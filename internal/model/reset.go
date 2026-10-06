@@ -22,6 +22,20 @@ func ResetPeriod(r ResetStrategy) time.Duration {
 	}
 }
 
+// Valid 报告这是不是一个认得的策略。
+//
+// 空串和拼错的值都算不认得。它们语义上等同于 none,但必须显式判定:不判定的话
+// NextResetAt 会算出一个正好等于起算点的时间,ResetDue 当场为真,而 AdvanceReset
+// 每轮「推进」出来的还是同一个时间 —— 后台任务就此卡在这个用户身上转到永远。
+func (r ResetStrategy) Valid() bool {
+	switch r {
+	case ResetNone, ResetDaily, ResetWeekly, ResetMonthly:
+		return true
+	default:
+		return false
+	}
+}
+
 // ResetAnchor 返回周期起算点:重置过就是那次的时间,否则是创建时间。
 func (u *User) ResetAnchor() time.Time {
 	if u.TrafficResetAt != nil {
@@ -30,12 +44,12 @@ func (u *User) ResetAnchor() time.Time {
 	return u.CreatedAt
 }
 
-// NextResetAt 返回严格晚于起算点的第一个重置点;ResetNone 返回零值。
+// NextResetAt 返回严格晚于起算点的第一个重置点;不重置(或策略不认得)返回零值。
 //
 // 用"上一次重置点加一个周期"而不是"now 加一个周期",是为了让周期保住原来的相
 // 位:1 号创建的用户永远在 1 号重置,不会因为控制面某次晚跑了几小时而慢慢漂移。
 func (u *User) NextResetAt() time.Time {
-	if u.ResetStrategy == ResetNone {
+	if u.ResetStrategy == ResetNone || !u.ResetStrategy.Valid() {
 		return time.Time{}
 	}
 	return addResetPeriod(u.ResetAnchor(), u.ResetStrategy)
@@ -53,8 +67,25 @@ func (u *User) ResetDue(now time.Time) bool {
 // 好几次(每次重置都伴随一次节点侧摘除/恢复,没必要重复折腾)。
 func (u *User) AdvanceReset(now time.Time) time.Time {
 	t := u.NextResetAt()
-	for !t.IsZero() && !now.Before(t) {
-		t = addResetPeriod(t, u.ResetStrategy)
+	if t.IsZero() {
+		return time.Time{}
+	}
+	// 固定周期直接算步数。逐次往前挪在正常情况(起算点就在几天前)下也一样,但
+	// 起算点要是个很早的时间,一天一步就要转几十万次。
+	if period := ResetPeriod(u.ResetStrategy); period > 0 {
+		if !t.After(now) {
+			t = t.Add((now.Sub(t)/period + 1) * period)
+		}
+		return t
+	}
+	// 月周期按月初推进,月份数有界。
+	for !now.Before(t) {
+		next := addResetPeriod(t, u.ResetStrategy)
+		// 守一道「必须往前走」:策略取值一旦出了意外,这里就是死循环。
+		if !next.After(t) {
+			return time.Time{}
+		}
+		t = next
 	}
 	return t
 }

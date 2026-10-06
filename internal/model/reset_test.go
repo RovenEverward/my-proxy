@@ -115,6 +115,55 @@ func TestResetMonthlyUsesMonthStart(t *testing.T) {
 	}
 }
 
+// TestUnknownResetStrategyNeverHangs 钉住一个真的把控制面卡死过的取值。
+//
+// 策略为空串(或任何拼错的值)时,ResetPeriod 返回 0、addResetPeriod 原地不动,
+// 于是 NextResetAt 算出来的正是起算点本身、ResetDue 当场为真,而 AdvanceReset
+// 每轮"推进"完还是同一个时间 —— 后台任务会卡在这个用户上永远转下去,再不做任何
+// 采样与收敛。所以不认得的策略必须在 NextResetAt 那一层就被挡掉。
+func TestUnknownResetStrategyNeverHangs(t *testing.T) {
+	created := mustTime(t, "2026-01-01T00:00:00Z")
+
+	for _, bad := range []ResetStrategy{"", "None", "每天", "hourly"} {
+		u := userAt(created, bad, nil)
+
+		if !u.NextResetAt().IsZero() {
+			t.Errorf("%q 不是认得的策略,不该有下一个重置点: %v", bad, u.NextResetAt())
+		}
+		if u.ResetDue(created.Add(100 * 24 * time.Hour)) {
+			t.Errorf("%q 不该被判定为到期", bad)
+		}
+		// 这一行在修好之前不会返回。用 goroutine + 超时兜着,让它报成一条
+		// 失败而不是把整个测试二进制挂住。
+		done := make(chan time.Time, 1)
+		go func() { done <- u.AdvanceReset(created.Add(100 * 24 * time.Hour)) }()
+		select {
+		case got := <-done:
+			if !got.IsZero() {
+				t.Errorf("%q 的起算点应是零值,实际 %v", bad, got)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%q 让 AdvanceReset 转不出来了", bad)
+		}
+	}
+}
+
+// TestAdvanceResetHandlesVeryOldAnchor 起算点若是个很早的时间,推进必须是常数级
+// 的:一天一步地挪 20 年要转七千多次(月周期更少,但道理一样)。
+func TestAdvanceResetHandlesVeryOldAnchor(t *testing.T) {
+	u := userAt(mustTime(t, "1970-01-01T00:00:00Z"), ResetDaily, nil)
+	now := mustTime(t, "2026-03-15T08:30:00Z")
+
+	got := u.AdvanceReset(now)
+	if !got.After(now) {
+		t.Fatalf("新的起算点必须严格晚于 now: %v", got)
+	}
+	// 相位仍然保持在 00:00。
+	if got.Hour() != 0 || got.Minute() != 0 {
+		t.Fatalf("每天重置的相位应当是 00:00,实际 %v", got)
+	}
+}
+
 func TestResetPeriod(t *testing.T) {
 	if got := ResetPeriod(ResetDaily); got != 24*time.Hour {
 		t.Fatalf("每天: %v", got)

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +18,10 @@ import (
 //
 // 它认的是 node 包拼出来的那几条命令的字面片段。片段要是改了,这个假 Runner 会
 // 立刻失效并报「没有为这条命令准备答案」,不会静默地让测试一直绿下去。
+//
+// 上锁是因为 Task.Run 在另一个 goroutine 里跑,测试这边同时要查它跑过什么。
 type fakeRunner struct {
+	mu    sync.Mutex
 	calls []string
 	// replies 的键是关键字,值是这条命令的输出;命中第一个包含关键字的规则。
 	replies []reply
@@ -33,6 +37,13 @@ type reply struct {
 }
 
 func (f *fakeRunner) answer(script string, stdin []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.answerLocked(script, stdin)
+}
+
+// answerLocked 要求调用方已经持有 f.mu。
+func (f *fakeRunner) answerLocked(script string, stdin []byte) (string, error) {
 	f.calls = append(f.calls, script)
 	f.stdin = append(f.stdin, string(stdin))
 	if f.failOn != "" && strings.Contains(script, f.failOn) {
@@ -56,21 +67,37 @@ func (f *fakeRunner) RunWithInput(_ context.Context, _ model.Node, script string
 
 // ran 报告是否跑过含该关键字的命令。
 func (f *fakeRunner) ran(keyword string) bool {
-	for _, c := range f.calls {
-		if strings.Contains(c, keyword) {
-			return true
-		}
-	}
-	return false
+	return f.indexOf(keyword) >= 0
 }
 
 func (f *fakeRunner) indexOf(keyword string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for i, c := range f.calls {
 		if strings.Contains(c, keyword) {
 			return i
 		}
 	}
 	return -1
+}
+
+// callList 返回一份命令序列的拷贝,给失败信息用。
+func (f *fakeRunner) callList() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
+// stdinFor 返回含该关键字的那条命令收到的标准输入。
+func (f *fakeRunner) stdinFor(keyword string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, c := range f.calls {
+		if strings.Contains(c, keyword) && i < len(f.stdin) {
+			return f.stdin[i]
+		}
+	}
+	return ""
 }
 
 // inbounduserReply / trafficReply 是真实的 `xray api` 输出形状。
@@ -278,10 +305,10 @@ func TestReconcileAddsBeforeRemoving(t *testing.T) {
 	addAt := r.indexOf("api adu")
 	removeAt := r.indexOf("api rmu")
 	if addAt < 0 {
-		t.Fatalf("没有添加任何用户,跑过的命令:%v", r.calls)
+		t.Fatalf("没有添加任何用户,跑过的命令:%v", r.callList())
 	}
 	if removeAt < 0 {
-		t.Fatalf("没有摘掉过期用户,跑过的命令:%v", r.calls)
+		t.Fatalf("没有摘掉过期用户,跑过的命令:%v", r.callList())
 	}
 	if addAt > removeAt {
 		t.Fatalf("先摘后加了(adu 在第 %d 条,rmu 在第 %d 条):中途失败会让人连不上", addAt, removeAt)
@@ -409,7 +436,7 @@ func TestSampleTrafficUsesReset(t *testing.T) {
 		t.Fatalf("SampleTraffic: %v", err)
 	}
 	if !r.ran("-reset") {
-		t.Fatalf("statsquery 没有带 -reset,流量会被重复累加:%v", r.calls)
+		t.Fatalf("statsquery 没有带 -reset,流量会被重复累加:%v", r.callList())
 	}
 }
 
@@ -435,13 +462,13 @@ func TestDeployNodeBacksUpThenValidatesThenRestarts(t *testing.T) {
 	testAt := r.indexOf("-test -config")
 	restartAt := r.indexOf("systemctl restart")
 	if backupAt < 0 {
-		t.Fatalf("没有备份原配置:%v", r.calls)
+		t.Fatalf("没有备份原配置:%v", r.callList())
 	}
 	if testAt < 0 {
-		t.Fatalf("没有校验新配置:%v", r.calls)
+		t.Fatalf("没有校验新配置:%v", r.callList())
 	}
 	if restartAt < 0 {
-		t.Fatalf("没有重启 xray:%v", r.calls)
+		t.Fatalf("没有重启 xray:%v", r.callList())
 	}
 	if backupAt > testAt {
 		t.Fatalf("先校验后备份了:校验失败时没有可回滚的东西")
@@ -467,7 +494,7 @@ func TestDeployNodeWritesNothingWhenRenderFails(t *testing.T) {
 	if err := c.DeployNode(context.Background(), n, time.Now()); err == nil {
 		t.Fatal("渲染失败时应当报错")
 	}
-	if len(r.calls) != 0 {
-		t.Fatalf("渲染失败却已经动了节点:%v", r.calls)
+	if len(r.callList()) != 0 {
+		t.Fatalf("渲染失败却已经动了节点:%v", r.callList())
 	}
 }

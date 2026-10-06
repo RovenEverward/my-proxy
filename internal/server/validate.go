@@ -189,6 +189,14 @@ func validateUser(u *model.User) string {
 	if u.DataLimit < 0 {
 		return "流量上限不能是负数"
 	}
+	// 留空按 none 处理。认不出的值必须挡在这里:模型层虽然已经不会再被它卡死,
+	// 但一个语义不明的策略存进库里,使用者看到的和实际发生的会不一致。
+	if u.ResetStrategy == "" {
+		u.ResetStrategy = model.ResetNone
+	}
+	if !u.ResetStrategy.Valid() {
+		return "流量重置策略只能是 none / daily / weekly / monthly"
+	}
 	return ""
 }
 
