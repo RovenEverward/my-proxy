@@ -456,3 +456,110 @@ func firstN(s string, n int) string {
 	}
 	return s[:n]
 }
+
+// shimDir 造一个只放 xray 与 systemctl 的 PATH 前缀。
+//
+// xray 是个转发到真二进制的壳(symlink 会让它以临时目录为基准去找 geoip.dat);
+// systemctl 在 macOS 上根本不存在,给个只记账的桩,让整条下发路径能在本机真跑一遍。
+func shimDir(t *testing.T, xrayBin string) (dir, systemctlLog string) {
+	t.Helper()
+	dir = t.TempDir()
+	systemctlLog = filepath.Join(dir, "systemctl.log")
+
+	xrayShim := "#!/bin/sh\ncd " + shellQuote(filepath.Dir(xrayBin)) + " && exec " + shellQuote(xrayBin) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "xray"), []byte(xrayShim), 0o755); err != nil {
+		t.Fatalf("写 xray 壳: %v", err)
+	}
+	ctlShim := "#!/bin/sh\necho \"$*\" >> " + shellQuote(systemctlLog) + "\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(ctlShim), 0o755); err != nil {
+		t.Fatalf("写 systemctl 桩: %v", err)
+	}
+	return dir, systemctlLog
+}
+
+func readFile(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("读 %s: %v", p, err)
+	}
+	return string(b)
+}
+
+// TestLiveDeployBacksUpValidatesAndRollsBack 让 Deploy 那条真的 shell 脚本在本机跑
+// 一遍。单测用的是假 Runner,只能证明「脚本字面片段对」;这里证明脚本本身能跑、
+// 退出码语义成立、坏配置真的会被拦下并把原文件放回去。
+func TestLiveDeployBacksUpValidatesAndRollsBack(t *testing.T) {
+	bin := liveXray(t)
+	shim, ctlLog := shimDir(t, bin)
+	r := localRunner{binDir: shim}
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	n := model.Node{Name: "本机", Address: "127.0.0.1", ConfigPath: cfgPath, ServiceName: "xray"}
+
+	serverConfig := func(port int) []byte {
+		return []byte(fmt.Sprintf(`{
+  "log": {"loglevel": "warning"},
+  "inbounds": [{
+    "tag": "vless-test", "listen": "127.0.0.1", "port": %d, "protocol": "vless",
+    "settings": {"decryption": "none", "clients": [{"id": "8f3a1c2e-5b7d-4a91-8c3f-2d6e9b0a4f17", "email": "alice"}]}
+  }],
+  "outbounds": [{"tag": "direct", "protocol": "freedom"}]
+}`, port))
+	}
+
+	first := serverConfig(freePort(t))
+	if err := Deploy(ctx, r, n, first); err != nil {
+		t.Fatalf("下发一份能用的配置应当成功: %v", err)
+	}
+	if got := readFile(t, cfgPath); got != string(first) {
+		t.Fatalf("配置没有落到节点上:\n%s", got)
+	}
+	if got := readFile(t, ctlLog); !strings.Contains(got, "restart xray") {
+		t.Fatalf("下发之后应当重启 xray,实际跑过:%s", got)
+	}
+
+	// 第二份:这时才存在「原文件」,备份应当留下上一份的内容。
+	second := serverConfig(freePort(t))
+	if err := Deploy(ctx, r, n, second); err != nil {
+		t.Fatalf("第二次下发应当成功: %v", err)
+	}
+	if got := readFile(t, cfgPath+".bak"); got != string(first) {
+		t.Fatalf("备份应当是上一份配置,实际:\n%s", got)
+	}
+
+	// 坏配置:xray 自己会拒绝,Deploy 必须报错、回滚,并且不重启。
+	// 用「认不出的协议」而不是坏 JSON —— 那才是 xray 的 -test 真正在拦的东西。
+	bad := []byte(`{"inbounds":[{"tag":"x","listen":"127.0.0.1","port":1080,"protocol":"这不是协议","settings":{}}],"outbounds":[{"tag":"direct","protocol":"freedom"}]}`)
+	err := Deploy(ctx, r, n, bad)
+	if err == nil {
+		t.Fatal("坏配置应当被 xray -test 拦下")
+	}
+	if !strings.Contains(err.Error(), "已回滚") {
+		t.Fatalf("报错应当说明回滚了,实际: %v", err)
+	}
+	if got := readFile(t, cfgPath); got != string(second) {
+		t.Fatalf("坏配置没有被回滚,节点上现在是:\n%s", got)
+	}
+	if got := strings.Count(readFile(t, ctlLog), "restart xray"); got != 2 {
+		t.Fatalf("校验失败的那次不该重启 xray,restart 次数应为 2,实际 %d:\n%s", got, readFile(t, ctlLog))
+	}
+
+	// Version 与 IsActive 也走 xrayBin 那行前缀,顺手确认它们能跑。
+	version, err := Version(ctx, r, n)
+	if err != nil {
+		t.Fatalf("读版本: %v", err)
+	}
+	if !strings.Contains(version, "Xray") {
+		t.Fatalf("版本输出不对: %q", version)
+	}
+	active, err := IsActive(ctx, r, n)
+	if err != nil {
+		t.Fatalf("问服务状态: %v", err)
+	}
+	if active {
+		t.Fatal("桩没输出 active,不该判定为在跑")
+	}
+}
