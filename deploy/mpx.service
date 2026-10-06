@@ -1,0 +1,28 @@
+[Unit]
+Description=mpx 控制面(订阅托管与节点收敛)
+Documentation=https://example.invalid/mpx
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mpx
+Group=mpx
+
+# token 放在 EnvironmentFile 里(0600),不要写进这个文件:单元文件是全局可读的。
+EnvironmentFile=/etc/mpx/env
+ExecStart=/usr/local/bin/mpx serve --addr 127.0.0.1:8080 --db /var/lib/mpx/mpx.db
+
+Restart=on-failure
+RestartSec=3
+
+# 只需要写自己的库目录,别的都别给。
+StateDirectory=mpx
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mpx
+
+[Install]
+WantedBy=multi-user.target
