@@ -1,0 +1,331 @@
+// Package xrayrelease 取一份 xray 发行包,把节点上要用的文件摊到控制面的磁盘上。
+//
+// 它和 ssh 无关:下载、解压、缓存这几件事只跟网络和压缩包打交道,可以单独验证。
+// 控制面只下载一次,之后把同一份文件推给每一台节点 —— 于是节点上不需要 curl、
+// 不需要 unzip,也不需要能连上 GitHub,一台只开 ssh 的离线机器照样能装。
+package xrayrelease
+
+import (
+	"archive/zip"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// repo 是 xray 的上游仓库。
+const repo = "XTLS/Xray-core"
+
+// 发布包里只取这三个文件。包里还有 LICENSE 和 README,推到几百台节点上没用。
+const (
+	fileXray    = "xray"
+	fileGeoIP   = "geoip.dat"
+	fileGeoSite = "geosite.dat"
+)
+
+// apiBase 与 downloadBase 是包级变量,测试里换成本地服务的地址。
+var (
+	apiBase      = "https://api.github.com"
+	downloadBase = "https://github.com"
+)
+
+// maxZip 是一次下载允许的最大字节数。上游的包不到 30MB,给一个宽松但有限的上限,
+// 免得对端(或中间人)让我们把磁盘写满。
+const maxZip = 200 << 20
+
+var client = &http.Client{Timeout: 5 * time.Minute}
+
+// Files 是一次发布里节点要用的文件,都已经落在这台机器的磁盘上。
+//
+// 给路径而不是内容:一个核心加两份数据接近 65MB,三个一起读进内存没有任何好处,
+// 往节点推的时候本来就是一个一个过去的。
+type Files struct {
+	Version string // 形如 v26.3.27
+	Xray    string
+	GeoIP   string
+	GeoSite string
+}
+
+// Request 说明要取哪一份发布、给哪个平台、缓存在哪。
+type Request struct {
+	Version string // 空表示最新版
+	OS      string // 节点的操作系统,取值同 runtime.GOOS
+	Arch    string // 节点的架构,取值同 runtime.GOARCH
+	Dir     string // 缓存目录,不存在会被创建
+}
+
+// AssetName 给出某个平台对应的发布包名。
+//
+// 名字是上游发布流程定的,没有规律可循:amd64 的包叫 64,arm64 的叫 arm64-v8a,
+// 所以只能列出来。认不出的平台直接报错 —— 核心装错架构,节点上是一启动就退。
+func AssetName(goos, goarch string) (string, error) {
+	switch goos + "/" + goarch {
+	case "linux/386":
+		return "Xray-linux-32.zip", nil
+	case "linux/amd64":
+		return "Xray-linux-64.zip", nil
+	case "linux/arm":
+		return "Xray-linux-arm32-v7a.zip", nil
+	case "linux/arm64":
+		return "Xray-linux-arm64-v8a.zip", nil
+	case "linux/riscv64":
+		return "Xray-linux-riscv64.zip", nil
+	case "linux/s390x":
+		return "Xray-linux-s390x.zip", nil
+	case "linux/ppc64le":
+		return "Xray-linux-ppc64le.zip", nil
+	case "darwin/amd64":
+		return "Xray-macos-64.zip", nil
+	case "darwin/arm64":
+		return "Xray-macos-arm64-v8a.zip", nil
+	case "freebsd/amd64":
+		return "Xray-freebsd-64.zip", nil
+	case "freebsd/arm64":
+		return "Xray-freebsd-arm64-v8a.zip", nil
+	}
+	return "", fmt.Errorf("没有 %s/%s 的 xray 发布包", goos, goarch)
+}
+
+// Fetch 取一份 xray 发布,解开并缓存在 req.Dir 下。
+//
+// 同一个版本加平台取过第二次就不再下载:装一台新节点、或者换核心重装,都只是从
+// 本地往节点推。这是让「节点不需要能连外网」成立的那一步。
+func Fetch(ctx context.Context, req Request) (Files, error) {
+	if req.Dir == "" {
+		return Files{}, errors.New("没有给缓存目录")
+	}
+	asset, err := AssetName(req.OS, req.Arch)
+	if err != nil {
+		return Files{}, err
+	}
+
+	version := normalize(req.Version)
+	var url string
+	if version == "" {
+		if version, url, err = resolveLatest(ctx, asset); err != nil {
+			return Files{}, err
+		}
+	} else {
+		url = releaseURL(version, asset)
+	}
+
+	files := Files{
+		Version: version,
+		Xray:    filepath.Join(req.Dir, version+"_"+req.OS+"_"+req.Arch, fileXray),
+		GeoIP:   filepath.Join(req.Dir, version+"_"+req.OS+"_"+req.Arch, fileGeoIP),
+		GeoSite: filepath.Join(req.Dir, version+"_"+req.OS+"_"+req.Arch, fileGeoSite),
+	}
+	if ready(files) {
+		return files, nil
+	}
+
+	if err := os.MkdirAll(req.Dir, 0o755); err != nil {
+		return Files{}, fmt.Errorf("建缓存目录 %s: %w", req.Dir, err)
+	}
+	if err := fetchInto(ctx, url, filepath.Dir(files.Xray)); err != nil {
+		return Files{}, err
+	}
+	if !ready(files) {
+		return Files{}, fmt.Errorf("发布包 %s 里没有 %s/%s/%s", url, fileXray, fileGeoIP, fileGeoSite)
+	}
+	return files, nil
+}
+
+// resolveLatest 问 GitHub 最新版是哪个,顺带拿到该平台资产的下载地址。
+//
+// 只有「不指定版本」才需要问接口:指定了版本的话下载地址能直接拼出来,少一次
+// 请求,也不会被接口的限流挡住。
+func resolveLatest(ctx context.Context, asset string) (version, url string, err error) {
+	resp, err := get(ctx, apiBase+"/repos/"+repo+"/releases/latest")
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
+		return "", "", fmt.Errorf("读 GitHub 的发布信息: %w", err)
+	}
+	if body.TagName == "" {
+		return "", "", errors.New("GitHub 没有给出最新版的版本号")
+	}
+	for _, a := range body.Assets {
+		if a.Name == asset {
+			return body.TagName, a.URL, nil
+		}
+	}
+	return "", "", fmt.Errorf("发布 %s 里没有 %s", body.TagName, asset)
+}
+
+// fetchInto 把发布包取到 dest 的旁边解开,最后整体改名成 dest。
+//
+// 先落临时目录再改名,是为了让缓存目录里出现的每一个版本都是完整的:解到一半
+// 断线留下的半份如果被当成「已缓存」,下次装到节点上的核心就是坏的。
+func fetchInto(ctx context.Context, url, dest string) error {
+	tmp, err := os.MkdirTemp(filepath.Dir(dest), filepath.Base(dest)+".part-")
+	if err != nil {
+		return fmt.Errorf("建临时目录: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	zipPath := filepath.Join(tmp, "release.zip")
+	resp, err := get(ctx, url)
+	if err != nil {
+		return err
+	}
+	if err := save(resp, zipPath); err != nil {
+		return fmt.Errorf("下载 %s: %w", url, err)
+	}
+
+	stage := filepath.Join(tmp, "files")
+	if err := extract(zipPath, stage); err != nil {
+		return err
+	}
+	if err := os.Remove(zipPath); err != nil {
+		return err
+	}
+	if err := os.Rename(stage, dest); err != nil {
+		return fmt.Errorf("把解出来的文件放到 %s: %w", dest, err)
+	}
+	return nil
+}
+
+// extract 把发布包里节点要用的三个文件取出来。
+func extract(zipPath, dest string) error {
+	r, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("读发布包: %w", err)
+	}
+	defer r.Close()
+
+	// 取文件的权限写死,不看包里的:核心必须可执行,而 OpenFile 的 mode 会被
+	// umask 削掉,所以还要显式 Chmod 一次。
+	want := map[string]os.FileMode{fileXray: 0o755, fileGeoIP: 0o644, fileGeoSite: 0o644}
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return fmt.Errorf("建 %s: %w", dest, err)
+	}
+	for _, f := range r.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		// 只看文件名不看目录:上游把文件放在包根下,但哪天挪进子目录了我们也不该瞎。
+		name := filepath.Base(f.Name)
+		mode, ok := want[name]
+		if !ok {
+			continue
+		}
+		if err := writeEntry(f, filepath.Join(dest, name), mode); err != nil {
+			return err
+		}
+		delete(want, name)
+	}
+
+	var missing []string
+	for name := range want {
+		missing = append(missing, name)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("发布包里缺少 %s", strings.Join(missing, "、"))
+	}
+	return nil
+}
+
+func writeEntry(f *zip.File, path string, mode os.FileMode) error {
+	src, err := f.Open()
+	if err != nil {
+		return fmt.Errorf("读 %s: %w", f.Name, err)
+	}
+	defer src.Close()
+
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return fmt.Errorf("写 %s: %w", path, err)
+	}
+	if err := out.Chmod(mode); err != nil {
+		out.Close()
+		return fmt.Errorf("设 %s 的权限: %w", path, err)
+	}
+	if _, err := io.Copy(out, src); err != nil {
+		out.Close()
+		return fmt.Errorf("解出 %s: %w", f.Name, err)
+	}
+	return out.Close()
+}
+
+// get 发一次 GET。GitHub 的接口要求带 User-Agent,不带会直接 403。
+func get(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "mpx")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求 %s: %w", url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("请求 %s: HTTP %d", url, resp.StatusCode)
+	}
+	return resp, nil
+}
+
+// save 把响应体写到 path 上。先写 path.tmp 再改名,断线不会留下半份文件。
+func save(resp *http.Response, path string) error {
+	defer resp.Body.Close()
+	out, err := os.OpenFile(path+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(out, io.LimitReader(resp.Body, maxZip+1))
+	if err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	if n > maxZip {
+		return fmt.Errorf("发布包超过 %d 字节", int64(maxZip))
+	}
+	return os.Rename(path+".tmp", path)
+}
+
+// ready 报告缓存里是不是已经有完整的一份了。三个文件缺一个都算没有。
+func ready(f Files) bool {
+	for _, p := range []string{f.Xray, f.GeoIP, f.GeoSite} {
+		st, err := os.Stat(p)
+		if err != nil || st.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
+// normalize 把使用者写的版本号补成上游的标签形式(26.3.27 → v26.3.27)。
+func normalize(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.EqualFold(v, "latest") {
+		return ""
+	}
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
+}
+
+func releaseURL(version, asset string) string {
+	return downloadBase + "/" + repo + "/releases/download/" + version + "/" + asset
+}

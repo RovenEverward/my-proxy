@@ -6,6 +6,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,16 +48,31 @@ func newClient() (*Client, error) {
 	return &Client{
 		server: strings.TrimSuffix(server, "/"),
 		token:  token,
-		// 控制面一般在本机,但设置与配置预览要走远端数据,给个不无限等待的上限。
-		http: &http.Client{Timeout: 30 * time.Second},
+		// 超时按次给(见 doWithin),不在这里定一个套在所有接口上的值:读一条记录
+		// 和往节点上装核心的合理上限差三个数量级。
+		http: &http.Client{},
 	}, nil
 }
 
-// do 发一次请求并返回响应的原始字节。
+const (
+	// defaultTimeout 是管理接口的常规上限。控制面一般就在本机(或一条 ssh 隧道
+	// 的另一头),正常几毫秒就回。
+	defaultTimeout = 30 * time.Second
+	// installTimeout 是安装节点核心的上限:控制面要下载一个几十兆的发布包,再推
+	// 同样大小的东西过 ssh 到节点上,慢链路下几分钟很正常。
+	installTimeout = 15 * time.Minute
+)
+
+// do 以常规上限发一次请求。
+func (c *Client) do(method, path string, body any) ([]byte, error) {
+	return c.doWithin(defaultTimeout, method, path, body)
+}
+
+// doWithin 以指定的上限发一次请求。
 //
 // 原始字节要一路留到输出层:json 模式直接重排它,表格模式才按需解出字段。
 // 这样客户端不必复刻一套服务端的结构体,也就不会有字段漂移。
-func (c *Client) do(method, path string, body any) ([]byte, error) {
+func (c *Client) doWithin(timeout time.Duration, method, path string, body any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -65,7 +81,9 @@ func (c *Client) do(method, path string, body any) ([]byte, error) {
 		}
 		reader = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequest(method, c.server+path, reader)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, c.server+path, reader)
 	if err != nil {
 		return nil, err
 	}

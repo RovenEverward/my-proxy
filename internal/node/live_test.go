@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -48,8 +49,12 @@ func liveXray(t *testing.T) string {
 //
 // Runner 抽象本来就说了「换成别的实现」,这就是那个实现:它让整层节点操作可以对着
 // 真实 xray 验证,而不必先有一台能 ssh 的机器。
+//
+// 节点脚本按固定路径找核心(/usr/local/lib/mpx/xray),本机显然不在那儿,所以这里用
+// MPX_XRAY_BIN 把它指到本机这份真二进制 —— 那个口子存在的理由就是这个。
 type localRunner struct {
-	binDir string
+	binDir  string // 当作节点上的 PATH 前缀:xray 壳、systemctl 桩都在里面
+	xrayBin string // 想让节点脚本用的那份 xray
 }
 
 func (l localRunner) Run(ctx context.Context, n model.Node, script string) (string, error) {
@@ -58,7 +63,11 @@ func (l localRunner) Run(ctx context.Context, n model.Node, script string) (stri
 
 func (l localRunner) RunWithInput(ctx context.Context, n model.Node, script string, stdin []byte) (string, error) {
 	cmd := exec.CommandContext(ctx, "bash", "-c", script)
-	cmd.Env = append(os.Environ(), "PATH="+l.binDir+":"+os.Getenv("PATH"))
+	env := append(os.Environ(), "PATH="+l.binDir+":"+os.Getenv("PATH"))
+	if l.xrayBin != "" {
+		env = append(env, "MPX_XRAY_BIN="+l.xrayBin)
+	}
+	cmd.Env = env
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -194,7 +203,7 @@ func TestLiveServerConfigAcceptedByXray(t *testing.T) {
 func TestLiveXrayAPIContract(t *testing.T) {
 	bin := liveXray(t)
 	dir := t.TempDir()
-	runner := localRunner{binDir: filepath.Dir(bin)}
+	runner := localRunner{binDir: filepath.Dir(bin), xrayBin: bin}
 
 	apiPort := freePort(t)
 	node := liveNode(t, dir, apiPort)
@@ -461,6 +470,8 @@ func firstN(s string, n int) string {
 //
 // xray 是个转发到真二进制的壳(symlink 会让它以临时目录为基准去找 geoip.dat);
 // systemctl 在 macOS 上根本不存在,给个只记账的桩,让整条下发路径能在本机真跑一遍。
+// 桩对 is-active 回答 active:Deploy 现在会确认服务真的起来了,一个什么都不答的桩
+// 会让每次下发都被判成失败。
 func shimDir(t *testing.T, xrayBin string) (dir, systemctlLog string) {
 	t.Helper()
 	dir = t.TempDir()
@@ -470,7 +481,10 @@ func shimDir(t *testing.T, xrayBin string) (dir, systemctlLog string) {
 	if err := os.WriteFile(filepath.Join(dir, "xray"), []byte(xrayShim), 0o755); err != nil {
 		t.Fatalf("写 xray 壳: %v", err)
 	}
-	ctlShim := "#!/bin/sh\necho \"$*\" >> " + shellQuote(systemctlLog) + "\nexit 0\n"
+	ctlShim := "#!/bin/sh\n" +
+		"echo \"$*\" >> " + shellQuote(systemctlLog) + "\n" +
+		"if [ \"$1\" = is-active ]; then echo active; fi\n" +
+		"exit 0\n"
 	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(ctlShim), 0o755); err != nil {
 		t.Fatalf("写 systemctl 桩: %v", err)
 	}
@@ -492,7 +506,7 @@ func readFile(t *testing.T, p string) string {
 func TestLiveDeployBacksUpValidatesAndRollsBack(t *testing.T) {
 	bin := liveXray(t)
 	shim, ctlLog := shimDir(t, bin)
-	r := localRunner{binDir: shim}
+	r := localRunner{binDir: shim, xrayBin: filepath.Join(shim, "xray")}
 	ctx := context.Background()
 
 	dir := t.TempDir()
@@ -548,18 +562,21 @@ func TestLiveDeployBacksUpValidatesAndRollsBack(t *testing.T) {
 	}
 
 	// Version 与 IsActive 也走 xrayBin 那行前缀,顺手确认它们能跑。
+	// 版本要的是纯版本号:调用方会把它打进给使用者看的一行里,xray 那整行横幅没法读。
 	version, err := Version(ctx, r, n)
 	if err != nil {
 		t.Fatalf("读版本: %v", err)
 	}
-	if !strings.Contains(version, "Xray") {
-		t.Fatalf("版本输出不对: %q", version)
+	if !regexp.MustCompile(`^\d+\.\d+`).MatchString(version) {
+		t.Fatalf("版本该是纯版本号(像 26.3.27),实际 %q", version)
 	}
+	// 下发之后必须能确认服务在跑 —— 这正是 Deploy 现在的最后一步,桩对 is-active
+	// 回答 active,所以这里应当为真。
 	active, err := IsActive(ctx, r, n)
 	if err != nil {
 		t.Fatalf("问服务状态: %v", err)
 	}
-	if active {
-		t.Fatal("桩没输出 active,不该判定为在跑")
+	if !active {
+		t.Fatal("桩对 is-active 回答了 active,应当判定为在跑")
 	}
 }

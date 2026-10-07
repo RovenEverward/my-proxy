@@ -1,6 +1,5 @@
 [Unit]
 Description=mpx 控制面(订阅托管与节点收敛)
-Documentation=https://example.invalid/mpx
 After=network-online.target
 Wants=network-online.target
 

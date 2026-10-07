@@ -46,16 +46,28 @@
 
 ### 1. 起控制面
 
+本机试:
+
 ```bash
 go build -o mpx ./cmd/mpx
-
-# 本机开发:不设 token 就不校验鉴权,所以默认只监听回环
-./mpx serve --db ~/mpx.db
-
-# 对外提供服务:必须给 token,否则任何人都能加节点
-export MPX_TOKEN="$(openssl rand -base64 32)"
-./mpx serve --addr 127.0.0.1:8080 --db /var/lib/mpx/mpx.db
+./mpx serve --db ~/mpx.db      # 不设 token 就不校验鉴权,所以默认只监听回环
 ```
+
+真正拿它服务人,就在控制面那台机器上装成 systemd 服务。**装和更新是同一条命令**:
+
+```bash
+# 开发机:编一个 linux 版,连同 deploy/ 一起传过去
+GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/mpx ./cmd/mpx
+scp -r /tmp/mpx deploy root@<控制面机器>:/tmp/
+
+# 控制面机器
+sudo /tmp/deploy/install.sh /tmp/mpx
+```
+
+它做的是:换二进制(先试跑,跑不起来就不换)→ 建 `mpx` 用户和目录 → 第一次生成管理
+token → 生成到节点去的 SSH 密钥 → 写单元文件 → 重启并**确认它真的在跑**。已经存在的
+token、数据库、密钥一律不动,所以重复跑就是更新。跑完会印出 token、公钥和接下来该敲的
+命令。细节见[装到机器上](#装到机器上)。
 
 ### 2. 让 CLI 记住它
 
@@ -69,18 +81,22 @@ export MPX_TOKEN="$(openssl rand -base64 32)"
 
 ### 3. 加一台节点
 
-节点上需要:xray 已装好(systemd 服务名默认 `xray`)、能 ssh 上去、`config.json`
-默认在 `/usr/local/etc/xray/config.json`。
+节点上只要有 sshd 和 systemd —— 不用预先装 xray,也不用能连 GitHub:
 
 ```bash
 ./mpx node add hk --address 203.0.113.10
-./mpx node show 1
-./mpx node config 1 > /tmp/preview.json   # 只是打印,不碰节点
-./mpx node sync 1                          # 真下发:备份 → 校验 → 回滚兜底 → 重启
+./mpx node install 1                       # 装 xray、写单元、下发配置、启动
+./mpx node config 1 > /tmp/preview.json    # 只是打印,不碰节点
+./mpx node sync 1                          # 只重新下发配置
 ```
 
-`node sync` 会先在节点上把原配置备份成 `.bak`,把新配置推过去用 `xray -test` 校验,
-**校验不过就自动回滚**,不会把一个起不来的 xray 留在节点上。
+`node install` 一步到能用:发布包由控制面下载一次缓存在自己那边,再把核心和 geodata
+推过去;换核心也走这条命令(默认最新版,`--xray-version` 指定)。
+
+两条命令都带兜底。`node sync` 先把节点上的原配置备份成 `.bak`,新配置用 `xray -test`
+校验,**不过就自动回滚**;`node install` 换核心之前先拿节点上**现有的**配置试跑新核心,
+通不过就不换。结构改动(加入站、改端口、换证书)之后要再跑一次 `node sync`,这些字段
+xray 只能重启才生效;但**加人、删人不需要** —— 见第 4 步。
 
 ### 4. 加入站与对外入口
 
@@ -102,9 +118,8 @@ export MPX_TOKEN="$(openssl rand -base64 32)"
 ./mpx host list --inbound 2
 ```
 
-结构性改动(新增入站、改端口、换证书)之后要再跑一次 `./mpx node sync <id>` ——
-这些字段 xray 只能重启才生效。**加人/删人不需要**:那是走 xray API 增量做的,节点上
-其他人的连接不会断。
+改完结构要按第 3 步再跑一次 `./mpx node sync <id>`。**加人/删人不需要**:那是走
+xray API 增量做的,节点上其他人的连接不会断。
 
 ### 5. 加用户并拿订阅
 
@@ -168,26 +183,28 @@ echo '{
   配置不变,只是旧订阅地址失效。订阅链接比协议凭证更容易泄露(截图、转发),分开存
   就是为了能单独换。
 
-## 部署
+## 装到机器上
 
-控制面只需要一个能跑二进制的 Linux 机器和一个 SQLite 文件。
+### 控制面
 
-```bash
-install -m 0755 mpx /usr/local/bin/mpx
-useradd --system --home /var/lib/mpx --shell /usr/sbin/nologin mpx
-install -d -o mpx -g mpx -m 0750 /var/lib/mpx /etc/mpx
+「快速开始」第 1 步里的 `deploy/install.sh` 就是全部,重复跑就是更新。它做的是:
 
-install -m 0644 deploy/mpx.service      /etc/systemd/system/mpx.service
-install -m 0600 -o mpx -g mpx deploy/mpx.env.example /etc/mpx/env
-$EDITOR /etc/mpx/env        # 填一个 openssl rand -base64 32 出来的 token
+- **先试跑再替换**:二进制先落到 `/usr/local/bin/mpx.new` 跑一次 `--help`,不通过就删掉
+  并保留原来那份 —— 更新时换上一个交叉编译错了架构的二进制,这台机器就没有控制面了;
+- 建 `mpx` 用户、`/var/lib/mpx`、`/etc/mpx`。家目录必须是 `/var/lib/mpx`,控制面要去
+  那里找自己的 `.ssh`;
+- `/etc/mpx/env` 不存在才生成 `MPX_TOKEN`,已存在就不动 —— 换了 token,所有登录过的
+  CLI 都要重登;
+- 生成到节点去的密钥 `/var/lib/mpx/.ssh/id_ed25519`;
+- 写 `/etc/systemd/system/mpx.service`(和手上这份不同就先备份成 `.bak`),重启,再
+  **确认它真的在跑**;起不来就打印状态和最近 20 行日志,以非零退出。
 
-systemctl daemon-reload
-systemctl enable --now mpx
-systemctl status mpx
-```
+不想用脚本的话,`deploy/install.sh` 本身就是那几步 shell,照着敲一遍也行。
 
-`mpx.service` 里 `ProtectSystem=strict` + `ReadWritePaths=/var/lib/mpx`,把控制面的写权限
-限在库目录里。`ExecStart` 绑 `127.0.0.1`,对外交给反向代理。
+控制面只要一个能跑二进制的 Linux 机器和一个 SQLite 文件。`ExecStart` 绑 `127.0.0.1`,
+对外交给反向代理;`ProtectSystem=strict` + `ReadWritePaths=/var/lib/mpx` 把写权限限在
+库目录里 —— 控制面下载的 xray 缓存也放在那儿(`/var/lib/mpx/xray`),因为那是它唯一
+能写的地方。
 
 ### 反向代理与证书
 
@@ -216,14 +233,45 @@ server {
 节点自己那侧的 TLS 证书要放在**节点机器上**,路径写进入站的 `--cert-file` /
 `--key-file`。多个子域建议用泛域名证书(地址里写了 `*` 就需要)。
 
-### 节点侧
+### 节点
 
-不需要装任何 mpx 组件。控制面用的是系统自带的 `ssh`:
+节点上不需要装任何 mpx 组件 —— 下发走系统自带的 `ssh`,准备工作都在控制面那边:
 
-- 连接参数走 `~/.ssh/config`、跳板机、ssh-agent —— 你机器上已经配好的那套直接生效;
 - `BatchMode=yes`,需要密码时**直接失败**而不是挂在等输入的提示上,所以
   **必须先配好免密**(公钥认证),控制面才能下发;
-- 用的用户是 `--ssh-user`(默认 `root`),要能写 `config.json` 并 `systemctl` 管 xray。
+- 读的是 `mpx` 用户的 `~/.ssh/config`(即 `/var/lib/mpx/.ssh/config`),跳板机、
+  ssh-agent、`known_hosts` 那一套同样生效;
+- 用的用户是 `--ssh-user`(默认 `root`),要能写 `config.json` 并 `systemctl` 管服务。
+
+mpx 在节点上占的都是自己的一份,和机器上可能已经有的 xray 不打架(同机跑着 Marzban
+也没关系):
+
+| | mpx 用的 | 别人常装的 |
+| --- | --- | --- |
+| 核心 | `/usr/local/lib/mpx/xray` | `/usr/local/bin/xray` |
+| geodata | 与核心同目录(xray 只去二进制同目录找) | `/usr/local/share/xray/` |
+| 配置 | `/etc/mpx/xray/config.json` | `/usr/local/etc/xray/config.json` |
+| 服务名 | `mpx-xray` | `xray` |
+
+默认值都在 `mpx node add` 的 `--help` 里,也可以逐个指定。
+
+### 接上一台已经在跑的机器
+
+```bash
+# 控制面机器:把这行公钥加到节点上对应 ssh 用户的 ~/.ssh/authorized_keys
+sudo cat /var/lib/mpx/.ssh/id_ed25519.pub
+
+# 操作者本机
+./mpx node add hk --address 203.0.113.10                   # 其余留空走默认值
+./mpx node add lab --address 10.0.0.9 --ssh-port 5522 --ssh-user ubuntu
+./mpx node install 1
+```
+
+`node install` 装的是 mpx 自己那份 xray,不碰节点上已有的那一份。`--config-path` /
+`--service-name` 只决定配置写到哪、重启哪个服务;核心始终是 `/usr/local/lib/mpx/xray`。
+
+**今天做不到的**:经跳板机连节点。`--address` 一个字段同时在当「ssh 往哪连」和「订阅里
+发给客户端的地址」,跳到别人的机器上时这两件事不是同一个值。
 
 ## 安全
 
@@ -260,12 +308,14 @@ go test ./... -count=1
 ### 目录
 
 ```
-cmd/mpx/            入口
-internal/model/     领域模型、密钥派生、重置周期(纯计算)
-internal/store/     SQLite 读写
-internal/render/    渲染:服务端配置 + links/clash/sing-box/xray 客户端格式
-internal/node/      对一台节点的动作:ssh、下发回滚、xray api
-internal/control/   「让节点和数据库一致」的那一层 + 后台周期任务
-internal/server/    HTTP:管理接口与订阅接口
-internal/cli/       CLI 客户端
+cmd/mpx/              入口
+internal/model/       领域模型、密钥派生、重置周期(纯计算)
+internal/store/       SQLite 读写
+internal/render/      渲染:服务端配置 + links/clash/sing-box/xray 客户端格式
+internal/xrayrelease/ 取 Xray 发布包(下载一次、缓存在控制面)
+internal/node/        对一台节点的动作:ssh、装核心、下发回滚、xray api
+internal/control/     「让节点和数据库一致」的那一层 + 后台周期任务
+internal/server/      HTTP:管理接口与订阅接口
+internal/cli/         CLI 客户端
+deploy/               控制面的安装脚本、systemd 单元、环境变量样例
 ```

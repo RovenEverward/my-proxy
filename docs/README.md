@@ -32,7 +32,7 @@ Marzban 和 Marzneshin 解决同一类问题,但它们在每台节点上跑一�
 | --- | --- | --- |
 | **CLI** | 把参数拼成请求,把结果显示成人能看的 | 不碰数据库,不碰节点。它是 `/api` 的纯客户端 —— 每条命令都能用 `curl` 等价做出来 |
 | **控制面** | 持有唯一一份真相;渲染节点配置与订阅;决定谁该在哪个节点上 | **不进数据通路**,用户流量直接打到节点上 |
-| **节点** | 跑 xray;按用户计量流量 | 不装任何 mpx 组件,不主动联系控制面 |
+| **节点** | 跑控制面推过去的 xray;按用户计量流量 | 不装任何 mpx 组件,不主动联系控制面,也不需要能连外网 |
 
 ## 一次改动,从头到尾
 
@@ -41,6 +41,9 @@ Marzban 和 Marzneshin 解决同一类问题,但它们在每台节点上跑一�
 ```console
 $ mpx node add hk-1 --address 203.0.113.10
 已创建节点 1(hk-1)
+
+$ mpx node install 1
+已在节点 1 上装好并启动 xray 26.3.27
 
 $ mpx inbound add --node 1 --protocol vless --port 443 --security reality \
     --sni www.microsoft.com --reality-dest www.microsoft.com:443 \
@@ -54,7 +57,7 @@ $ mpx user add alice --limit 100GB --reset-strategy monthly --note "老朋友"
 已创建用户 alice
 ```
 
-这四条只写了控制面的库,**节点上一个字节都没动**。
+`node add`、`inbound add`、`host add`、`user add` 这四条只写控制面的库,**节点上一个字节都没动** —— 真正碰节点的是上面那条 `node install`(装核心、写单元文件、下发、启动),以及之后每次改结构要跑的 `node sync`。
 
 `mpx node config 1` 输出**下发给节点的那份文件**(节选):
 
@@ -95,7 +98,7 @@ $ mpx user add alice --limit 100GB --reset-strategy monthly --note "老朋友"
 $ mpx node sync 1
 ```
 
-顺序是:备份现有文件 → 写入新的 → `xray -test -config <路径>` 验一遍 → **验不过就回滚** → `systemctl restart xray`。最后一步是重启,所以 `sync` 只用于改结构。
+顺序是:备份现有文件 → 写入新的 → `xray -test -config <路径>` 验一遍 → **验不过就回滚** → 重启服务 → **没起来就再回滚一次**。因为最后一步是重启,`sync` 只用于改结构 —— 加人、摘人走的是另一条路(xray API),不重启。
 
 ## 之后每 30 秒发生什么
 
@@ -180,7 +183,7 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 | --- | --- |
 | 管理员与多租户 | 只有一个人操作。多管理员会带来权限模型、审计、越权测试一整条链 |
 | Web UI | 入口是 CLI,UI 得跟着模型一起演进 |
-| 在节点上装 / 升级 xray | 假定节点已装好并能 `systemctl` 管理;安装与发行版、架构强相关 |
+| 自己维护 xray 构建 | 只用 XTLS 官方发布包原样推送。自己编就等于把上游的安全修复变成我们的事 |
 | 证书签发与续期 | 假定证书已在节点上,库里只存路径。REALITY 公私钥由本工具生成 |
 | 节点侧常驻 agent | 节点只用 SSH,不装任何 mpx 组件 |
 

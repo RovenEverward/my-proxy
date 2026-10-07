@@ -12,7 +12,7 @@ CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点�
 login                                    存控制面地址与 token
 serve                                    起控制面:--addr --db --interval(默认 30s)
 
-node     list | show | add | rm | config | sync
+node     list | show | add | rm | config | sync | install
 inbound  list | show | add | rm
 host     list | add | rm
 user     list | show | add | rm | enable | disable
@@ -42,6 +42,10 @@ $ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
 
 `node config` 与 `node sync` 是两回事:**前者只打印,后者真下发并重启**。改结构前先 `config` 看一眼。
 
+`node install` 是第三条路:它装核心、写单元文件、下发配置、启动,一条命令从裸机器到能用。
+它的请求默认上限 15 分钟(要下载 21MB 发布包、往节点推 65MB),其它命令是 30 秒 ——
+这条例外写在 `internal/cli/client.go` 的 `installTimeout`,不是把全局上限调大。
+
 ## 2. HTTP 管理接口
 
 全部挂 `/api/`,过一个 Bearer token。
@@ -50,6 +54,7 @@ $ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
 GET|POST         /api/nodes          GET|PUT|DELETE  /api/nodes/{id}
 GET              /api/nodes/{id}/config              预览,不下发
 POST             /api/nodes/{id}/sync                下发 + 重启
+POST             /api/nodes/{id}/install             装核心 + 下发 + 启动(?version= 指定版本)
 
 GET|POST         /api/inbounds       GET|PUT|DELETE  /api/inbounds/{id}
 GET|POST         /api/inbounds/{id}/hosts             PUT|DELETE  /api/hosts/{id}
@@ -203,5 +208,20 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 | --- | --- | --- |
 | 加入站、改端口、换证书 | 人显式触发 `node sync` | 是 |
 | 加人、摘人、到期、超限 | 周期收敛(每 `--interval`) | **否** |
+| 换 xray 核心 | 人显式触发 `node install` | 是 |
 
 理由见 [decisions.md](decisions.md) 第 3 条。
+
+### 装核心
+
+控制面把发布包下载一次缓存在 `<库目录>/xray/<版本>_<os>_<arch>/`,再用和其它下发一样的 `PutFile` 把三个文件推过去:
+
+| 文件 | 落点 |
+| --- | --- |
+| `xray` | `/usr/local/lib/mpx/xray` |
+| `geoip.dat` / `geosite.dat` | 与核心同目录(xray 只去二进制所在目录找 `.dat`) |
+| systemd 单元 | `/etc/systemd/system/<服务名>.service` |
+
+节点上只需要 `uname`、`mkdir`、`mv`、`chmod`、`systemctl` —— 不需要 curl / unzip,也不需要能连 GitHub。
+
+替换顺序是**先校验后顶替**:新核心先写成 `xray.new`,拿节点上**现有的**配置跑一次 `-test`,通过了才 `mv -f` 顶上去。全新机器没有配置可校验,这一步跳过。`InstallCore` 自己**不启动服务** —— 装完紧接着走一次 `Deploy`,由它负责启动并确认真的起来了,失败的兜底也因此在同一处。落地后回读 `xray version` 的第二段作为显示的版本号,拿不到就退回整行。

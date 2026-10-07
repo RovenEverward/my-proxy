@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 
@@ -17,14 +18,16 @@ var nodeCmd = &cobra.Command{
 }
 
 func init() {
-	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd)
+	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.sshUser, "ssh-user", "", "SSH 用户,空表示 root")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.apiPort, "api-port", 0, "xray API 入站端口,0 表示 10085")
-	nodeAddCmd.Flags().StringVar(&nodeAddFlags.configPath, "config-path", "", "节点上的 config.json 路径,空表示 /usr/local/etc/xray/config.json")
-	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serviceName, "service-name", "", "systemd 服务名,空表示 xray")
+	nodeAddCmd.Flags().StringVar(&nodeAddFlags.configPath, "config-path", "", "节点上的 config.json 路径,空表示 /etc/mpx/xray/config.json")
+	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serviceName, "service-name", "", "systemd 服务名,空表示 mpx-xray")
+
+	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
 }
 
 // nodeHeaders 是节点表格的表头。列表与其它命令共用同一套列。
@@ -231,6 +234,53 @@ var nodeSyncCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "已下发节点 %d,它的 xray 已重启", id)
+	},
+}
+
+var nodeInstallFlags struct {
+	xrayVersion string
+}
+
+var nodeInstallCmd = &cobra.Command{
+	Use:   "install <id>",
+	Short: "在节点上装好 xray 并启动它",
+	Long: `在节点上装好 xray 并启动它。
+
+发布包由控制面下载一次并缓存在它自己那边,再由它把核心和 geodata 推过 ssh 送到
+节点上 —— 所以节点不必能连 GitHub,也不需要 curl、unzip。核心落在一个独占的位
+置 /usr/local/lib/mpx/xray,配套的 systemd 单元叫 mpx-xray.service,两处都不占用
+机器上可能已经有的别人的 xray。
+
+全新机器跑这一条就够:装核心、写单元、下发配置、启动,一步到 "能用了"。换核心
+走同一条命令,默认取最新版,--xray-version 可以指定或退回某个版本;替换之前会先
+拿节点上现有的配置试跑新核心,通不过就不换。
+
+核心已装好、配置也通过了校验,但服务没起来时,会回滚到上一份配置并把节点日志的
+末尾带回来。下载和推送加起来几十兆,慢链路下要几分钟,所以这条命令的上限比其它
+命令长得多。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		path := nodePath(id) + "/install"
+		if nodeInstallFlags.xrayVersion != "" {
+			path += "?version=" + url.QueryEscape(nodeInstallFlags.xrayVersion)
+		}
+		raw, err := c.doWithin(installTimeout, "POST", path, nil)
+		if err != nil {
+			return err
+		}
+		res, err := decode[map[string]string](raw)
+		if err != nil {
+			return err
+		}
+		return report(raw, "已在节点 %d 上装好并启动 xray %s", id, res["version"])
 	},
 }
 

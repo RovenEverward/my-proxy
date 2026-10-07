@@ -124,11 +124,11 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
-	if s.deployer == nil {
+	if s.nodeOps == nil {
 		writeError(w, http.StatusNotImplemented, "控制面没有接上下发通道")
 		return
 	}
-	if err := s.deployer.DeployNode(r.Context(), *n, time.Now()); err != nil {
+	if err := s.nodeOps.DeployNode(r.Context(), *n, time.Now()); err != nil {
 		// 下发失败的原因原样回给使用者:那是要照着去节点上修的东西,
 		// 换成一句"下发失败"等于把唯一的线索扔掉。
 		s.logger.Error("下发节点失败", "node", n.Name, "error", err)
@@ -137,6 +137,42 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 	}
 	s.logger.Info("已下发节点", "node", n.Name, "address", n.Address)
 	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "synced": true})
+}
+
+// handleInstallNode 在节点上装好 xray 核心并把它跑起来。
+//
+// 和 sync 的分工:sync 只管把配置送过去(核心得已经在节点上),install 负责把核心
+// 和它的服务准备出来。install 自己会下发一次配置,所以全新机器上跑完 install 就
+// 能用了,sync 只留给"只改了配置、不动核心"的场合。
+func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.store.GetNode(id)
+	if err != nil {
+		s.writeStoreError(w, err, "节点")
+		return
+	}
+	if s.nodeOps == nil {
+		writeError(w, http.StatusNotImplemented, "控制面没有接上下发通道")
+		return
+	}
+	version := r.URL.Query().Get("version")
+	installed, err := s.nodeOps.InstallNode(r.Context(), *n, version)
+	if err != nil {
+		s.logger.Error("安装节点核心失败", "node", n.Name, "error", err)
+		// 版本非空说明核心确实已经推上去了,是后面的配置没让服务起来 ——
+		// 这两种失败该做的事不一样,不分开说清楚,使用者会去重装一遍。
+		if installed != "" {
+			writeError(w, http.StatusBadGateway, "节点上的核心已经换成 "+installed+",但服务没能起来: "+err.Error())
+			return
+		}
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.logger.Info("已安装节点核心", "node", n.Name, "version", installed, "address", n.Address)
+	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "version": installed})
 }
 
 // renderNodeConfig 产出某节点完整的 xray config.json。

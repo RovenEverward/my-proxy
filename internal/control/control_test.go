@@ -138,7 +138,7 @@ func newTestControl(t *testing.T, r *fakeRunner) (*Control, *store.Store) {
 		t.Fatalf("开库: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return New(st, r, slog.New(slog.DiscardHandler)), st
+	return New(st, r, slog.New(slog.DiscardHandler), filepath.Join(t.TempDir(), "xray")), st
 }
 
 func addUser(t *testing.T, st *store.Store, u model.User) model.User {
@@ -444,8 +444,11 @@ func TestSampleTrafficUsesReset(t *testing.T) {
 func TestDeployNodeBacksUpThenValidatesThenRestarts(t *testing.T) {
 	r := &fakeRunner{replies: []reply{
 		{keyword: "-test -config", out: "Configuration OK.\n"},
+		// is-active 要排在 systemctl 前面:命中的是第一条包含关键字的规则。
+		{keyword: "is-active", out: "active\n"},
 		{keyword: "cat >", out: ""},
 		{keyword: "cp -f", out: ""},
+		{keyword: "sleep 1", out: ""},
 		{keyword: "systemctl", out: ""},
 	}}
 	c, st := newTestControl(t, r)
@@ -461,6 +464,7 @@ func TestDeployNodeBacksUpThenValidatesThenRestarts(t *testing.T) {
 	backupAt := r.indexOf(".bak")
 	testAt := r.indexOf("-test -config")
 	restartAt := r.indexOf("systemctl restart")
+	activeAt := r.indexOf("systemctl is-active")
 	if backupAt < 0 {
 		t.Fatalf("没有备份原配置:%v", r.callList())
 	}
@@ -470,11 +474,17 @@ func TestDeployNodeBacksUpThenValidatesThenRestarts(t *testing.T) {
 	if restartAt < 0 {
 		t.Fatalf("没有重启 xray:%v", r.callList())
 	}
+	if activeAt < 0 {
+		t.Fatalf("重启之后没有确认服务在跑:%v", r.callList())
+	}
 	if backupAt > testAt {
 		t.Fatalf("先校验后备份了:校验失败时没有可回滚的东西")
 	}
 	if testAt > restartAt {
 		t.Fatalf("先重启后校验了")
+	}
+	if activeAt < restartAt {
+		t.Fatalf("确认服务状态排在了重启前面,那确认的是上一份配置")
 	}
 }
 

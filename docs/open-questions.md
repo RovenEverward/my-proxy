@@ -21,11 +21,18 @@
 
 **待决策**:这是不是立项时要的「规则」?是就继续做;不是就把 [status.md](status.md) 对照表里那一行改成「显式不做」。
 
-## 2. 真实 SSH 传输没有验证过
+## 2. 经跳板机连节点做不到
 
-见 [status.md](status.md) 最后一节。首次上真机请先拿可弃的机器试 `mpx node sync`。
+`model.Node` 只有一个 `Address`,它同时在当两件事:
 
-要不要为此加一个「只连不写」的探针命令,比如 `mpx node ping <id>`?
+- 控制面 ssh 往哪连(`internal/node/ssh.go`);
+- 订阅里发给客户端的地址(`internal/render/ir.go` 的 `endpoint()` → `ResolveExposure`)。
+
+节点在跳板机后面时,这两件事不是同一个值:ssh 要连跳板机,订阅要发节点自己那个客户端能到达的地址。现在没有第二个字段可写。
+
+**要做的话**:`Node` 加一个可选的 ssh 目标(空则用 `Address`),只有连接用它。需要定的是字段名,以及 `mpx node add` 怎么把它问出来。
+
+**已经澄清的**:真实 SSH 传输验证过了(两台 Ubuntu 24.04 真机,`BatchMode=yes` 免密,控制面的 `HOME=/var/lib/mpx`,`node install` / `node sync` 都跑通)。原先「要不要加一个只连不写的探针」的问题,现在由 `node install` 的失败信息回答:连不上会直接报出来。
 
 ## 3. 单 token,没有管理员
 
@@ -90,9 +97,10 @@ $ curl -X POST .../api/users -d '{"username":"dave"}'
 ## 待确认项
 
 1. **第 1 节**:分流规则是不是立项时要的「规则」?
-2. **第 4 节**:`{USERNAME}` 在节点名里接上还是撤下?
-3. **第 5 节**:建用户的 `enabled` 默认值要不要和 CLI 对齐?
-4. [README.md](README.md) 的「不做什么」表里,哪几条不该是不做,而是还没排在前面?
-5. [model.md](model.md) 的数据模型有没有缺的对象或字段?
-6. [decisions.md](decisions.md) 的十二条决策,有没有哪条的理由不成立、该换方案?
-7. 第 6 节那张表里,哪些是现在就要定的?
+2. **第 2 节**:跳板机要不要现在就有个位置放第二个地址?
+3. **第 4 节**:`{USERNAME}` 在节点名里接上还是撤下?
+4. **第 5 节**:建用户的 `enabled` 默认值要不要和 CLI 对齐?
+5. [README.md](../README.md) 的「不做什么」表里,哪几条不该是不做,而是还没排在前面?
+6. [model.md](model.md) 的数据模型有没有缺的对象或字段?
+7. [decisions.md](decisions.md) 的十五条决策,有没有哪条的理由不成立、该换方案?
+8. 第 6 节那张表里,哪些是现在就要定的?

@@ -32,6 +32,13 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newEnvWith 在组装控制面时接上一个假的节点通道。ops 为 nil 表示不接 ——
+// 那种情况下跟节点有关的接口应该回 501,而不是假装做过了。
+func newEnvWith(t *testing.T, ops NodeOps) *env {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "mpx.db"))
 	if err != nil {
 		t.Fatalf("打开测试库: %v", err)
@@ -39,7 +46,11 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { _ = st.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewServer(New(st, testToken, logger).Handler())
+	s := New(st, testToken, logger)
+	if ops != nil {
+		s.SetNodeOps(ops)
+	}
+	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 
 	return &env{t: t, st: st, srv: srv}

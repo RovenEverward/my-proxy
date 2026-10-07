@@ -19,21 +19,24 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// Deployer 把一份配置真正送到节点上。
+// NodeOps 是控制面能对一台节点做的事。
 //
 // 它必须是控制面进程里的东西:能 SSH 到节点的是控制面,不是操作者手边那台
 // 笔记本。所以 CLI 只负责说"该下发了",真正动手的在这里。
-type Deployer interface {
+type NodeOps interface {
 	DeployNode(ctx context.Context, n model.Node, now time.Time) error
+	// InstallNode 装好节点上的 xray 核心并启动它,返回实际装上的版本。返回非空
+	// 版本表示核心已经推上去了 —— 此时出错是配置没让服务起来,不是没装成。
+	InstallNode(ctx context.Context, n model.Node, version string) (string, error)
 }
 
 // Server 持有控制面运行期需要的东西。
 type Server struct {
-	store    *store.Store
-	token    string
-	logger   *slog.Logger
-	mux      *http.ServeMux
-	deployer Deployer
+	store   *store.Store
+	token   string
+	logger  *slog.Logger
+	mux     *http.ServeMux
+	nodeOps NodeOps
 }
 
 // New 组装一台控制面。token 为空表示不校验管理接口的鉴权,只用于本机开发。
@@ -46,9 +49,9 @@ func New(st *store.Store, token string, logger *slog.Logger) *Server {
 	return s
 }
 
-// SetDeployer 接上下发通道。不接时下发接口返回 501,而不是回一句"已下发"
-// 让人以为节点真的变了。
-func (s *Server) SetDeployer(d Deployer) { s.deployer = d }
+// SetNodeOps 接上跟节点打交道的通道。不接时下发接口返回 501,而不是回一句
+// "已下发"让人以为节点真的变了。
+func (s *Server) SetNodeOps(o NodeOps) { s.nodeOps = o }
 
 // Handler 返回可以直接交给 http.Server 的处理器。
 func (s *Server) Handler() http.Handler { return s.mux }
@@ -66,6 +69,7 @@ func (s *Server) routes() {
 	api.HandleFunc("DELETE /api/nodes/{id}", s.handleDeleteNode)
 	api.HandleFunc("GET /api/nodes/{id}/config", s.handlePreviewNodeConfig)
 	api.HandleFunc("POST /api/nodes/{id}/sync", s.handleSyncNode)
+	api.HandleFunc("POST /api/nodes/{id}/install", s.handleInstallNode)
 
 	api.HandleFunc("GET /api/inbounds", s.handleListInbounds)
 	api.HandleFunc("POST /api/inbounds", s.handleCreateInbound)

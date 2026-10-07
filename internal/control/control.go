@@ -20,16 +20,21 @@ import (
 
 // Control 持有跨节点动作需要的依赖。
 type Control struct {
-	store  *store.Store
-	runner node.Runner
-	logger *slog.Logger
+	store    *store.Store
+	runner   node.Runner
+	logger   *slog.Logger
+	cacheDir string
 }
 
-func New(st *store.Store, r node.Runner, logger *slog.Logger) *Control {
+// New 接起这一层。
+//
+// cacheDir 是控制面存 xray 发布包的地方。它得是一个能长久留存、并且控制面进程有
+// 权写的目录 —— 下发给节点的核心从这里推出去,所以不能是每次启动就没的临时目录。
+func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *Control {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Control{store: st, runner: r, logger: logger}
+	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir}
 }
 
 // DeployNode 渲染该节点的完整配置并下发,然后重启 xray。

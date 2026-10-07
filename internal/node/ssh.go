@@ -30,11 +30,19 @@ type Runner interface {
 // 而且要把这些能力补回来还得再写一遍。
 type SSH struct{}
 
-// xrayBin 在节点上定位 xray 可执行文件。
+// XrayBinPath 是节点上 mpx 那份 xray 核心里可执行文件的位置。
 //
-// 官方安装脚本放在 /usr/local/bin/xray,但用发行版包管理器装的会在别处,所以先按
-// PATH 找、找不到再退回默认路径。节点上的一切 xray 调用都以它开头。
-const xrayBin = `XRAY_BIN="$(command -v xray || echo /usr/local/bin/xray)"; `
+// 不放在 /usr/local/bin:xray 的官方安装脚本装在那里,发行版包管理器也装在那里,
+// 别人的 Marzban 之类也在那里。共用同一个路径意味着两件事同时成立 —— 我们可能
+// 覆盖掉别人的核心,我们也可能用到不知道是谁、不知道哪个版本的核心。装和更新只
+// 认这一个路径,别人的一个字节都不动。
+const XrayBinPath = "/usr/local/lib/mpx/xray"
+
+// xrayBin 是节点上每条 xray 命令的前缀。
+//
+// MPX_XRAY_BIN 是给本机测试留的口子(本机跑真实 xray 时它在别处,见 live_test.go);
+// 真节点上没人会设它,于是永远解析成 XrayBinPath。
+const xrayBin = `XRAY_BIN="${MPX_XRAY_BIN:-` + XrayBinPath + `}"; `
 
 func (SSH) Run(ctx context.Context, n model.Node, script string) (string, error) {
 	return run(ctx, n, script, nil)

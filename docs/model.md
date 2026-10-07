@@ -16,7 +16,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
-| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name` | 空值有默认:22 / `root` / 10085 / `/usr/local/etc/xray/config.json` / `xray` |
+| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name` | 空值有默认:22 / `root` / 10085 / `/etc/mpx/xray/config.json` / `mpx-xray`。**不存 xray 版本**:节点上装的是哪个版本随时能读出来,存进库就是第二份真相 |
 | `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow` | 切片存 JSON 文本 |
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |

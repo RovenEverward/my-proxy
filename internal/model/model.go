@@ -94,8 +94,8 @@ type Node struct {
 	SSHUser string `json:"ssh_user"` // 空表示 root
 
 	APIPort     int    `json:"api_port"`     // xray API 入站端口,仅监听回环
-	ConfigPath  string `json:"config_path"`  // 空表示 /usr/local/etc/xray/config.json
-	ServiceName string `json:"service_name"` // 空表示 xray
+	ConfigPath  string `json:"config_path"`  // 空表示 /etc/mpx/xray/config.json
+	ServiceName string `json:"service_name"` // 空表示 mpx-xray
 }
 
 // Inbound 是某个节点上 xray 的一个入站。

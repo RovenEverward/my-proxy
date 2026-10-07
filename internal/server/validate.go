@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -134,6 +135,15 @@ func validateNode(n *model.Node) string {
 	}
 	if n.Address == "" {
 		return "节点地址不能为空"
+	}
+	// 这两个值会进 systemd 单元文件和 systemctl 的命令行:空白会把单元文件切错,
+	// 斜杠会让单元文件落到别的目录去。在这里挡下来,比到了节点上报一句
+	// "Unit mpx xray.service not found" 好认得多。
+	if strings.ContainsAny(n.ServiceName, " \t\n/") {
+		return "服务名里不能有空白或斜杠"
+	}
+	if n.ConfigPath != "" && (!strings.HasPrefix(n.ConfigPath, "/") || strings.ContainsAny(n.ConfigPath, " \t\n\"")) {
+		return "配置路径要写成绝对路径,且不带空白和引号"
 	}
 	return ""
 }

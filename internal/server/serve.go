@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/control"
@@ -41,12 +42,14 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	}
 	defer st.Close()
 
-	ctrl := control.New(st, node.SSH{}, logger)
+	// 核心缓存放在数据库旁边:服务单元的 ProtectSystem=strict 只给控制面留了
+	// /var/lib/mpx 一处可写,而缓存要能长期留存、重启之后还在。
+	ctrl := control.New(st, node.SSH{}, logger, filepath.Join(filepath.Dir(opt.DBPath), "xray"))
 	task := control.NewTask(ctrl, st, logger, opt.Interval)
 
 	srv := New(st, opt.Token, logger)
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
-	srv.SetDeployer(ctrl)
+	srv.SetNodeOps(ctrl)
 
 	httpSrv := &http.Server{
 		Addr:              opt.Addr,
