@@ -83,8 +83,8 @@ func (s *Server) renderSubscription(user *model.User, format model.ClientFormat)
 // 订阅是「所有节点合成一份」,所以这里把全部节点都过一遍;入站授权和状态由
 // render.Resolve 与 placeholder 逻辑负责。
 func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
-	if user.Status(time.Now()) != model.StatusActive {
-		return []render.Endpoint{placeholderEndpoint(user)}, nil
+	if status := user.Status(time.Now()); status != model.StatusActive {
+		return []render.Endpoint{placeholderEndpoint(user, status)}, nil
 	}
 
 	nodes, err := s.store.ListNodes()
@@ -119,15 +119,31 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 }
 
 // placeholderEndpoint 是一个连不通、但各家客户端都肯接受的节点。
-func placeholderEndpoint(user *model.User) render.Endpoint {
+func placeholderEndpoint(user *model.User, status model.Status) render.Endpoint {
 	return render.Endpoint{
-		Remark:   "订阅已停用",
+		Remark:   statusRemark(status),
 		Address:  "0.0.0.0",
 		Port:     1,
 		Protocol: model.ProtocolVLESS,
 		UUID:     model.DeriveUUID(user.Key),
 		Network:  model.NetworkTCP,
 		Security: model.SecurityNone,
+	}
+}
+
+// statusRemark 是占位节点的名字,也是客户端里唯一能看到的一句话。
+// 三种不可用状态用户要做的事不一样 —— 停用要申诉、过期要续费、超限要加流量,
+// 所以名字得区分开,不能都写成「已停用」。
+func statusRemark(status model.Status) string {
+	switch status {
+	case model.StatusDisabled:
+		return "订阅已停用"
+	case model.StatusExpired:
+		return "订阅已过期"
+	case model.StatusLimited:
+		return "订阅已超限"
+	default:
+		return "订阅不可用"
 	}
 }
 

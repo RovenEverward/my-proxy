@@ -411,6 +411,41 @@ func TestLimitedUserGetsPlaceholder(t *testing.T) {
 	}
 }
 
+// 三种不可用状态在客户端里看到的说明不一样:停用要申诉、过期要续费、超限要加
+// 流量,都写成「已停用」用户就不知道该做什么。
+func TestUnusableUserSeesWhy(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*model.User)
+		want   string
+	}{
+		{"停用", func(u *model.User) { u.Enabled = false }, "订阅已停用"},
+		{"过期", func(u *model.User) { past := time.Now().Add(-time.Hour); u.ExpireAt = &past }, "订阅已过期"},
+		{"超限", func(u *model.User) { u.DataLimit = 100; u.UsedTraffic = 100 }, "订阅已超限"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			n := e.createNode("hk", "node.example.com")
+			in := e.createInbound(n.ID, "vless-ws", 8443)
+			e.createHost(in.ID, "香港", "node.example.com")
+			user := e.createUser("alice")
+
+			e.updateUser("alice", tc.mutate)
+
+			// 走 xray 格式:节点名原样落在 remarks 里,不用再解一遍 URL 编码。
+			code, _, body := e.sub("/sub/"+user.SubToken+"/xray", "v2rayng")
+			if code != http.StatusOK {
+				t.Fatalf("不可用的用户仍应能下载订阅: got %d %s", code, body)
+			}
+			if !strings.Contains(string(body), tc.want) {
+				t.Fatalf("订阅里应当写明 %q:\n%s", tc.want, body)
+			}
+		})
+	}
+}
+
 // ---- 订阅规则 ----
 
 func TestSubscriptionRulePicksFormatByUserAgent(t *testing.T) {
