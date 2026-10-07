@@ -4,6 +4,8 @@
 
 参考 [Marzneshin](https://github.com/marzneshin/marzneshin) 0.7.4 的设计自建,不复用其代码。
 
+> 这份 README 讲**怎么用**。想知道**为什么这么设计**、数据长什么样、还差什么,看 [docs/](docs/README.md)。
+
 ## 它管什么
 
 ```
@@ -35,9 +37,10 @@
 用户授权到**入站**粒度(`--inbounds` 留空表示全部)。订阅渲染时,每个用户拿到的是
 「他被授权的入站 × 这些入站的对外入口」展开出来的端点列表。
 
-节点名(host 的 `remark`)支持 `{USERNAME}`、`{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、
-`{TRANSPORT}` 变量;地址里写 `*` 会按用户派生出一个稳定的随机子域(同一个人每次更新
-订阅看到的是同一个地址,换一个人就不同)。
+节点名(host 的 `remark`)与地址支持 `{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、`{TRANSPORT}`
+变量;地址里写 `*` 会按用户派生出一个稳定的随机子域(同一个人每次更新订阅看到的是同一个
+地址,换一个人就不同)。`{USERNAME}` 只在订阅名里生效,在节点名里不生效 —— 见
+[docs/open-questions.md](docs/open-questions.md) 第 4 节。
 
 ## 快速开始
 

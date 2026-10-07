@@ -1,0 +1,197 @@
+# 对外契约
+
+三组契约:**CLI ↔ 人**、**控制面 ↔ 客户端**、**控制面 ↔ 节点**。
+
+## 1. CLI(`mpx`)
+
+全局 flag:`--server`(覆盖 `MPX_SERVER` 与配置文件)、`--token`(覆盖 `MPX_TOKEN`)、`-o table|json`。
+
+CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
+
+```
+login                                    存控制面地址与 token
+serve                                    起控制面:--addr --db --interval(默认 30s)
+
+node     list | show | add | rm | config | sync
+inbound  list | show | add | rm
+host     list | add | rm
+user     list | show | add | rm | enable | disable
+         | links | reset-traffic | revoke-sub
+settings show | set
+```
+
+各命令的参数用 `mpx <命令> --help` 看(那是代码的职责,不在文档里抄第二份)。
+
+```console
+$ mpx user add alice --limit 100GB --reset-strategy monthly --note "老朋友"
+已创建用户 alice
+
+$ mpx user list
+ID  用户名    状态        已用  上限     到期          重置策略     入站  备注
+1   alice  active    0B  100GB  不过期         monthly  全部  老朋友
+2   bob    active    0B  不限     2030-01-01  none     全部
+3   carol  disabled  0B  不限     不过期         none     全部
+
+$ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
+```
+
+两个输入约定:
+
+- `--limit` 走 **1024 进制**(`1GB` = 2³⁰ 字节)。直接往 `/api` 塞十进制数会得到另一个数。
+- `--expire` 收 `YYYY-MM-DD`,解释成**当地时区当天 23:59:59**。`--expire 2030-01-01` 存成 `2030-01-01T15:59:59Z`(Asia/Shanghai)。
+
+`node config` 与 `node sync` 是两回事:**前者只打印,后者真下发并重启**。改结构前先 `config` 看一眼。
+
+## 2. HTTP 管理接口
+
+全部挂 `/api/`,过一个 Bearer token。
+
+```
+GET|POST         /api/nodes          GET|PUT|DELETE  /api/nodes/{id}
+GET              /api/nodes/{id}/config              预览,不下发
+POST             /api/nodes/{id}/sync                下发 + 重启
+
+GET|POST         /api/inbounds       GET|PUT|DELETE  /api/inbounds/{id}
+GET|POST         /api/inbounds/{id}/hosts             PUT|DELETE  /api/hosts/{id}
+
+GET|POST         /api/users          GET|PUT|DELETE  /api/users/{username}
+POST             /api/users/{username}/reset-traffic
+POST             /api/users/{username}/revoke-sub
+GET              /api/users/{username}/links
+
+GET|PUT          /api/settings
+```
+
+token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
+
+```console
+$ curl -H 'Authorization: Bearer demo-token' localhost:8080/api/users
+[
+  { "id": 1, "username": "alice", "sub_token": "DOeGM8286gAsgFfm",
+    "enabled": true, "status": "active",
+    "data_limit": 107374182400, "used_traffic": 0, "lifetime_used_traffic": 0,
+    "reset_strategy": "monthly", "note": "老朋友",
+    "created_at": "2026-10-07T10:24:38Z" }
+]
+
+$ curl -H 'Authorization: Bearer wrong' localhost:8080/api/nodes
+401 { "error": "管理 token 不正确" }
+```
+
+**注意 `enabled` 的默认值。** 建用户的 handler 是直接解码进 `model.User`,`Enabled` 是 Go 的零值:
+
+```console
+$ curl -X POST .../api/users -d '{"username":"dave"}'     # 没带 enabled
+{ "username": "dave", "enabled": false, "status": "disabled", ... }
+```
+
+而 `mpx user add` 默认是**启用**的(除非显式 `--disabled`)。所以绕过 CLI 直接用 API 时,别漏掉 `"enabled": true`。见 [open-questions.md](open-questions.md) 第 5 节。
+
+## 3. HTTP 订阅接口
+
+```
+GET /sub/{token}              按 User-Agent 决定格式
+GET /sub/{token}/{format}     强制格式
+```
+
+`format` ∈ `links | base64-links | clash | clash-meta | sing-box | xray`。
+
+**不鉴权** —— 订阅 token 即凭证。这是行业惯例,但也意味着订阅链接泄露等同于凭证泄露。所以订阅 token(`sub_token`)与协议凭证种子(`key`)是分开存的:`revoke-sub` 只换前者。
+
+### 响应头
+
+```
+Content-Disposition: attachment; filename=alice
+Content-Type: text/yaml; charset=utf-8
+Profile-Title: base64:YWxpY2Ug55qE6K6i6ZiF
+Profile-Update-Interval: 12
+Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
+Support-Url: https://t.me/example
+```
+
+`Profile-Title` 用 `base64:` 前缀是因为订阅名里可能是中文。`Support-Url` 与 `Profile-Update-Interval` 只在设了值时才发。
+
+| 格式 | Content-Type |
+| --- | --- |
+| `clash` / `clash-meta` | `text/yaml; charset=utf-8` |
+| `sing-box` / `xray` | `application/json; charset=utf-8` |
+| 其余 | `text/plain; charset=utf-8` |
+
+### User-Agent 匹配
+
+按 `settings.rules` 顺序逐条 `regexp` 匹配:
+
+- 第一条命中的决定格式(或 `block` → 404);
+- 一条都没命中 → 分享链接;
+- **正则写坏的那条跳过而不报错**;
+- 路径里的格式优先级高于规则。
+
+正则里的 `(?i)` 用来忽略大小写 —— `(?i)clash` 能同时接住 `clash-verge` 和 `ClashforWindows`。
+
+## 4. 节点侧契约
+
+节点上不装任何 mpx 组件,全部经系统自带的 `ssh`。
+
+### 连接参数
+
+```
+ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+    [-p <非 22 端口>] user@address <脚本>
+```
+
+`BatchMode=yes` 是这条设计里最要紧的一项:控制面是常驻进程,`ssh` 一旦停在等密码的提示上,整轮收敛就跟着停住。**必须先配好免密。**
+
+跳板机、`ssh-agent`、`~/.ssh/config`、`known_hosts` 全部复用系统 `ssh` 已有的那套 —— 这也是当初不引 `golang.org/x/crypto/ssh` 的理由(见 [decisions.md](decisions.md) 第 2 条)。
+
+### 下发流程
+
+```
+备份 p → p.bak
+  → 新配置经 stdin 落到 p.tmp
+  → mv p.tmp p
+  → xray -test -config p
+      ├─ 退出码非 0 → cp p.bak p 回滚,报错,不重启
+      └─ 退出码 0   → systemctl restart <service>
+```
+
+内容走 stdin 而不是命令行参数,是为了让配置内容不落进节点上的进程表。写入用 `umask 077`。
+
+`xray -test -config` 的退出码:**好配置 0 且打出 `Configuration OK.`,坏配置 23**。回滚就靠这个。
+
+### 节点上的 `config.json`
+
+| 段 | 内容 |
+| --- | --- |
+| `api` | 入站 `dokodemo-door`,只监听 `127.0.0.1:<api_port>`,services 是 `HandlerService` + `StatsService` |
+| `stats` | `{}` |
+| `policy` | 打开按用户、按入站的统计 |
+| `inbounds` | API 入站 + 每个业务入站各一条 |
+| `outbounds` | `direct`(freedom) + `block`(blackhole) |
+| `routing` | `inboundTag: ["api"] → api`;`geoip:private → block` |
+| `log` | `loglevel: warning` |
+
+`geoip:private → block` 挡住用户借节点打节点自己的内网。**这是有意的,不要为了让某个本地测试通过而删掉它**(本地测试要放行回环,就在 `routing.rules` 里插一条 `ip: ["127.0.0.1/32"] → direct`,且必须插在 `api → api` 那条**之后**,否则 API 自己会被送进 direct 而失联)。
+
+### 运行时命令
+
+四条都在节点上执行,连的是那个只监听回环的 API 入站:
+
+| 操作 | 命令 |
+| --- | --- |
+| 读某入站的用户名单 | `xray api inbounduser --server=127.0.0.1:<port> <tag>` |
+| 加用户 | `xray api adu --server=... <config>`(配置片段走 stdin) |
+| 删用户 | `xray api rmu --server=... <tag> <email>` |
+| 读并清零流量 | `xray api statsquery --server=... -reset` |
+
+`email` 就是用户名 —— 按用户聚合流量靠的是这个。
+
+`inbounduser` 返回 protojson。`xray api adu` 收的是一份**完整配置**,它从里面解出入站再逐个加用户,所以这里复用 `ServerConfig` 的入站渲染,而不是另写一份 account 拼装逻辑(两份必然漂移)。
+
+### 结构变更 vs 人员名单
+
+| 变更 | 通道 | 是否重启 xray |
+| --- | --- | --- |
+| 加入站、改端口、换证书 | 人显式触发 `node sync` | 是 |
+| 加人、摘人、到期、超限 | 周期收敛(每 `--interval`) | **否** |
+
+理由见 [decisions.md](decisions.md) 第 3 条。
