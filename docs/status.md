@@ -18,12 +18,13 @@
 | 空 token + 非回环 | 启动被拒,退出码 1 |
 | 控制面安装脚本 | 真机重复跑:二进制换掉、`/etc/mpx/env` 与私钥的 md5 不变、单元文件留 `.bak`、用户数据还在;坏二进制被拒且原文件保住;非 root 被拒 |
 | 经 ssh 打远端机器 | 两台 Ubuntu 24.04 真机,`BatchMode=yes` 免密,控制面 `HOME=/var/lib/mpx` |
-| `node install` | 裸机器到能用一条命令;再次跑命中缓存不下载;旧核心 `/usr/local/bin/xray` 一个字节没动,配置与订阅内容前后 md5 一致 |
+| `node install` | 裸机器到能用一条命令;再次跑命中缓存不下载,三个文件的 mtime 一个都没动(内容比对生效);旧核心 `/usr/local/bin/xray` 一个字节没动,配置与订阅内容前后 md5 一致 |
+| 建用户的 `enabled` 三态 | 真机 curl:不带 `enabled` 建用户得到 `active`;停用后只改流量上限的一次 PUT 仍是 `disabled`;显式 `enabled: true` 才回到 `active` |
 | 真实出网 | 从本机走两个节点的订阅配置,出口 IP 分别是两台节点,`generate_204` = 204;流量落到 `user list` |
 | 加人/摘人不重启 | 加人后不 `node sync`,等 45 秒:节点上 `config.json` 的 `%y %s` 前后完全一致;停用/启用后同一份旧客户端配置先失效又恢复,而 `MainPID` 与 `NRestarts` 全程不变 |
 | 全量 | `gofmt` 干净、`go vet` 通过、`go test ./... -race` 八个包全绿 |
 
-生产代码 7434 行,测试 6747 行。
+生产代码 7543 行,测试 6985 行。
 
 **没验过的**:经跳板机连节点(见 [open-questions.md](open-questions.md) 第 2 节)。另外 REALITY 从本机所在的网络到其中一台节点的路径不通 —— 做过对照实验,用的是节点上自产密钥的最小 REALITY 服务端,本机自连成功、从我的网络过去连连接记录都没有,所以那是链路问题,不是渲染问题。附带一条经验:**`reality_dest` 要挑节点自己真能连上的域名**,同一个节点上 `www.microsoft.com:443` 连自连都失败,换 `www.cloudflare.com:443` 立刻好。
 

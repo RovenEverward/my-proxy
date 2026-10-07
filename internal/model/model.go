@@ -133,15 +133,18 @@ type Inbound struct {
 // 地址(例如 CDN 域名 + 直连 IP)暴露时,再加 Host。留空的字段一律回落到
 // 入站或节点上的值。
 type Host struct {
-	ID        int64    `json:"id"`
-	InboundID int64    `json:"inbound_id"`
-	Remark    string   `json:"remark"`  // 客户端看到的节点名,支持 {USERNAME} 等变量
-	Address   string   `json:"address"` // 空表示用 Node.Address
-	Port      int      `json:"port"`    // 0 表示用 Inbound.Port
-	SNI       string   `json:"sni,omitempty"`
-	Host      string   `json:"host,omitempty"` // ws/grpc 的 Host 头
-	Path      string   `json:"path,omitempty"`
-	ALPN      []string `json:"alpn,omitempty"`
+	ID        int64 `json:"id"`
+	InboundID int64 `json:"inbound_id"`
+	// Remark 是客户端看到的节点名。可用变量:{SERVER_IP}、{NODE_NAME}、
+	// {PROTOCOL}、{TRANSPORT}。{USERNAME} 在这里被抹成空串 —— 节点名会被截图
+	// 和转发,不该带上账号名;要按用户区分名字用订阅名那个字段。
+	Remark  string   `json:"remark"`
+	Address string   `json:"address"` // 空表示用 Node.Address
+	Port    int      `json:"port"`    // 0 表示用 Inbound.Port
+	SNI     string   `json:"sni,omitempty"`
+	Host    string   `json:"host,omitempty"` // ws/grpc 的 Host 头
+	Path    string   `json:"path,omitempty"`
+	ALPN    []string `json:"alpn,omitempty"`
 }
 
 // Exposure 是 Host 合并节点与入站之后,真正会发布到订阅里的那一组值。

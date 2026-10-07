@@ -415,10 +415,13 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	var u model.User
-	if !decodeBody(w, r, &u) {
+	var req userRequest
+	if !decodeBody(w, r, &req) {
 		return
 	}
+	u := req.User
+	// 请求体里没提 enabled,就是启用 —— 新建的用户默认能用。
+	u.Enabled = req.takeEnabled(false, true)
 	if msg := validateUser(&u); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -457,10 +460,14 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
-	var u model.User
-	if !decodeBody(w, r, &u) {
+	var req userRequest
+	if !decodeBody(w, r, &req) {
 		return
 	}
+	u := req.User
+	// 改用户是整体替换,但没提 enabled 时按保持原样 —— 不然只想改流量上限
+	// 的一次 PUT 会把停用的用户悄悄启用。
+	u.Enabled = req.takeEnabled(old.Enabled, false)
 	u.ID = old.ID
 	u.Username = name
 	if msg := validateUser(&u); msg != "" {

@@ -64,6 +64,32 @@ func userViews(users []model.User) []userView {
 	return out
 }
 
+// userRequest 是建用户与改用户的请求体。
+//
+// 比 model.User 只多一件事:Enabled 是 *bool,为了分得清「没说」和「说了
+// false」。model.User 里它是裸 bool,零值就是 false —— 手工打 API 时
+// `curl -d '{"username":"dave"}'` 会悄没声地建出一个连不上的用户,而 CLI
+// 不写 --disabled 就是启用,同一个字段两种结果。
+//
+// 嵌入的 model.User 里那个同名字段会被外层这个遮住(JSON 里同名的取浅的那个),
+// 其余字段照常解析。
+type userRequest struct {
+	model.User
+	Enabled *bool `json:"enabled"`
+}
+
+// takeEnabled 把三态收成一个 bool:没说时,新建按启用、改动按保持原样。
+func (req *userRequest) takeEnabled(old bool, creating bool) bool {
+	switch {
+	case req.Enabled != nil:
+		return *req.Enabled
+	case creating:
+		return true
+	default:
+		return old
+	}
+}
+
 // fillUserSecrets 给新建用户生成密钥与订阅 token。
 //
 // 无条件覆盖:请求体里带什么都不作数。用户凭证是控制面发出去的,让调用方挑

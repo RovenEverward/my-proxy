@@ -23,7 +23,7 @@ func init() {
 	hostListCmd.Flags().Int64Var(&hostListInbound, "inbound", 0, "所属入站 id,必填")
 
 	hostAddCmd.Flags().Int64Var(&hostAddFlags.inbound, "inbound", 0, "所属入站 id,必填")
-	hostAddCmd.Flags().StringVar(&hostAddFlags.remark, "remark", "", "客户端看到的节点名,支持 {USERNAME} 等变量")
+	hostAddCmd.Flags().StringVar(&hostAddFlags.remark, "remark", "", "客户端看到的节点名。变量:{SERVER_IP} {NODE_NAME} {PROTOCOL} {TRANSPORT};{USERNAME} 在这里被抹成空串")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.address, "address", "", "对外地址,空表示用节点地址")
 	hostAddCmd.Flags().IntVar(&hostAddFlags.port, "port", 0, "对外端口,0 表示用入站端口")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.sni, "sni", "", "TLS SNI")

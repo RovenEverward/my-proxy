@@ -1100,3 +1100,64 @@ func TestHostCarriesEffectiveValues(t *testing.T) {
 		t.Errorf("存下来的空字段该还是空: address=%q port=%d", views[0].Address, views[0].Port)
 	}
 }
+
+// 请求体里没提 enabled 的三种情况。
+//
+// 这一组守的是裸 bool 零值的坑:"没说" 和 "说了 false" 曾经是同一个意思,于是
+// `curl -d '{"username":"dave"}'` 会建出一个连不上的用户,而 CLI 不写 --disabled
+// 就是启用 —— 同一个字段两种结果。
+func TestEnabledNotMentionedInBody(t *testing.T) {
+	e := newEnv(t)
+
+	t.Run("建用户时没说就是启用", func(t *testing.T) {
+		code, data := e.api("POST", "/api/users", map[string]any{"username": "dave"})
+		if code != http.StatusCreated {
+			t.Fatalf("建用户: got %d %s", code, data)
+		}
+		v := decodeJSON[userView](t, data)
+		if !v.Enabled {
+			t.Errorf("请求体里没提 enabled,应当是启用")
+		}
+		if v.Status != model.StatusActive {
+			t.Errorf("状态 = %s,期望 %s", v.Status, model.StatusActive)
+		}
+	})
+
+	// 只想改流量上限的一次 PUT,不该把停用的用户悄悄启用。
+	e.updateUser("dave", func(u *model.User) { u.Enabled = false })
+	code, data := e.api("PUT", "/api/users/dave", map[string]any{
+		"username":   "dave",
+		"data_limit": 1024,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("改用户: got %d %s", code, data)
+	}
+	v := decodeJSON[userView](t, data)
+	if v.Enabled {
+		t.Errorf("请求体里没提 enabled,停用的用户不该被启用")
+	}
+	if v.DataLimit != 1024 {
+		t.Errorf("data_limit = %d,期望 1024", v.DataLimit)
+	}
+}
+
+// 请求体里显式写了 enabled 时以它为准 —— 两个方向都要能表达。
+func TestEnabledInBodyWinsOverPreviousValue(t *testing.T) {
+	e := newEnv(t)
+
+	code, data := e.api("POST", "/api/users", map[string]any{"username": "dave", "enabled": false})
+	if code != http.StatusCreated {
+		t.Fatalf("建用户: got %d %s", code, data)
+	}
+	if v := decodeJSON[userView](t, data); v.Enabled {
+		t.Errorf("请求体里写了 enabled: false,应当是停用")
+	}
+
+	code, data = e.api("PUT", "/api/users/dave", map[string]any{"username": "dave", "enabled": true})
+	if code != http.StatusOK {
+		t.Fatalf("改用户: got %d %s", code, data)
+	}
+	if v := decodeJSON[userView](t, data); !v.Enabled {
+		t.Errorf("请求体里写了 enabled: true,应当是启用")
+	}
+}

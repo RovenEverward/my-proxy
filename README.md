@@ -39,8 +39,8 @@
 
 节点名(host 的 `remark`)与地址支持 `{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、`{TRANSPORT}`
 变量;地址里写 `*` 会按用户派生出一个稳定的随机子域(同一个人每次更新订阅看到的是同一个
-地址,换一个人就不同)。`{USERNAME}` 只在订阅名里生效,在节点名里不生效 —— 见
-[docs/open-questions.md](docs/open-questions.md) 第 4 节。
+地址,换一个人就不同)。`{USERNAME}` 只在订阅名里生效,在节点名里被抹成空串 —— 节点名会
+被截图转发,不该带账号名,见 [docs/open-questions.md](docs/open-questions.md) 第 4 节。
 
 ## 快速开始
 
@@ -91,7 +91,8 @@ token、数据库、密钥一律不动,所以重复跑就是更新。跑完会�
 ```
 
 `node install` 一步到能用:发布包由控制面下载一次缓存在自己那边,再把核心和 geodata
-推过去;换核心也走这条命令(默认最新版,`--xray-version` 指定)。
+推过去;换核心也走这条命令(默认最新版,`--xray-version` 指定)。推之前先和节点对一次
+sha256,**已经一样的文件不重推** —— 换一版核心通常只动其中一个,重复跑一遍基本不用等传输。
 
 两条命令都带兜底。`node sync` 先把节点上的原配置备份成 `.bak`,新配置用 `xray -test`
 校验,**不过就自动回滚**;`node install` 换核心之前先拿节点上**现有的**配置试跑新核心,

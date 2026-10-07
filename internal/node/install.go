@@ -2,7 +2,10 @@ package node
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -81,9 +84,12 @@ func platformArch(s string) (string, error) {
 
 // InstallCore 把一套 xray 装到节点上,并给它配好自己的 systemd 服务。
 //
-// 装和更新是同一件事:同一条命令跑第二遍就是更新。换核心的顺序是「新核心先以
-// .new 落盘 → 拿节点上现有的配置校验一遍 → 通过了才顶替上去」,于是新核心跑不
-// 起来的时候,旧的那份一个字节都没动。
+// 装和更新是同一件事:同一条命令跑第二遍就是更新。节点上已经有、内容和这份逐字节
+// 相同的文件不再重推 —— 一个核心加两份 geodata 接近 65MB,而换一版核心通常只动
+// 其中一个;推之前先和节点对一次 sha256,把没变的那部分省掉。
+//
+// 换核心的顺序是「新核心先以 .new 落盘 → 拿节点上现有的配置校验一遍 → 通过了才
+// 顶替上去」,于是新核心跑不起来的时候,旧的那份一个字节都没动。
 //
 // 它不启动服务:配置由 Deploy 写好、验过、再重启。那是同一个动作的下一步,分成
 // 两半是因为「换核心」和「下发配置」各自都可能单独用到。
@@ -94,39 +100,49 @@ func InstallCore(ctx context.Context, r Runner, n model.Node, core Core) error {
 		return fmt.Errorf("在节点 %s 上建 %s: %w", n.Name, dir, err)
 	}
 
+	geodata := []coreFile{
+		{core.GeoIP, path.Join(dir, "geoip.dat")},
+		{core.GeoSite, path.Join(dir, "geosite.dat")},
+	}
+	files := append(append([]coreFile{}, geodata...), coreFile{core.Xray, XrayBinPath})
+	same := sameOnNode(ctx, r, n, files)
+
 	// geodata 先走:核心去自己的同目录找它们,待会儿校验配置就要用。
-	for _, f := range []struct{ src, name string }{
-		{core.GeoIP, "geoip.dat"},
-		{core.GeoSite, "geosite.dat"},
-	} {
+	for _, f := range geodata {
+		if same[f.dest] {
+			continue
+		}
 		content, err := os.ReadFile(f.src)
 		if err != nil {
 			return err
 		}
-		if err := PutFile(ctx, r, n, path.Join(dir, f.name), content); err != nil {
-			return fmt.Errorf("推送 %s 到节点 %s: %w", f.name, n.Name, err)
+		if err := PutFile(ctx, r, n, f.dest, content); err != nil {
+			return fmt.Errorf("推送 %s 到节点 %s: %w", path.Base(f.dest), n.Name, err)
 		}
 	}
 
-	// 新核心先落在旁边,不直接覆盖正在跑的那份。
-	content, err := os.ReadFile(core.Xray)
-	if err != nil {
-		return err
-	}
-	if err := PutFile(ctx, r, n, XrayBinPath+".new", content); err != nil {
-		return fmt.Errorf("推送 xray 核心到节点 %s: %w", n.Name, err)
-	}
-	// PutFile 走的是 umask 077,核心必须自己再补一次可执行位。
-	if _, err := r.Run(ctx, n, "chmod 755 "+shellQuote(XrayBinPath+".new")); err != nil {
-		return err
-	}
+	// 核心已经一样就不碰它:重推 35MB 只为了得到一个字节不差的文件,不划算。
+	if !same[XrayBinPath] {
+		// 新核心先落在旁边,不直接覆盖正在跑的那份。
+		content, err := os.ReadFile(core.Xray)
+		if err != nil {
+			return err
+		}
+		if err := PutFile(ctx, r, n, XrayBinPath+".new", content); err != nil {
+			return fmt.Errorf("推送 xray 核心到节点 %s: %w", n.Name, err)
+		}
+		// PutFile 走的是 umask 077,核心必须自己再补一次可执行位。
+		if _, err := r.Run(ctx, n, "chmod 755 "+shellQuote(XrayBinPath+".new")); err != nil {
+			return err
+		}
 
-	if err := verifyNewCore(ctx, r, n, XrayBinPath+".new"); err != nil {
-		_, _ = r.Run(ctx, n, "rm -f "+shellQuote(XrayBinPath+".new"))
-		return err
-	}
-	if _, err := r.Run(ctx, n, "mv -f "+shellQuote(XrayBinPath+".new")+" "+shellQuote(XrayBinPath)); err != nil {
-		return err
+		if err := verifyNewCore(ctx, r, n, XrayBinPath+".new"); err != nil {
+			_, _ = r.Run(ctx, n, "rm -f "+shellQuote(XrayBinPath+".new"))
+			return err
+		}
+		if _, err := r.Run(ctx, n, "mv -f "+shellQuote(XrayBinPath+".new")+" "+shellQuote(XrayBinPath)); err != nil {
+			return err
+		}
 	}
 
 	if _, err := writeUnit(ctx, r, n); err != nil {
@@ -139,6 +155,63 @@ func InstallCore(ctx context.Context, r Runner, n model.Node, core Core) error {
 		return fmt.Errorf("在节点 %s 上设开机自启: %w", n.Name, err)
 	}
 	return nil
+}
+
+// coreFile 是这套 core 里要落地的一个文件:控制面上的源路径,节点上的目标路径。
+type coreFile struct {
+	src  string
+	dest string
+}
+
+// sameOnNode 报告节点上这几个文件是不是已经和控制面那一份逐字节相同。
+//
+// 一次 ssh 问完所有文件:先找得到哪个算 sha256 的工具,再逐个打印 `<路径> <哈希>`。
+// 问不出来(文件不在,或机器上连 sha256sum / shasum 都没有)就返回空表,调用方
+// 于是把它们全推一遍 —— 少推一个文件只是多等一会儿,推错一个装不起来,两者不对称。
+func sameOnNode(ctx context.Context, r Runner, n model.Node, files []coreFile) map[string]bool {
+	var b strings.Builder
+	b.WriteString("if command -v sha256sum >/dev/null 2>&1; then H=sha256sum; ")
+	b.WriteString("elif command -v shasum >/dev/null 2>&1; then H='shasum -a 256'; ")
+	b.WriteString("else exit 0; fi; for p in")
+	for _, f := range files {
+		b.WriteString(" " + shellQuote(f.dest))
+	}
+	b.WriteString(`; do if [ -f "$p" ]; then printf '%s %s\n' "$p" "$($H "$p" | cut -d' ' -f1)"; fi; done`)
+
+	out, err := r.Run(ctx, n, b.String())
+	if err != nil {
+		return nil
+	}
+	want := make(map[string]string, len(files))
+	for _, f := range files {
+		sum, err := fileSHA256(f.src)
+		if err != nil {
+			return nil
+		}
+		want[f.dest] = sum
+	}
+	same := make(map[string]bool, len(files))
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && want[fields[0]] == fields[1] {
+			same[fields[0]] = true
+		}
+	}
+	return same
+}
+
+// fileSHA256 算一个控制面本地文件的 sha256。
+func fileSHA256(p string) (string, error) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("算 %s 的 sha256: %w", p, err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // verifyNewCore 拿新核心去校验节点上现有的配置。

@@ -83,14 +83,14 @@ $ curl -H 'Authorization: Bearer wrong' localhost:8080/api/nodes
 401 { "error": "管理 token 不正确" }
 ```
 
-**注意 `enabled` 的默认值。** 建用户的 handler 是直接解码进 `model.User`,`Enabled` 是 Go 的零值:
+**`enabled` 可以不写,但两个方向含义不同。** 请求体里不带 `enabled` 时:
 
-```console
-$ curl -X POST .../api/users -d '{"username":"dave"}'     # 没带 enabled
-{ "username": "dave", "enabled": false, "status": "disabled", ... }
-```
+| 请求 | 结果 |
+| --- | --- |
+| `POST /api/users` | 启用 —— 新建的用户默认能用,和 `mpx user add` 一致 |
+| `PUT /api/users/{name}` | 保持原样 —— 只想改流量上限的一次 PUT 不会把停用的用户悄悄启用 |
 
-而 `mpx user add` 默认是**启用**的(除非显式 `--disabled`)。所以绕过 CLI 直接用 API 时,别漏掉 `"enabled": true`。见 [open-questions.md](open-questions.md) 第 5 节。
+显式写 `"enabled": false` / `true` 时以请求体为准。服务端为此在请求体上把 `enabled` 读成 `*bool`(`internal/server/validate.go` 的 `userRequest`),为的是分得清「没说」和「说了 false」;领域模型 `model.User.Enabled` 仍是裸 bool,零值只在真正要表达「停用」的地方出现。
 
 **对外入口的返回里有两组值。** 存下来的字段原样返回(空就是空),`effective` 里才是合并节点与入站之后真正发出去的值:
 
@@ -224,4 +224,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 
 节点上只需要 `uname`、`mkdir`、`mv`、`chmod`、`systemctl` —— 不需要 curl / unzip,也不需要能连 GitHub。
 
-替换顺序是**先校验后顶替**:新核心先写成 `xray.new`,拿节点上**现有的**配置跑一次 `-test`,通过了才 `mv -f` 顶上去。全新机器没有配置可校验,这一步跳过。`InstallCore` 自己**不启动服务** —— 装完紧接着走一次 `Deploy`,由它负责启动并确认真的起来了,失败的兜底也因此在同一处。落地后回读 `xray version` 的第二段作为显示的版本号,拿不到就退回整行。
+**推之前先比一次 sha256**,一样的文件不重推。一次 ssh 问完三个目标路径(节点上有 `sha256sum` 或 `shasum` 就用,一个都没有、文件不在、或者这次查询失败,就当三个都不一样全推一遍 —— 少推一个文件只是多等一会儿,推错一个装不起来)。换一版核心通常只动 65MB 里的一个,这一步把重跑从「等一次传输」变成「等一次握手」。
+
+替换顺序是**先校验后顶替**:新核心先写成 `xray.new`,拿节点上**现有的**配置跑一次 `-test`,通过了才 `mv -f` 顶上去。全新机器没有配置可校验,这一步跳过。核心没变时这一步整个不跑 —— 它当初就是这么装上去的。`InstallCore` 自己**不启动服务** —— 装完紧接着走一次 `Deploy`,由它负责启动并确认真的起来了,失败的兜底也因此在同一处。落地后回读 `xray version` 的第二段作为显示的版本号,拿不到就退回整行。
