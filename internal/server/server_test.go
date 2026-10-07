@@ -1052,3 +1052,40 @@ func TestDuplicateHostRemarksGetDistinctNames(t *testing.T) {
 		t.Fatalf("两个节点重名了: %q", doc.Proxies[0].Name)
 	}
 }
+
+// 对外入口带要上生效值:只填了备注时,光看那几个空字段看不出客户端最终会连到
+// 哪里。回落规则本身在 render 里测,这里只测 API 有没有把它带出来、有没有把存
+// 下来的空字段改掉。
+func TestHostCarriesEffectiveValues(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("hk", "203.0.113.9")
+	in := e.createInbound(n.ID, "vless-ws", 8443)
+
+	code, data := e.api("POST", pathf("/api/inbounds/%d/hosts", in.ID), model.Host{Remark: "裸备注"})
+	if code != http.StatusCreated {
+		t.Fatalf("建对外入口: got %d %s", code, data)
+	}
+	created := decodeJSON[model.HostView](t, data)
+	if created.ID == 0 {
+		t.Fatalf("创建返回里该有 id: %s", data)
+	}
+	if got := created.Effective; got.Address != "203.0.113.9" || got.Port != 8443 || got.Path != "/ws" {
+		t.Errorf("创建返回该带回落后的地址/端口/路径: %+v", got)
+	}
+
+	code, data = e.api("GET", pathf("/api/inbounds/%d/hosts", in.ID), nil)
+	if code != http.StatusOK {
+		t.Fatalf("列对外入口: got %d %s", code, data)
+	}
+	views := decodeJSON[[]model.HostView](t, data)
+	if len(views) != 1 {
+		t.Fatalf("期望 1 个对外入口,got %d", len(views))
+	}
+	if got := views[0].Effective; got.SNI != "node.example.com" || len(got.ALPN) != 2 {
+		t.Errorf("列表该带回落后的 SNI/ALPN: %+v", got)
+	}
+	// 填进去的字段原样返回。要是被生效值覆盖了,就分不清哪些是自己定的了。
+	if views[0].Address != "" || views[0].Port != 0 {
+		t.Errorf("存下来的空字段该还是空: address=%q port=%d", views[0].Address, views[0].Port)
+	}
+}

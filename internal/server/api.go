@@ -263,6 +263,30 @@ func (s *Server) handleDeleteInbound(w http.ResponseWriter, r *http.Request) {
 
 // ---- 对外入口 ----
 
+// hostViewOf 给一个对外入口补上生效值。合并规则在 render 里,这里只负责把它的
+// 两个输入(入站、节点)取出来。
+func (s *Server) hostViewOf(h model.Host) (model.HostView, error) {
+	in, err := s.store.GetInbound(h.InboundID)
+	if err != nil {
+		return model.HostView{}, err
+	}
+	n, err := s.store.GetNode(in.NodeID)
+	if err != nil {
+		return model.HostView{}, err
+	}
+	return model.HostView{Host: h, Effective: render.ResolveExposure(*n, *in, h)}, nil
+}
+
+// writeHostView 把一个对外入口连同它的生效值写回去。
+func (s *Server) writeHostView(w http.ResponseWriter, code int, h model.Host) {
+	view, err := s.hostViewOf(h)
+	if err != nil {
+		s.writeStoreError(w, err, "对外入口")
+		return
+	}
+	writeJSON(w, code, view)
+}
+
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
@@ -273,10 +297,16 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
-	if hosts == nil {
-		hosts = []model.Host{}
+	views := make([]model.HostView, 0, len(hosts))
+	for _, h := range hosts {
+		v, err := s.hostViewOf(h)
+		if err != nil {
+			s.writeStoreError(w, err, "对外入口")
+			return
+		}
+		views = append(views, v)
 	}
-	writeJSON(w, http.StatusOK, hosts)
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
@@ -301,7 +331,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
-	writeJSON(w, http.StatusCreated, h)
+	s.writeHostView(w, http.StatusCreated, h)
 }
 
 func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
@@ -322,7 +352,7 @@ func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
-	writeJSON(w, http.StatusOK, h)
+	s.writeHostView(w, http.StatusOK, h)
 }
 
 func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {

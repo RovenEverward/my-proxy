@@ -87,6 +87,16 @@ $ curl -X POST .../api/users -d '{"username":"dave"}'     # 没带 enabled
 
 而 `mpx user add` 默认是**启用**的(除非显式 `--disabled`)。所以绕过 CLI 直接用 API 时,别漏掉 `"enabled": true`。见 [open-questions.md](open-questions.md) 第 5 节。
 
+**对外入口的返回里有两组值。** 存下来的字段原样返回(空就是空),`effective` 里才是合并节点与入站之后真正发出去的值:
+
+```console
+$ curl ... /api/inbounds/2/hosts
+[ { "id": 2, "inbound_id": 2, "remark": "美国 WS", "address": "", "port": 0,
+    "effective": { "address": "203.0.113.45", "port": 2087, "path": "/ws" } } ]
+```
+
+`mpx host list` 显示的是 `effective` —— 只填了备注时,光看那几个空字段看不出客户端最终会连到哪里。回落规则只有 `render.ResolveExposure` 一份,见 [model.md](model.md) 的「host 的回落」。
+
 ## 3. HTTP 订阅接口
 
 ```

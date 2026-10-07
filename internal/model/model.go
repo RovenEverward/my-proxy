@@ -144,6 +144,26 @@ type Host struct {
 	ALPN      []string `json:"alpn,omitempty"`
 }
 
+// Exposure 是 Host 合并节点与入站之后,真正会发布到订阅里的那一组值。
+//
+// 和 Host 分开是因为这两个问题的答案不一样:「我填了什么」和「最终发出去是什么」。
+// Host 里留空的项在 Exposure 里一定已经回落成实际值。
+type Exposure struct {
+	Address string   `json:"address"`
+	Port    int      `json:"port"`
+	SNI     string   `json:"sni,omitempty"`
+	Host    string   `json:"host,omitempty"` // ws/grpc 的 Host 头
+	Path    string   `json:"path,omitempty"`
+	ALPN    []string `json:"alpn,omitempty"`
+}
+
+// HostView 是 Host 对外的返回形态:填写过的字段原样返回(空就是空),另外附上
+// 生效值。合并规则在 render 里,不在这一层。
+type HostView struct {
+	Host
+	Effective Exposure `json:"effective"`
+}
+
 // ResetStrategy 是流量周期重置策略。
 type ResetStrategy string
 

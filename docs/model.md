@@ -51,6 +51,10 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `port` | 入站端口 |
 | `sni` | 入站 SNI |
 | `path` | ws 路径或 gRPC serviceName |
+| `alpn` | 入站 ALPN |
+| `host`(ws/grpc 的 Host 头) | 没有可回落的 —— 入站上不存在这个概念,空就是不发 |
+
+`mpx host list` 显示的是这张表合出来的结果(API 里叫 `effective`),和订阅里发出去的是同一份:合并规则只有 `render.ResolveExposure` 一处,所以「列表上显示的」和「客户端实际连的」不会漂。变量和 `*` 除外 —— 那些跟具体用户有关,列表里原样显示,得看某个用户的订阅才知道展开成什么。
 
 所以「一个入站零个 host」是合法状态,表示沿用入站自身。
 

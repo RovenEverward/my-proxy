@@ -45,23 +45,27 @@ var hostAddFlags struct {
 	alpn    string
 }
 
-// hostRow 里留空的项按"-"显示:这些字段本来就允许空,空着代表回落到
-// 入站或节点上的值,表格里没必要替换成别的数字误导使用者。
-func hostRow(h model.Host) []string {
+// hostRow 显示的是生效值,不是存进去的值:入口上留空的字段会回落到节点或入站,
+// 光看自己填的那几个空,看不出这个入口最终会把客户端连到哪里。回落由服务端算
+// (见 model.Exposure),CLI 不重复一遍。
+//
+// 生效值里仍然可能带 {VAR} 或 * —— 那些跟具体用户有关,得看某个用户的订阅才
+// 知道,表格里原样显示。
+func hostRow(h model.HostView) []string {
 	port := ""
-	if h.Port != 0 {
-		port = strconv.Itoa(h.Port)
+	if h.Effective.Port != 0 {
+		port = strconv.Itoa(h.Effective.Port)
 	}
 	return []string{
 		strconv.FormatInt(h.ID, 10),
 		strconv.FormatInt(h.InboundID, 10),
-		h.Remark,
-		h.Address,
-		port,
-		h.SNI,
-		h.Host,
-		h.Path,
-		strings.Join(h.ALPN, ","),
+		dash(h.Remark),
+		dash(h.Effective.Address),
+		dash(port),
+		dash(h.Effective.SNI),
+		dash(h.Effective.Host),
+		dash(h.Effective.Path),
+		dash(strings.Join(h.Effective.ALPN, ",")),
 	}
 }
 
@@ -84,7 +88,7 @@ var hostListCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		hosts, err := decode[[]model.Host](raw)
+		hosts, err := decode[[]model.HostView](raw)
 		if err != nil {
 			return err
 		}
@@ -125,7 +129,7 @@ var hostAddCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		created, err := decode[model.Host](raw)
+		created, err := decode[model.HostView](raw)
 		if err != nil {
 			return err
 		}

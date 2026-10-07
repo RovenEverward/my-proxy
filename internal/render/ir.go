@@ -127,11 +127,43 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 		"TRANSPORT": string(in.Network),
 	}
 
-	address := firstNonEmpty(h.Address, node.Address)
-	port := in.Port
-	if h.Port != 0 {
-		port = h.Port
+	ex := ResolveExposure(node, in, h)
+
+	remark := expand(h.Remark, vars, salt)
+	if remark == "" {
+		remark = expand(node.Name, vars, salt)
 	}
+
+	return Endpoint{
+		Remark:  remark,
+		Address: expand(ex.Address, vars, salt),
+		Port:    ex.Port,
+
+		Protocol: in.Protocol,
+		UUID:     uuid,
+		Password: password,
+		Flow:     in.Flow,
+
+		Network: in.Network,
+		Path:    ex.Path,
+		Host:    expand(ex.Host, vars, salt),
+
+		Security:    in.Security,
+		SNI:         expand(ex.SNI, vars, salt),
+		ALPN:        ex.ALPN,
+		Fingerprint: firstNonEmpty(in.Fingerprint, "chrome"),
+		RealityPub:  in.RealityPub,
+		RealitySID:  firstShortID(in.ShortIDs),
+	}
+}
+
+// ResolveExposure 算出 (节点, 入站, 对外入口) 合成之后的对外形态。回落规则只有
+// 这一份:订阅渲染和 API 都从这里取,否则「列表上看到的」和「实际发出去的」迟早
+// 对不上。
+//
+// 这里只合并,不展开 {VAR} 和 * —— 那两个跟具体用户有关,得等渲染时才知道。
+func ResolveExposure(node model.Node, in model.Inbound, h model.Host) model.Exposure {
+	// 路径:grpc 用 serviceName,其余用 ws 的 path。
 	path, host := in.WSPath, ""
 	if in.Network == model.NetworkGRPC {
 		path = in.GRPCService
@@ -142,38 +174,23 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 	if h.Path != "" {
 		path = h.Path
 	}
-	sni := firstNonEmpty(h.SNI, in.SNI)
 	alpn := h.ALPN
 	if len(alpn) == 0 {
 		alpn = in.ALPN
 	}
-	fp := firstNonEmpty(in.Fingerprint, "chrome")
-
-	remark := expand(h.Remark, vars, salt)
-	if remark == "" {
-		remark = expand(node.Name, vars, salt)
+	port := in.Port
+	if h.Port != 0 {
+		port = h.Port
 	}
 
-	return Endpoint{
-		Remark:  remark,
-		Address: expand(address, vars, salt),
+	return model.Exposure{
+		Address: firstNonEmpty(h.Address, node.Address),
 		Port:    port,
-
-		Protocol: in.Protocol,
-		UUID:     uuid,
-		Password: password,
-		Flow:     in.Flow,
-
-		Network: in.Network,
-		Path:    path,
-		Host:    expand(host, vars, salt),
-
-		Security:    in.Security,
-		SNI:         expand(sni, vars, salt),
-		ALPN:        alpn,
-		Fingerprint: fp,
-		RealityPub:  in.RealityPub,
-		RealitySID:  firstShortID(in.ShortIDs),
+		SNI:     firstNonEmpty(h.SNI, in.SNI),
+		// Host 头没有可回落的东西:入站上没有这个概念,空就是不发。
+		Host: host,
+		Path: path,
+		ALPN: alpn,
 	}
 }
 
