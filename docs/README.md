@@ -195,4 +195,5 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 | [contracts.md](contracts.md) | 对外契约的确切形状 |
 | [decisions.md](decisions.md) | 为什么这么选,换掉会怎样 |
 | [status.md](status.md) | 做到哪、验到什么程度 |
+| [roadmap.md](roadmap.md) | 分批演进计划,从流量可对账做起 |
 | [open-questions.md](open-questions.md) | 还有哪些缺口、下一步做什么 |
