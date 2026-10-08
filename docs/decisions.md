@@ -281,3 +281,15 @@ sing-box 订阅的 `route.rule_set` 是 112 个远程规则集(geosite/geoip 的
 - **代价记在明处**。`download_detour` 在 sing-box 1.14.0 已标为废弃、1.16.0 会移除,移除后远程
   规则集默认走「隐含 HTTP 客户端」——到时要迁到新的写法(比如给 rule_set 显式指定客户端或换成本地
   分发)。这是已知的模板债务,留着是因为 1.14 还没删,删之前先把能跑的样子跑通。
+
+## 29. wireguard 隧道地址按用户 key 哈希派生,peer 带 allowedIPs
+
+wireguard 的 cryptokey routing 要求每个 peer 有一个唯一的隧道地址;所有用户共用
+`10.0.0.2` 时服务端分不出回包该给谁。本实现用 `sha256("wgaddr:"+key)` 把用户 key
+映射进管理员配置的那个网段(`in.wg_address`,如 `10.0.0.1/24`)的主机位,跳过网络
+地址、服务器地址 `.1` 和广播地址,确定性、不需要分配表,同一 key 永远得同一地址。
+服务端 peer 的 `allowedIPs` 与客户端地址用同一条派生函数算,这是必须的 ——
+没有 `allowedIPs` 服务端无法路由回包。
+
+xray 的 wireguard inbound `address` 字段只收 `/32`(IPv4)/`/128`(IPv6),而管理员
+配置的是网段,渲染时切到 `/` 前再补 `/32`。

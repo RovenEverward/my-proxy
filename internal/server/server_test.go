@@ -756,7 +756,7 @@ func TestInboundValidation(t *testing.T) {
 		},
 		{
 			name: "不认识的协议",
-			in: model.Inbound{NodeID: n.ID, Protocol: "shadowsocks", Port: 443,
+			in: model.Inbound{NodeID: n.ID, Protocol: "trojan-go", Port: 443,
 				Network: model.NetworkTCP, Security: model.SecurityNone},
 			want: http.StatusBadRequest,
 		},

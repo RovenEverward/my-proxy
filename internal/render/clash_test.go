@@ -54,6 +54,31 @@ func clashTestEndpoints() []Endpoint {
 			Network: model.NetworkGRPC, Path: "svc", Host: "authority.tj.com",
 			Security: model.SecurityTLS, SNI: "tj.example.com",
 		},
+		{
+			Remark: "ss2022", Address: "ss.example.com", Port: 8388,
+			Protocol: model.ProtocolShadowsocks, Password: "AAECAwQFBgcICQoLDA0ODw==",
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+		{
+			Remark: "wg", Address: "wg.example.com", Port: 51820,
+			Protocol:     model.ProtocolWireguard,
+			WGPrivateKey: "V2whiAfjuJKAfimCWSgogDW7OesBIJSISZGjiRWRmX8",
+			WGPublicKey:  "fh0bUIH0q9EjI8syMy2iDT1pwocGBoFcbWmauu1wc3o",
+			WGAddress:    "10.0.0.7/32",
+			Network:      model.NetworkTCP, Security: model.SecurityNone,
+		},
+		{
+			Remark: "xhttp-vless", Address: "xh.example.com", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkXHTTP, Path: "/x", Host: "cdn.example.com", Mode: "packet-up",
+			Security: model.SecurityTLS, SNI: "xh.example.com",
+		},
+		{
+			Remark: "httpupgrade-vless", Address: "hu.example.com", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkHTTPUpgrade, Path: "/u", Host: "cdn2.example.com",
+			Security: model.SecurityTLS, SNI: "hu.example.com",
+		},
 	}
 }
 
@@ -108,7 +133,8 @@ func TestClashStructure(t *testing.T) {
 		}
 		selectNames, _ := proxyGroup["proxies"].([]any)
 		wantSelect := []any{"AUTO", "DIRECT", "reality-vless", "ws-vless", "grpc-vless",
-			"vmess-ws", "vmess-tcp", "tcp-trojan", "grpc-trojan"}
+			"vmess-ws", "vmess-tcp", "tcp-trojan", "grpc-trojan",
+			"ss2022", "wg", "xhttp-vless", "httpupgrade-vless"}
 		if len(selectNames) != len(wantSelect) {
 			t.Fatalf("PROXY 成员 = %#v, want %#v", selectNames, wantSelect)
 		}
@@ -448,6 +474,79 @@ func TestClashProxyFields(t *testing.T) {
 			t.Errorf("grpc-opts = %#v", p["grpc-opts"])
 		}
 	})
+
+	t.Run("ss-2022", func(t *testing.T) {
+		p := byName["ss2022"]
+		if p == nil {
+			t.Fatal("缺少 ss2022")
+		}
+		if p["type"] != "ss" {
+			t.Errorf("type = %v", p["type"])
+		}
+		if p["cipher"] != "2022-blake3-aes-128-gcm" {
+			t.Errorf("cipher = %v", p["cipher"])
+		}
+		if p["password"] != "AAECAwQFBgcICQoLDA0ODw==" {
+			t.Errorf("password = %v", p["password"])
+		}
+	})
+
+	t.Run("wireguard", func(t *testing.T) {
+		p := byName["wg"]
+		if p == nil {
+			t.Fatal("缺少 wg")
+		}
+		if p["type"] != "wireguard" {
+			t.Errorf("type = %v", p["type"])
+		}
+		// IR 里是 RawURL base64,mihomo 只收带填充的标准 base64。
+		if p["private-key"] != "V2whiAfjuJKAfimCWSgogDW7OesBIJSISZGjiRWRmX8=" {
+			t.Errorf("private-key = %v", p["private-key"])
+		}
+		if p["public-key"] != "fh0bUIH0q9EjI8syMy2iDT1pwocGBoFcbWmauu1wc3o=" {
+			t.Errorf("public-key = %v", p["public-key"])
+		}
+		if p["ip"] != "10.0.0.7/32" {
+			t.Errorf("ip = %v", p["ip"])
+		}
+		if _, ok := p["network"]; ok {
+			t.Errorf("wireguard 是 L3,不该有 network 字段: %#v", p)
+		}
+	})
+
+	t.Run("vless+xhttp", func(t *testing.T) {
+		p := byName["xhttp-vless"]
+		if p == nil {
+			t.Fatal("缺少 xhttp-vless")
+		}
+		if p["network"] != "xhttp" {
+			t.Errorf("network = %v", p["network"])
+		}
+		opts, ok := p["xhttp-opts"].(map[string]any)
+		if !ok {
+			t.Fatalf("xhttp-opts = %#v", p["xhttp-opts"])
+		}
+		if opts["path"] != "/x" || opts["host"] != "cdn.example.com" || opts["mode"] != "packet-up" {
+			t.Errorf("xhttp-opts = %#v", opts)
+		}
+	})
+
+	t.Run("vless+httpupgrade", func(t *testing.T) {
+		p := byName["httpupgrade-vless"]
+		if p == nil {
+			t.Fatal("缺少 httpupgrade-vless")
+		}
+		if p["network"] != "httpupgrade" {
+			t.Errorf("network = %v", p["network"])
+		}
+		opts, ok := p["httpupgrade-opts"].(map[string]any)
+		if !ok {
+			t.Fatalf("httpupgrade-opts = %#v", p["httpupgrade-opts"])
+		}
+		if opts["path"] != "/u" || opts["host"] != "cdn2.example.com" {
+			t.Errorf("httpupgrade-opts = %#v", opts)
+		}
+	})
 }
 
 // TestClashMetaOnlyFields 覆盖 client-fingerprint 只在 meta 版出现。
@@ -573,7 +672,7 @@ func TestClashRejectsUnsupported(t *testing.T) {
 		{
 			name: "协议",
 			ep: Endpoint{
-				Protocol: model.Protocol("shadowsocks"), Network: model.NetworkTCP,
+				Protocol: model.Protocol("trojan-go"), Network: model.NetworkTCP,
 				Security: model.SecurityNone, Address: "1.2.3.4", Port: 1,
 			},
 		},

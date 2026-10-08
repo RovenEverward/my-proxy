@@ -155,6 +155,27 @@ func ensureReality(in *model.Inbound, old *model.Inbound) error {
 	return nil
 }
 
+// ensureWireguard 给 wireguard 入站备齐服务端私钥。
+//
+// 与 RealityPriv 同构:服务端私钥由控制面生成、不接受调用方指定(调用方给的
+// 只会是一对配不上的密钥);换入站协议再改回来时旧密钥已经发不出去,
+// 因此只在 keepOld 且旧值非空时沿用。
+func ensureWireguard(in *model.Inbound, old *model.Inbound) error {
+	if in.Protocol != model.ProtocolWireguard {
+		return nil
+	}
+	if old != nil && old.Protocol == model.ProtocolWireguard && old.WGSecretKey != "" {
+		in.WGSecretKey = old.WGSecretKey
+		return nil
+	}
+	priv, _, err := model.GenerateRealityKeypair() // X25519 密钥对,wireguard 与 reality 同算法
+	if err != nil {
+		return err
+	}
+	in.WGSecretKey = priv
+	return nil
+}
+
 func validateNode(n *model.Node) string {
 	if n.Name == "" {
 		return "节点名不能为空"
@@ -207,6 +228,9 @@ func validateInbound(i *model.Inbound) string {
 	}
 	if i.Flow != "" && i.Protocol != model.ProtocolVLESS {
 		return "flow 只有 VLESS 支持"
+	}
+	if i.Protocol == model.ProtocolWireguard && i.WGAddress == "" {
+		return "wireguard 必须填服务端隧道地址(如 10.0.0.1/24)"
 	}
 	return ""
 }

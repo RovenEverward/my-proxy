@@ -9,8 +9,11 @@
 package render
 
 import (
+	"crypto/ecdh"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
+	"net/netip"
 	"strconv"
 	"strings"
 
@@ -74,14 +77,23 @@ type Endpoint struct {
 
 	Protocol model.Protocol
 	UUID     string // vless / vmess
-	Password string // trojan
+	Password string // trojan / shadowsocks-2022 的用户密钥
 	Flow     string // vless
 
+	// Wireguard 的字段单独放:它是 L3,不需要传输/安全层,复用 Path/Host 会让
+	// 渲染器分不清「该写哪个键」。
+	WGPrivateKey string // 客户端自己的私钥(标准 base64 带填充)
+	WGPublicKey  string // 服务端公钥
+	WGAddress    string // 客户端隧道地址,如 10.0.0.2/32
+
 	Network model.Network
-	// Path 是 ws 的 path,或 grpc 的 serviceName。
+	// Path 是 ws 的 path、grpc 的 serviceName,或 http 系传输的 path。
 	Path string
-	// Host 是 ws 的 Host 头,或 grpc 的 authority。
+	// Host 是 ws 的 Host 头、grpc 的 authority,或 http 系传输的 host。
 	Host string
+	// Mode 只对 xhttp 有意义:auto / packet-up / stream-up / stream-one。
+	// 空表示 auto。
+	Mode string
 
 	Security      model.Security
 	SNI           string
@@ -90,6 +102,10 @@ type Endpoint struct {
 	RealityPub    string // REALITY 公钥
 	RealitySID    string // REALITY shortId
 	AllowInsecure bool
+
+	// 客户端侧特性:只写进订阅,不改变节点配置。
+	Mux      bool // xray / sing-box 认识,mihomo 忽略
+	Fragment bool // 只有 xray 客户端渲染
 }
 
 // Resolve 把节点上的入站展开成该用户可以连接的端点列表。
@@ -111,14 +127,17 @@ func Resolve(node model.Node, inbounds []model.Inbound, hosts map[int64][]model.
 			exposures = []model.Host{{}}
 		}
 		for _, h := range exposures {
-			out = append(out, endpoint(node, in, h, uuid, password, salt))
+			if ep, ok := endpoint(node, in, h, user, uuid, password, salt); ok {
+				out = append(out, ep)
+			}
 		}
 	}
 	return out
 }
 
 // endpoint 把 (节点, 入站, 对外入口) 合成一个 Endpoint,并展开其中的变量。
-func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, salt string) Endpoint {
+// 返回 ok=false 表示该端点的关键字段无法生成(如密钥派生失败),跳过而不是发一个坏配置。
+func endpoint(node model.Node, in model.Inbound, h model.Host, user *model.User, uuid, password, salt string) (Endpoint, bool) {
 	vars := map[string]string{
 		"USERNAME":  "",
 		"SERVER_IP": node.Address,
@@ -134,7 +153,7 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 		remark = expand(node.Name, vars, salt)
 	}
 
-	return Endpoint{
+	ep := Endpoint{
 		Remark:  remark,
 		Address: expand(ex.Address, vars, salt),
 		Port:    ex.Port,
@@ -147,6 +166,7 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 		Network: in.Network,
 		Path:    ex.Path,
 		Host:    expand(ex.Host, vars, salt),
+		Mode:    in.XHTTPMode,
 
 		Security:    in.Security,
 		SNI:         expand(ex.SNI, vars, salt),
@@ -154,7 +174,75 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 		Fingerprint: firstNonEmpty(in.Fingerprint, "chrome"),
 		RealityPub:  in.RealityPub,
 		RealitySID:  firstShortID(in.ShortIDs),
+
+		Mux:      in.Mux,
+		Fragment: in.Fragment,
 	}
+
+	switch in.Protocol {
+	case model.ProtocolShadowsocks:
+		ep.Password = model.DeriveSS2022Key(user.Key)
+	case model.ProtocolWireguard:
+		priv, _, err := model.DeriveWGKeypair(user.Key)
+		if err != nil {
+			// SHA-256 输出永远是合法的 X25519 种子,这里 err 不可能非空;
+			// 但万一出现,跳过一个端点比让整份订阅崩掉好——坏端点只会少一个
+			// 入口,坏订阅会让客户端整份不加载。
+			return Endpoint{}, false
+		}
+		ep.WGPrivateKey = priv
+		ep.WGPublicKey = wgServerPub(in)
+		ep.WGAddress = wgClientAddr(in.WGAddress, user.Key)
+	}
+
+	return ep, true
+}
+
+// wgClientAddr 给客户端算隧道地址,由服务端网段与用户 Key 派生。
+//
+// wireguard 靠 allowedIPs 做路由:两个 peer 拿了同一个地址,后到的会把先到
+// 的流量挤掉。地址因此必须每用户唯一,又不能在控制面存一份分配表——这里把
+// Key 的散列映进网段的主机位,同一用户永远拿到同一个地址。
+// 主机位里跳过三个值:网络地址(.0)、服务端自己(.1)、最后一个(广播位)。
+func wgClientAddr(serverAddr, key string) string {
+	prefix, err := netip.ParsePrefix(serverAddr)
+	if err != nil || !prefix.Addr().Is4() {
+		return serverAddr
+	}
+	hostBits := 32 - prefix.Bits()
+	if hostBits < 2 {
+		// 网段小到放不下第三个地址,直接让客户端拿服务端地址,连不上也比
+		// 算出一个网段外的地址好排查。
+		return serverAddr
+	}
+	usable := uint64(1)<<hostBits - 3
+	sum := sha256.Sum256([]byte("wgaddr:" + key))
+	host := 2 + binary.BigEndian.Uint64(sum[:8])%usable
+
+	base := binary.BigEndian.Uint32(prefix.Masked().Addr().AsSlice())
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, base+uint32(host))
+	return netip.AddrFrom4([4]byte{b[0], b[1], b[2], b[3]}).String() + "/32"
+}
+
+// wgServerPub 由服务端私钥推出服务端公钥。
+//
+// 渲染端点时不直接存公钥——公钥跟着私钥走,存一份只会多一份要同步的东西。
+func wgServerPub(in model.Inbound) string {
+	if in.WGSecretKey == "" {
+		return ""
+	}
+	// WGSecretKey 存的是 RawURLEncoding(与 xray 一致);DeriveWGKeypair 返回的
+	// 也是 RawURLEncoding,直接复用它的解码/编码逻辑会绕,这里只做 base64 换算。
+	raw, err := base64.RawURLEncoding.DecodeString(in.WGSecretKey)
+	if err != nil {
+		return ""
+	}
+	priv, err := ecdh.X25519().NewPrivateKey(raw)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(priv.PublicKey().Bytes())
 }
 
 // ResolveExposure 算出 (节点, 入站, 对外入口) 合成之后的对外形态。回落规则只有
@@ -163,10 +251,19 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, uuid, password, s
 //
 // 这里只合并,不展开 {VAR} 和 * —— 那两个跟具体用户有关,得等渲染时才知道。
 func ResolveExposure(node model.Node, in model.Inbound, h model.Host) model.Exposure {
-	// 路径:grpc 用 serviceName,其余用 ws 的 path。
+	// 路径:grpc 用 serviceName,http 系传输用自己的 path,其余用 ws 的 path。
 	path, host := in.WSPath, ""
-	if in.Network == model.NetworkGRPC {
+	switch in.Network {
+	case model.NetworkGRPC:
 		path = in.GRPCService
+	case model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkHTTPUpgrade:
+		path = in.XHTTPPath
+	}
+	// Host 同理:grpc 没有 host 概念,http 系用自己的 host,其余用 ws host(入站
+	// 上没有,只能由 Host 覆盖)。
+	if in.Network == model.NetworkXHTTP || in.Network == model.NetworkSplitHTTP ||
+		in.Network == model.NetworkHTTPUpgrade {
+		host = in.XHTTPHost
 	}
 	if h.Host != "" {
 		host = h.Host
@@ -208,6 +305,23 @@ func expand(s string, vars map[string]string, salt string) string {
 		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
+}
+
+// paddedStdB64 把 RawURLEncoding 的 base64 换成带填充的标准 base64。
+//
+// DeriveWGKeypair 产出的密钥是 RawURLEncoding(xray 认这种),而 sing-box
+// 与 mihomo 只认标准带填充形式;不转换它们会直接拒收。换字母表之前先解码
+// 再编码,避免只补 padding 不换 `-`/`_` 的半成品。
+func paddedStdB64(s string) string {
+	if s == "" {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		// 解码失败说明输入本来就不是 RawURL 形式,原样透传让下游报错。
+		return s
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // saltOf 为每个用户生成稳定的随机子域片段。

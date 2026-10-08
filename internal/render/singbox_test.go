@@ -350,6 +350,81 @@ func TestSingBoxNode(t *testing.T) {
 	}
 }
 
+// wireguard 在 sing-box 里是 endpoint 而不是 outbound:它有地址和 key,没有 server/port。
+// 渲染放在 endpoints[],同时把 tag 追加进 selector,selector 指向 endpoint tag。
+func TestSingBoxWireguardEndpoint(t *testing.T) {
+	ep := Endpoint{
+		Remark: "wg 节点", Address: "wg.example.com", Port: 51820,
+		Protocol:     model.ProtocolWireguard,
+		WGPrivateKey: "V2whiAfjuJKAfimCWSgogDW7OesBIJSISZGjiRWRmX8",
+		WGPublicKey:  "fh0bUIH0q9EjI8syMy2iDT1pwocGBoFcbWmauu1wc3o",
+		WGAddress:    "10.0.0.7/32",
+	}
+	out, err := SingBox([]Endpoint{ep}, nil)
+	if err != nil {
+		t.Fatalf("SingBox 返回错误: %v", err)
+	}
+	cfg := decodeConfig(t, out)
+
+	eps, ok := cfg["endpoints"].([]any)
+	if !ok || len(eps) != 1 {
+		t.Fatalf("endpoints = %#v", cfg["endpoints"])
+	}
+	wg, ok := eps[0].(map[string]any)
+	if !ok {
+		t.Fatalf("endpoints[0] 不是对象: %#v", eps[0])
+	}
+	if wg["type"] != "wireguard" || wg["tag"] != "wg-0" {
+		t.Errorf("endpoint 顶层字段 = %#v", wg)
+	}
+	if wg["address"].([]any)[0] != "10.0.0.7/32" {
+		t.Errorf("address = %#v", wg["address"])
+	}
+	// sing-box 只收带填充的标准 base64,IR 里是无填充 RawURL。
+	if wg["private_key"] != "V2whiAfjuJKAfimCWSgogDW7OesBIJSISZGjiRWRmX8=" {
+		t.Errorf("private_key = %v", wg["private_key"])
+	}
+	peers, _ := wg["peers"].([]any)
+	if len(peers) != 1 {
+		t.Fatalf("peers = %#v", wg["peers"])
+	}
+	peer := peers[0].(map[string]any)
+	if peer["public_key"] != "fh0bUIH0q9EjI8syMy2iDT1pwocGBoFcbWmauu1wc3o=" {
+		t.Errorf("public_key = %v", peer["public_key"])
+	}
+
+	// selector 的 outbounds 必须把 wg endpoint 的 tag 带上,否则选不中。
+	proxy := findOutbound(t, cfg, singboxProxyTag)
+	if !reflect.DeepEqual(proxy["outbounds"], []any{singboxAutoTag, "wg-0"}) {
+		t.Errorf("selector.outbounds = %v", proxy["outbounds"])
+	}
+}
+
+// mux 和 fragment 是订阅级的开关:渲染时写进对应的 outbound 层。
+func TestSingBoxMuxAndFragment(t *testing.T) {
+	ep := Endpoint{
+		Remark: "mux-frag", Address: "us.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, UUID: testUUID,
+		Network: model.NetworkTCP, Security: model.SecurityTLS,
+		SNI: "us.example.com",
+		Mux: true, Fragment: true,
+	}
+	out, err := SingBox([]Endpoint{ep}, nil)
+	if err != nil {
+		t.Fatalf("SingBox 返回错误: %v", err)
+	}
+	cfg := decodeConfig(t, out)
+	ob := findOutbound(t, cfg, "mux-frag")
+
+	mux, ok := ob["multiplex"].(map[string]any)
+	if !ok {
+		t.Fatalf("multiplex 缺失: %#v", ob)
+	}
+	if mux["enabled"] != true || mux["protocol"] != "smux" || mux["max_connections"] != float64(4) {
+		t.Errorf("multiplex = %#v", mux)
+	}
+}
+
 // TestSingBoxRealityFields 精确断言 REALITY 的公钥与 shortId 原样进了 tls.reality。
 func TestSingBoxRealityFields(t *testing.T) {
 	ep := Endpoint{
@@ -607,7 +682,7 @@ func TestSingBoxErrors(t *testing.T) {
 		{name: "模板不是JSON", eps: []Endpoint{ep}, tmpl: []byte("{")},
 		{name: "outbounds不是数组", eps: []Endpoint{ep}, tmpl: []byte(`{"outbounds": "x"}`)},
 		{name: "route不是对象", eps: []Endpoint{ep}, tmpl: []byte(`{"route": []}`)},
-		{name: "协议不支持", eps: []Endpoint{{Remark: "S", Protocol: model.Protocol("shadowsocks"), Network: model.NetworkTCP}}},
+		{name: "协议不支持", eps: []Endpoint{{Remark: "S", Protocol: model.Protocol("trojan-go"), Network: model.NetworkTCP}}},
 		{name: "传输不支持", eps: []Endpoint{{Remark: "H", Protocol: model.ProtocolVLESS, Network: model.Network("hysteria2")}}},
 		{name: "安全层不支持", eps: []Endpoint{{Remark: "X", Protocol: model.ProtocolVLESS, Network: model.NetworkTCP, Security: model.Security("xtls")}}},
 	}

@@ -303,6 +303,10 @@ func (s *Server) handleCreateInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "REALITY 密钥")
 		return
 	}
+	if err := ensureWireguard(&in, nil); err != nil {
+		s.writeStoreError(w, err, "wireguard 密钥")
+		return
+	}
 	if msg := validateInbound(&in); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -352,6 +356,10 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 	in.NodeID = old.NodeID
 	if err := ensureReality(&in, old); err != nil {
 		s.writeStoreError(w, err, "REALITY 密钥")
+		return
+	}
+	if err := ensureWireguard(&in, old); err != nil {
+		s.writeStoreError(w, err, "wireguard 密钥")
 		return
 	}
 	if msg := validateInbound(&in); msg != "" {

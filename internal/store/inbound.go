@@ -9,19 +9,26 @@ import (
 // inboundColumns 是 inbounds 表的列顺序,扫描时按同一顺序取值。
 const inboundColumns = `id, node_id, tag, protocol, listen, port, network, security,
 	ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
-	reality_dest, reality_priv, reality_pub, short_ids, flow`
+	reality_dest, reality_priv, reality_pub, short_ids, flow,
+	xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
+	mux, fragment`
 
 func scanInbound(sc rowScanner) (*model.Inbound, error) {
 	var (
 		i              model.Inbound
 		alpn, shortIDs string
+		mux, fragment  int
 	)
 	if err := sc.Scan(&i.ID, &i.NodeID, &i.Tag, &i.Protocol, &i.Listen, &i.Port,
 		&i.Network, &i.Security, &i.WSPath, &i.GRPCService, &i.SNI, &alpn,
 		&i.Fingerprint, &i.CertFile, &i.KeyFile, &i.RealityDest, &i.RealityPriv,
-		&i.RealityPub, &shortIDs, &i.Flow); err != nil {
+		&i.RealityPub, &shortIDs, &i.Flow,
+		&i.XHTTPPath, &i.XHTTPHost, &i.XHTTPMode,
+		&i.WGSecretKey, &i.WGAddress, &i.WGMTU, &mux, &fragment); err != nil {
 		return nil, err
 	}
+	i.Mux = mux != 0
+	i.Fragment = fragment != 0
 	var err error
 	if i.ALPN, err = decodeSlice[string](alpn); err != nil {
 		return nil, fmt.Errorf("入站 %d 的 alpn: %w", i.ID, err)
@@ -47,12 +54,18 @@ func (s *Store) CreateInbound(i *model.Inbound) error {
 	res, err := s.db.Exec(
 		`INSERT INTO inbounds (node_id, tag, protocol, listen, port, network, security,
 			ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
-			reality_dest, reality_priv, reality_pub, short_ids, flow)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			reality_dest, reality_priv, reality_pub, short_ids, flow,
+			xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
+			mux, fragment)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		         ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
 		i.CertFile, i.KeyFile, i.RealityDest, i.RealityPriv, i.RealityPub,
-		shortIDs, i.Flow)
+		shortIDs, i.Flow,
+		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
+		i.WGSecretKey, i.WGAddress, i.WGMTU,
+		boolToInt(i.Mux), boolToInt(i.Fragment))
 	if err != nil {
 		return fmt.Errorf("创建入站 %q: %w", i.Tag, err)
 	}
@@ -118,12 +131,17 @@ func (s *Store) UpdateInbound(i *model.Inbound) error {
 		`UPDATE inbounds
 		 SET node_id = ?, tag = ?, protocol = ?, listen = ?, port = ?, network = ?, security = ?,
 		     ws_path = ?, grpc_service = ?, sni = ?, alpn = ?, fingerprint = ?, cert_file = ?, key_file = ?,
-		     reality_dest = ?, reality_priv = ?, reality_pub = ?, short_ids = ?, flow = ?
+		     reality_dest = ?, reality_priv = ?, reality_pub = ?, short_ids = ?, flow = ?,
+		     xhttp_path = ?, xhttp_host = ?, xhttp_mode = ?,
+		     wg_secret = ?, wg_address = ?, wg_mtu = ?, mux = ?, fragment = ?
 		 WHERE id = ?`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
 		i.CertFile, i.KeyFile, i.RealityDest, i.RealityPriv, i.RealityPub,
-		shortIDs, i.Flow, i.ID)
+		shortIDs, i.Flow,
+		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
+		i.WGSecretKey, i.WGAddress, i.WGMTU,
+		boolToInt(i.Mux), boolToInt(i.Fragment), i.ID)
 	if err != nil {
 		return fmt.Errorf("更新入站 %d: %w", i.ID, err)
 	}

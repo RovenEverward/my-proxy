@@ -17,7 +17,7 @@ import (
 // Links 返回每个端点的分享链接,一行一条,顺序与输入一致。
 //
 // 只支持 vless / vmess / trojan;其余协议跳过该条并继续,不因为一个坏端点让
-// 整份订阅失败。
+// 整份订阅失败。shadowsocks-2022 与 wireguard 没有标准 URI,只能走配置文件订阅。
 func Links(eps []Endpoint) []string {
 	var out []string
 	for _, ep := range eps {
@@ -40,6 +40,8 @@ func shareLink(ep Endpoint) (string, bool) {
 	switch ep.Protocol {
 	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan:
 	default:
+		// ss-2022 有 ss:// URI 但格式复杂(要嵌入 SIP-022 的 16B key),
+		// wireguard 没有 URI;这两个协议只能靠配置文件订阅,链接先跳过。
 		return "", false
 	}
 	if ep.Protocol == model.ProtocolVMess {
@@ -89,6 +91,14 @@ func urlLink(ep Endpoint) string {
 	case model.NetworkWS:
 		q.add("path", ep.Path)
 		q.add("host", ep.Host)
+	case model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkHTTPUpgrade:
+		// xhttp / httpupgrade 与 ws 的 query 参数形状相同(path + host);
+		// mode 只对 xhttp 有意义,空或 auto 时不写。
+		q.add("path", ep.Path)
+		q.add("host", ep.Host)
+		if ep.Mode != "" && ep.Mode != "auto" {
+			q.add("mode", ep.Mode)
+		}
 	}
 	// tcp 没有可表达的参数,不带 path / host。
 

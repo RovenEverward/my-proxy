@@ -1,9 +1,12 @@
 package render
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -77,13 +80,18 @@ type serverAPISettings struct {
 
 // serverStreamSettings 是传输层配置。
 type serverStreamSettings struct {
-	Network         string                 `json:"network"`
-	Security        string                 `json:"security"`
-	TCPSettings     *serverEmptySettings   `json:"tcpSettings,omitempty"`
-	WSSettings      *serverWSSettings      `json:"wsSettings,omitempty"`
-	GRPCSettings    *serverGRPCSettings    `json:"grpcSettings,omitempty"`
-	TLSSettings     *serverTLSSettings     `json:"tlsSettings,omitempty"`
-	RealitySettings *serverRealitySettings `json:"realitySettings,omitempty"`
+	Network      string               `json:"network"`
+	Security     string               `json:"security"`
+	TCPSettings  *serverEmptySettings `json:"tcpSettings,omitempty"`
+	WSSettings   *serverWSSettings    `json:"wsSettings,omitempty"`
+	GRPCSettings *serverGRPCSettings  `json:"grpcSettings,omitempty"`
+	// xhttp / splithttp / httpupgrade 的 settings 键名不同但字段一样,
+	// 这里合成一个指针,序列化时由各自的 json tag 落到对应键。
+	XHTTPSettings       *serverHTTPSettings    `json:"xhttpSettings,omitempty"`
+	SplitHTTPSettings   *serverHTTPSettings    `json:"splithttpSettings,omitempty"`
+	HTTPUpgradeSettings *serverHTTPSettings    `json:"httpupgradeSettings,omitempty"`
+	TLSSettings         *serverTLSSettings     `json:"tlsSettings,omitempty"`
+	RealitySettings     *serverRealitySettings `json:"realitySettings,omitempty"`
 }
 
 // serverEmptySettings 渲染成 {}:tcp 传输没有可选参数,但键必须在。
@@ -95,6 +103,16 @@ type serverWSSettings struct {
 
 type serverGRPCSettings struct {
 	ServiceName string `json:"serviceName"`
+}
+
+// serverHTTPSettings 是 xhttp / splithttp / httpupgrade 共用的字段集:
+// 三者在 xray 里都是 path + host 的形状,xhttp 额外认一个 mode。
+// Mode 为 "" 或 "auto" 时不写进配置(auto 就是默认值,写进去反而让
+// 「默认值变了」这类上游调整不生效)。
+type serverHTTPSettings struct {
+	Path string `json:"path,omitempty"`
+	Host string `json:"host,omitempty"`
+	Mode string `json:"mode,omitempty"`
 }
 
 type serverTLSSettings struct {
@@ -155,6 +173,42 @@ type serverTrojanClient struct {
 
 type serverTrojanSettings struct {
 	Clients []serverTrojanClient `json:"clients"`
+}
+
+// serverSS2022Client 是 shadowsocks-2022 的用户条目。
+//
+// xray 的 ss-2022 入站没有 email 字段:统计靠 user@inbound 里的 user,这里写
+// 用户名,效果与 vless/vmess/trojan 的 email 一致。
+type serverSS2022Client struct {
+	Password string `json:"password"`
+	Email    string `json:"email"`
+}
+
+// serverSS2022Settings 只支持 aes-128-gcm 变体:128-gcm 与 256-gcm 服务端
+// 逻辑一样,差别只在密钥长度;固定一种让「客户端密钥派生」不用记住入站选了哪种。
+type serverSS2022Settings struct {
+	Method   string               `json:"method"`
+	Password string               `json:"password"`
+	Clients  []serverSS2022Client `json:"clients"`
+}
+
+// serverWGPeer 是 wireguard 服务端眼里的一个对端(即一个用户)。
+//
+// allowedIPs 必须写,且与 wgClientAddr 派生出的客户端地址一致:wireguard 靠
+// allowedIPs 把隧道地址绑到 peer,不写的话两个用户的隧道地址相同,服务端分不
+// 清回来的包属于谁。
+type serverWGPeer struct {
+	PublicKey  string   `json:"publicKey"`
+	AllowedIPs []string `json:"allowedIPs"`
+}
+
+// serverWGSettings 是 wireguard 入站的 settings。
+// secretKey 即服务端私钥,与 reality 的 privateKey 同待遇:只在节点出现。
+type serverWGSettings struct {
+	SecretKey string         `json:"secretKey"`
+	Address   []string       `json:"address"`
+	MTU       int            `json:"mtu,omitempty"`
+	Peers     []serverWGPeer `json:"peers"`
 }
 
 type serverOutbound struct {
@@ -277,6 +331,15 @@ func serverRenderInbound(in model.Inbound, users []model.User, now time.Time) (s
 		stream.WSSettings = &serverWSSettings{Path: path}
 	case model.NetworkGRPC:
 		stream.GRPCSettings = &serverGRPCSettings{ServiceName: in.GRPCService}
+	case model.NetworkXHTTP:
+		stream.XHTTPSettings = &serverHTTPSettings{
+			Path: in.XHTTPPath, Host: in.XHTTPHost, Mode: xhttpMode(in.XHTTPMode)}
+	case model.NetworkSplitHTTP:
+		stream.SplitHTTPSettings = &serverHTTPSettings{
+			Path: in.XHTTPPath, Host: in.XHTTPHost}
+	case model.NetworkHTTPUpgrade:
+		stream.HTTPUpgradeSettings = &serverHTTPSettings{
+			Path: in.XHTTPPath, Host: in.XHTTPHost}
 	}
 
 	switch security {
@@ -309,7 +372,7 @@ func serverRenderInbound(in model.Inbound, users []model.User, now time.Time) (s
 		}
 	}
 
-	settings, err := serverInboundSettings(in.Protocol, in.Flow, allowed)
+	settings, err := serverInboundSettings(in, allowed)
 	if err != nil {
 		return serverInbound{}, fmt.Errorf("入站 %q: %w", tag, err)
 	}
@@ -334,19 +397,27 @@ func serverRenderInbound(in model.Inbound, users []model.User, now time.Time) (s
 	}, nil
 }
 
+// xhttpMode 把存储层的空值与 xray 的默认值对齐:存 "" 表示 auto,渲染时也不写。
+func xhttpMode(m string) string {
+	if m == "" {
+		return ""
+	}
+	return m
+}
+
 // serverInboundSettings 按协议生成入站 settings。
 //
 // email 一律用用户名而不是用户 ID:同一个用户在所有入站上的 email 相同,xray 的
 // per-user 流量才能按用户聚合,而不是按「用户 × 入站」拆成好几行。
-func serverInboundSettings(protocol model.Protocol, flow string, users []*model.User) (any, error) {
-	switch protocol {
+func serverInboundSettings(in model.Inbound, users []*model.User) (any, error) {
+	switch in.Protocol {
 	case model.ProtocolVLESS:
 		clients := make([]serverVLESSClient, 0, len(users))
 		for _, u := range users {
 			clients = append(clients, serverVLESSClient{
 				ID:    model.DeriveUUID(u.Key),
 				Email: u.Username,
-				Flow:  flow,
+				Flow:  in.Flow,
 			})
 		}
 		return serverVLESSettings{Clients: clients, Decryption: "none"}, nil
@@ -371,8 +442,56 @@ func serverInboundSettings(protocol model.Protocol, flow string, users []*model.
 			})
 		}
 		return serverTrojanSettings{Clients: clients}, nil
+
+	case model.ProtocolShadowsocks:
+		// 服务端 psk 从该入站自己的字段派生,不用单独存:用户只记 Key 一份种子,
+		// 服务端密钥也一样——由入站身份推出,重建入站不改密钥。
+		b := deriveSS2022ServerKey(in.Tag)
+		clients := make([]serverSS2022Client, 0, len(users))
+		for _, u := range users {
+			clients = append(clients, serverSS2022Client{
+				Password: model.DeriveSS2022Key(u.Key),
+				Email:    u.Username,
+			})
+		}
+		return serverSS2022Settings{
+			Method:   "2022-blake3-aes-128-gcm",
+			Password: b,
+			Clients:  clients,
+		}, nil
+
+	case model.ProtocolWireguard:
+		peers := make([]serverWGPeer, 0, len(users))
+		for _, u := range users {
+			_, pub, err := model.DeriveWGKeypair(u.Key)
+			if err != nil {
+				return nil, fmt.Errorf("用户 %q 的 wireguard 公钥: %w", u.Username, err)
+			}
+			peers = append(peers, serverWGPeer{
+				PublicKey:  pub,
+				AllowedIPs: []string{wgClientAddr(in.WGAddress, u.Key)},
+			})
+		}
+		// xray 的 wireguard 入站只接受 /32 的接口地址;管理面填的是网段
+		// (10.0.0.1/24),下发时把主机部分原样带上、掩码换成 /32。
+		iface, _, _ := strings.Cut(in.WGAddress, "/")
+		return serverWGSettings{
+			SecretKey: in.WGSecretKey,
+			Address:   []string{iface + "/32"},
+			MTU:       in.WGMTU,
+			Peers:     peers,
+		}, nil
 	}
-	return nil, fmt.Errorf("协议 %q 不受支持", protocol)
+	return nil, fmt.Errorf("协议 %q 不受支持", in.Protocol)
+}
+
+// deriveSS2022ServerKey 由入站 tag 派生该入站的服务端 psk。
+//
+// 不单独存:入站重建(tag 相同)时密钥不变,客户端不必换配置;两个入站 tag 不同
+// 时密钥也不同,不会出现「两条入站共享一把 psk、其中一条被破就全破」。
+func deriveSS2022ServerKey(tag string) string {
+	b := sha256.Sum256([]byte("ss2022-server:" + tag))
+	return base64.StdEncoding.EncodeToString(b[:16])
 }
 
 // serverInboundUsers 筛出 now 时刻可用、且被该入站授权的用户,并按用户名排序。

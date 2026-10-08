@@ -71,7 +71,11 @@ func Xray(eps []Endpoint, templateJSON []byte) ([]byte, error) {
 			cfg[k] = v
 		}
 		cfg["remarks"] = tag
-		cfg["outbounds"] = append([]any{node}, tpl["outbounds"].([]any)...)
+		outbounds := append([]any{node}, tpl["outbounds"].([]any)...)
+		if ep.Fragment {
+			outbounds = applyFragment(outbounds, tag)
+		}
+		cfg["outbounds"] = outbounds
 		configs = append(configs, cfg)
 	}
 
@@ -80,6 +84,58 @@ func Xray(eps []Endpoint, templateJSON []byte) ([]byte, error) {
 		return nil, fmt.Errorf("xray: 序列化配置: %w", err)
 	}
 	return out, nil
+}
+
+// applyFragment 给节点出站挂上分片拨号链。
+//
+// xray 的分片用「出站链」做:代理出站(VLESS 等)的 sockopt.dialerProxy 指向
+// 一条带 fragment settings 的 freedom 出站,底层 TCP 由那条 freedom 发出,
+// ClientHello 在它拨号时被切片。所以这里做两件事:
+//  1. 新增一条 tag 为 "<proxy-tag>-fragment" 的 freedom 出站,带切片参数;
+//  2. 给节点出站(nodeTag,即 outbounds[0])挂 sockopt.dialerProxy 指向它。
+//
+// dialerProxy 在运行时才解析,`xray -test` 不会校验引用的 tag 是否存在;
+// 指向不存在的 tag 只在拨号时报错。所以必须同时加链尾,不能只挂引用。
+func applyFragment(outbounds []any, nodeTag string) []any {
+	fragTag := nodeTag + "-fragment"
+	// 模板里也许已经有这条链尾,有就不再加(用户手工配的分片链优先)。
+	found := false
+	for _, o := range outbounds {
+		obj, ok := o.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := obj["tag"].(string); t == fragTag {
+			found = true
+			break
+		}
+	}
+	if !found {
+		outbounds = append(outbounds, map[string]any{
+			"tag":      fragTag,
+			"protocol": "freedom",
+			"settings": map[string]any{
+				"fragment": map[string]any{
+					"packets":  "tlshello",
+					"length":   "50-100",
+					"interval": "10-20",
+				},
+			},
+		})
+	}
+
+	// 给节点出站挂 sockopt.dialerProxy,指向上面那条 fragment 出站。
+	node, ok := outbounds[0].(map[string]any)
+	if !ok {
+		return outbounds
+	}
+	sockopt, _ := node["sockopt"].(map[string]any)
+	if sockopt == nil {
+		sockopt = map[string]any{}
+	}
+	sockopt["dialerProxy"] = fragTag
+	node["sockopt"] = sockopt
+	return outbounds
 }
 
 // xrayTemplateOutbounds 取出底稿里的出口并返回它们占用的 tag。
@@ -134,11 +190,35 @@ func xrayNode(ep Endpoint, tag string) (map[string]any, error) {
 	case model.ProtocolTrojan:
 		server["password"] = ep.Password
 		out["settings"] = map[string]any{"servers": []any{server}}
+	case model.ProtocolShadowsocks:
+		server["method"] = "2022-blake3-aes-128-gcm"
+		server["password"] = ep.Password
+		out["settings"] = map[string]any{"servers": []any{server}}
+	case model.ProtocolWireguard:
+		// wireguard 是 L3:outbound 不走 vnext / servers,也没有 streamSettings。
+		if ep.WGPrivateKey == "" || ep.WGPublicKey == "" || ep.WGAddress == "" {
+			return nil, fmt.Errorf("xray: 端点 %q 的 wireguard 缺私钥/公钥/隧道地址", tag)
+		}
+		out["settings"] = map[string]any{
+			"secretKey": ep.WGPrivateKey,
+			"address":   []string{ep.WGAddress},
+			"peers": []any{map[string]any{
+				"publicKey": ep.WGPublicKey,
+				"endpoint":  fmt.Sprintf("%s:%d", ep.Address, ep.Port),
+				"keepAlive": 25,
+			}},
+		}
+		return out, nil
 	default:
 		return nil, fmt.Errorf("xray: 端点 %q 的协议 %q 不受支持", tag, ep.Protocol)
 	}
 
 	out["streamSettings"] = xrayStreamSettings(ep)
+
+	// mux 只在出站层:xray 的 mux 是 outbound.mux,与传输无关。
+	if ep.Mux {
+		out["mux"] = map[string]any{"enabled": true, "concurrency": 8}
+	}
 	return out, nil
 }
 
@@ -180,6 +260,20 @@ func xrayStreamSettings(ep Endpoint) map[string]any {
 		stream["grpcSettings"] = grpc
 	case model.NetworkTCP:
 		stream["tcpSettings"] = map[string]any{}
+	case model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkHTTPUpgrade:
+		// 三个传输共一个字段集;键名各不同,由调用方按 transport 写。
+		http := map[string]any{}
+		if ep.Path != "" {
+			http["path"] = ep.Path
+		}
+		if ep.Host != "" {
+			http["host"] = ep.Host
+		}
+		if ep.Mode != "" && ep.Mode != "auto" {
+			http["mode"] = ep.Mode
+		}
+		key := string(network) + "Settings"
+		stream[key] = http
 	}
 
 	switch ep.Security {

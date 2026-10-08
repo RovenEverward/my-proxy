@@ -149,25 +149,33 @@ type clashGroup struct {
 // security=none 想要的效果。AlterID 必须是指针,否则 vmess 的 alterId: 0 会被
 // omitempty 吃掉。
 type clashProxy struct {
-	Name              string            `yaml:"name"`
-	Type              string            `yaml:"type"`
-	Server            string            `yaml:"server"`
-	Port              int               `yaml:"port"`
-	UUID              string            `yaml:"uuid,omitempty"`
-	Password          string            `yaml:"password,omitempty"`
-	AlterID           *int              `yaml:"alterId,omitempty"`
-	Cipher            string            `yaml:"cipher,omitempty"`
-	Network           string            `yaml:"network"`
-	TLS               bool              `yaml:"tls,omitempty"`
-	UDP               bool              `yaml:"udp"`
-	ServerName        string            `yaml:"servername,omitempty"`
-	ALPN              []string          `yaml:"alpn,omitempty"`
-	Flow              string            `yaml:"flow,omitempty"`
-	ClientFingerprint string            `yaml:"client-fingerprint,omitempty"`
-	SkipCertVerify    bool              `yaml:"skip-cert-verify,omitempty"`
-	WSOpts            *clashWSOpts      `yaml:"ws-opts,omitempty"`
-	GRPCOpts          *clashGRPCOpts    `yaml:"grpc-opts,omitempty"`
-	RealityOpts       *clashRealityOpts `yaml:"reality-opts,omitempty"`
+	Name     string `yaml:"name"`
+	Type     string `yaml:"type"`
+	Server   string `yaml:"server"`
+	Port     int    `yaml:"port"`
+	UUID     string `yaml:"uuid,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	AlterID  *int   `yaml:"alterId,omitempty"`
+	Cipher   string `yaml:"cipher,omitempty"`
+	// wireguard 不写 network:它是 L3,这个字段只对代理类节点有意义。
+	Network           string                `yaml:"network,omitempty"`
+	TLS               bool                  `yaml:"tls,omitempty"`
+	UDP               bool                  `yaml:"udp"`
+	ServerName        string                `yaml:"servername,omitempty"`
+	ALPN              []string              `yaml:"alpn,omitempty"`
+	Flow              string                `yaml:"flow,omitempty"`
+	ClientFingerprint string                `yaml:"client-fingerprint,omitempty"`
+	SkipCertVerify    bool                  `yaml:"skip-cert-verify,omitempty"`
+	WSOpts            *clashWSOpts          `yaml:"ws-opts,omitempty"`
+	GRPCOpts          *clashGRPCOpts        `yaml:"grpc-opts,omitempty"`
+	XHTTPOpts         *clashXHTTPOpts       `yaml:"xhttp-opts,omitempty"`
+	HTTPUpgradeOpts   *clashHTTPUpgradeOpts `yaml:"httpupgrade-opts,omitempty"`
+	RealityOpts       *clashRealityOpts     `yaml:"reality-opts,omitempty"`
+
+	// ss-2022 没有 uuid/flow;wireguard 没有 server/port/网络层。
+	PrivateKey string `yaml:"private-key,omitempty"` // wireguard / ss-2022
+	PublicKey  string `yaml:"public-key,omitempty"`  // wireguard
+	IP         string `yaml:"ip,omitempty"`          // wireguard 隧道地址
 }
 
 // clashWSOpts 是 ws 的传输参数。
@@ -181,6 +189,19 @@ type clashGRPCOpts struct {
 	GRPCServiceName string `yaml:"grpc-service-name,omitempty"`
 }
 
+// clashXHTTPOpts 是 xhttp 的传输参数,只有 mihomo 认。
+type clashXHTTPOpts struct {
+	Path string `yaml:"path,omitempty"`
+	Host string `yaml:"host,omitempty"`
+	Mode string `yaml:"mode,omitempty"`
+}
+
+// clashHTTPOpts 是 httpupgrade 的传输参数,只有 mihomo 认。
+type clashHTTPUpgradeOpts struct {
+	Path string `yaml:"path,omitempty"`
+	Host string `yaml:"host,omitempty"`
+}
+
 // clashRealityOpts 是 REALITY 参数,只有 mihomo 认。
 type clashRealityOpts struct {
 	PublicKey string `yaml:"public-key"`
@@ -190,7 +211,8 @@ type clashRealityOpts struct {
 // clashNode 把一个端点转成 Clash 节点。
 func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
 	switch ep.Protocol {
-	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan:
+	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan,
+		model.ProtocolShadowsocks, model.ProtocolWireguard:
 	default:
 		return clashProxy{}, fmt.Errorf("render: Clash 不支持的协议 %q", ep.Protocol)
 	}
@@ -205,51 +227,80 @@ func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
 	}
 
 	p := clashProxy{
-		Name:    ep.Remark,
-		Type:    string(ep.Protocol),
-		Server:  ep.Address,
-		Port:    ep.Port,
-		Network: string(transport),
-		UDP:     true,
+		Name:   ep.Remark,
+		Server: ep.Address,
+		Port:   ep.Port,
+		UDP:    true,
 	}
 
 	switch ep.Protocol {
 	case model.ProtocolVLESS:
+		p.Type = "vless"
 		p.UUID = ep.UUID
 		p.Flow = ep.Flow
+		p.Network = string(transport)
 	case model.ProtocolVMess:
+		p.Type = "vmess"
 		p.UUID = ep.UUID
 		alterID := 0
 		p.AlterID = &alterID
 		p.Cipher = "auto"
+		p.Network = string(transport)
 	case model.ProtocolTrojan:
+		p.Type = "trojan"
 		p.Password = ep.Password
+		p.Network = string(transport)
+	case model.ProtocolShadowsocks:
+		p.Type = "ss"
+		p.Cipher = "2022-blake3-aes-128-gcm"
+		p.Password = ep.Password
+		p.Network = string(transport)
+	case model.ProtocolWireguard:
+		p.Type = "wireguard"
+		// xray 侧的密钥是无填充 RawURL base64,mihomo 只认带填充的标准 base64。
+		p.PrivateKey = paddedStdB64(ep.WGPrivateKey)
+		p.PublicKey = paddedStdB64(ep.WGPublicKey)
+		p.IP = ep.WGAddress
+		// wireguard 是 L3,mihomo 的 network 字段对它无意义,不写。
 	}
 
-	if sec == model.SecurityTLS || sec == model.SecurityReality {
-		// REALITY 也走 TLS:握手仍然是 TLS,只是证书校验换成了 REALITY。
-		p.TLS = true
-		p.ServerName = ep.SNI
-		p.ALPN = ep.ALPN
-		p.SkipCertVerify = ep.AllowInsecure
-	}
-	// client-fingerprint 是 mihomo 独有字段,原版 Clash 会拒绝未知字段。
-	if meta {
-		p.ClientFingerprint = ep.Fingerprint
-	}
-
-	switch transport {
-	case model.NetworkWS:
-		opts := &clashWSOpts{Path: ep.Path}
-		if ep.Host != "" {
-			opts.Headers = map[string]string{"Host": ep.Host}
+	// wireguard 是 L3,不走 TLS 层、不走路径/Host 传输参数。
+	if ep.Protocol != model.ProtocolWireguard {
+		if sec == model.SecurityTLS || sec == model.SecurityReality {
+			// REALITY 也走 TLS:握手仍然是 TLS,只是证书校验换成了 REALITY。
+			p.TLS = true
+			p.ServerName = ep.SNI
+			p.ALPN = ep.ALPN
+			p.SkipCertVerify = ep.AllowInsecure
 		}
-		p.WSOpts = opts
-	case model.NetworkGRPC:
-		p.GRPCOpts = &clashGRPCOpts{GRPCServiceName: ep.Path}
+		// client-fingerprint 是 mihomo 独有字段,原版 Clash 会拒绝未知字段。
+		if meta {
+			p.ClientFingerprint = ep.Fingerprint
+		}
+
+		switch transport {
+		case model.NetworkWS:
+			opts := &clashWSOpts{Path: ep.Path}
+			if ep.Host != "" {
+				opts.Headers = map[string]string{"Host": ep.Host}
+			}
+			p.WSOpts = opts
+		case model.NetworkGRPC:
+			p.GRPCOpts = &clashGRPCOpts{GRPCServiceName: ep.Path}
+		case model.NetworkXHTTP:
+			opts := &clashXHTTPOpts{Path: ep.Path, Host: ep.Host}
+			if ep.Mode != "" && ep.Mode != "auto" {
+				opts.Mode = ep.Mode
+			}
+			p.XHTTPOpts = opts
+		case model.NetworkHTTPUpgrade:
+			p.HTTPUpgradeOpts = &clashHTTPUpgradeOpts{Path: ep.Path, Host: ep.Host}
+			// splithttp 在 mihomo 里没有对应类型,xray 客户端侧也不建议再用——
+			// 订阅里遇到 splithttp 端点就在 clash/sing-box 端跳过,而不是给错类型。
+		}
 	}
 
-	if sec == model.SecurityReality {
+	if sec == model.SecurityReality && ep.Protocol != model.ProtocolWireguard {
 		opts := &clashRealityOpts{PublicKey: ep.RealityPub}
 		if ep.RealitySID != "" {
 			opts.ShortID = ep.RealitySID

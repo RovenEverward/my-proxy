@@ -91,7 +91,15 @@ var schema = []string{
 		reality_priv TEXT    NOT NULL DEFAULT '',
 		reality_pub  TEXT    NOT NULL DEFAULT '',
 		short_ids    TEXT    NOT NULL DEFAULT '[]',
-		flow         TEXT    NOT NULL DEFAULT ''
+		flow         TEXT    NOT NULL DEFAULT '',
+		xhttp_path   TEXT    NOT NULL DEFAULT '',
+		xhttp_host   TEXT    NOT NULL DEFAULT '',
+		xhttp_mode   TEXT    NOT NULL DEFAULT '',
+		wg_secret    TEXT    NOT NULL DEFAULT '',
+		wg_address   TEXT    NOT NULL DEFAULT '',
+		wg_mtu       INTEGER NOT NULL DEFAULT 0,
+		mux          INTEGER NOT NULL DEFAULT 0,
+		fragment     INTEGER NOT NULL DEFAULT 0
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_inbounds_node_id ON inbounds(node_id)`,
 
@@ -301,6 +309,25 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN notify_days_left INTEGER NOT NULL DEFAULT 3`},
 	{"settings", "notify_usage_percent",
 		`ALTER TABLE settings ADD COLUMN notify_usage_percent INTEGER NOT NULL DEFAULT 80`},
+	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
+	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
+	// 只在服务端出现,客户端拿的是公钥。
+	{"inbounds", "xhttp_path",
+		`ALTER TABLE inbounds ADD COLUMN xhttp_path TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "xhttp_host",
+		`ALTER TABLE inbounds ADD COLUMN xhttp_host TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "xhttp_mode",
+		`ALTER TABLE inbounds ADD COLUMN xhttp_mode TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "wg_secret",
+		`ALTER TABLE inbounds ADD COLUMN wg_secret TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "wg_address",
+		`ALTER TABLE inbounds ADD COLUMN wg_address TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "wg_mtu",
+		`ALTER TABLE inbounds ADD COLUMN wg_mtu INTEGER NOT NULL DEFAULT 0`},
+	{"inbounds", "mux",
+		`ALTER TABLE inbounds ADD COLUMN mux INTEGER NOT NULL DEFAULT 0`},
+	{"inbounds", "fragment",
+		`ALTER TABLE inbounds ADD COLUMN fragment INTEGER NOT NULL DEFAULT 0`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

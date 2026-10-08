@@ -33,6 +33,35 @@ func DerivePassword(key string) string {
 	return hex.EncodeToString(b[:16])
 }
 
+// DeriveSS2022Key 由 Key 派生 shadowsocks-2022 的用户密钥。
+//
+// 服务端密钥在入站上另存(见 serverconfig),这里只产出每个用户的 psk。
+// 加密方式固定为 2022-blake3-aes-128-gcm,密钥因此是 16 字节;
+// 写成 base64 与 xray 配置里 clients[].password 的写法一致。
+func DeriveSS2022Key(key string) string {
+	b := derive("ss2022", key)
+	return base64.StdEncoding.EncodeToString(b[:16])
+}
+
+// DeriveWGKeypair 由 Key 确定性派生一对 wireguard X25519 密钥。
+//
+// 不随机生成:同一用户每次订阅都要拿到同一把私钥,否则订阅刷新一次,客户端
+// 手里的 key 就和服务端 peers 里的 publicKey 对不上了。SHA-256 的输出本身
+// 就是合法的 X25519 私钥种子(X25519 对私钥做 clamp,任意 32 字节都可用)。
+//
+// 返回无填充 URL-safe base64,与 xray 配置里 secretKey / publicKey 的写法
+// 一致(实测 xray 认这种;渲染给 sing-box / mihomo 时再换成带填充的标准
+// base64,它们只认那种)。
+func DeriveWGKeypair(key string) (priv, pub string, err error) {
+	b := derive("wireguard", key)
+	privKey, err := ecdh.X25519().NewPrivateKey(b[:])
+	if err != nil {
+		return "", "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(privKey.Bytes()),
+		base64.RawURLEncoding.EncodeToString(privKey.PublicKey().Bytes()), nil
+}
+
 // NewKey 生成一份新的密钥种子。
 func NewKey() (string, error) {
 	var b [32]byte

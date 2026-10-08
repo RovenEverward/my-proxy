@@ -18,6 +18,11 @@ import (
 // 实测 `publicKey` 与 `password` 两个键名这版都认。
 const realRealityPub = "3ofQKNd7CYn1Oef2aB11do2LVErA2smY31lczNCF_Rk"
 
+// 一对真实的 wireguard 密钥(RawURLEncoding base64):占位串过不了 xray 的解码,
+// 拿 GenerateRealityKeypair 产出的这一对与 DeriveWGKeypair 是同一种编码。
+const scWGTestPriv = "V2whiAfjuJKAfimCWSgogDW7OesBIJSISZGjiRWRmX8"
+const scWGTestPub = "fh0bUIH0q9EjI8syMy2iDT1pwocGBoFcbWmauu1wc3o"
+
 func xrayEndpoints() []Endpoint {
 	return []Endpoint{
 		{Remark: "香港 tcp", Address: "hk.example.com", Port: 443, Protocol: model.ProtocolVLESS,
@@ -39,6 +44,23 @@ func xrayEndpoints() []Endpoint {
 			Password: "uk-pass", Network: model.NetworkTCP, Security: model.SecurityTLS, SNI: "uk.example.com"},
 		{Remark: "法国 trojan", Address: "fr.example.com", Port: 8443, Protocol: model.ProtocolTrojan,
 			Password: "fr-pass", Network: model.NetworkWS, Path: "/tj", Security: model.SecurityNone},
+		{Remark: "ss-2022", Address: "ss.example.com", Port: 443, Protocol: model.ProtocolShadowsocks,
+			Password: model.DeriveSS2022Key("key-a"), Network: model.NetworkTCP, Security: model.SecurityNone},
+		{Remark: "wireguard", Address: "wg.example.com", Port: 51820, Protocol: model.ProtocolWireguard,
+			WGPrivateKey: scWGTestPriv, WGPublicKey: scWGTestPub, WGAddress: "10.0.0.7/32",
+			Network: model.NetworkTCP, Security: model.SecurityNone},
+		{Remark: "vless xhttp", Address: "xh.example.com", Port: 443, Protocol: model.ProtocolVLESS,
+			UUID: "66666666-6666-4666-8666-666666666666", Network: model.NetworkXHTTP,
+			Path: "/x", Host: "cdn.example.com", Mode: "packet-up",
+			Security: model.SecurityTLS, SNI: "xh.example.com", Mux: true},
+		{Remark: "vless httpupgrade", Address: "hu.example.com", Port: 443, Protocol: model.ProtocolVLESS,
+			UUID: "77777777-7777-4777-8777-777777777777", Network: model.NetworkHTTPUpgrade,
+			Path: "/u", Host: "cdn2.example.com",
+			Security: model.SecurityTLS, SNI: "hu.example.com"},
+		{Remark: "vless fragment", Address: "fg.example.com", Port: 443, Protocol: model.ProtocolVLESS,
+			UUID: "88888888-8888-4888-8888-888888888888", Network: model.NetworkTCP,
+			Security: model.SecurityReality, SNI: "www.microsoft.com", Fingerprint: "chrome",
+			RealityPub: realRealityPub, RealitySID: "abcd", Fragment: true},
 	}
 }
 
@@ -292,4 +314,53 @@ func liveXrayBinary(t *testing.T) string {
 		t.Skip("本机没有 xray:设 MPX_XRAY_BIN,或把 xray 放进 PATH 后重跑")
 	}
 	return p
+}
+
+// 分片是「代理出站 sockopt.dialerProxy → 带 fragment settings 的 freedom 出站」
+// 的链式结构,`xray -test` 不解析 dialerProxy 的引用,所以只跑 -test 会把
+// 「指向不存在 tag」的配置误报通过。这里把链的两端都断言住。
+func TestXrayFragmentChainIsComplete(t *testing.T) {
+	ep := Endpoint{
+		Remark: "fg", Address: "fg.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, UUID: "88888888-8888-4888-8888-888888888888",
+		Security: model.SecurityReality, SNI: "www.microsoft.com",
+		RealityPub: realRealityPub, RealitySID: "abcd", Fragment: true,
+	}
+	data, err := Xray([]Endpoint{ep}, nil)
+	if err != nil {
+		t.Fatalf("Xray: %v", err)
+	}
+	var configs []map[string]any
+	if err := json.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("产物不是 JSON 数组: %v", err)
+	}
+	outbounds, _ := configs[0]["outbounds"].([]any)
+
+	// 节点出站挂着指向分片链尾的 dialerProxy。
+	node, _ := outbounds[0].(map[string]any)
+	sockopt, _ := node["sockopt"].(map[string]any)
+	dialer, _ := sockopt["dialerProxy"].(string)
+	if dialer == "" {
+		t.Fatalf("节点出站没有 sockopt.dialerProxy: %v", node)
+	}
+
+	// dialerProxy 指向的 tag 必须在 outbounds 里真实存在,且是带 fragment
+	// settings 的 freedom——缺一截就是运行时拨号才暴雷的坏链。
+	var frag map[string]any
+	for _, o := range outbounds {
+		obj, _ := o.(map[string]any)
+		if t, _ := obj["tag"].(string); t == dialer {
+			frag = obj
+		}
+	}
+	if frag == nil {
+		t.Fatalf("dialerProxy 指向 %q 但 outbounds 里没有这条", dialer)
+	}
+	if p, _ := frag["protocol"].(string); p != "freedom" {
+		t.Fatalf("分片链尾 %q 的协议是 %q,期望 freedom", dialer, p)
+	}
+	settings, _ := frag["settings"].(map[string]any)
+	if _, ok := settings["fragment"]; !ok {
+		t.Fatalf("分片链尾 %q 没有 settings.fragment", dialer)
+	}
 }

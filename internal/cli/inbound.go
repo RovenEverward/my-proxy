@@ -25,10 +25,10 @@ func init() {
 
 	inboundAddCmd.Flags().Int64Var(&inboundAddFlags.node, "node", 0, "所属节点 id,必填")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.tag, "tag", "", "入站 tag,空表示按协议与端口生成")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.protocol, "protocol", "", "协议:vless / vmess / trojan,必填")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.protocol, "protocol", "", "协议:vless / vmess / trojan / shadowsocks / wireguard,必填")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.listen, "listen", "", "监听地址,空表示 0.0.0.0")
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.port, "port", 0, "监听端口,必填")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.network, "network", string(model.NetworkTCP), "传输方式:tcp / ws / grpc")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.network, "network", string(model.NetworkTCP), "传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.security, "security", string(model.SecurityNone), "安全层:none / tls / reality")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.wsPath, "ws-path", "", "ws 传输的路径")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.grpcService, "grpc-service", "", "gRPC 传输的 serviceName")
@@ -40,6 +40,13 @@ func init() {
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.realityDest, "reality-dest", "", "REALITY 回落目标,如 www.microsoft.com:443")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.shortIDs, "short-ids", "", "REALITY shortId,逗号分隔")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.flow, "flow", "", "VLESS flow,如 xtls-rprx-vision")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.xhttpPath, "xhttp-path", "", "xhttp / splithttp / httpupgrade 的路径")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.xhttpHost, "xhttp-host", "", "xhttp / splithttp / httpupgrade 的 Host")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.xhttpMode, "xhttp-mode", "", "xhttp mode:auto / packet-up / stream-up / stream-one")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.wgAddress, "wg-address", "", "wireguard 服务端隧道地址,如 10.0.0.1/24")
+	inboundAddCmd.Flags().IntVar(&inboundAddFlags.wgMTU, "wg-mtu", 1420, "wireguard MTU")
+	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.mux, "mux", false, "订阅里给客户端开 mux")
+	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
 }
 
 var inboundListNode int64
@@ -62,6 +69,13 @@ var inboundAddFlags struct {
 	realityDest string
 	shortIDs    string
 	flow        string
+	xhttpPath   string
+	xhttpHost   string
+	xhttpMode   string
+	wgAddress   string
+	wgMTU       int
+	mux         bool
+	fragment    bool
 }
 
 // inboundDetail 把传输与安全层的几个可选参数压成一列,免得表格宽到看不完。
@@ -72,6 +86,18 @@ func inboundDetail(in model.Inbound) string {
 	}
 	if in.GRPCService != "" {
 		parts = append(parts, "service="+in.GRPCService)
+	}
+	if in.XHTTPPath != "" {
+		parts = append(parts, "xpath="+in.XHTTPPath)
+	}
+	if in.XHTTPHost != "" {
+		parts = append(parts, "xhost="+in.XHTTPHost)
+	}
+	if in.XHTTPMode != "" {
+		parts = append(parts, "xmode="+in.XHTTPMode)
+	}
+	if in.WGAddress != "" {
+		parts = append(parts, "wgaddr="+in.WGAddress)
 	}
 	if in.SNI != "" {
 		parts = append(parts, "sni="+in.SNI)
@@ -176,6 +202,14 @@ var inboundShowCmd = &cobra.Command{
 			{"REALITY 公钥", in.RealityPub},
 			{"REALITY shortId", strings.Join(in.ShortIDs, ",")},
 			{"flow", in.Flow},
+			{"xhttp 路径", in.XHTTPPath},
+			{"xhttp Host", in.XHTTPHost},
+			{"xhttp mode", in.XHTTPMode},
+			{"wg 私钥", in.WGSecretKey},
+			{"wg 隧道地址", in.WGAddress},
+			{"wg MTU", strconv.Itoa(in.WGMTU)},
+			{"mux", strconv.FormatBool(in.Mux)},
+			{"fragment", strconv.FormatBool(in.Fragment)},
 		})
 	},
 }
@@ -213,6 +247,13 @@ var inboundAddCmd = &cobra.Command{
 			RealityDest: inboundAddFlags.realityDest,
 			ShortIDs:    splitCSV(inboundAddFlags.shortIDs),
 			Flow:        inboundAddFlags.flow,
+			XHTTPPath:   inboundAddFlags.xhttpPath,
+			XHTTPHost:   inboundAddFlags.xhttpHost,
+			XHTTPMode:   inboundAddFlags.xhttpMode,
+			WGAddress:   inboundAddFlags.wgAddress,
+			WGMTU:       inboundAddFlags.wgMTU,
+			Mux:         inboundAddFlags.mux,
+			Fragment:    inboundAddFlags.fragment,
 		}
 		c, err := newClient()
 		if err != nil {

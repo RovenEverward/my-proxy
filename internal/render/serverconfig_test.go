@@ -114,6 +114,21 @@ type scCheck struct {
 	want any
 }
 
+// scWGPub 取用户的 wireguard 公钥,与 serverconfig 里逐用户派生是同一份逻辑。
+func scWGPub(key string) string {
+	_, pub, err := model.DeriveWGKeypair(key)
+	if err != nil {
+		panic(err)
+	}
+	return pub
+}
+
+// scWGClientAddr 同 wgClientAddr:断言里用它反推,而不是把派生结果抄进来——
+// 抄进来的常量只能证明「现在是这个值」,证明不了「和客户端拿的是同一个」。
+func scWGClientAddr(serverAddr, key string) string {
+	return wgClientAddr(serverAddr, key)
+}
+
 // TestServerConfig 是主表:逐字段断言各协议 / 传输 / 安全层的渲染结果。
 func TestServerConfig(t *testing.T) {
 	realityInbound := model.Inbound{
@@ -244,6 +259,88 @@ func TestServerConfig(t *testing.T) {
 				{[]any{"inbounds", 1, "streamSettings", "network"}, "tcp"},
 				{[]any{"inbounds", 1, "streamSettings", "security"}, "none"},
 				{[]any{"inbounds", 1, "streamSettings", "tcpSettings"}, map[string]any{}},
+			},
+		},
+		{
+			name: "shadowsocks-2022 tcp",
+			node: model.Node{ID: 1, APIPort: 10085},
+			inbounds: []model.Inbound{{
+				ID: 7, Tag: "ss2022", Protocol: model.ProtocolShadowsocks, Port: 18443,
+				Network: model.NetworkTCP, Security: model.SecurityNone,
+			}},
+			users: []model.User{scActiveUser("alice")},
+			checks: []scCheck{
+				{[]any{"inbounds", 1, "protocol"}, "shadowsocks"},
+				{[]any{"inbounds", 1, "settings", "method"}, "2022-blake3-aes-128-gcm"},
+				{[]any{"inbounds", 1, "settings", "password"}, "2kbTQpLqQGxva91SzTnB4g=="},
+				{[]any{"inbounds", 1, "settings", "clients", 0}, map[string]any{
+					"password": model.DeriveSS2022Key("key-alice"), "email": "alice",
+				}},
+			},
+		},
+		{
+			name: "wireguard",
+			node: model.Node{ID: 1, APIPort: 10085},
+			inbounds: []model.Inbound{{
+				ID: 8, Tag: "wg", Protocol: model.ProtocolWireguard, Port: 51820,
+				WGSecretKey: "WG-SERVER-PRIVATE-KEY", WGAddress: "10.0.0.1/24", WGMTU: 1420,
+			}},
+			users: []model.User{scActiveUser("alice")},
+			checks: []scCheck{
+				{[]any{"inbounds", 1, "protocol"}, "wireguard"},
+				{[]any{"inbounds", 1, "settings", "secretKey"}, "WG-SERVER-PRIVATE-KEY"},
+				// xray 只收 /32 接口地址,网段的前缀不能带下来。
+				{[]any{"inbounds", 1, "settings", "address"}, []any{"10.0.0.1/32"}},
+				{[]any{"inbounds", 1, "settings", "mtu"}, float64(1420)},
+				{[]any{"inbounds", 1, "settings", "peers", 0, "publicKey"}, scWGPub("key-alice")},
+				// allowedIPs 与 wgClientAddr 派生的客户端地址一致。
+				{[]any{"inbounds", 1, "settings", "peers", 0, "allowedIPs"}, []any{scWGClientAddr("10.0.0.1/24", "key-alice")}},
+			},
+		},
+		{
+			name: "vless xhttp none",
+			node: model.Node{ID: 1, APIPort: 10085},
+			inbounds: []model.Inbound{{
+				ID: 9, Tag: "xh", Protocol: model.ProtocolVLESS, Port: 443,
+				Network: model.NetworkXHTTP, Security: model.SecurityNone,
+				XHTTPPath: "/x", XHTTPHost: "cdn.example.com", XHTTPMode: "packet-up",
+			}},
+			users: []model.User{scActiveUser("alice")},
+			checks: []scCheck{
+				{[]any{"inbounds", 1, "streamSettings", "network"}, "xhttp"},
+				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "path"}, "/x"},
+				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "host"}, "cdn.example.com"},
+				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "mode"}, "packet-up"},
+			},
+		},
+		{
+			name: "vless splithttp none",
+			node: model.Node{ID: 1, APIPort: 10085},
+			inbounds: []model.Inbound{{
+				ID: 10, Tag: "sh", Protocol: model.ProtocolVLESS, Port: 444,
+				Network: model.NetworkSplitHTTP, Security: model.SecurityNone,
+				XHTTPPath: "/s", XHTTPHost: "cdn2.example.com",
+			}},
+			users: []model.User{scActiveUser("alice")},
+			checks: []scCheck{
+				{[]any{"inbounds", 1, "streamSettings", "network"}, "splithttp"},
+				{[]any{"inbounds", 1, "streamSettings", "splithttpSettings", "path"}, "/s"},
+				{[]any{"inbounds", 1, "streamSettings", "splithttpSettings", "host"}, "cdn2.example.com"},
+			},
+		},
+		{
+			name: "vless httpupgrade none",
+			node: model.Node{ID: 1, APIPort: 10085},
+			inbounds: []model.Inbound{{
+				ID: 11, Tag: "hu", Protocol: model.ProtocolVLESS, Port: 445,
+				Network: model.NetworkHTTPUpgrade, Security: model.SecurityNone,
+				XHTTPPath: "/u", XHTTPHost: "cdn3.example.com",
+			}},
+			users: []model.User{scActiveUser("alice")},
+			checks: []scCheck{
+				{[]any{"inbounds", 1, "streamSettings", "network"}, "httpupgrade"},
+				{[]any{"inbounds", 1, "streamSettings", "httpupgradeSettings", "path"}, "/u"},
+				{[]any{"inbounds", 1, "streamSettings", "httpupgradeSettings", "host"}, "cdn3.example.com"},
 			},
 		},
 	}
@@ -445,7 +542,7 @@ func TestServerConfig_UnsupportedInput(t *testing.T) {
 		name    string
 		inbound model.Inbound
 	}{
-		{name: "不支持的协议", inbound: model.Inbound{ID: 1, Protocol: model.Protocol("shadowsocks"), Port: 80}},
+		{name: "不支持的协议", inbound: model.Inbound{ID: 1, Protocol: model.Protocol("vless-reality"), Port: 80}},
 		{name: "不支持的传输", inbound: model.Inbound{ID: 1, Protocol: model.ProtocolVLESS, Network: model.Network("kcp"), Port: 80}},
 		{name: "不支持的安全层", inbound: model.Inbound{ID: 1, Protocol: model.ProtocolVLESS, Security: model.Security("xtls"), Port: 80}},
 		{name: "空协议", inbound: model.Inbound{ID: 1, Port: 80}},

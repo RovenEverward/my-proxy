@@ -15,11 +15,17 @@ const (
 	ProtocolVLESS  Protocol = "vless"
 	ProtocolVMess  Protocol = "vmess"
 	ProtocolTrojan Protocol = "trojan"
+	// ProtocolShadowsocks 只覆盖 shadowsocks-2022:加密方式在渲染层写死
+	// 2022-blake3-aes-128-gcm,不把 aes-*-gcm 那代旧加密放进来。
+	ProtocolShadowsocks Protocol = "shadowsocks"
+	// ProtocolWireguard 是一个 L3 协议,不套传输与安全层:wireguard 自己的
+	// 握手已经是加密通道,外面再包 tls/reality 没有意义。
+	ProtocolWireguard Protocol = "wireguard"
 )
 
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolVLESS, ProtocolVMess, ProtocolTrojan:
+	case ProtocolVLESS, ProtocolVMess, ProtocolTrojan, ProtocolShadowsocks, ProtocolWireguard:
 		return true
 	}
 	return false
@@ -32,11 +38,17 @@ const (
 	NetworkTCP  Network = "tcp"
 	NetworkWS   Network = "ws"
 	NetworkGRPC Network = "grpc"
+	// NetworkXHTTP 是 xray 的新方向:splithttp 与 httpupgrade 都已停止演进,
+	// xhttp 把两者的特性收进一个传输。这里仍然渲染 splithttp / httpupgrade,
+	// 因为存量客户端(v2rayNG 旧版、部分 mihomo)还认这两个名字。
+	NetworkXHTTP       Network = "xhttp"
+	NetworkSplitHTTP   Network = "splithttp"
+	NetworkHTTPUpgrade Network = "httpupgrade"
 )
 
 func (n Network) Valid() bool {
 	switch n {
-	case NetworkTCP, NetworkWS, NetworkGRPC:
+	case NetworkTCP, NetworkWS, NetworkGRPC, NetworkXHTTP, NetworkSplitHTTP, NetworkHTTPUpgrade:
 		return true
 	}
 	return false
@@ -123,6 +135,26 @@ type Inbound struct {
 	WSPath      string `json:"ws_path,omitempty"`
 	GRPCService string `json:"grpc_service,omitempty"`
 
+	// HTTP 系传输(xhttp / splithttp / httpupgrade)的路径与 Host。
+	//
+	// 与 WSPath / GRPCService 分开存而不是复用一个 path 字段:同一条入站改传输
+	// 方式时,各自的配置互不污染,改回去不用重填;也和 Host 的覆盖模型一致
+	// (入站有自己的默认 path,Host 再覆盖)。
+	XHTTPPath string `json:"xhttp_path,omitempty"`
+	XHTTPHost string `json:"xhttp_host,omitempty"`
+	// XHTTPMode 只对 xhttp 有效:auto / packet-up / stream-up / stream-one。
+	// 空表示 auto,不写进配置。splithttp / httpupgrade 没有这个维度。
+	XHTTPMode string `json:"xhttp_mode,omitempty"`
+
+	// WireGuard 服务端私钥。生成逻辑与 RealityPriv 一致(控制面生成、改入站时
+	// 原样留住),理由也一样:调用方单独给一个公钥只会给出一对配不上的密钥。
+	// 不下发到客户端,客户端拿的是从它派生的公钥。
+	WGSecretKey string `json:"-"`
+	// WGAddress 是服务端在隧道里的地址(带前缀),如 10.0.0.1/24。
+	WGAddress string `json:"wg_address,omitempty"`
+	// WGMTU 缺省 1420(wireguard 经验值:1500 减去外层 IP/UDP 头还有富余)。
+	WGMTU int `json:"wg_mtu,omitempty"`
+
 	// TLS / REALITY
 	SNI         string   `json:"sni,omitempty"`
 	ALPN        []string `json:"alpn,omitempty"`
@@ -135,6 +167,15 @@ type Inbound struct {
 	ShortIDs    []string `json:"short_ids,omitempty"`
 
 	Flow string `json:"flow,omitempty"` // VLESS flow,如 xtls-rprx-vision
+
+	// Mux / Fragment 是客户端侧特性,写进订阅而不写进节点配置:
+	// 是否启用由客户端决定,节点端不需要知道。
+	//
+	// Mux 只在 xray / sing-box 客户端生效(mihomo 不认这个字段)。
+	Mux bool `json:"mux,omitempty"`
+	// Fragment 只在 xray 客户端生效:分片在 sockopt 层,Clash 与 sing-box
+	// 都没有对应字段。
+	Fragment bool `json:"fragment,omitempty"`
 }
 
 // Host 是一个入站对外暴露的一种方式。

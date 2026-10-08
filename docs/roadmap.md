@@ -69,11 +69,13 @@
 
 **验证**:1000 个用户的列表与批量操作耗时达标(宽松上限);订阅页与换地址真机验证过(浏览器拿页面、客户端拿配置、旧地址 404、新地址可用、`Profile-Web-Page-Url` 正确);通知全在单测里验(假 webhook 服务端):同一件事只发一次、续费/重置后能再发、发失败不记账且下一轮重试、没配地址不发也不记账、停用用户跳过、设置校验与测试接口的 200/400/502。
 
-## 批 5:协议支持(产品决策,单独成批)
+## 批 5:协议支持(已完成)
 
 **为什么**:今天只有 vless / vmess / trojan × tcp / ws / grpc × none / tls / reality。缺的、且重要的:hysteria2、tuic(丢包网络刚需)、shadowsocks-2022、wireguard;传输层 xhttp / splithttp、httpupgrade;客户端特性 mux / fragment。
 
 **注意**:这是加性的,但要同时动四层 —— 模型枚举、四个渲染器、节点侧配置渲染、测试。是产品决策不是运维决策,单独成批,不混进上面任何一类。
+
+**结果**:加了 shadowsocks-2022 与 wireguard 两个协议、xhttp / splithttp / httpupgrade 三个传输、mux 与 fragment 两个客户端开关。hysteria2 与 tuic 不在 xray 26.3.27 的协议清单里,这一批不做(记 [open-questions.md](open-questions.md))。wireguard 的隧道地址按用户 key 哈希派生,服务器 peer 带 `allowedIPs`,理由见 [decisions.md](decisions.md) 第 29 条。
 
 **验证**:每种新协议 × 传输 × 安全层组合过 `xray -test`,客户端实测出网。
 

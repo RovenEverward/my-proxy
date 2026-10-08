@@ -55,6 +55,13 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 | 每条远端命令各付一次 ssh 握手 | 没有开连接复用,实测一次 `node sync` 是 6 次 ssh(约 11 秒)、一次 `node install` 是 14 次(约 25 秒),大头是握手不是传输 | 要不要开 `ControlMaster` / `ControlPersist`;代价是多一份连接状态要管(套接字路径、残留、和后台任务并发共用) |
 | `settings.rules` 顺序 | 按数组顺序匹配,顺序即优先级 | 要不要独立的优先级字段 |
 
+## 5. hysteria2 与 tuic 不在 xray 支持里
+
+批 5 最初列了这两个协议,实测 xray 26.3.27 的 `inbound.protocol` 不认 `hysteria2` /
+`tuic`,配置直接被拒。它们只在 sing-box / mihomo 有。这一批只做 xray 能跑的:
+shadowsocks-2022、wireguard、xhttp / splithttp / httpupgrade、mux、fragment。
+要加 hy2 / tuic 就得让节点同时跑第二种协议实现,是另一个数量级的改动,先记在这里。
+
 ## 待确认项
 
 1. [README.md](../README.md) 的「不做什么」表里,哪几条不该是不做,而是还没排在前面?

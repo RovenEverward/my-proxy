@@ -58,7 +58,18 @@ func SingBox(eps []Endpoint, templateJSON []byte) ([]byte, error) {
 	cleanJSON(cfg)
 
 	// 先渲染节点:重名 tag 在这里就已经消歧,后面的 selector / urltest 直接用结果。
-	nodes, tags, err := singboxNodes(eps)
+	// wireguard 端点不走 outbound(1.13 起单独顶层段),先拆出来。
+	var wgEps []Endpoint
+	var proxyEps []Endpoint
+	for _, ep := range eps {
+		if ep.Protocol == model.ProtocolWireguard {
+			wgEps = append(wgEps, ep)
+		} else {
+			proxyEps = append(proxyEps, ep)
+		}
+	}
+
+	nodes, tags, err := singboxNodes(proxyEps)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +79,29 @@ func SingBox(eps []Endpoint, templateJSON []byte) ([]byte, error) {
 		return nil, err
 	}
 	cfg["outbounds"] = outbounds
+
+	// wireguard 是 endpoint 不是 outbound:sing-box 1.13 删掉了 outbound 形态,
+	// 让 endpoint 通过路由规则引流。端点之间靠 tag 区分,不与 outbound tag 冲突。
+	// 每个 wireguard endpoint 进 selector 的候选,让用户能手动选;不进 urltest
+	// (endpoint 不参与 outbound 测速)。
+	wgTags := make([]any, 0, len(wgEps))
+	for i, ep := range wgEps {
+		epTag := fmt.Sprintf("wg-%d", i)
+		cfg["endpoints"] = append([]any{singboxWireguardEndpoint(ep, epTag)},
+			toAnySlice(cfg["endpoints"])...)
+		wgTags = append(wgTags, epTag)
+	}
+	// wireguard endpoint 也要能被 selector 选中:把 tag 混进 proxy 的候选列表。
+	// endpoint 不在 outbound 数组里,但 selector 的候选可以指到 endpoint。
+	if outs, ok := cfg["outbounds"].([]any); ok {
+		for _, o := range outs {
+			if m, ok := o.(map[string]any); ok && m["tag"] == singboxProxyTag {
+				if cands, ok := m["outbounds"].([]any); ok {
+					m["outbounds"] = append(cands, wgTags...)
+				}
+			}
+		}
+	}
 
 	if err := singboxEnsureFinal(cfg); err != nil {
 		return nil, err
@@ -127,6 +161,10 @@ func singboxNodes(eps []Endpoint) ([]any, []string, error) {
 
 // singboxNode 把一个端点渲染成 outbound。
 func singboxNode(ep Endpoint, tag string) (map[string]any, error) {
+	// wireguard 不走 outbound(1.13 起是顶层 endpoints),这里只拦漏网的。
+	if ep.Protocol == model.ProtocolWireguard {
+		return nil, fmt.Errorf("sing-box: 端点 %q 的 wireguard 协议应走 endpoint 而非 outbound", tag)
+	}
 	if !ep.Protocol.Valid() {
 		return nil, fmt.Errorf("sing-box: 端点 %q 的协议 %q 不受支持", tag, ep.Protocol)
 	}
@@ -156,15 +194,58 @@ func singboxNode(ep Endpoint, tag string) (map[string]any, error) {
 		node["alter_id"] = 0
 	case model.ProtocolTrojan:
 		node["password"] = ep.Password
+	case model.ProtocolShadowsocks:
+		node["method"] = "2022-blake3-aes-128-gcm"
+		node["password"] = ep.Password
 	}
 
 	if tls, ok := singboxTLS(ep); ok {
 		node["tls"] = tls
 	}
+	// sing-box 的 shadowsocks 没有 transport 字段:ss-2022 只走裸 TCP,
+	// 别的传输形态在服务端本来就很少见,这里直接报错,免得订阅里
+	// 出一条连不上的节点。
+	if ep.Protocol == model.ProtocolShadowsocks && ep.Network != "" && ep.Network != model.NetworkTCP {
+		return nil, fmt.Errorf("sing-box: 端点 %q 的 shadowsocks 不支持传输 %q", tag, ep.Network)
+	}
 	if tr := singboxTransport(ep); tr != nil {
 		node["transport"] = tr
 	}
+
+	// mux 是 outbound.multiplex:sing-box 的 mux 写在这一层,不在 stream 层。
+	if ep.Mux {
+		node["multiplex"] = map[string]any{"enabled": true, "protocol": "smux", "max_connections": 4}
+	}
 	return node, nil
+}
+
+// singboxWireguardEndpoint 把 wireguard 端点渲染成 sing-box 的 endpoints[] 项。
+//
+// sing-box 1.13 删掉了 wireguard outbound,用 endpoint 取代;endpoint 的引流靠
+// route.final 指向 endpoint tag,而不是 outbound 列表。
+func singboxWireguardEndpoint(ep Endpoint, tag string) map[string]any {
+	// xray 侧的密钥是无填充 RawURL base64,sing-box 只认带填充的标准 base64。
+	return map[string]any{
+		"type":        "wireguard",
+		"tag":         tag,
+		"mtu":         1420,
+		"address":     []string{ep.WGAddress},
+		"private_key": paddedStdB64(ep.WGPrivateKey),
+		"peers": []any{map[string]any{
+			"address":     ep.Address,
+			"port":        ep.Port,
+			"public_key":  paddedStdB64(ep.WGPublicKey),
+			"allowed_ips": []string{"0.0.0.0/0", "::/0"},
+		}},
+	}
+}
+
+// toAnySlice 把 any 转 []any,失败时返回空切片。
+func toAnySlice(v any) []any {
+	if s, ok := v.([]any); ok {
+		return s
+	}
+	return nil
 }
 
 // singboxTLS 生成端点的 tls 块,不需要时返回 false。
@@ -184,10 +265,15 @@ func singboxTLS(ep Endpoint) (map[string]any, bool) {
 	if len(ep.ALPN) > 0 {
 		tls["alpn"] = ep.ALPN
 	}
-	if ep.Fingerprint != "" {
+	// sing-box 要求 reality 必须带 utls;没设指纹时给 chrome,与 xray 侧的默认一致。
+	fp := ep.Fingerprint
+	if ep.Security == model.SecurityReality && fp == "" {
+		fp = "chrome"
+	}
+	if fp != "" {
 		tls["utls"] = map[string]any{
 			"enabled":     true,
-			"fingerprint": ep.Fingerprint,
+			"fingerprint": fp,
 		}
 	}
 	if ep.Security == model.SecurityReality {
@@ -211,6 +297,18 @@ func singboxTransport(ep Endpoint) map[string]any {
 		return tr
 	case model.NetworkGRPC:
 		return map[string]any{"type": "grpc", "service_name": ep.Path}
+	case model.NetworkXHTTP, model.NetworkHTTPUpgrade:
+		// sing-box 没有独立的 xhttp/httpupgrade 类型:都走 type=http 加 path/host。
+		// 上游的 splithttp 同样没有对应类型,这里不映射——让订阅方在
+		// sing-box 上看不到该节点,比悄悄降级成 plain http 好。
+		tr := map[string]any{"type": "http"}
+		if ep.Path != "" {
+			tr["path"] = ep.Path
+		}
+		if ep.Host != "" {
+			tr["host"] = ep.Host
+		}
+		return tr
 	default:
 		return nil
 	}
