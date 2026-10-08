@@ -8,11 +8,12 @@ nodes ──1:N──► inbounds ──1:N──► hosts
                   │  users.inbound_ids(JSON 数组,空 = 全部)
                   ▼
                 users          settings(单行)
+                                traffic_samples(只追加:node_id 外键级联,username 是文本)
 ```
 
-级联删除:`ON DELETE CASCADE`。删节点连带删它的入站与入口,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
+级联删除:`ON DELETE CASCADE`。删节点连带删它的入站、入口与流量采样,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
 
-## 五张表
+## 六张表
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
@@ -21,8 +22,11 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |
 | `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules` | `rules` 是 `[{pattern, result}]` 的 JSON 文本 |
+| `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
 
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
+
+`traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`(见 [decisions.md](decisions.md) 第 9 条)。
 
 ## 语义
 

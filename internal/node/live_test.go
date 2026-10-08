@@ -271,10 +271,12 @@ func TestLiveXrayAPIContract(t *testing.T) {
 	}
 	t.Logf("真实 xray 上读到 bob 的计数: uplink=%d downlink=%d", up, down)
 
-	// ④ 读走即清零:控制面按周期取增量累加,第二个周期不该把同一段流量再算一次。
+	// ④ 读的是累计值,不清零:再读一次只会持平或更多。控制面自己存上次值算差,
+	// 节点上的读数不再被抹掉。若这里变回 0,说明 statsquery 又带上了 -reset,
+	// 那段流量在节点上就没有第二份可对了。
 	up2, down2 := liveTraffic(t, ctx, runner, node, "bob")
-	if up2 != 0 || down2 != 0 {
-		t.Fatalf("采样应当把计数清零,第二次却读到 up=%d down=%d", up2, down2)
+	if up2 < up || down2 < down {
+		t.Fatalf("累计计数不该变小:第一次 up=%d down=%d,第二次 up=%d down=%d", up, down, up2, down2)
 	}
 
 	// ⑤ 摘掉用户(到期、超限走的路径)。

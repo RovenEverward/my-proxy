@@ -3,8 +3,9 @@
 // 只有控制面进程打开它:本机 CLI 是纯 HTTP 客户端,不碰数据库文件。库文件由
 // 控制面独占,所以这里不做跨进程协调,只保证本进程内的并发安全。
 //
-// 表结构刻意保持精简:五张表对应五类对象。SubscriptionRule 属于 Settings,
-// 存成 settings.rules 的 JSON 文本;Inbound.ALPN / Inbound.ShortIDs /
+// 表结构刻意保持精简:五类对象各一张表(nodes / inbounds / hosts / users /
+// settings),外加一张只追加的流量采样表 traffic_samples。SubscriptionRule 属于
+// Settings,存成 settings.rules 的 JSON 文本;Inbound.ALPN / Inbound.ShortIDs /
 // Host.ALPN / User.InboundIDs 这些切片字段同样存 JSON 文本,不另建关联表。
 package store
 
@@ -125,6 +126,27 @@ var schema = []string{
 	)`,
 	// sub_token 上只建普通索引:没设 token 的用户都是空串,唯一索引会互相冲突。
 	`CREATE INDEX IF NOT EXISTS idx_users_sub_token ON users(sub_token)`,
+
+	// traffic_samples 是流量的历史采样,只追加、不更新:节点上报的累计值变了就写
+	// 一行。它是「上次累计值」唯一的落点 —— 每用户每节点读最近一行当基准,不另设
+	// 状态字段;同一批数据也支撑按区间重算用量与画曲线。
+	//
+	// node_id 指向 nodes 并随节点级联删除:节点都没了,它的采样也拼不出对账,和
+	// inbounds / hosts 一个做法。username 这里没有外键 —— 整个库都用用户名字符串
+	// 标识用户,本来就没有指向 users 的外键。
+	//
+	// 索引按 (node_id, username, sampled_at):采样总是先定节点、再在该节点下遍历
+	// 用户,这个顺序能让「每用户最近一行」直接顺着索引扫一遍。
+	`CREATE TABLE IF NOT EXISTS traffic_samples (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		username   TEXT    NOT NULL,
+		node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+		sampled_at INTEGER NOT NULL,
+		uplink     INTEGER NOT NULL,
+		downlink   INTEGER NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_traffic_samples_node_user_at
+		ON traffic_samples(node_id, username, sampled_at)`,
 
 	// settings 是单行表:id 恒为 1。
 	`CREATE TABLE IF NOT EXISTS settings (

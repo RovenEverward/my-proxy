@@ -73,8 +73,8 @@ func TestTickSamplesBeforeReconciling(t *testing.T) {
 	if !r.ran("api rmu") {
 		t.Fatalf("采样在收敛之后跑了:这一轮超限的 bob 要等下一轮才被摘掉。命令序列:%v", r.callList())
 	}
-	if !r.ran("-reset") {
-		t.Fatalf("采样没有带 -reset,流量会被重复累加:%v", r.callList())
+	if r.ran("-reset") {
+		t.Fatalf("采样又清零了:清零后节点上就没有第二份读数,账再也拼不回来:%v", r.callList())
 	}
 }
 

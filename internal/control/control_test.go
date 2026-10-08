@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -133,12 +134,19 @@ func trafficReply(pairs ...any) string {
 
 func newTestControl(t *testing.T, r *fakeRunner) (*Control, *store.Store) {
 	t.Helper()
+	return newLoggingControl(t, r, slog.New(slog.DiscardHandler))
+}
+
+// newLoggingControl 与 newTestControl 相同,但让调用方自己给 logger —— 需要断言
+// 某条日志真的打出来时用。
+func newLoggingControl(t *testing.T, r *fakeRunner, logger *slog.Logger) (*Control, *store.Store) {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "mpx.db"))
 	if err != nil {
 		t.Fatalf("开库: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	return New(st, r, slog.New(slog.DiscardHandler), filepath.Join(t.TempDir(), "xray")), st
+	return New(st, r, logger, filepath.Join(t.TempDir(), "xray")), st
 }
 
 func addUser(t *testing.T, st *store.Store, u model.User) model.User {
@@ -404,10 +412,11 @@ func TestSampleTrafficSkipsZerosAndSurvivesBadUser(t *testing.T) {
 	addUser(t, st, activeUser("bob"))
 	addUser(t, st, activeUser("carol"))
 
-	if err := c.SampleTraffic(context.Background(), n); err != nil {
+	if err := c.SampleTraffic(context.Background(), n, time.Now()); err != nil {
 		t.Fatalf("SampleTraffic: %v", err)
 	}
 
+	// 第一次采到 = 历史里没有基准,增量就是本次累计值。
 	alice, _ := st.GetUser("alice")
 	if alice.UsedTraffic != 1000 {
 		t.Errorf("alice 应当是 1000,实际 %d", alice.UsedTraffic)
@@ -421,10 +430,28 @@ func TestSampleTrafficSkipsZerosAndSurvivesBadUser(t *testing.T) {
 	if carol.UsedTraffic != 10 {
 		t.Errorf("carol 应当是 10,实际 %d(前面某个用户写失败就中断了)", carol.UsedTraffic)
 	}
+
+	samples, err := st.LatestTrafficSamples(n.ID)
+	if err != nil {
+		t.Fatalf("读回采样: %v", err)
+	}
+	// 没在 users 里的用户也照样落一行:节点上报的是事实,基准不能因为库里没这个
+	// 人就停在原地。
+	for _, name := range []string{"alice", "carol", "没这个人"} {
+		if _, ok := samples[name]; !ok {
+			t.Errorf("%s 的采样没落进历史表:%v", name, samples)
+		}
+	}
+	if _, ok := samples["bob"]; ok {
+		t.Errorf("增量是 0 的不该写历史(每次都写会让表白白长大):%v", samples)
+	}
+	if got := samples["alice"]; got.Uplink != 100 || got.Downlink != 900 {
+		t.Errorf("alice 落表的应当是累计值 100/900,实际 %d/%d", got.Uplink, got.Downlink)
+	}
 }
 
-// 采集是「读走即清零」的,所以脚本里必须带 -reset,否则流量会被重复累加。
-func TestSampleTrafficUsesReset(t *testing.T) {
+// 读的是累计值,不能再带 -reset:清零之后节点上就没有第二份读数,账再也拼不回来。
+func TestSampleTrafficReadsCumulativeCounters(t *testing.T) {
 	r := &fakeRunner{replies: []reply{
 		{keyword: "statsquery", out: trafficReply("alice", "uplink", 1, "alice", "downlink", 1)},
 	}}
@@ -432,11 +459,123 @@ func TestSampleTrafficUsesReset(t *testing.T) {
 	n := addNode(t, st, "hk", "node.example.com")
 	addUser(t, st, activeUser("alice"))
 
-	if err := c.SampleTraffic(context.Background(), n); err != nil {
+	if err := c.SampleTraffic(context.Background(), n, time.Now()); err != nil {
 		t.Fatalf("SampleTraffic: %v", err)
 	}
-	if !r.ran("-reset") {
-		t.Fatalf("statsquery 没有带 -reset,流量会被重复累加:%v", r.callList())
+	if r.ran("-reset") {
+		t.Fatalf("statsquery 又带上了 -reset,清零后这段流量在节点上就没有第二份了:%v", r.callList())
+	}
+}
+
+// 第二次采样要减掉上次的累计值,而不是把读到的数再加一遍。
+func TestSampleTrafficComputesDeltaFromHistory(t *testing.T) {
+	r := &fakeRunner{}
+	c, st := newTestControl(t, r)
+	n := addNode(t, st, "hk", "node.example.com")
+	addUser(t, st, activeUser("alice"))
+
+	first := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	r.replies = []reply{{keyword: "statsquery", out: trafficReply(
+		"alice", "uplink", 100, "alice", "downlink", 900)}}
+	if err := c.SampleTraffic(context.Background(), n, first); err != nil {
+		t.Fatalf("第一轮 SampleTraffic: %v", err)
+	}
+
+	second := first.Add(30 * time.Second)
+	r.replies = []reply{{keyword: "statsquery", out: trafficReply(
+		"alice", "uplink", 160, "alice", "downlink", 950)}}
+	if err := c.SampleTraffic(context.Background(), n, second); err != nil {
+		t.Fatalf("第二轮 SampleTraffic: %v", err)
+	}
+
+	alice, _ := st.GetUser("alice")
+	// 1000(首次) + 60 + 50(第二轮增量)
+	if alice.UsedTraffic != 1110 {
+		t.Fatalf("第二轮应当只累加增量 110,总用量应为 1110,实际 %d", alice.UsedTraffic)
+	}
+	if alice.LifetimeUsedTraffic != 1110 {
+		t.Errorf("累计用量应当同步涨到 1110,实际 %d", alice.LifetimeUsedTraffic)
+	}
+
+	rows, err := st.ListTrafficSamples("alice", n.ID, first, second)
+	if err != nil {
+		t.Fatalf("读回采样: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("两轮应当各落一行采样,实际 %d 行:%v", len(rows), rows)
+	}
+	if rows[0].Uplink != 100 || rows[1].Uplink != 160 {
+		t.Errorf("落表的应当是累计值 100 → 160,实际 %d → %d", rows[0].Uplink, rows[1].Uplink)
+	}
+}
+
+// 累计值回退 = xray 重启过。这是最要紧的一条:以前这种账会静默消失,现在必须看
+// 得见(打日志),而且不能把用户用量倒扣回去。
+func TestSampleTrafficLogsRestartAndKeepsBaseline(t *testing.T) {
+	var logs bytes.Buffer
+	r := &fakeRunner{}
+	c, st := newLoggingControl(t, r, slog.New(slog.NewTextHandler(&logs, nil)))
+	n := addNode(t, st, "hk", "node.example.com")
+	addUser(t, st, activeUser("alice"))
+
+	before := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	r.replies = []reply{{keyword: "statsquery", out: trafficReply(
+		"alice", "uplink", 5000, "alice", "downlink", 5000)}}
+	if err := c.SampleTraffic(context.Background(), n, before); err != nil {
+		t.Fatalf("第一轮 SampleTraffic: %v", err)
+	}
+
+	// xray 重启,计数从零重来。
+	after := before.Add(30 * time.Second)
+	r.replies = []reply{{keyword: "statsquery", out: trafficReply(
+		"alice", "uplink", 7, "alice", "downlink", 3)}}
+	if err := c.SampleTraffic(context.Background(), n, after); err != nil {
+		t.Fatalf("第二轮 SampleTraffic: %v", err)
+	}
+
+	alice, _ := st.GetUser("alice")
+	if alice.UsedTraffic != 10000 {
+		t.Fatalf("回退那一轮不该动用量,应当仍是 10000,实际 %d", alice.UsedTraffic)
+	}
+	if got := logs.String(); !strings.Contains(got, "疑似 xray 重启") {
+		t.Errorf("累计值回退没有打日志,账又会静默消失。日志:%s", got)
+	}
+
+	// 基准要更新到重启后的累计值,否则下一轮还按 5000 算,会一直报同一个回退。
+	next := after.Add(30 * time.Second)
+	r.replies = []reply{{keyword: "statsquery", out: trafficReply(
+		"alice", "uplink", 10, "alice", "downlink", 4)}}
+	if err := c.SampleTraffic(context.Background(), n, next); err != nil {
+		t.Fatalf("第三轮 SampleTraffic: %v", err)
+	}
+	alice, _ = st.GetUser("alice")
+	if alice.UsedTraffic != 10004 {
+		t.Fatalf("重启后的新增量应当继续累加:期望 10004,实际 %d(基准还停在重启前)", alice.UsedTraffic)
+	}
+}
+
+// 节点不可达:这一轮跳过,不写历史也不清任何东西。漏掉的这轮不会丢账 —— 下一轮
+// 仍然从上次留下的基准往后算。
+func TestSampleTrafficNodeUnreachableWritesNothing(t *testing.T) {
+	r := &fakeRunner{failOn: "statsquery"}
+	c, st := newTestControl(t, r)
+	n := addNode(t, st, "hk", "node.example.com")
+	addUser(t, st, activeUser("alice"))
+
+	if err := c.SampleTraffic(context.Background(), n, time.Now()); err == nil {
+		t.Fatal("节点不可达时 SampleTraffic 应当把错误交出来")
+	}
+
+	samples, err := st.LatestTrafficSamples(n.ID)
+	if err != nil {
+		t.Fatalf("读回采样: %v", err)
+	}
+	if len(samples) != 0 {
+		t.Fatalf("节点不可达就不该写历史,实际写了 %v", samples)
+	}
+	alice, _ := st.GetUser("alice")
+	if alice.UsedTraffic != 0 {
+		t.Fatalf("节点不可达不该动用量,实际 %d", alice.UsedTraffic)
 	}
 }
 

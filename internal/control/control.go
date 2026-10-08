@@ -59,20 +59,64 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	return nil
 }
 
-// SampleTraffic 采一次该节点上的用户流量并累加进数据库。
+// SampleTraffic 采一次该节点上的用户流量,算出相对上次采样的增量并累加进数据库。
+//
+// 读的是 xray 的累计计数(见 node.QueryUserTraffic),增量由「本次累计 − 上次
+// 累计」得到,上次值从 traffic_samples 里读最近一行。每采到一笔变化就把这次的
+// 累计值追加进历史表:它既是下次的基准,也是事后重算用量的依据。
+//
+// 累计值回退 = 节点上的 xray 重启过。这一笔不累加(负增量会把用户用量倒扣回去),
+// 只打日志并把新的累计值存成基准,免得下一轮又按旧基准报同一个回退。
 //
 // 单个用户的写入失败只记日志、不中断整轮:一个用户的流量对不上,不该让其余
 // 几百个人的用量也停止累计。
-func (c *Control) SampleTraffic(ctx context.Context, n model.Node) error {
+func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time) error {
 	traffic, err := node.QueryUserTraffic(ctx, c.runner, n)
+	if err != nil {
+		// 节点不可达:这一轮什么都不做,不写历史也不动基准。漏掉的这段时间不会
+		// 丢账 —— 下一轮采到的累计值仍然是从上次留下的基准往后算。
+		return err
+	}
+
+	last, err := c.store.LatestTrafficSamples(n.ID)
 	if err != nil {
 		return err
 	}
+
 	for name, t := range traffic {
-		if t.Uplink == 0 && t.Downlink == 0 {
+		var prev *model.TrafficSample
+		if p, ok := last[name]; ok {
+			prev = &p
+		}
+		sample := model.TrafficSample{
+			Username: name, NodeID: n.ID, SampledAt: now,
+			Uplink: t.Uplink, Downlink: t.Downlink,
+		}
+		delta := sample.DeltaFrom(prev)
+
+		if delta.Restarted {
+			c.logger.Warn("节点流量计数回退,疑似 xray 重启过,本轮不累加",
+				"node", n.Name, "user", name,
+				"prev_uplink", prev.Uplink, "prev_downlink", prev.Downlink,
+				"uplink", t.Uplink, "downlink", t.Downlink)
+			// 新的累计值要存成基准:不存的话下一轮又拿旧基准算出同一个回退。
+			if err := c.store.RecordTrafficSample(sample); err != nil {
+				c.logger.Warn("写流量采样失败", "node", n.Name, "user", name, "error", err)
+			}
 			continue
 		}
-		if err := c.store.AddUserTraffic(name, t.Uplink, t.Downlink); err != nil {
+		if delta.Uplink == 0 && delta.Downlink == 0 {
+			continue
+		}
+
+		// 先落历史再累加:采样是下一次的基准,也是账本。反过来写的话,历史写失败
+		// 会让下一轮拿同一个基准再算一遍,把同一段流量加两次;而累加失败只是这一
+		// 笔晚到,历史里有,能看出来也能重算。
+		if err := c.store.RecordTrafficSample(sample); err != nil {
+			c.logger.Warn("写流量采样失败", "node", n.Name, "user", name, "error", err)
+			continue
+		}
+		if err := c.store.AddUserTraffic(name, delta.Uplink, delta.Downlink); err != nil {
 			c.logger.Warn("累加用户流量失败", "node", n.Name, "user", name, "error", err)
 		}
 	}

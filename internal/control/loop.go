@@ -55,6 +55,7 @@ func (t *Task) Run(ctx context.Context) {
 //
 //  1. 采样。先把节点上的计数收进数据库,超限的用户这一轮就能被判定出来。
 //  2. 重置。采样之后再做周期重置,刚过去的那个周期的用量才不会被算进新周期。
+//     重置只动 users.used_traffic,traffic_samples 不动,所以区间用量仍然算得回来。
 //  3. 收敛名单。用重置并采样后的状态决定谁该在节点上,该加的加、该摘的摘。
 func (t *Task) Tick(ctx context.Context) {
 	now := time.Now()
@@ -66,7 +67,7 @@ func (t *Task) Tick(ctx context.Context) {
 	}
 
 	for _, n := range nodes {
-		if err := t.control.SampleTraffic(ctx, n); err != nil {
+		if err := t.control.SampleTraffic(ctx, n, now); err != nil {
 			t.logger.Warn("采样节点流量失败", "node", n.Name, "error", err)
 		}
 	}

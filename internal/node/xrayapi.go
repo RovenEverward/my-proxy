@@ -114,12 +114,15 @@ type UserTraffic struct {
 	Downlink int64
 }
 
-// QueryUserTraffic 读出节点上所有用户的流量计数,并顺手把它们清零。
+// QueryUserTraffic 读出节点上所有用户的流量计数。读回来的**累计值**,不清零。
 //
-// 读走即清零是有意的:控制面按周期取增量累加进数据库。若不清零,就得自己保存
-// 上一次的读数,而那份读数会在控制面重启或漏掉一次采样时悄悄失真。
+// 以前这里带 -reset(读走即清零),省掉了控制面自己记上次读数。但 xray 的计数只
+// 在进程内存里,清零之后节点上就再没有第二份:控制面一旦漏掉一轮、或者进程重启
+// 对不上账,那段用量就永远找不回来了,而且事后分不清「用户没用」和「账被吞了」。
+// 现在读数与清零分开:控制面把每次采到的累计值落进 traffic_samples,自己存上次
+// 值算差,账能不能对上随时能从历史里重算;累计值变小也成了 xray 重启过的证据。
 func QueryUserTraffic(ctx context.Context, r Runner, n model.Node) (map[string]UserTraffic, error) {
-	out, err := apiRun(ctx, r, n, "statsquery", nil, "-pattern="+shellQuote("user>>>"), "-reset")
+	out, err := apiRun(ctx, r, n, "statsquery", nil, "-pattern="+shellQuote("user>>>"))
 	if err != nil {
 		return nil, err
 	}

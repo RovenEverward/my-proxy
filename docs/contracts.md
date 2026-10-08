@@ -196,9 +196,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 | 读某入站的用户名单 | `xray api inbounduser --server=127.0.0.1:<port> <tag>` |
 | 加用户 | `xray api adu --server=... <config>`(配置片段走 stdin) |
 | 删用户 | `xray api rmu --server=... <tag> <email>` |
-| 读并清零流量 | `xray api statsquery --server=... -reset` |
+| 读流量累计值 | `xray api statsquery --server=...` |
 
-`email` 就是用户名 —— 按用户聚合流量靠的是这个。
+`email` 就是用户名 —— 按用户聚合流量靠的是这个。读数**不带 `-reset`**:节点上的计数不再被抹掉,控制面自己存上次累计值算差(见 [decisions.md](decisions.md) 第 9 条)。
 
 `inbounduser` 返回 protojson。`xray api adu` 收的是一份**完整配置**,它从里面解出入站再逐个加用户,所以这里复用 `ServerConfig` 的入站渲染,而不是另写一份 account 拼装逻辑(两份必然漂移)。
 
