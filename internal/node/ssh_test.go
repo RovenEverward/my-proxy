@@ -3,8 +3,10 @@ package node
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -109,5 +111,88 @@ func TestPutFileScriptSurvivesHostilePathAndContent(t *testing.T) {
 	}
 	if _, err := os.Stat(p + ".tmp"); !os.IsNotExist(err) {
 		t.Fatal("临时文件应当已经被改名,不该留在节点上")
+	}
+}
+
+// fakeSSH 把一个假的 ssh 放到 PATH 最前面。SSH.Run 是通过 PATH 找 ssh 的,于是
+// 不用真机器就能控制「这条命令在外面待多久、说什么」。
+//
+// body 要用 `exec` 结尾:直接 `sleep` 的话,被打死的只是外层 shell, sleep 还活着
+// 且握着输出管道,Wait 会一直等到它自己退出 —— 那就不是测超时,而是测等待。
+func fakeSSH(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o755); err != nil {
+		t.Fatalf("写假 ssh: %v", err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+}
+
+// 远端命令卡住时,Run 必须自己断掉并说清是超时 —— 而不是把整轮任务挂死。
+func TestRunTimesOutInsteadOfHanging(t *testing.T) {
+	fakeSSH(t, "exec sleep 30")
+
+	start := time.Now()
+	_, err := SSH{Timeout: 200 * time.Millisecond}.
+		Run(t.Context(), model.Node{Name: "慢节点", Address: "203.0.113.10"}, "echo hi")
+	if err == nil {
+		t.Fatal("命令一直不返回,该报超时")
+	}
+	if !strings.Contains(err.Error(), "命令超时") {
+		t.Fatalf("超时要说人话,实际:%v", err)
+	}
+	if !strings.Contains(err.Error(), "慢节点") {
+		t.Fatalf("错误里要能看出是哪台节点:%v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("超时没生效,等了 %s", d)
+	}
+}
+
+// 调用方自带 deadline 时以它为准:兜底值大得多,一旦覆盖就等于把某个节点的卡顿
+// 放大成整轮任务的卡顿。
+func TestRunHonorsCallerDeadline(t *testing.T) {
+	fakeSSH(t, "exec sleep 30")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	// 兜底给 10 分钟:要是它赢了这个测试会先超时结束,而不是通过。
+	_, err := SSH{Timeout: 10 * time.Minute}.
+		Run(ctx, model.Node{Name: "慢节点", Address: "203.0.113.10"}, "echo hi")
+	if err == nil || !strings.Contains(err.Error(), "命令超时") {
+		t.Fatalf("ctx 的 deadline 该生效并报超时,实际:%v", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("没有用 ctx 的 deadline,等了 %s", d)
+	}
+}
+
+// 超时与「节点不可达」在日志里要能一眼分开:后者要把 ssh 自己的话带出来。
+func TestRunReportsUnreachableNotTimeout(t *testing.T) {
+	fakeSSH(t, `echo "ssh: connect to host 203.0.113.10 port 22: Connection refused" >&2; exit 255`)
+
+	_, err := SSH{}.Run(t.Context(), model.Node{Name: "断电节点", Address: "203.0.113.10"}, "echo hi")
+	if err == nil {
+		t.Fatal("连不上该报错")
+	}
+	if strings.Contains(err.Error(), "命令超时") {
+		t.Fatalf("连不上不是超时,别把两类混在一起:%v", err)
+	}
+	if !strings.Contains(err.Error(), "Connection refused") {
+		t.Fatalf("要把 ssh 的原话带出来:%v", err)
+	}
+}
+
+// 兜底值必须盖得住最慢的那条合法命令(推 65MB 的 node install),否则没给
+// deadline 的调用会被它误杀。
+func TestDefaultTimeoutCoversSlowestCommand(t *testing.T) {
+	if got := (SSH{}).timeout(); got != DefaultTimeout {
+		t.Fatalf("0 值该回落到兜底值: got %s, want %s", got, DefaultTimeout)
+	}
+	if DefaultTimeout < 10*time.Minute {
+		t.Fatalf("65MB 走 100KB/s 要约 11 分钟,兜底值 %s 太小", DefaultTimeout)
 	}
 }

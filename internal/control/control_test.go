@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -139,7 +140,10 @@ func newTestControl(t *testing.T, r *fakeRunner) (*Control, *store.Store) {
 
 // newLoggingControl 与 newTestControl 相同,但让调用方自己给 logger —— 需要断言
 // 某条日志真的打出来时用。
-func newLoggingControl(t *testing.T, r *fakeRunner, logger *slog.Logger) (*Control, *store.Store) {
+//
+// 参数取 Runner 而不是 *fakeRunner:退避那几条测试要用另一只假 Runner(它会
+// 在中途切换「节点通不通」,并把假时钟往前拨)。
+func newLoggingControl(t *testing.T, r node.Runner, logger *slog.Logger) (*Control, *store.Store) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "mpx.db"))
 	if err != nil {

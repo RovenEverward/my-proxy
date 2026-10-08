@@ -27,6 +27,7 @@ const testToken = "test-management-token"
 type env struct {
 	t      *testing.T
 	st     *store.Store
+	s      *Server
 	srv    *httptest.Server
 	dbPath string
 }
@@ -55,7 +56,7 @@ func newEnvWith(t *testing.T, ops NodeOps) *env {
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 
-	return &env{t: t, st: st, srv: srv, dbPath: dbPath}
+	return &env{t: t, st: st, s: s, srv: srv, dbPath: dbPath}
 }
 
 // api 发一个带管理 token 的请求。body 为 nil 表示不带请求体。

@@ -30,6 +30,12 @@ type NodeOps interface {
 	InstallNode(ctx context.Context, n model.Node, version string) (string, error)
 }
 
+// StatusSource 是控制面后台任务的自报状态,GET /api/status 靠它回答。
+type StatusSource interface {
+	// Snapshot 返回此刻的心跳与退避状态,不发任何 SSH。
+	Snapshot(now time.Time) model.ControlStatus
+}
+
 // Server 持有控制面运行期需要的东西。
 type Server struct {
 	store   *store.Store
@@ -37,6 +43,7 @@ type Server struct {
 	logger  *slog.Logger
 	mux     *http.ServeMux
 	nodeOps NodeOps
+	status  StatusSource
 	dbPath  string
 }
 
@@ -60,6 +67,10 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 // "已下发"让人以为节点真的变了。
 func (s *Server) SetNodeOps(o NodeOps) { s.nodeOps = o }
 
+// SetStatusSource 接上后台任务的心跳。不接时 /api/status 仍会回答说不出心跳,
+// 但对象数量照给 —— CLI 的 status 不该因为后台任务没起就整个失败。
+func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
+
 // Handler 返回可以直接交给 http.Server 的处理器。
 func (s *Server) Handler() http.Handler { return s.mux }
 
@@ -69,6 +80,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
 
 	api := http.NewServeMux()
+	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	api.HandleFunc("GET /api/nodes/{id}", s.handleGetNode)

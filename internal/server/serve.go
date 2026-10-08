@@ -61,6 +61,8 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	srv := New(st, opt.Token, logger, opt.DBPath)
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
+	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
+	srv.SetStatusSource(task)
 
 	httpSrv := &http.Server{
 		Addr:              opt.Addr,

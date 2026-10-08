@@ -46,7 +46,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.token, "token", "", "管理 token,覆盖 MPX_TOKEN 与配置文件")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(loginCmd, serveCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
+	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。

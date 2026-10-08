@@ -18,6 +18,27 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
+// 单节点操作的预算:一个节点在一轮动作里最多花多久。
+//
+// 这是「上限」而不是「预期耗时」:超了就把这一节点这一轮记成失败,继续下一个 ——
+// 一台节点卡住不该让其余节点这一轮什么都收不到。每个数都比 node.DefaultTimeout
+// 紧得多,因为调用方知道这类命令要多久,兜底值只是保险。
+const (
+	// sampleBudget 是采样一台节点的上限:节点上就一条 statsquery。20 秒必须留在
+	// 30 秒的周期之内,慢过周期就会让后台任务永久落后。
+	sampleBudget = 20 * time.Second
+	// reconcileBudget 是收敛一台节点的上限:可能连着加很多用户,每条 xray api
+	// 约 0.3 秒,几十条也就十几秒;60 秒是余量,不是常态。
+	reconcileBudget = 60 * time.Second
+	// deployBudget 是 node sync 下发一台节点的上限:推一份几十 KB 的配置 +
+	// xray -test + 重启 + 等它起来,两分钟足够。
+	deployBudget = 2 * time.Minute
+	// installBudget 是 node install 的上限:要推 65MB(核心加两份 geodata),
+	// 实测约 40 秒,慢链路按 100KB/s 算约 11 分钟。它和 CLI 侧的
+	// installTimeout(15 分钟)对齐:HTTP 请求还在等的时候,不该先在节点这一层断掉。
+	installBudget = 15 * time.Minute
+)
+
 // Control 持有跨节点动作需要的依赖。
 type Control struct {
 	store    *store.Store
@@ -41,6 +62,9 @@ func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *
 //
 // 用于「结构性」变更:新增入站、改端口、换证书。这类改动 xray 只能重启才生效。
 func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, deployBudget)
+	defer cancel()
+
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
 		return err
@@ -71,6 +95,9 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 // 单个用户的写入失败只记日志、不中断整轮:一个用户的流量对不上,不该让其余
 // 几百个人的用量也停止累计。
 func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
+	defer cancel()
+
 	traffic, err := node.QueryUserTraffic(ctx, c.runner, n)
 	if err != nil {
 		// 节点不可达:这一轮什么都不做,不写历史也不动基准。漏掉的这段时间不会
@@ -128,6 +155,9 @@ func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time
 // 只做增删用户,不重启 xray:配额恢复、到期续费都会走到这里,若每次都重启,
 // 节点上所有人的连接都会跟着断一次。
 func (c *Control) ReconcileUsers(ctx context.Context, n model.Node, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, reconcileBudget)
+	defer cancel()
+
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
 		return err

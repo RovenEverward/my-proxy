@@ -24,9 +24,12 @@
 | 加人/摘人不重启 | 加人后不 `node sync`,等 45 秒:节点上 `config.json` 的 `%y %s` 前后完全一致;停用/启用后同一份旧客户端配置先失效又恢复,而 `MainPID` 与 `NRestarts` 全程不变 |
 | 流量可对账 | 单测覆盖差值(首次采样 / 正常 / 计数回退)、重启记日志、历史落表、节点不可达不写历史;live 断言由「读走即清零」改成「累计值只增不减」,本机无 xray 未重跑 |
 | 备份与恢复 | 单测:造有数据的库 → 建归档 → 解归档 → 数据在、manifest 行数对;四类坏输入全报错且不留 `.restore`;HTTP 侧 `GET /api/backup` 能解出数据、`POST /api/restore` 合法 200 且 `.restore` 存在、非法 400 且不存在、已暂存再传不带 force 拒绝带 force 覆盖;换入函数预置「另一份库」→ 主库变快照数据、旧库留 `<db>.pre-restore-*`、`.restore` 没了;全流程演练(备份 → 删库 → 手动放 `.restore` → 启动 → 数据全在、订阅 token 不变、能出订阅) |
-| 全量 | `gofmt` 干净、`go vet` 通过、`go test ./... -race` 八个包全绿 |
+| 远端命令超时 | 单测:假 `ssh` 脚本睡 30 秒,200ms 的 deadline 把它打断并报「命令超时(节点卡住了)」,耗时远小于脚本本身;ctx 自带 150ms 的 deadline 优先于 `SSH.Timeout`;脚本模拟 `Connection refused` 时仍报 `ssh` 原话、不含「命令超时」;零值兜底不小于 10 分钟 |
+| 失败退避与心跳 | 单测(假时钟):失败一轮后窗口内不再调用 runner,「在退避中」只记一条;等待 30s → 1m → 2m → 4m → 封顶 5m,窗口过后重试;成功后清零且日志说「退避清零」;一轮耗时超过 interval 打 Warn;未跑过时 `last_tick_at` 为空、`ticks=0` |
+| `GET /api/status` / `mpx status` | 单测:响应 16 个字段齐全、启动时间/最后 Tick/耗时/计数/退避逐个对得上,没接后台任务也 200 且给 `backoffs:[]`,无 token 与错 token 均 401;CLI 用假服务端走完整命令链,表格含心跳各字段与退避行 |
+| 全量 | `gofmt` 干净、`go vet` 通过、`go test ./... -race` 九个包全绿 |
 
-生产代码 8990 行,测试 8595 行。
+生产代码 9359 行,测试 8685 行。
 
 **没验过的**:经跳板机连节点(见 [open-questions.md](open-questions.md) 第 1 节)。另外 REALITY 从本机所在的网络到其中一台节点的路径不通 —— 做过对照实验,用的是节点上自产密钥的最小 REALITY 服务端,本机自连成功、从我的网络过去连连接记录都没有,所以那是链路问题,不是渲染问题。附带一条经验:**`reality_dest` 要挑节点自己真能连上的域名**,同一个节点上 `www.microsoft.com:443` 连自连都失败,换 `www.cloudflare.com:443` 立刻好。
 
@@ -93,3 +96,4 @@ ResetPeriod("") 返回 0
 | 8 | 测试与收口 | 补 control / node 两个包的测试,修掉教训二那个缺陷。 |
 | 9 | 装与更新 | 真实机器跑起来之后才暴露的一批:节点上的核心从哪来(`node install` + `internal/xrayrelease`)、控制面自己怎么装和更新(`deploy/install.sh`)、节点上占自己的一份路径与服务名、下发之后确认服务真的起来了。 |
 | 10 | 备份与恢复 | 批 2:`mpx backup` / `mpx restore`,归档 = manifest + 一致快照 `mpx.db` + 可选系统 ssh 私钥,不含管理 token;恢复 = 校验 + 暂存 + 重启换入,旧库留 `<db>.pre-restore-*` 可回退。 |
+| 11 | 超时、退避与心跳 | 批 3a:每条远端命令一条 deadline(调用点给预算、`node` 层兜 15 分钟、ctx 自带 deadline 不覆盖);失败节点按 30s 起步、5 分钟封顶退避,成功清零;控制面心跳经 `GET /api/status` 与 `mpx status` 可读。批 3b(`node status`、漂移、证书、`doctor`、告警)未做。 |

@@ -11,6 +11,7 @@ CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点�
 ```
 login                                    存控制面地址与 token
 serve                                    起控制面:--addr --db --interval(默认 30s)
+status                                   控制面心跳、对象数量、退避中的节点(读缓存,不碰节点)
 backup   [-o 文件]                        下载一份备份归档(默认 mpx-backup-<时间戳>.tar.gz)
 restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
@@ -70,6 +71,8 @@ GET|PUT          /api/settings
 
 GET              /api/backup                 流式返回 tar.gz 备份归档
 POST             /api/restore                校验并暂存一份备份(?force=1 覆盖已暂存的)
+
+GET              /api/status                 控制面心跳 + 对象数量 + 节点退避状态(只读内存,不发 ssh)
 ```
 
 `backup` 的正文是 gzip 过的 tar,不是 JSON:CLI 直接落盘,`curl` 也能重定向到文件。`restore` 的**正文就是归档本身**(非 JSON 包装),只做校验 + 暂存,不换库:
@@ -83,6 +86,8 @@ $ curl -H 'Authorization: Bearer demo-token' \
 ```
 
 归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**(见 [decisions.md](decisions.md) 第 16 条)。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
+
+`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 [model.go](../internal/model/model.go) 的 `ControlStatus`。
 
 token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
 
@@ -172,6 +177,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 ```
 
 `BatchMode=yes` 是这条设计里最要紧的一项:控制面是常驻进程,`ssh` 一旦停在等密码的提示上,整轮收敛就跟着停住。**必须先配好免密。**
+
+`ConnectTimeout=10` 只管到握手为止,**远端命令本身另有一条 deadline**:调用点按操作给预算(采样 20 秒、收敛 60 秒、`node sync` 2 分钟、`node install` 15 分钟),`internal/node` 再兜一个 15 分钟的下限,调用方自己带了更短的 deadline 就以调用方为准。超时和连不上是两种错,报错文本分开写:超时是「命令超时(节点卡住了)」,连不上还是 `ssh` 原话。理由见 [decisions.md](decisions.md) 第 17、18 条。
 
 跳板机、`ssh-agent`、`~/.ssh/config`、`known_hosts` 全部复用系统 `ssh` 已有的那套 —— 这也是当初不引 `golang.org/x/crypto/ssh` 的理由(见 [decisions.md](decisions.md) 第 2 条)。
 

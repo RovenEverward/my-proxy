@@ -21,6 +21,11 @@ import (
 // 装和更新是同一条路径:同一个版本再跑一遍就是把核心重新推一遍、重新校验一遍。
 // 返回的是节点上回话的版本 —— 控制面以为装了什么不算数,节点上那句才是事实。
 func (c *Control) InstallNode(ctx context.Context, n model.Node, version string) (string, error) {
+	// 整个安装是一条命令的时长量级:推 65MB 是它的大头。预算给足,但仍有上限 ——
+	// 一台节点的安装卡住不该把控制面的安装请求永远挂着。
+	ctx, cancel := context.WithTimeout(ctx, installBudget)
+	defer cancel()
+
 	goos, goarch, err := node.Platform(ctx, c.runner, n)
 	if err != nil {
 		return "", err

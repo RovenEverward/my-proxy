@@ -3,11 +3,13 @@ package node
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -28,7 +30,14 @@ type Runner interface {
 // 刻意不自己实现 SSH 客户端:一台机器怎么连(跳板机、ssh-agent、~/.ssh/config、
 // known_hosts)在用户机器上已经是既成事实,重写一份只会多出一处会漂移的真相,
 // 而且要把这些能力补回来还得再写一遍。
-type SSH struct{}
+type SSH struct {
+	// Timeout 是单条命令的兜底上限,0 表示 DefaultTimeout。
+	//
+	// 调用方给的 ctx 自带 deadline 时它不起作用 —— 那条命令该给多久,调用方最
+	// 清楚(采样、收敛、下发、安装各有各的预算)。它的作用是保证「没有一条命令
+	// 能永远挂着」:漏了 deadline 的调用在这里被截断,而不是把整轮任务拖死。
+	Timeout time.Duration
+}
 
 // XrayBinPath 是节点上 mpx 那份 xray 核心里可执行文件的位置。
 //
@@ -44,15 +53,44 @@ const XrayBinPath = "/usr/local/lib/mpx/xray"
 // 真节点上没人会设它,于是永远解析成 XrayBinPath。
 const xrayBin = `XRAY_BIN="${MPX_XRAY_BIN:-` + XrayBinPath + `}"; `
 
-func (SSH) Run(ctx context.Context, n model.Node, script string) (string, error) {
-	return run(ctx, n, script, nil)
+// DefaultTimeout 是单条远端命令的兜底上限。
+//
+// 取值来自最慢的那条合法命令:node install 要推 65MB(核心加两份 geodata),
+// 实测约 40 秒。给到 15 分钟是照慢链路算的 —— 65MB 走 100KB/s 的出口要约 11
+// 分钟,再留一点余量。正常情况下轮不到它:每个调用点都有自己的 ctx deadline
+// (见 internal/control 的 sampleBudget 等),这里只是最后一道兜底。
+const DefaultTimeout = 15 * time.Minute
+
+func (s SSH) timeout() time.Duration {
+	if s.Timeout > 0 {
+		return s.Timeout
+	}
+	return DefaultTimeout
 }
 
-func (SSH) RunWithInput(ctx context.Context, n model.Node, script string, stdin []byte) (string, error) {
-	return run(ctx, n, script, stdin)
+func (s SSH) Run(ctx context.Context, n model.Node, script string) (string, error) {
+	return run(ctx, s.timeout(), n, script, nil)
 }
 
-func run(ctx context.Context, n model.Node, script string, stdin []byte) (string, error) {
+func (s SSH) RunWithInput(ctx context.Context, n model.Node, script string, stdin []byte) (string, error) {
+	return run(ctx, s.timeout(), n, script, stdin)
+}
+
+// run 跑一条远端命令,并保证它有上限。
+//
+// ctx 已经带了 deadline 就用它的预算,不覆盖:调用方知道这条命令要多久,兜底值
+// 比它大得多,一旦覆盖就等于把某个节点的卡顿放大成整轮任务的卡顿。没有 deadline
+// 时才补上 fallback。
+func run(ctx context.Context, fallback time.Duration, n model.Node, script string, stdin []byte) (string, error) {
+	budget := fallback
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = time.Until(deadline)
+	} else {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, fallback)
+		defer cancel()
+	}
+
 	args := append(sshArgs(n), script)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	var stdout, stderr bytes.Buffer
@@ -62,6 +100,19 @@ func run(ctx context.Context, n model.Node, script string, stdin []byte) (string
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
 	if err := cmd.Run(); err != nil {
+		// 超时和「节点不可达」是两回事,日志里要能一眼分开:前者是连上了但命令
+		// 不回来(节点卡住、重启中、命令自己挂住),后者连不上。ctx 结束会让
+		// exec 杀掉 ssh 进程,那时 stderr 往往是空的、err 只写着 signal: killed,
+		// 所以先看 ctx 的错。
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				// 毫秒取整:调用方给几十毫秒的小预算时,按秒取整会印出「0s 内
+				// 没返回」,那句话什么也没说清。
+				return stdout.String(), fmt.Errorf("节点 %s: 命令超时(%s 内没返回,节点卡住了)",
+					n.Name, budget.Round(time.Millisecond))
+			}
+			return stdout.String(), fmt.Errorf("节点 %s: 命令被取消", n.Name)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = strings.TrimSpace(stdout.String())

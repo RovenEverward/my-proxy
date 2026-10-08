@@ -294,3 +294,43 @@ func (s *Settings) MatchFormat(userAgent string) ClientFormat {
 	}
 	return FormatLinks
 }
+
+// ControlStatus 是控制面自报的「现在怎么样」,GET /api/status 与 mpx status 共用。
+//
+// 与 HostView 同样的理由:服务端和 CLI 看的是同一份形状,分叉只会让两边各自
+// 漂移。这些字段全在内存里,控制面一重启就从零再算 —— 库里的账不受影响。
+type ControlStatus struct {
+	// StartedAt 是控制面进程启动的时间。
+	StartedAt time.Time `json:"started_at"`
+	// UptimeSeconds 是到这次查询为止已运行的秒数。
+	UptimeSeconds float64 `json:"uptime_seconds"`
+	// IntervalSeconds 是后台任务的周期。
+	IntervalSeconds float64 `json:"interval_seconds"`
+	// Ticks 是已跑完的后台轮数。
+	Ticks uint64 `json:"ticks"`
+	// LastTickAt 是上一轮开始的时间;一次都没跑过时为 nil。
+	LastTickAt *time.Time `json:"last_tick_at"`
+	// LastTickSeconds 是上一轮花掉的秒数。
+	LastTickSeconds float64 `json:"last_tick_seconds"`
+
+	Counts   Counts        `json:"counts"`
+	Backoffs []NodeBackoff `json:"backoffs"`
+}
+
+// Counts 是各类对象的数量,给状态页一眼看规模用。
+type Counts struct {
+	Nodes    int `json:"nodes"`
+	Inbounds int `json:"inbounds"`
+	Hosts    int `json:"hosts"`
+	Users    int `json:"users"`
+}
+
+// NodeBackoff 是一台正处于失败退避中的节点。
+type NodeBackoff struct {
+	NodeID   int64  `json:"node_id"`
+	NodeName string `json:"node_name"`
+	// Failures 是连续失败次数,成功一次即清零。
+	Failures int `json:"failures"`
+	// SkipUntil 是这个窗口的结束时间,到了就重新试。
+	SkipUntil time.Time `json:"skip_until"`
+}
