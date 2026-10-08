@@ -41,8 +41,8 @@ type Task struct {
 	// now 可注入:退避窗口和心跳都要能在测试里拨表,而不是真等 5 分钟。
 	now func() time.Time
 
-	// alerter 是巡检发现问题时往哪儿喊。留成接口是为了批 4 能换成 webhook
-	// (见 LogAlerter 上的注释),测试里也换成一个记账的假实现。
+	// alerter 是巡检发现问题时往哪儿喊。默认是日志 + webhook(见 defaultAlerter),
+	// 留成接口也让测试能换成记账的假实现。
 	alerter Alerter
 
 	// mu 保护下面这一组「现在怎么样」的运行状态。它们只在内存里,不落库。
@@ -86,7 +86,7 @@ func NewTask(c *Control, st *store.Store, logger *slog.Logger, interval time.Dur
 		interval = DefaultInterval
 	}
 	now := time.Now()
-	return &Task{
+	t := &Task{
 		control:   c,
 		store:     st,
 		logger:    logger,
@@ -95,19 +95,44 @@ func NewTask(c *Control, st *store.Store, logger *slog.Logger, interval time.Dur
 		startedAt: now,
 		nodeFail:  map[int64]*nodeBackoff{},
 		armed:     map[int64]map[string]struct{}{},
-		alerter:   NewLogAlerter(logger),
 	}
+	t.alerter = t.defaultAlerter()
+	return t
+}
+
+// defaultAlerter 拼出开箱即用的告警出口:日志一份,配了 webhook 地址再发一份。
+//
+// 在这里拼而不是让调用方(serve)拼,是因为"忘了接 webhook"是一种没人会发现的
+// 故障:告警照常进日志,只有坐到 webhook 那一头等消息的人才察觉收不到。默认
+// 接好,配地址即生效。
+func (t *Task) defaultAlerter() Alerter {
+	return NewFanoutAlerter(
+		NewLogAlerter(t.logger),
+		NewWebhookAlerter(t.webhookURL, t.logger),
+	)
+}
+
+// webhookURL 现取设置里的 webhook 地址;读不到当没配。
+//
+// 每次现取而不是缓存在 Task 上:地址可以在运行中被改,缓存就得有人负责失效,
+// 而这点查询开销只会发生在有告警/有通知的时候。
+func (t *Task) webhookURL() string {
+	s, err := t.store.GetSettings()
+	if err != nil {
+		return ""
+	}
+	return s.WebhookURL
 }
 
 // SetAlerter 换掉告警出口。
 //
-// 默认就是 LogAlerter(只落日志);留这个口子是给批 4 的 webhook 用,也让
+// 默认是日志 + webhook(见 defaultAlerter);传 nil 恢复默认。留这个口子是让
 // 测试能用一个记账的实现去断言"报了几次、什么时候销的"。
 func (t *Task) SetAlerter(a Alerter) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if a == nil {
-		a = NewLogAlerter(t.logger)
+		a = t.defaultAlerter()
 	}
 	t.alerter = a
 }
@@ -140,6 +165,10 @@ func (t *Task) Run(ctx context.Context) {
 //
 // 正在退避的节点整轮跳过;采样就失败的节点这一轮不再收敛 —— 它已经不通了,收敛
 // 试了也只是再等一个预算。一台节点失败不影响其余节点:循环继续往下走。
+//
+// 结账之后还有两件"顺便做"的事:给用户发提醒、抽查节点状态。两者都在 finishTick
+// 之后,理由同 sweepNodeStatus 上的注释 —— 它们的耗时不该算进"一轮多久"。
+// 提醒排在巡检之前:提醒是给人看的,而巡检本来就每 10 轮才做一次。
 func (t *Task) Tick(ctx context.Context) {
 	started := t.now()
 
@@ -186,6 +215,7 @@ func (t *Task) Tick(ctx context.Context) {
 	// 一次、天生比周期慢 —— 把它算进去,心跳会在每个第 10 轮跳一次、报出一个
 	// 并不存在的"落后",而真正需要警惕的(采样+收敛本身变慢)反而被掩盖。
 	t.finishTick(started)
+	t.notifyUsers(ctx, t.now())
 	t.sweepNodeStatus(ctx, nodes, t.now())
 }
 

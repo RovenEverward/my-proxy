@@ -21,7 +21,7 @@ inbound  list | show | add | rm
 host     list | add | rm
 user     list | show | add | rm | enable | disable | renew | export | import
          | links | reset-traffic | revoke-sub
-settings show | set
+settings show | set | test | template get|set|del
 ```
 
 `user list` 默认只给一页(50 个),`--page` / `--page-size` 翻页,`--status` / `--search` / `--inbound` 筛选;
@@ -106,6 +106,7 @@ POST             /api/users/{username}/revoke-sub
 GET              /api/users/{username}/links
 
 GET|PUT          /api/settings
+POST             /api/settings/test-webhook   往当前 webhook_url 发一条测试事件
 
 GET              /api/backup                 流式返回 tar.gz 备份归档
 POST             /api/restore                校验并暂存一份备份(?force=1 覆盖已暂存的)

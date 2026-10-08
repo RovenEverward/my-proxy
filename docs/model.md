@@ -8,13 +8,14 @@ nodes ──1:N──► inbounds ──1:N──► hosts
   │               │  users.inbound_ids(JSON 数组,空 = 全部)
   │               ▼
   │             users          settings(单行)
-  │                             traffic_samples(只追加:node_id 外键级联,username 是文本)
+  │               │             traffic_samples(只追加:node_id 外键级联,username 是文本)
+  │               └──1:N──► user_notices(只追加:记「这条提醒发过了」)
   └──1:1──► node_status
 ```
 
 级联删除:`ON DELETE CASCADE`。删节点连带删它的入站、入口、流量采样与状态行,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
 
-## 七张表
+## 八张表
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
@@ -23,8 +24,9 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow` | 切片存 JSON 文本 |
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |
-| `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules` | `rules` 是 `[{pattern, result}]` 的 JSON 文本 |
+| `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules`、`templates`、`webhook_url`、`notify_days_left`、`notify_usage_percent` | `rules` 是 `[{pattern, result}]` 的 JSON 文本,`templates` 是 `{格式: 正文}`。`notify_days_left` / `notify_usage_percent` 为 0 表示关掉这一类提醒 |
 | `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
+| `user_notices` | `user_id`、`kind`、`sent_at`(主键 `(user_id, kind)`) | 只是「这条用户提醒已经发过了」的流水账,不承载业务数据:整张表删掉用户、流量、订阅照常工作,只是下一轮可能重发。所以备份校验的必需表清单里**刻意没有它** |
 
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
 
@@ -108,3 +110,15 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 ### 到期日的解释
 
 `--expire YYYY-MM-DD` 解释成**当地时区当天 23:59:59**。`--expire 2030-01-01` 存成 `2030-01-01T15:59:59Z`(Asia/Shanghai)。
+
+### 提醒
+
+两类用户提醒,各由设置里的一个阈值控制:`notify_days_left`(剩余天数 ≤ 它)与
+`notify_usage_percent`(本周期用量 ≥ 它)。两者都是 0 表示关掉这一类。
+
+同一个人同一类提醒只发一次,靠 `user_notices` 记「已发过」;**发出去了才记**,发失败或压根没配
+`webhook_url` 都不记,下一轮还会再试。条件不成立时(续费、重置用量、停用)把那一行删掉,所以
+续费一年之后再次临近到期会正常提醒第二次。停用的用户不发。
+
+节点故障走的是另一条路:复用告警那条线(冷却 30 分钟、条件消失打「已恢复」),不记 `user_notices`。
+两边为什么这么分,见 [decisions.md](decisions.md) 第 27 条。

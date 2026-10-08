@@ -287,11 +287,49 @@ type Settings struct {
 	// UpdateInterval 是客户端自动更新间隔,单位小时。
 	UpdateInterval int `json:"update_interval"`
 
+	// WebhookURL 是通知的投递地址,POST 一个 JSON 事件过去;为空表示不通知。
+	WebhookURL string `json:"webhook_url"`
+	// NotifyDaysLeft 是用户到期前多少天开始提醒(用户侧通知)。
+	NotifyDaysLeft int `json:"notify_days_left"`
+	// NotifyUsagePercent 是用户用量达到多少百分比开始提醒(用户侧通知)。
+	NotifyUsagePercent int `json:"notify_usage_percent"`
+
 	Rules []SubscriptionRule `json:"rules"`
 
 	// Templates 是各格式的客户端模板,键是 ClientFormat 的字符串
 	// (clash-meta / sing-box / xray)。缺键或空串表示用内置默认模板。
 	Templates map[string]string `json:"templates"`
+}
+
+// 用户侧通知的默认阈值,写入设置里的缺省值。0 有特殊含义(见 DaysLeft 与
+// UsagePercent),所以默认值用正数,和"关掉某项通知"的写法分开。
+const (
+	DefaultNotifyDaysLeft     = 3
+	DefaultNotifyUsagePercent = 80
+)
+
+// DaysLeft 返回用户到期的剩余天数;不过期返回 0 与 false。
+func (u *User) DaysLeft(now time.Time) (int, bool) {
+	if u.ExpireAt == nil {
+		return 0, false
+	}
+	days := int(u.ExpireAt.Sub(now).Hours() / 24)
+	if days < 0 {
+		days = 0
+	}
+	return days, true
+}
+
+// UsagePercent 返回本周期已用量的百分比;不限量返回 0。
+func (u *User) UsagePercent() int {
+	if u.DataLimit <= 0 {
+		return 0
+	}
+	pct := int(u.UsedTraffic * 100 / u.DataLimit)
+	if pct > 100 {
+		pct = 100
+	}
+	return pct
 }
 
 // TemplateFor 返回该格式的模板文本;没存过或存了空串时返回空串,
@@ -400,6 +438,23 @@ const (
 	KindNodeDrift       Kind = "node_drift"
 	KindCertExpiring    Kind = "cert_expiring"
 )
+
+// 用户侧通知的种类,用于 user_notices 表记"哪一类提醒已经发过"。
+const (
+	NoticeKindExpiring  = "expiring"   // 快到期
+	NoticeKindOverUsage = "over_usage" // 快超限
+)
+
+// UserNotice 是"这一条用户通知已经发过了"的记录。
+//
+// 它存在的意义是让用户侧提醒精确地只发一次:巡检每轮都会看一遍用户,如果只看
+// 窗口(比如"三天内到期")而不记账,一轮漏跑或窗口横跨多轮就会重复发。记下
+// (user, kind) 之后,同一用户同一类提醒只在条件消失(续费/重置)后才会再发。
+type UserNotice struct {
+	UserID int64     `json:"user_id"`
+	Kind   string    `json:"kind"`
+	SentAt time.Time `json:"sent_at"`
+}
 
 // Alert 是一条告警。
 //

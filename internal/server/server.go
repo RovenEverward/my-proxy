@@ -129,6 +129,7 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/settings/templates/{format}", s.handleGetTemplate)
 	api.HandleFunc("PUT /api/settings/templates/{format}", s.handlePutTemplate)
 	api.HandleFunc("DELETE /api/settings/templates/{format}", s.handleDeleteTemplate)
+	api.HandleFunc("POST /api/settings/test-webhook", s.handleTestWebhook)
 
 	// 备份与恢复:GET 流式返回 tar.gz,POST 校验并暂存归档(重启后生效)。
 	api.HandleFunc("GET /api/backup", s.handleBackup)

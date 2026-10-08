@@ -20,7 +20,7 @@ var settingsCmd = &cobra.Command{
 }
 
 func init() {
-	settingsCmd.AddCommand(settingsShowCmd, settingsSetCmd, settingsTemplateCmd)
+	settingsCmd.AddCommand(settingsShowCmd, settingsSetCmd, settingsTestCmd, settingsTemplateCmd)
 	settingsSetCmd.Flags().StringVarP(&settingsSetFile, "file", "f", "", "设置 JSON 文件;- 表示从 stdin 读")
 	settingsTemplateCmd.AddCommand(settingsTemplateGetCmd, settingsTemplateSetCmd, settingsTemplateDelCmd)
 	settingsTemplateSetCmd.Flags().StringVarP(&settingsTemplateFile, "file", "f", "", "模板文件;- 表示从 stdin 读")
@@ -144,6 +144,9 @@ var settingsShowCmd = &cobra.Command{
 			{"订阅名", s.ProfileTitle},
 			{"支持链接", s.SupportLink},
 			{"自动更新间隔(小时)", strconv.Itoa(s.UpdateInterval)},
+			{"通知地址", webhookText(s.WebhookURL)},
+			{"到期提醒", notifyDaysText(s.NotifyDaysLeft)},
+			{"用量提醒", notifyPercentText(s.NotifyUsagePercent)},
 		}); err != nil {
 			return err
 		}
@@ -209,6 +212,55 @@ JSON 的形状与 mpx -o json settings show 的输出一致(model.Settings)。�
 		}
 		return report(raw, "已保存订阅设置")
 	},
+}
+
+var settingsTestCmd = &cobra.Command{
+	Use:   "test",
+	Short: "往配置好的通知地址发一条测试消息",
+	Long: `往设置里的通知地址发一条测试消息,确认对面收得到。
+
+webhook 是一条沉默的通道:地址写错了不会有任何反馈,要等到真出事那天才发现
+没收到。这条命令当场把话说出去一次 —— 对面收到就算配好了。地址本身在
+mpx settings show 里看,改地址用 mpx settings set。`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.do("POST", "/api/settings/test-webhook", nil)
+		if err != nil {
+			return err
+		}
+		return report(raw, "测试通知已送到")
+	},
+}
+
+// webhookText 把通知地址显示成人话:没配时说清楚是"不发通知",而不是留一格空。
+func webhookText(url string) string {
+	if url == "" {
+		return "未配置(不发通知)"
+	}
+	return url
+}
+
+// notifyDaysText 把"提前几天提醒"翻译成人话。
+//
+// 0 在这两个阈值字段里表示关掉,直接显示 0 会读成"到期当天才提醒",而那是另一
+// 回事。负数不该出现(写入口会拒),真出现了也当关掉显示。
+func notifyDaysText(days int) string {
+	if days <= 0 {
+		return "关"
+	}
+	return fmt.Sprintf("到期前 %d 天", days)
+}
+
+// notifyPercentText 同 notifyDaysText,把用量阈值翻译成人话。
+func notifyPercentText(pct int) string {
+	if pct <= 0 {
+		return "关"
+	}
+	return fmt.Sprintf("用量达到 %d%%", pct)
 }
 
 // readSettingsFile 读设置文件;"-" 表示从 stdin 读,方便管道与 heredoc。

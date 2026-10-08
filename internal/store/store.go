@@ -182,6 +182,21 @@ var schema = []string{
 		rules           TEXT    NOT NULL DEFAULT '[]',
 		templates       TEXT    NOT NULL DEFAULT '{}'
 	)`,
+
+	// user_notices 是"这条用户通知已经发过了"的流水账,一条 (user_id, kind)
+	// 一行。它让用户侧提醒精确地只发一次:巡检每轮都看用户,不记账的话一轮漏跑
+	// 或窗口横跨多轮就会重复发;记下之后,同一用户同一类提醒只在条件消失(续费/
+	// 重置)后才会再发。
+	//
+	// 与 traffic_samples 一个思路:它只是记账,不承载业务数据 —— 删掉整张表,
+	// 用户、流量、订阅全都照常工作,只是"已通知过"的标记丢了,下一轮可能重发。
+	// 因此备份校验的必需表清单里刻意没有它。
+	`CREATE TABLE IF NOT EXISTS user_notices (
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		kind    TEXT    NOT NULL,
+		sent_at INTEGER NOT NULL,
+		PRIMARY KEY (user_id, kind)
+	)`,
 }
 
 // Open 打开(不存在则创建)数据库文件并建表。建表幂等,重复调用安全。
@@ -278,6 +293,14 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE nodes ADD COLUMN deployed_hash TEXT NOT NULL DEFAULT ''`},
 	{"nodes", "deployed_at",
 		`ALTER TABLE nodes ADD COLUMN deployed_at INTEGER`},
+	// 通知设置。列有默认值,迁移补上后旧库读设置不会报错:webhook_url 缺省空串
+	// 表示不通知,两个阈值缺省用模型层的默认值(到期前 3 天 / 用量 80%)。
+	{"settings", "webhook_url",
+		`ALTER TABLE settings ADD COLUMN webhook_url TEXT NOT NULL DEFAULT ''`},
+	{"settings", "notify_days_left",
+		`ALTER TABLE settings ADD COLUMN notify_days_left INTEGER NOT NULL DEFAULT 3`},
+	{"settings", "notify_usage_percent",
+		`ALTER TABLE settings ADD COLUMN notify_usage_percent INTEGER NOT NULL DEFAULT 80`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

@@ -20,8 +20,13 @@ func DefaultSettings() *model.Settings {
 		ProfileTitle:   "{USERNAME}",
 		SupportLink:    "",
 		UpdateInterval: 24, // 小时
-		Rules:          nil,
-		Templates:      nil,
+
+		WebhookURL:         "",
+		NotifyDaysLeft:     model.DefaultNotifyDaysLeft,     // 到期前 3 天
+		NotifyUsagePercent: model.DefaultNotifyUsagePercent, // 用量 80%
+
+		Rules:     nil,
+		Templates: nil,
 	}
 }
 
@@ -33,9 +38,12 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		templates string
 	)
 	err := s.db.QueryRow(
-		`SELECT sub_url_prefix, profile_title, support_link, update_interval, rules, templates
+		`SELECT sub_url_prefix, profile_title, support_link, update_interval,
+		        webhook_url, notify_days_left, notify_usage_percent,
+		        rules, templates
 		 FROM settings WHERE id = 1`).
-		Scan(&st.SubURLPrefix, &st.ProfileTitle, &st.SupportLink, &st.UpdateInterval, &rules, &templates)
+		Scan(&st.SubURLPrefix, &st.ProfileTitle, &st.SupportLink, &st.UpdateInterval,
+			&st.WebhookURL, &st.NotifyDaysLeft, &st.NotifyUsagePercent, &rules, &templates)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultSettings(), nil
 	}
@@ -71,16 +79,22 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 	}
 
 	_, err = s.db.Exec(
-		`INSERT INTO settings (id, sub_url_prefix, profile_title, support_link, update_interval, rules, templates)
-		 VALUES (1, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO settings (id, sub_url_prefix, profile_title, support_link,
+		                      update_interval, webhook_url, notify_days_left,
+		                      notify_usage_percent, rules, templates)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
-			sub_url_prefix  = excluded.sub_url_prefix,
-			profile_title   = excluded.profile_title,
-			support_link    = excluded.support_link,
-			update_interval = excluded.update_interval,
-			rules           = excluded.rules,
-			templates       = excluded.templates`,
-		st.SubURLPrefix, st.ProfileTitle, st.SupportLink, st.UpdateInterval, rules, templates)
+			sub_url_prefix       = excluded.sub_url_prefix,
+			profile_title        = excluded.profile_title,
+			support_link         = excluded.support_link,
+			update_interval      = excluded.update_interval,
+			webhook_url          = excluded.webhook_url,
+			notify_days_left     = excluded.notify_days_left,
+			notify_usage_percent = excluded.notify_usage_percent,
+			rules                = excluded.rules,
+			templates            = excluded.templates`,
+		st.SubURLPrefix, st.ProfileTitle, st.SupportLink, st.UpdateInterval,
+		st.WebhookURL, st.NotifyDaysLeft, st.NotifyUsagePercent, rules, templates)
 	if err != nil {
 		return fmt.Errorf("保存设置: %w", err)
 	}

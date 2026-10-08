@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/control"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/store"
@@ -759,11 +762,77 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// 通知阈值允许 0(表示关掉),负数没有意义 —— 放进去只会让判断永远为假,
+	// 使用者却以为开着。
+	if v.NotifyDaysLeft < 0 {
+		writeError(w, http.StatusBadRequest, "到期提醒天数不能是负数")
+		return
+	}
+	if v.NotifyUsagePercent < 0 || v.NotifyUsagePercent > 100 {
+		writeError(w, http.StatusBadRequest, "用量提醒百分比要在 0 到 100 之间")
+		return
+	}
+	if err := validateWebhookURL(v.WebhookURL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := s.store.SaveSettings(&v); err != nil {
 		s.writeStoreError(w, err, "订阅设置")
 		return
 	}
 	writeJSON(w, http.StatusOK, v)
+}
+
+// validateWebhookURL 检查通知地址是不是一个能 POST 的 http(s) 地址。
+//
+// 空串合法,表示不通知。只认 http/https:这个地址是我们主动发出去的,别的 scheme
+// (file://、javascript:)在这里没有任何意义,放行只会把一个配置错误推迟成运行时的
+// 怪错误 —— 那时候人已经忘了自己配过什么。
+//
+// 校验放在写入口而不是发送时:发的时候才发现地址不对,那条通知已经错过了。
+func validateWebhookURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("webhook 地址不是合法 URL: %s", raw)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook 地址要以 http:// 或 https:// 开头: %s", raw)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("webhook 地址缺少主机名: %s", raw)
+	}
+	return nil
+}
+
+// handleTestWebhook 往当前设置里的地址发一条测试事件。
+//
+// 存在的理由:webhook 是一条沉默的通道 —— 配错了不会有任何反馈,要等到真出事
+// 那天才发现没收到。这个接口让它当场把话说出去一次,对面收得到才算配好了。
+//
+// 投递失败返回 502 而不是 500:请求本身没错,是上游没接住。
+func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.store.GetSettings()
+	if err != nil {
+		s.writeStoreError(w, err, "订阅设置")
+		return
+	}
+	if settings.WebhookURL == "" {
+		writeError(w, http.StatusBadRequest, "还没有配置 webhook 地址")
+		return
+	}
+	ev := control.WebhookEvent{
+		Event:   control.EventTest,
+		Message: "这是一条来自 my-proxy 的测试通知,收到就说明地址配对了。",
+		At:      time.Now(),
+	}
+	if err := control.PostWebhook(r.Context(), settings.WebhookURL, ev, s.logger); err != nil {
+		writeError(w, http.StatusBadGateway, "webhook 没送到: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"webhook": settings.WebhookURL, "sent": true})
 }
 
 // ---- 状态 ----
