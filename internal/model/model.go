@@ -197,6 +197,22 @@ const (
 	StatusLimited  Status = "limited" // 流量已超限
 )
 
+// UserStatuses 按 User.Status 的判定优先级列出全部状态。
+//
+// 判定逻辑只有 Status 方法那一份,这里只列取值 —— 校验查询参数、拼错误提示、
+// 写测试都从这一处取,新加状态时不会漏掉某个列表。
+var UserStatuses = []Status{StatusDisabled, StatusExpired, StatusLimited, StatusActive}
+
+// Valid 报告取值是不是一个已知状态。空串不算:它在这里表示"不限",由调用方处理。
+func (s Status) Valid() bool {
+	for _, v := range UserStatuses {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
 // User 是一个订阅主体。
 type User struct {
 	ID       int64  `json:"id"`

@@ -19,10 +19,17 @@ restore  <归档> [--force]                 把一份备份暂存到控制面,�
 node     list | show | status | add | rm | config | sync | install
 inbound  list | show | add | rm
 host     list | add | rm
-user     list | show | add | rm | enable | disable
+user     list | show | add | rm | enable | disable | renew | export | import
          | links | reset-traffic | revoke-sub
 settings show | set
 ```
+
+`user list` 默认只给一页(50 个),`--page` / `--page-size` 翻页,`--status` / `--search` / `--inbound` 筛选;
+末尾会写共多少个、还有多少个没显示,以及照着敲就能看下一页的命令(带上刚才的筛选条件)。
+
+`user rm` / `enable` / `disable` / `renew` / `links` 都收**一个或多个**用户名,逐个执行:中途某个失败不影响其余,
+末尾报「完成:N 个成功,M 个失败」,有失败时退出码非 0。只给一个名字时输出和以前一样(不加汇总行),
+这是为了让已有的脚本不被改坏。
 
 各命令的参数用 `mpx <命令> --help` 看(那是代码的职责,不在文档里抄第二份)。
 
@@ -35,9 +42,36 @@ ID  用户名    状态        已用  上限     到期          重置策略  
 1   alice  active    0B  100GB  不过期         monthly  全部  老朋友
 2   bob    active    0B  不限     2030-01-01  none     全部
 3   carol  disabled  0B  不限     不过期         none     全部
+共 3 个用户
+
+$ mpx user list --status expired --search li --inbound 2
+(空)
+共 0 个用户
+
+$ mpx user renew alice bob --days 30     # 各自从自己的到期日起顺延 30 天
+alice: 已把用户 alice 的到期日设为 2026-11-07
+bob: 已把用户 bob 的到期日设为 2030-01-31
+完成:2 个成功,0 个失败
+
+$ mpx user export > users.csv          # 列名见下;导出的是定义,不含用量与凭证
+$ mpx user import -f users.csv         # 按用户名 upsert,逐行独立提交
+第 2 行:已创建用户 alice
+第 3 行:已更新用户 bob
+导入完成:1 个新增,1 个更新,0 个失败
 
 $ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
 ```
+
+`renew` 两种给法:定死日期用 `--expire YYYY-MM-DD`,顺延用 `--days N`(只能给一个)。
+`--days` 的基准是**各人自己的到期日**(没到期不抹掉剩余时间),已经过期或不过期的从今天算,
+结果时分秒固定当天 23:59:59。批量的 `--days` 因此要逐个读回用户再写,不能按同一天算。
+
+CSV 的七列是 `用户名,流量上限,到期时间,可用性,重置策略,入站范围,备注`(顺序不拘,按列名认;
+不认识的列忽略,以后加列旧文件还能读)。空单元格表示「不限 / 不过期 / 全部 / 默认策略」,
+`可用性` 只认 `启用`/`停用`(以及 `true`/`false`/`是`/`否`/`1`/`0`)——**认不出的写法会报错而不是当启用**,
+理由见 [decisions.md](decisions.md) 第 25 条。`到期时间` 收 `YYYY-MM-DD`(当地时区当天 23:59:59),
+`流量上限` 走和 `--limit` 一样的 1024 进制。导入按用户名 upsert:已存在的用户只改这七个定义字段,
+`used_traffic` 与协议凭证原样保留。
 
 两个输入约定:
 
@@ -66,6 +100,7 @@ GET|POST         /api/inbounds       GET|PUT|DELETE  /api/inbounds/{id}
 GET|POST         /api/inbounds/{id}/hosts             PUT|DELETE  /api/hosts/{id}
 
 GET|POST         /api/users          GET|PUT|DELETE  /api/users/{username}
+                                                     列表支持 ?limit= ?offset= ?status= ?search= ?inbound_id=
 POST             /api/users/{username}/reset-traffic
 POST             /api/users/{username}/revoke-sub
 GET              /api/users/{username}/links
@@ -96,17 +131,31 @@ token 为空时**完全不校验**,所以那种模式只允许绑回环地址(�
 
 ```console
 $ curl -H 'Authorization: Bearer demo-token' localhost:8080/api/users
-[
-  { "id": 1, "username": "alice", "sub_token": "DOeGM8286gAsgFfm",
-    "enabled": true, "status": "active",
-    "data_limit": 107374182400, "used_traffic": 0, "lifetime_used_traffic": 0,
-    "reset_strategy": "monthly", "note": "老朋友",
-    "created_at": "2026-10-07T10:24:38Z" }
-]
+{ "users":
+  [ { "id": 1, "username": "alice", "sub_token": "DOeGM8286gAsgFfm",
+      "enabled": true, "status": "active",
+      "data_limit": 107374182400, "used_traffic": 0, "lifetime_used_traffic": 0,
+      "reset_strategy": "monthly", "note": "老朋友",
+      "created_at": "2026-10-07T10:24:38Z" } ],
+  "total": 1, "limit": 50, "offset": 0 }
 
 $ curl -H 'Authorization: Bearer wrong' localhost:8080/api/nodes
 401 { "error": "管理 token 不正确" }
 ```
+
+**用户列表给的是「一页 + 总数」。** `GET /api/users` 的五个查询参数:
+
+| 参数 | 含义 | 不合法时 |
+| --- | --- | --- |
+| `limit` | 每页条数,1..1000,默认 50(不是「全部」) | 400 `limit 要在 1 到 1000 之间` |
+| `offset` | 跳过几条,≥0 | 400 `offset 不能是负数` |
+| `status` | `active` / `expired` / `limited` / `disabled`,按 `User.Status` 的判定 | 400,并把可选值列出来 |
+| `search` | 用户名子串,不分大小写 | —— |
+| `inbound_id` | 只留能用这个入站的用户(没限定入站的用户算在内) | —— |
+
+响应里的 `total` 是**筛选之后**的总数,不是本页条数:客户端靠它才能说「还有 7 个」。
+`offset` 超出总数时 `users` 是 `[]`(不是 `null`)、`total` 照旧。筛选与分页在哪一层做、为什么不在 SQL 里写 Where,
+见 [decisions.md](decisions.md) 第 24 条。
 
 **`enabled` 可以不写,但两个方向含义不同。** 请求体里不带 `enabled` 时:
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -485,13 +486,97 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 
 // ---- 用户 ----
 
+// 用户列表的默认与最大页大小。
+//
+// 默认不是"全部":列表每行都要渲染,一千个用户刷屏既看不见也没法用;要一次拿完
+// 就自己按 offset 翻页(每页最多 1000)。
+const (
+	defaultUserPageSize = 50
+	maxUserPageSize     = 1000
+)
+
+// userPage 是 GET /api/users 的响应:一页用户加上匹配总数。
+//
+// 总数必须有:客户端靠"offset+本页条数 < total"才能说"还有 N 个",只看本页满没满
+// 在整除时会猜错。它是筛选之后的总数,不是本页条数。
+type userPage struct {
+	Users  []userView `json:"users"`
+	Total  int        `json:"total"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+}
+
+// handleListUsers 列出用户,支持筛选与分页。
+//
+// 筛选参数:status(按 model.User.Status 的判定)、search(用户名子串,不分大小写)、
+// inbound_id(可用该入站的用户)。判定不在这里做,一律交给 store —— 它复用 model
+// 里那份唯一的判定,这里再写一遍就会有两份。
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := s.store.ListUsers()
+	q := r.URL.Query()
+	page := userPage{Limit: defaultUserPageSize}
+
+	if v := q.Get("limit"); v != "" {
+		n, ok := parseInt(w, v)
+		if !ok {
+			return
+		}
+		if n < 1 || n > maxUserPageSize {
+			writeError(w, http.StatusBadRequest, "limit 要在 1 到 "+strconv.Itoa(maxUserPageSize)+" 之间")
+			return
+		}
+		page.Limit = int(n)
+	}
+	if v := q.Get("offset"); v != "" {
+		n, ok := parseInt(w, v)
+		if !ok {
+			return
+		}
+		if n < 0 {
+			writeError(w, http.StatusBadRequest, "offset 不能是负数")
+			return
+		}
+		page.Offset = int(n)
+	}
+
+	status := model.Status(q.Get("status"))
+	if status != "" && !status.Valid() {
+		writeError(w, http.StatusBadRequest, "status 只能是 "+statusChoices()+"(按判定优先级排列)")
+		return
+	}
+
+	var inboundID int64
+	if v := q.Get("inbound_id"); v != "" {
+		id, ok := parseInt(w, v)
+		if !ok {
+			return
+		}
+		inboundID = id
+	}
+
+	users, total, err := s.store.ListUsersPage(store.UserQuery{
+		Status:    status,
+		Search:    q.Get("search"),
+		InboundID: inboundID,
+		Limit:     page.Limit,
+		Offset:    page.Offset,
+	})
 	if err != nil {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
-	writeJSON(w, http.StatusOK, userViews(users))
+	page.Users = userViews(users)
+	page.Total = total
+	writeJSON(w, http.StatusOK, page)
+}
+
+// statusChoices 拼出状态取值的提示。取值列表来自 model,不在这里另抄一份 ——
+// 新加一个状态时只需要改 model。
+func statusChoices() string {
+	parts := make([]string, 0, len(model.UserStatuses))
+	for _, s := range model.UserStatuses {
+		parts = append(parts, string(s))
+	}
+	return strings.Join(parts, " / ")
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,13 +23,15 @@ var userCmd = &cobra.Command{
 
 var userHeaders = []string{"ID", "用户名", "状态", "已用", "上限", "到期", "重置策略", "入站", "备注"}
 
-// userRow 只声明表格要展示的字段。
+// userRow 是 CLI 侧对服务端 userView 的映射。
 //
-// 它对应服务端的 userView(不含 Key),字段名与服务端 JSON 标签一致;json
-// 模式不走这里,而是原样重排服务端响应。
+// 除表格要展示的字段外还带上 enabled:导出 CSV 要写"可用性",而"可用性"是
+// 显式开关,不是由过期/超限推出的 status;表里两者的差别(停用 vs 过期)不加
+// 这一列就分不出来。
 type userRow struct {
 	ID            int64      `json:"id"`
 	Username      string     `json:"username"`
+	Enabled       bool       `json:"enabled"`
 	Status        string     `json:"status"`
 	DataLimit     int64      `json:"data_limit"`
 	UsedTraffic   int64      `json:"used_traffic"`
@@ -80,32 +83,124 @@ func expireText(t *time.Time) string {
 	return t.Local().Format("2006-01-02")
 }
 
+// userListFlags 是 user list 的筛选与分页选项。
+//
+// 用具名 flag 而不是让用户拼服务端查询串:分页应该是"第几页/每页多少"这种
+// 想得明白的东西。刻意不用 --limit 表示每页条数 —— 在 user add 里 --limit
+// 已经是流量上限(1024 进制字节),一个工具里同一个词不能有两个意思。
+var userListFlags struct {
+	page     int
+	pageSize int
+	status   string
+	search   string
+	inbound  int64
+}
+
+// userPage 对应服务端的 userPage:一页用户加匹配总数。
+//
+// total 是筛选之后的总数,不是库里的总数;客户端靠它才能说清"还有多少"。
+type userPage struct {
+	Users  []userRow `json:"users"`
+	Total  int       `json:"total"`
+	Limit  int       `json:"limit"`
+	Offset int       `json:"offset"`
+}
+
 var userListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "列出所有用户",
-	Args:  cobra.NoArgs,
+	Short: "列出用户(可分页与筛选)",
+	Long: `列出用户。默认只给一页(50 个),不会把上千个用户一次刷满屏幕。
+
+末尾会写明匹配到多少、还有多少,以及带上当前筛选条件的下一页命令。
+
+  mpx user list --status expired --search li
+  mpx user list --inbound 2 --page 2 --page-size 20`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// page/page-size 先自己挡一道:page=0 会算出负数 offset,让服务端回一句
+		// "offset 不能是负数"更让人糊涂。
+		if userListFlags.page < 1 {
+			return errors.New("--page 从 1 开始")
+		}
+		if userListFlags.pageSize < 1 {
+			return errors.New("--page-size 至少为 1")
+		}
+		if userListFlags.inbound < 0 {
+			return errors.New("--inbound 是入站 ID,不能是负数")
+		}
+		q := url.Values{}
+		q.Set("limit", strconv.Itoa(userListFlags.pageSize))
+		q.Set("offset", strconv.Itoa((userListFlags.page-1)*userListFlags.pageSize))
+		if userListFlags.status != "" {
+			q.Set("status", userListFlags.status)
+		}
+		if userListFlags.search != "" {
+			q.Set("search", userListFlags.search)
+		}
+		if userListFlags.inbound > 0 {
+			q.Set("inbound_id", strconv.FormatInt(userListFlags.inbound, 10))
+		}
 		c, err := newClient()
 		if err != nil {
 			return err
 		}
-		raw, err := c.do("GET", "/api/users", nil)
+		raw, err := c.do("GET", "/api/users?"+q.Encode(), nil)
 		if err != nil {
 			return err
 		}
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		users, err := decode[[]userRow](raw)
+		page, err := decode[userPage](raw)
 		if err != nil {
 			return err
 		}
-		rows := make([][]string, 0, len(users))
-		for _, u := range users {
+		rows := make([][]string, 0, len(page.Users))
+		for _, u := range page.Users {
 			rows = append(rows, u.row())
 		}
-		return writeTable(userHeaders, rows)
+		if err := writeTable(userHeaders, rows); err != nil {
+			return err
+		}
+		return userListHint(page)
 	},
+}
+
+// userListHint 在表格末尾补一句:匹配到多少、还有多少、下一页怎么敲。
+//
+// 少了这句,默认一页就会让人以为用户就这么多 —— 分页最容易骗人的地方就是
+// 静默截断。
+func userListHint(page userPage) error {
+	shown := page.Offset + len(page.Users)
+	if shown >= page.Total {
+		_, err := fmt.Fprintf(os.Stdout, "共 %d 个用户\n", page.Total)
+		return err
+	}
+	_, err := fmt.Fprintf(os.Stdout, "共 %d 个用户,本页 %d 个;还有 %d 个,下一页:\n  %s\n",
+		page.Total, len(page.Users), page.Total-shown, userListNextCmd(userListFlags.page+1))
+	return err
+}
+
+// userListNextCmd 拼出下一页的命令,带上这次用过的筛选条件。
+//
+// 必须重复筛选条件:否则用户照着敲就跳出了当前筛选,那个"下一页"根本不是同一
+// 份列表。
+func userListNextCmd(page int) string {
+	parts := []string{
+		"mpx", "user", "list",
+		"--page", strconv.Itoa(page),
+		"--page-size", strconv.Itoa(userListFlags.pageSize),
+	}
+	if userListFlags.status != "" {
+		parts = append(parts, "--status", userListFlags.status)
+	}
+	if userListFlags.search != "" {
+		parts = append(parts, "--search", userListFlags.search)
+	}
+	if userListFlags.inbound > 0 {
+		parts = append(parts, "--inbound", strconv.FormatInt(userListFlags.inbound, 10))
+	}
+	return strings.Join(parts, " ")
 }
 
 var userShowCmd = &cobra.Command{
@@ -191,68 +286,66 @@ var userAddCmd = &cobra.Command{
 }
 
 var userRmCmd = &cobra.Command{
-	Use:   "rm <username>",
-	Short: "删除一个用户",
-	Args:  cobra.ExactArgs(1),
+	Use:   "rm <username>...",
+	Short: "删除一个或多个用户",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		raw, err := c.do("DELETE", userPath(args[0]), nil)
-		if err != nil {
-			return err
-		}
-		return report(raw, "已删除用户 %s", args[0])
+		return runUserBatch(args, func(c *Client, name string) (string, []byte, error) {
+			raw, err := c.do("DELETE", userPath(name), nil)
+			if err != nil {
+				return "", nil, err
+			}
+			return fmt.Sprintf("已删除用户 %s", name), raw, nil
+		})
 	},
 }
 
 var userEnableCmd = &cobra.Command{
-	Use:   "enable <username>",
-	Short: "启用一个用户",
-	Args:  cobra.ExactArgs(1),
+	Use:   "enable <username>...",
+	Short: "启用一个或多个用户",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return setUserEnabled(args[0], true)
+		return runUserBatch(args, func(c *Client, name string) (string, []byte, error) {
+			return setUserEnabled(c, name, true)
+		})
 	},
 }
 
 var userDisableCmd = &cobra.Command{
-	Use:   "disable <username>",
-	Short: "停用一个用户",
-	Args:  cobra.ExactArgs(1),
+	Use:   "disable <username>...",
+	Short: "停用一个或多个用户",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return setUserEnabled(args[0], false)
+		return runUserBatch(args, func(c *Client, name string) (string, []byte, error) {
+			return setUserEnabled(c, name, false)
+		})
 	},
 }
 
 // setUserEnabled 用"读-改-写"实现启用/停用。
 //
-// PUT 是整体替换,所以先把用户读回来再回写;只带 Enabled 的改动。服务端的
-// userView 不含 Key,回写时留空,服务端会沿用原值。
-func setUserEnabled(username string, enabled bool) error {
-	c, err := newClient()
-	if err != nil {
-		return err
-	}
+// PUT 是整体替换,所以先把用户读回来再回写,只改 Enabled 这一项。返回的原始
+// 响应交给 runUserBatch 决定怎么打;单名字时就是原来那条 GET→PUT 的行为。
+func setUserEnabled(c *Client, username string, enabled bool) (string, []byte, error) {
 	path := userPath(username)
 	raw, err := c.do("GET", path, nil)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	u, err := decode[model.User](raw)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	u.Enabled = enabled
 	raw, err = c.do("PUT", path, u)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	word := "已停用"
 	if enabled {
 		word = "已启用"
 	}
-	return report(raw, "%s用户 %s", word, username)
+	return fmt.Sprintf("%s用户 %s", word, username), raw, nil
 }
 
 // linkOrder 固定订阅链接的显示顺序:map 的遍历顺序是随机的,不固定下来每次
@@ -260,95 +353,102 @@ func setUserEnabled(username string, enabled bool) error {
 var linkOrder = []string{"auto", string(model.FormatLinks), string(model.FormatBase64), string(model.FormatClash), string(model.FormatClashMeta), string(model.FormatSingBox), string(model.FormatXray)}
 
 var userLinksCmd = &cobra.Command{
-	Use:   "links <username>",
-	Short: "显示一个用户的各格式订阅地址",
-	Args:  cobra.ExactArgs(1),
+	Use:   "links <username>...",
+	Short: "显示一个或多个用户的各格式订阅地址",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		raw, err := c.do("GET", userPath(args[0])+"/links", nil)
-		if err != nil {
-			return err
-		}
-		if opts.output == outputJSON {
-			return emitJSON(raw)
-		}
-		links, err := decode[map[string]string](raw)
-		if err != nil {
-			return err
-		}
-		rows := make([][]string, 0, len(links))
-		for _, key := range linkOrder {
-			if v, ok := links[key]; ok {
-				rows = append(rows, []string{key, v})
-				delete(links, key)
-			}
-		}
-		// 服务端以后加了新格式,也别让它悄悄消失。
-		rest := make([]string, 0, len(links))
-		for key := range links {
-			rest = append(rest, key)
-		}
-		sort.Strings(rest)
-		for _, key := range rest {
-			rows = append(rows, []string{key, links[key]})
-		}
-		return writeTable([]string{"格式", "订阅地址"}, rows)
+		return runUserBatch(args, userLinksText)
 	},
 }
 
+// userLinksText 取回一个用户的全部格式订阅地址并排成表格文本。
+func userLinksText(c *Client, username string) (string, []byte, error) {
+	raw, err := c.do("GET", userPath(username)+"/links", nil)
+	if err != nil {
+		return "", nil, err
+	}
+	links, err := decode[map[string]string](raw)
+	if err != nil {
+		return "", nil, err
+	}
+	rows := make([][]string, 0, len(links))
+	for _, key := range linkOrder {
+		if v, ok := links[key]; ok {
+			rows = append(rows, []string{key, v})
+			delete(links, key)
+		}
+	}
+	// 服务端以后加了新格式,也别让它悄悄消失。
+	rest := make([]string, 0, len(links))
+	for key := range links {
+		rest = append(rest, key)
+	}
+	sort.Strings(rest)
+	for _, key := range rest {
+		rows = append(rows, []string{key, links[key]})
+	}
+	return strings.TrimSuffix(tableText([]string{"格式", "订阅地址"}, rows), "\n"), raw, nil
+}
+
 var userResetTrafficCmd = &cobra.Command{
-	Use:   "reset-traffic <username>",
-	Short: "把用户已用流量清零",
-	Args:  cobra.ExactArgs(1),
+	Use:   "reset-traffic <username>...",
+	Short: "把一个或多个用户的已用流量清零",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		raw, err := c.do("POST", userPath(args[0])+"/reset-traffic", nil)
-		if err != nil {
-			return err
-		}
-		return report(raw, "已清零用户 %s 的已用流量", args[0])
+		return runUserBatch(args, func(c *Client, name string) (string, []byte, error) {
+			raw, err := c.do("POST", userPath(name)+"/reset-traffic", nil)
+			if err != nil {
+				return "", nil, err
+			}
+			return fmt.Sprintf("已清零用户 %s 的已用流量", name), raw, nil
+		})
 	},
 }
 
 var userRevokeSubCmd = &cobra.Command{
-	Use:   "revoke-sub <username>",
-	Short: "换掉用户的订阅 token(不影响协议凭证)",
-	Args:  cobra.ExactArgs(1),
+	Use:   "revoke-sub <username>...",
+	Short: "换掉一个或多个用户的订阅 token(不影响协议凭证)",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		path := userPath(args[0])
-		raw, err := c.do("POST", path+"/revoke-sub", nil)
-		if err != nil {
-			return err
-		}
-		if opts.output == outputJSON {
-			return emitJSON(raw)
-		}
-		// 换完之后旧订阅地址就失效了,顺手把新地址打出来,省一次链接查询;
-		// 查不到也不影响"已经换掉"这个事实,所以不当成错误。
-		if links, err := c.do("GET", path+"/links", nil); err == nil {
-			if m, err := decode[map[string]string](links); err == nil {
-				if sub := m["auto"]; sub != "" {
-					return report(raw, "已换掉用户 %s 的订阅 token,新地址:\n%s", args[0], sub)
-				}
+		return runUserBatch(args, revokeUserSub)
+	},
+}
+
+// revokeUserSub 换掉一个用户的订阅 token,并尽量把新地址带出来。
+//
+// 换完之后旧订阅地址就失效了,顺手打新地址省一次链接查询;查不到也不影响
+// "已经换掉"这个事实,所以不当成错误。
+func revokeUserSub(c *Client, username string) (string, []byte, error) {
+	path := userPath(username)
+	raw, err := c.do("POST", path+"/revoke-sub", nil)
+	if err != nil {
+		return "", nil, err
+	}
+	if links, err := c.do("GET", path+"/links", nil); err == nil {
+		if m, err := decode[map[string]string](links); err == nil {
+			if sub := m["auto"]; sub != "" {
+				return fmt.Sprintf("已换掉用户 %s 的订阅 token,新地址:\n%s", username, sub), raw, nil
 			}
 		}
-		return report(raw, "已换掉用户 %s 的订阅 token", args[0])
-	},
+	}
+	return fmt.Sprintf("已换掉用户 %s 的订阅 token", username), raw, nil
 }
 
 func init() {
 	userCmd.AddCommand(userListCmd, userShowCmd, userAddCmd, userRmCmd,
-		userEnableCmd, userDisableCmd, userLinksCmd, userResetTrafficCmd, userRevokeSubCmd)
+		userEnableCmd, userDisableCmd, userRenewCmd, userLinksCmd,
+		userResetTrafficCmd, userRevokeSubCmd, userExportCmd, userImportCmd)
+
+	userListCmd.Flags().IntVar(&userListFlags.page, "page", 1, "第几页(从 1 开始)")
+	userListCmd.Flags().IntVar(&userListFlags.pageSize, "page-size", 50, "每页多少条")
+	userListCmd.Flags().StringVar(&userListFlags.status, "status", "", "只看某种状态:active / expired / limited / disabled")
+	userListCmd.Flags().StringVar(&userListFlags.search, "search", "", "用户名包含这段文字(不分大小写)")
+	userListCmd.Flags().Int64Var(&userListFlags.inbound, "inbound", 0, "只看能用某个入站 id 的用户")
+
+	userRenewCmd.Flags().StringVar(&userRenewFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
+	userRenewCmd.Flags().IntVar(&userRenewFlags.days, "days", 0, "从当前到期日(已过期则从今天)起顺延的天数")
+
+	userImportCmd.Flags().StringVarP(&userImportFlags.file, "file", "f", "", "要导入的 CSV 文件")
 
 	userAddCmd.Flags().StringVar(&userAddFlags.limit, "limit", "", "流量上限,如 100GB / 1.5TB;不填或 0 表示不限")
 	userAddCmd.Flags().StringVar(&userAddFlags.expire, "expire", "", "到期日 YYYY-MM-DD(当地时区当天 23:59:59)")

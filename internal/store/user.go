@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -131,26 +132,78 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 	return u, nil
 }
 
-// ListUsers 按 id 升序返回全部用户。
-func (s *Store) ListUsers() ([]model.User, error) {
+// UserQuery 是用户列表的筛选与分页条件;零值表示"全部用户、不分页"。
+//
+// 筛选在 Go 里按 model 的方法做(状态用 User.Status、入站用 User.AllowsInbound),
+// 不把判定翻写成 SQL 的 WHERE:那两处判定是本系统唯一的一份规则,SQL 里再写一遍
+// 迟早会出现"列表说 active、订阅说 limited"这种两份规则打架。代价是每次列表要
+// 把用户读进内存再筛 —— 全量读用户本来就在别处做过(巡检、渲染节点配置),量级
+// 在千级时这点内存和 CPU 不值得换一份第二实现;真到了十万级再考虑给 SQL 版本
+// 补一份共用判定,见 decisions.md 第 24 条。
+type UserQuery struct {
+	// Status 为空表示不限。取值合法性由调用方先校验(非法值在这里会筛出空结果)。
+	Status model.Status
+	// Search 是用户名的子串,不分大小写;空表示不限。
+	Search string
+	// InboundID 大于 0 时只保留可用该入站的用户 —— 没限定入站的用户本来就能用
+	// 全部入站,算在内。
+	InboundID int64
+	// Limit 是每页条数,<=0 表示不分页;Offset 是跳过的条数。
+	Limit  int
+	Offset int
+}
+
+// ListUsersPage 返回筛选后的一页用户,以及匹配的用户总数(不是本页条数)。
+//
+// 总数在筛选之后数,客户端才能说"还有 N 个"。
+func (s *Store) ListUsersPage(q UserQuery) ([]model.User, int, error) {
 	rows, err := s.db.Query(`SELECT ` + userColumns + ` FROM users ORDER BY id`)
 	if err != nil {
-		return nil, fmt.Errorf("查询用户列表: %w", err)
+		return nil, 0, fmt.Errorf("查询用户列表: %w", err)
 	}
 	defer rows.Close()
 
-	var out []model.User
+	now := time.Now()
+	search := strings.ToLower(strings.TrimSpace(q.Search))
+	var matched []model.User
 	for rows.Next() {
 		u, err := scanUser(rows)
 		if err != nil {
-			return nil, fmt.Errorf("读取用户记录: %w", err)
+			return nil, 0, fmt.Errorf("读取用户记录: %w", err)
 		}
-		out = append(out, *u)
+		if search != "" && !strings.Contains(strings.ToLower(u.Username), search) {
+			continue
+		}
+		if q.Status != "" && u.Status(now) != q.Status {
+			continue
+		}
+		if q.InboundID > 0 && !u.AllowsInbound(q.InboundID) {
+			continue
+		}
+		matched = append(matched, *u)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历用户列表: %w", err)
+		return nil, 0, fmt.Errorf("遍历用户列表: %w", err)
 	}
-	return out, nil
+
+	total := len(matched)
+	if q.Offset >= total {
+		return nil, total, nil
+	}
+	page := matched[q.Offset:]
+	if q.Limit > 0 && q.Limit < len(page) {
+		page = page[:q.Limit]
+	}
+	return page, total, nil
+}
+
+// ListUsers 按 id 升序返回全部用户。
+//
+// 它是 ListUsersPage 不加任何条件的简写:全量列表与"筛出来的一页"共用同一段
+// 查询与扫描,不各写一份。
+func (s *Store) ListUsers() ([]model.User, error) {
+	users, _, err := s.ListUsersPage(UserQuery{})
+	return users, err
 }
 
 // UpdateUser 按 u.Username 整体覆盖一条用户记录,用户名本身不能通过它改。

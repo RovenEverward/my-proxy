@@ -192,6 +192,19 @@ func emitJSON(raw []byte) error {
 	return err
 }
 
+// emitJSONValue 把客户端自己拼出来的结构按同样的缩进规则打出去。
+//
+// 与 emitJSON 分开:那个用于透传服务端响应,这个用于批量/导入这种客户端自己
+// 攒出来的报告,形状由客户端定义。
+func emitJSONValue(v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(append(b, '\n'))
+	return err
+}
+
 // report 输出一次写操作的结果:json 模式给服务端原始响应,表格模式给人话。
 func report(raw []byte, format string, a ...any) error {
 	if opts.output == outputJSON {
@@ -210,18 +223,28 @@ func decode[T any](raw []byte) (T, error) {
 	return v, nil
 }
 
-// writeTable 打一张带表头的表;没有数据时明确写出"(空)"而不是什么都不打。
-func writeTable(headers []string, rows [][]string) error {
+// tableText 把一张带表头的表渲染成文本;没有数据时明确写出"(空)"而不是什么都不打。
+//
+// 渲染与打印分开,是为了批量命令能把每个用户的结果攒成一个字符串再决定怎么输出
+// (逐个打、还是包进 JSON),不至于一边打一边拼。
+func tableText(headers []string, rows [][]string) string {
 	if len(rows) == 0 {
-		_, err := fmt.Fprintln(os.Stdout, "(空)")
-		return err
+		return "(空)\n"
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	var buf bytes.Buffer
+	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, strings.Join(headers, "\t"))
 	for _, row := range rows {
 		fmt.Fprintln(w, strings.Join(row, "\t"))
 	}
-	return w.Flush()
+	_ = w.Flush()
+	return buf.String()
+}
+
+// writeTable 把表格打到标准输出。
+func writeTable(headers []string, rows [][]string) error {
+	_, err := os.Stdout.WriteString(tableText(headers, rows))
+	return err
 }
 
 // writeKV 打一张两列的详情表,用来显示一条记录的全部字段。

@@ -151,6 +151,21 @@ echo '{"sub_url_prefix":"https://sub.example.com","profile_title":"我的机场"
   | ./mpx settings set -f -
 ```
 
+用户多了之后的几个动作:
+
+```bash
+./mpx user list                                # 默认只给一页(50 个),末尾说共多少、还有多少
+./mpx user list --status expired --search li   # 筛选;末尾给出带上筛选条件的下一页命令
+./mpx user enable alice bob carol              # 一次多个,逐个执行,末尾汇总成败
+./mpx user renew alice bob --days 30           # 各自从自己的到期日起顺延 30 天
+./mpx user export > users.csv
+./mpx user import -f users.csv                 # 按用户名 upsert,坏行报行号、其余照常
+```
+
+`user rm` / `enable` / `disable` / `renew` / `links` 都收**一个或多个**用户名:中途某个失败不影响其余,
+末尾报「完成:N 个成功,M 个失败」,有失败时退出码非 0;只给一个名字时输出和以前一样。
+CSV 的七列、空单元格的含义、以及「可用性写错就报错」的理由,见 [docs/contracts.md](docs/contracts.md)。
+
 ### 6. 按 User-Agent 分格式
 
 订阅规则是「正则 + 返回格式」的有序列表,第一条命中的生效。客户端不认路径参数的
