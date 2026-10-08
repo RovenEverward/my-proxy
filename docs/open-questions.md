@@ -6,11 +6,12 @@
 
 立项时用户的原话是「操作订阅的 Clash 以及 SingBox 的规则」。当前实现里,「规则」只有一层意思:**User-Agent → 返回哪种格式**。
 
-客户端配置内部的分流规则(哪些域名走代理、哪些直连)是**写死在模板里**的:
+客户端配置内部的分流规则(哪些域名走代理、哪些直连)现在**内嵌在模板里**:
 
-- `settings` 表没有模板字段;
-- `render.Clash(eps, meta)` **不接受模板参数**,规则完全写死在代码里;
-- `render.SingBox(eps, nil)` 与 `render.Xray(eps, nil)` 的调用处一律传 `nil`,永远用内嵌的默认模板。
+- `clash-meta` 走 `internal/render/templates/clash-default.yaml`:rule-providers(128 个源)、proxy-groups(15 组)、rules(159 条)、dns 都写在这里,`proxies` 由渲染时注入;
+- `sing-box` 走 `internal/render/templates/singbox-default.json`:route.rule_set(105 个 sing-geosite 规则集)、按主题分组的 selector、镜像 Clash 规则的 route.rules;
+- 两者都是 `//go:embed` 编进二进制,**改模板要重新编译控制面**;
+- `render.Clash(eps, meta)` 的 `meta=false` 仍是最小输出(3 条规则),`meta=true` 才走完整模板。
 
 **要做的话大致是这个形状**(需要定):
 

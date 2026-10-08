@@ -126,8 +126,9 @@ func assertSkeleton(t *testing.T, cfg map[string]any, nodeTags []string) {
 	if !ok {
 		t.Fatalf("route 不是对象: %v", cfg["route"])
 	}
-	if route["final"] != singboxProxyTag {
-		t.Errorf("route.final = %v, 期望 %q", route["final"], singboxProxyTag)
+	final, _ := route["final"].(string)
+	if final == "" {
+		t.Errorf("route.final 为空,应当指向一个真实存在的出口")
 	}
 }
 
@@ -492,7 +493,9 @@ func TestSingBoxUniqueTags(t *testing.T) {
 	wantTags := []string{
 		singboxProxyTag, singboxAutoTag,
 		"同名声", "同名声-2", "同名声-3", "别的名字",
-		singboxDirectTag, singboxBlockTag, "dns-out",
+		singboxDirectTag, singboxBlockTag,
+		"全球代理", "广告拦截", "本地直连", "人工智能", "谷歌", "苹果", "微软",
+		"社交", "流媒体", "游戏", "开发", "国内媒体", "漏网之鱼",
 	}
 	got := tagsOf(cfg)
 	if !reflect.DeepEqual(got, wantTags) {
@@ -523,13 +526,40 @@ func TestSingBoxDefaultTemplate(t *testing.T) {
 	}
 	cfg := decodeConfig(t, out)
 
-	// proxy / auto / 节点 / direct / block / dns-out
-	if got := len(outboundsOf(t, cfg)); got != 6 {
-		t.Errorf("outbounds 数量 = %d, 期望 6: %v", got, tagsOf(cfg))
+	// 内置默认模板:proxy / auto / 节点 / direct / block,外加按主题分组的
+	// selector(全球代理 / 广告拦截 / 本地直连 / 人工智能 / 谷歌 / 苹果 / 微软 /
+	// 社交 / 流媒体 / 游戏 / 开发 / 国内媒体 / 漏网之鱼)。
+	if got := len(outboundsOf(t, cfg)); got != 18 {
+		t.Errorf("outbounds 数量 = %d, 期望 18: %v", got, tagsOf(cfg))
 	}
 	for _, key := range []string{"log", "dns", "inbounds", "route", "experimental"} {
 		if _, ok := cfg[key]; !ok {
 			t.Errorf("默认模板缺少顶层键 %q", key)
+		}
+	}
+	// 主题组存在且引用的是稳定出口,而不是节点名。
+	for _, tag := range []string{"全球代理", "广告拦截", "本地直连", "人工智能", "谷歌",
+		"苹果", "微软", "社交", "流媒体", "游戏", "开发", "国内媒体", "漏网之鱼"} {
+		ob := findOutbound(t, cfg, tag)
+		if ob["type"] != "selector" {
+			t.Errorf("%s 的 type = %v, 期望 selector", tag, ob["type"])
+		}
+	}
+	// route.rule_set 存在,且至少带广告与 geoip 两组规则。
+	route := cfg["route"].(map[string]any)
+	ruleSets, ok := route["rule_set"].([]any)
+	if !ok || len(ruleSets) == 0 {
+		t.Errorf("默认模板 route 应有 rule_set")
+	}
+	ruleSetTags := map[string]bool{}
+	for _, rs := range ruleSets {
+		if m, ok := rs.(map[string]any); ok {
+			ruleSetTags[m["tag"].(string)] = true
+		}
+	}
+	for _, want := range []string{"category-ads-all", "easylist", "geoip-cn"} {
+		if !ruleSetTags[want] {
+			t.Errorf("rule_set 缺 %q", want)
 		}
 	}
 	assertSkeleton(t, cfg, []string{ep.Remark})

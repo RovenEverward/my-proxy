@@ -74,81 +74,144 @@ func clashProxies(t *testing.T, eps []Endpoint, meta bool) []map[string]any {
 }
 
 // TestClashStructure 覆盖顶层结构:能被 yaml 解析,节点数与策略组、规则齐全。
+// meta=false 是原来的最小输出(2 组 3 规则);meta=true 走完整模板。
 func TestClashStructure(t *testing.T) {
 	eps := clashTestEndpoints()
 
-	for _, meta := range []bool{false, true} {
-		name := "clash"
-		if meta {
-			name = "clash-meta"
+	t.Run("clash", func(t *testing.T) {
+		raw, err := Clash(eps, false)
+		if err != nil {
+			t.Fatalf("Clash() 报错: %v", err)
 		}
-		t.Run(name, func(t *testing.T) {
-			raw, err := Clash(eps, meta)
-			if err != nil {
-				t.Fatalf("Clash() 报错: %v", err)
-			}
 
-			var doc map[string]any
-			if err := yaml.Unmarshal(raw, &doc); err != nil {
-				t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
-			}
+		var doc map[string]any
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
+		}
 
-			proxies, ok := doc["proxies"].([]any)
-			if !ok {
-				t.Fatalf("proxies 不是列表: %#v", doc["proxies"])
-			}
-			if len(proxies) != len(eps) {
-				t.Errorf("proxies 条数 = %d, want %d", len(proxies), len(eps))
-			}
+		proxies, ok := doc["proxies"].([]any)
+		if !ok {
+			t.Fatalf("proxies 不是列表: %#v", doc["proxies"])
+		}
+		if len(proxies) != len(eps) {
+			t.Errorf("proxies 条数 = %d, want %d", len(proxies), len(eps))
+		}
 
-			groups, ok := doc["proxy-groups"].([]any)
-			if !ok || len(groups) != 2 {
-				t.Fatalf("proxy-groups = %#v, want 2 个", doc["proxy-groups"])
-			}
+		groups, ok := doc["proxy-groups"].([]any)
+		if !ok || len(groups) != 2 {
+			t.Fatalf("proxy-groups = %#v, want 2 个", doc["proxy-groups"])
+		}
 
-			proxyGroup, _ := groups[0].(map[string]any)
-			if proxyGroup["name"] != "PROXY" || proxyGroup["type"] != "select" {
-				t.Errorf("第一个策略组 = %#v, want PROXY/select", groups[0])
+		proxyGroup, _ := groups[0].(map[string]any)
+		if proxyGroup["name"] != "PROXY" || proxyGroup["type"] != "select" {
+			t.Errorf("第一个策略组 = %#v, want PROXY/select", groups[0])
+		}
+		selectNames, _ := proxyGroup["proxies"].([]any)
+		wantSelect := []any{"AUTO", "DIRECT", "reality-vless", "ws-vless", "grpc-vless",
+			"vmess-ws", "vmess-tcp", "tcp-trojan", "grpc-trojan"}
+		if len(selectNames) != len(wantSelect) {
+			t.Fatalf("PROXY 成员 = %#v, want %#v", selectNames, wantSelect)
+		}
+		for i, want := range wantSelect {
+			if selectNames[i] != want {
+				t.Errorf("PROXY[%d] = %v, want %v", i, selectNames[i], want)
 			}
-			selectNames, _ := proxyGroup["proxies"].([]any)
-			wantSelect := []any{"AUTO", "DIRECT", "reality-vless", "ws-vless", "grpc-vless",
-				"vmess-ws", "vmess-tcp", "tcp-trojan", "grpc-trojan"}
-			if len(selectNames) != len(wantSelect) {
-				t.Fatalf("PROXY 成员 = %#v, want %#v", selectNames, wantSelect)
-			}
-			for i, want := range wantSelect {
-				if selectNames[i] != want {
-					t.Errorf("PROXY[%d] = %v, want %v", i, selectNames[i], want)
-				}
-			}
+		}
 
-			autoGroup, _ := groups[1].(map[string]any)
-			if autoGroup["name"] != "AUTO" || autoGroup["type"] != "url-test" {
-				t.Errorf("第二个策略组 = %#v, want AUTO/url-test", groups[1])
-			}
-			if autoGroup["url"] != "http://www.gstatic.com/generate_204" {
-				t.Errorf("AUTO.url = %v", autoGroup["url"])
-			}
-			if autoGroup["interval"] != 300 {
-				t.Errorf("AUTO.interval = %#v, want 300", autoGroup["interval"])
-			}
-			autoNames, _ := autoGroup["proxies"].([]any)
-			if len(autoNames) != len(eps) {
-				t.Errorf("AUTO 成员条数 = %d, want %d", len(autoNames), len(eps))
-			}
+		autoGroup, _ := groups[1].(map[string]any)
+		if autoGroup["name"] != "AUTO" || autoGroup["type"] != "url-test" {
+			t.Errorf("第二个策略组 = %#v, want AUTO/url-test", groups[1])
+		}
+		if autoGroup["url"] != "http://www.gstatic.com/generate_204" {
+			t.Errorf("AUTO.url = %v", autoGroup["url"])
+		}
+		if autoGroup["interval"] != 300 {
+			t.Errorf("AUTO.interval = %#v, want 300", autoGroup["interval"])
+		}
+		autoNames, _ := autoGroup["proxies"].([]any)
+		if len(autoNames) != len(eps) {
+			t.Errorf("AUTO 成员条数 = %d, want %d", len(autoNames), len(eps))
+		}
 
-			rules, ok := doc["rules"].([]any)
-			if !ok || len(rules) != 3 {
-				t.Fatalf("rules = %#v, want 3 条", doc["rules"])
+		rules, ok := doc["rules"].([]any)
+		if !ok || len(rules) != 3 {
+			t.Fatalf("rules = %#v, want 3 条", doc["rules"])
+		}
+		wantRules := []any{"GEOIP,LAN,DIRECT", "GEOIP,CN,DIRECT", "MATCH,PROXY"}
+		for i, want := range wantRules {
+			if rules[i] != want {
+				t.Errorf("rules[%d] = %v, want %v", i, rules[i], want)
 			}
-			wantRules := []any{"GEOIP,LAN,DIRECT", "GEOIP,CN,DIRECT", "MATCH,PROXY"}
-			for i, want := range wantRules {
-				if rules[i] != want {
-					t.Errorf("rules[%d] = %v, want %v", i, rules[i], want)
-				}
+		}
+	})
+
+	t.Run("clash-meta", func(t *testing.T) {
+		raw, err := Clash(eps, true)
+		if err != nil {
+			t.Fatalf("Clash() 报错: %v", err)
+		}
+
+		var doc map[string]any
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
+		}
+
+		proxies, ok := doc["proxies"].([]any)
+		if !ok {
+			t.Fatalf("proxies 不是列表: %#v", doc["proxies"])
+		}
+		if len(proxies) != len(eps) {
+			t.Errorf("proxies 条数 = %d, want %d", len(proxies), len(eps))
+		}
+		// 注入的节点与最小版同源:name 齐全即可。
+		names := map[string]bool{}
+		for _, p := range proxies {
+			names[p.(map[string]any)["name"].(string)] = true
+		}
+		for _, want := range []string{"reality-vless", "ws-vless", "grpc-vless",
+			"vmess-ws", "vmess-tcp", "tcp-trojan", "grpc-trojan"} {
+			if !names[want] {
+				t.Errorf("proxies 缺节点 %q", want)
 			}
-		})
-	}
+		}
+
+		// 模板段落齐整:rule-providers / proxy-groups / rules / dns。
+		if _, ok := doc["rule-providers"].(map[string]any); !ok {
+			t.Errorf("meta 版应有 rule-providers")
+		}
+		groups, ok := doc["proxy-groups"].([]any)
+		if !ok || len(groups) < 15 {
+			t.Fatalf("meta 版 proxy-groups = %d 个, want >= 15", len(groups))
+		}
+		groupNames := map[string]bool{}
+		for _, g := range groups {
+			groupNames[g.(map[string]any)["name"].(string)] = true
+		}
+		for _, want := range []string{"手动切换", "自动选择", "全球代理", "广告拦截",
+			"本地直连", "人工智能", "谷歌", "苹果", "微软", "社交", "流媒体", "游戏",
+			"开发", "国内媒体", "漏网之鱼"} {
+			if !groupNames[want] {
+				t.Errorf("meta 版缺策略组 %q", want)
+			}
+		}
+
+		rules, ok := doc["rules"].([]any)
+		if !ok || len(rules) < 100 {
+			t.Errorf("meta 版 rules = %d 条, want >= 100", len(rules))
+		}
+
+		dns, ok := doc["dns"].(map[string]any)
+		if !ok {
+			t.Errorf("meta 版应有 dns 段")
+		} else {
+			if _, ok := dns["fake-ip-filter"].([]any); !ok {
+				t.Errorf("dns 缺 fake-ip-filter")
+			}
+			if _, ok := dns["nameserver-policy"].(map[string]any); !ok {
+				t.Errorf("dns 缺 nameserver-policy")
+			}
+		}
+	})
 }
 
 // TestClashProxyFields 逐个字段核对节点的渲染结果。
@@ -382,6 +445,32 @@ func TestClashEmpty(t *testing.T) {
 	}
 	if _, ok := doc["rules"].([]any); !ok {
 		t.Error("空订阅也应有 rules")
+	}
+}
+
+// TestClashMetaEmptyProxies 覆盖 meta 版模板在零节点时也能正常产出:
+// proxies 段插进去但为空,模板其余部分原样带出。
+func TestClashMetaEmptyProxies(t *testing.T) {
+	raw, err := Clash(nil, true)
+	if err != nil {
+		t.Fatalf("Clash(nil, true) 报错: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
+	}
+	proxies, ok := doc["proxies"].([]any)
+	if !ok {
+		t.Fatalf("proxies 不是列表: %#v", doc["proxies"])
+	}
+	if len(proxies) != 0 {
+		t.Errorf("proxies = %#v, want 空", proxies)
+	}
+	if _, ok := doc["rule-providers"].(map[string]any); !ok {
+		t.Error("meta 版空订阅也应有 rule-providers")
+	}
+	if _, ok := doc["dns"].(map[string]any); !ok {
+		t.Error("meta 版空订阅也应有 dns")
 	}
 }
 

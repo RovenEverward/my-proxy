@@ -6,25 +6,18 @@
   "dns": {
     "servers": [
       {
+        "type": "udp",
         "tag": "dns-remote",
-        "address": "1.1.1.2",
+        "server": "1.1.1.2",
         "detour": "proxy"
       },
       {
-        "tag": "dns-direct",
-        "address": "local",
-        "detour": "direct"
-      }
-    ],
-    "rules": [
-      {
-        "outbound": "any",
-        "server": "dns-direct"
+        "type": "local",
+        "tag": "dns-direct"
       }
     ],
     "final": "dns-remote",
-    "strategy": "prefer_ipv4",
-    "independent_cache": true
+    "strategy": "prefer_ipv4"
   },
   "inbounds": [
     {
@@ -36,8 +29,7 @@
       ],
       "auto_route": true,
       "strict_route": true,
-      "stack": "mixed",
-      "sniff": true
+      "stack": "mixed"
     }
   ],
   "outbounds": [
@@ -63,23 +55,1095 @@
       "tag": "block"
     },
     {
-      "type": "dns",
-      "tag": "dns-out"
+      "type": "selector",
+      "tag": "全球代理",
+      "outbounds": [
+        "auto",
+        "proxy",
+        "direct"
+      ],
+      "default": "auto"
+    },
+    {
+      "type": "selector",
+      "tag": "广告拦截",
+      "outbounds": [
+        "block",
+        "direct",
+        "全球代理"
+      ],
+      "default": "block"
+    },
+    {
+      "type": "selector",
+      "tag": "本地直连",
+      "outbounds": [
+        "direct",
+        "全球代理"
+      ],
+      "default": "direct"
+    },
+    {
+      "type": "selector",
+      "tag": "人工智能",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "谷歌",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "苹果",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "微软",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "社交",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "流媒体",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "游戏",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "开发",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
+    },
+    {
+      "type": "selector",
+      "tag": "国内媒体",
+      "outbounds": [
+        "direct",
+        "全球代理",
+        "proxy"
+      ],
+      "default": "direct"
+    },
+    {
+      "type": "selector",
+      "tag": "漏网之鱼",
+      "outbounds": [
+        "全球代理",
+        "proxy",
+        "direct"
+      ],
+      "default": "全球代理"
     }
   ],
   "route": {
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "category-ads-all",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/category-ads-all.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "easylist",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/easylist.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "openai",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/openai.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "anthropic",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/anthropic.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-gemini",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-gemini.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "github-copilot",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/github-copilot.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-play",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-play.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-registry",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-registry.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-scholar",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-scholar.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-trust-services",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-trust-services.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "google-deepmind",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/google-deepmind.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "apple",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/apple.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "apple-dev",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/apple-dev.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "apple-music",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/apple-music.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "apple-tvplus",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/apple-tvplus.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "icloud",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/icloud.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "microsoft",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/microsoft.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "bing",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/bing.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "twitter",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/twitter.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "discord",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/discord.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "reddit",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/reddit.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "facebook",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/facebook.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "instagram",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/instagram.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "threads",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/threads.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "whatsapp",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/whatsapp.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "line",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/line.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "kakao",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/kakao.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "snap",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/snap.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "tumblr",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/tumblr.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "pinterest",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/pinterest.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "linkedin",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/linkedin.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "vk",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/vk.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "netflix",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/netflix.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "disney",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/disney.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "hbo",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/hbo.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "primevideo",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/primevideo.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "youtube",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/youtube.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "spotify",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/spotify.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "tidal",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/tidal.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "soundcloud",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/soundcloud.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "deezer",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/deezer.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "dailymotion",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/dailymotion.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "twitch",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/twitch.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "vimeo",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/vimeo.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "category-emby",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/category-emby.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "hulu",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/hulu.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "steam",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/steam.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "epicgames",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/epicgames.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "playstation",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/playstation.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "xbox",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/xbox.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "nintendo",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/nintendo.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "blizzard",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/blizzard.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "riot",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/riot.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "ubisoft",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/ubisoft.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "ea",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/ea.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "supercell",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/supercell.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "hoyoverse",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/hoyoverse.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "garena",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/garena.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "github",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/github.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "gitlab",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/gitlab.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "docker",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/docker.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "npmjs",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/npmjs.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "python",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/python.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "jetbrains",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/jetbrains.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "stackexchange",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/stackexchange.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "sourceforge",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/sourceforge.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "vercel",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/vercel.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "cloudflare",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/cloudflare.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "digitalocean",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/digitalocean.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "heroku",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/heroku.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "nvidia",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/nvidia.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "atlassian",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/atlassian.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "hashicorp",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/hashicorp.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "figma",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/figma.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "notion",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/notion.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "slack",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/slack.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "bilibili",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/bilibili.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "iqiyi",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/iqiyi.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "youku",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/youku.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "douyin",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/douyin.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "kuaishou",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/kuaishou.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "netease",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/netease.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "acfun",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/acfun.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "douyu",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/douyu.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "huya",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/huya.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "kugou",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/kugou.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "kuwo",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/kuwo.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "wikimedia",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/wikimedia.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "imdb",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/imdb.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "tmdb",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/tmdb.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "speedtest",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/speedtest.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "dropbox",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/dropbox.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "mega",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/mega.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "protonmail",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/protonmail.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "pixiv",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/pixiv.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "paypal",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/paypal.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "amazon",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/amazon.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "ebay",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/ebay.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "shopify",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/shopify.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "yandex",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/yandex.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "naver",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/naver.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "greatfire",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/greatfire.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "telegram",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/telegram.srs",
+        "download_detour": "proxy"
+      },
+      {
+        "type": "remote",
+        "tag": "geoip-cn",
+        "format": "binary",
+        "url": "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+        "download_detour": "proxy"
+      }
+    ],
     "rules": [
       {
+        "action": "sniff"
+      },
+      {
         "protocol": "dns",
-        "outbound": "dns-out"
+        "action": "hijack-dns"
       },
       {
         "ip_is_private": true,
-        "outbound": "direct"
+        "outbound": "本地直连"
+      },
+      {
+        "rule_set": [
+          "category-ads-all",
+          "easylist"
+        ],
+        "outbound": "广告拦截"
+      },
+      {
+        "domain_suffix": [
+          "akile.io",
+          "linux.do",
+          "rapidroot.net",
+          "metamask.io",
+          "xlog.app",
+          "tradingview.com",
+          "codeium.com",
+          "simplex.chat",
+          "toronto.edu",
+          "rateyoursupervisor.com",
+          "googleapis.com",
+          "flowith.io",
+          "simplex.com",
+          "v2rayssr.com",
+          "trae.ai",
+          "open-vsx.org",
+          "metacubex.one",
+          "ahhhhfs.com",
+          "o3.fan",
+          "brew.sh",
+          "outlook.live.com",
+          "wandb.ai",
+          "hack.chat",
+          "vpsjxw.com",
+          "592083.xyz",
+          "nebula-media.org",
+          "ai.dev"
+        ],
+        "outbound": "全球代理"
+      },
+      {
+        "domain_suffix": [
+          "club.fnnas.com",
+          "zfile.vip"
+        ],
+        "outbound": "本地直连"
+      },
+      {
+        "rule_set": [
+          "openai",
+          "anthropic",
+          "google-gemini",
+          "github-copilot"
+        ],
+        "outbound": "人工智能"
+      },
+      {
+        "rule_set": [
+          "google",
+          "google-play",
+          "google-registry",
+          "google-scholar",
+          "google-trust-services",
+          "google-deepmind"
+        ],
+        "outbound": "谷歌"
+      },
+      {
+        "rule_set": [
+          "apple",
+          "apple-dev",
+          "apple-music",
+          "apple-tvplus",
+          "icloud"
+        ],
+        "outbound": "苹果"
+      },
+      {
+        "rule_set": [
+          "microsoft",
+          "bing"
+        ],
+        "outbound": "微软"
+      },
+      {
+        "rule_set": [
+          "twitter",
+          "discord",
+          "reddit",
+          "facebook",
+          "instagram",
+          "threads",
+          "whatsapp",
+          "line",
+          "kakao",
+          "snap",
+          "tumblr",
+          "pinterest",
+          "linkedin",
+          "vk"
+        ],
+        "outbound": "社交"
+      },
+      {
+        "rule_set": [
+          "netflix",
+          "disney",
+          "hbo",
+          "primevideo",
+          "youtube",
+          "spotify",
+          "tidal",
+          "soundcloud",
+          "deezer",
+          "dailymotion",
+          "twitch",
+          "vimeo",
+          "category-emby",
+          "hulu"
+        ],
+        "outbound": "流媒体"
+      },
+      {
+        "rule_set": [
+          "steam",
+          "epicgames",
+          "playstation",
+          "xbox",
+          "nintendo",
+          "blizzard",
+          "riot",
+          "ubisoft",
+          "ea",
+          "supercell",
+          "hoyoverse",
+          "garena"
+        ],
+        "outbound": "游戏"
+      },
+      {
+        "rule_set": [
+          "github",
+          "gitlab",
+          "docker",
+          "npmjs",
+          "python",
+          "jetbrains",
+          "stackexchange",
+          "sourceforge",
+          "vercel",
+          "cloudflare",
+          "digitalocean",
+          "heroku",
+          "nvidia",
+          "atlassian",
+          "hashicorp",
+          "figma",
+          "notion",
+          "slack"
+        ],
+        "outbound": "开发"
+      },
+      {
+        "rule_set": [
+          "bilibili",
+          "iqiyi",
+          "youku",
+          "douyin",
+          "kuaishou",
+          "netease",
+          "acfun",
+          "douyu",
+          "huya",
+          "kugou",
+          "kuwo"
+        ],
+        "outbound": "国内媒体"
+      },
+      {
+        "rule_set": [
+          "wikimedia",
+          "imdb",
+          "tmdb",
+          "speedtest",
+          "dropbox",
+          "mega",
+          "protonmail",
+          "pixiv",
+          "paypal",
+          "amazon",
+          "ebay",
+          "shopify",
+          "yandex",
+          "naver",
+          "greatfire",
+          "telegram"
+        ],
+        "outbound": "全球代理"
+      },
+      {
+        "rule_set": [
+          "geoip-cn"
+        ],
+        "outbound": "本地直连"
       }
     ],
-    "final": "proxy",
-    "auto_detect_interface": true
+    "final": "漏网之鱼",
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "dns-remote"
+    }
   },
   "experimental": {
     "cache_file": {

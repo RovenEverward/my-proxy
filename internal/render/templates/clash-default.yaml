@@ -1,0 +1,1145 @@
+# mpx 的 Clash / Clash.Meta 订阅默认模板。
+#
+# 这是一份完整配置的骨架:proxies 由控制面按用户注入,其余(rule-providers /
+# proxy-groups / rules / dns)都写在这里,订阅里原样带出。
+# 规则源 128 个,合计约 35 万条,由客户端(mihomo)自己下载更新。
+#
+# 想改默认规则表:改这个文件,重新编译控制面即可。
+
+rule-providers:
+  hijacking:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Hijacking/Hijacking_No_Resolve.yaml
+    path: ./ruleset/hijacking.yaml
+  openai:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OpenAI/OpenAI_No_Resolve.yaml
+    path: ./ruleset/openai.yaml
+  claude:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Claude/Claude_No_Resolve.yaml
+    path: ./ruleset/claude.yaml
+  gemini:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Gemini/Gemini_No_Resolve.yaml
+    path: ./ruleset/gemini.yaml
+  copilot:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Copilot/Copilot_No_Resolve.yaml
+    path: ./ruleset/copilot.yaml
+  googledrive:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GoogleDrive/GoogleDrive_No_Resolve.yaml
+    path: ./ruleset/googledrive.yaml
+  googlefcm:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GoogleFCM/GoogleFCM_No_Resolve.yaml
+    path: ./ruleset/googlefcm.yaml
+  googleearth:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GoogleEarth/GoogleEarth_No_Resolve.yaml
+    path: ./ruleset/googleearth.yaml
+  googlesearch:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GoogleSearch/GoogleSearch_No_Resolve.yaml
+    path: ./ruleset/googlesearch.yaml
+  appstore:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AppStore/AppStore_No_Resolve.yaml
+    path: ./ruleset/appstore.yaml
+  appledev:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AppleDev/AppleDev_No_Resolve.yaml
+    path: ./ruleset/appledev.yaml
+  applemusic:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AppleMusic/AppleMusic_No_Resolve.yaml
+    path: ./ruleset/applemusic.yaml
+  appletv:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AppleTV/AppleTV_No_Resolve.yaml
+    path: ./ruleset/appletv.yaml
+  findmy:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/FindMy/FindMy_No_Resolve.yaml
+    path: ./ruleset/findmy.yaml
+  siri:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Siri/Siri_No_Resolve.yaml
+    path: ./ruleset/siri.yaml
+  testflight:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/TestFlight/TestFlight_No_Resolve.yaml
+    path: ./ruleset/testflight.yaml
+  microsoft:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Microsoft/Microsoft_No_Resolve.yaml
+    path: ./ruleset/microsoft.yaml
+  onedrive:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/OneDrive/OneDrive_No_Resolve.yaml
+    path: ./ruleset/onedrive.yaml
+  teams:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Teams/Teams_No_Resolve.yaml
+    path: ./ruleset/teams.yaml
+  microsoftedge:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/MicrosoftEdge/MicrosoftEdge_No_Resolve.yaml
+    path: ./ruleset/microsoftedge.yaml
+  bing:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Bing/Bing_No_Resolve.yaml
+    path: ./ruleset/bing.yaml
+  twitter:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Twitter/Twitter_No_Resolve.yaml
+    path: ./ruleset/twitter.yaml
+  discord:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Discord/Discord_No_Resolve.yaml
+    path: ./ruleset/discord.yaml
+  reddit:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Reddit/Reddit_No_Resolve.yaml
+    path: ./ruleset/reddit.yaml
+  facebook:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Facebook/Facebook_No_Resolve.yaml
+    path: ./ruleset/facebook.yaml
+  instagram:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Instagram/Instagram_No_Resolve.yaml
+    path: ./ruleset/instagram.yaml
+  threads:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Threads/Threads_No_Resolve.yaml
+    path: ./ruleset/threads.yaml
+  whatsapp:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Whatsapp/Whatsapp_No_Resolve.yaml
+    path: ./ruleset/whatsapp.yaml
+  line:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Line/Line_No_Resolve.yaml
+    path: ./ruleset/line.yaml
+  kakaotalk:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/KakaoTalk/KakaoTalk_No_Resolve.yaml
+    path: ./ruleset/kakaotalk.yaml
+  snap:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Snap/Snap_No_Resolve.yaml
+    path: ./ruleset/snap.yaml
+  tumblr:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Tumblr/Tumblr_No_Resolve.yaml
+    path: ./ruleset/tumblr.yaml
+  pinterest:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Pinterest/Pinterest_No_Resolve.yaml
+    path: ./ruleset/pinterest.yaml
+  linkedin:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/LinkedIn/LinkedIn_No_Resolve.yaml
+    path: ./ruleset/linkedin.yaml
+  vk:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/VK/VK_No_Resolve.yaml
+    path: ./ruleset/vk.yaml
+  netflix:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Netflix/Netflix_Classical_No_Resolve.yaml
+    path: ./ruleset/netflix.yaml
+  disney:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Disney/Disney_No_Resolve.yaml
+    path: ./ruleset/disney.yaml
+  hbo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/HBO/HBO_No_Resolve.yaml
+    path: ./ruleset/hbo.yaml
+  primevideo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PrimeVideo/PrimeVideo_No_Resolve.yaml
+    path: ./ruleset/primevideo.yaml
+  youtube:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/YouTube/YouTube_No_Resolve.yaml
+    path: ./ruleset/youtube.yaml
+  youtubemusic:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/YouTubeMusic/YouTubeMusic_No_Resolve.yaml
+    path: ./ruleset/youtubemusic.yaml
+  spotify:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Spotify/Spotify_No_Resolve.yaml
+    path: ./ruleset/spotify.yaml
+  tidal:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/TIDAL/TIDAL_No_Resolve.yaml
+    path: ./ruleset/tidal.yaml
+  soundcloud:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SoundCloud/SoundCloud_No_Resolve.yaml
+    path: ./ruleset/soundcloud.yaml
+  deezer:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Deezer/Deezer_No_Resolve.yaml
+    path: ./ruleset/deezer.yaml
+  dailymotion:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Dailymotion/Dailymotion_No_Resolve.yaml
+    path: ./ruleset/dailymotion.yaml
+  twitch:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Twitch/Twitch_No_Resolve.yaml
+    path: ./ruleset/twitch.yaml
+  vimeo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Vimeo/Vimeo_No_Resolve.yaml
+    path: ./ruleset/vimeo.yaml
+  emby:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Emby/Emby_No_Resolve.yaml
+    path: ./ruleset/emby.yaml
+  hulu:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Hulu/Hulu_No_Resolve.yaml
+    path: ./ruleset/hulu.yaml
+  globalmedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GlobalMedia/GlobalMedia_Classical_No_Resolve.yaml
+    path: ./ruleset/globalmedia.yaml
+  steam:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Steam/Steam_No_Resolve.yaml
+    path: ./ruleset/steam.yaml
+  steamcn:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SteamCN/SteamCN_No_Resolve.yaml
+    path: ./ruleset/steamcn.yaml
+  epic:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Epic/Epic_No_Resolve.yaml
+    path: ./ruleset/epic.yaml
+  playstation:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PlayStation/PlayStation_No_Resolve.yaml
+    path: ./ruleset/playstation.yaml
+  xbox:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Xbox/Xbox_No_Resolve.yaml
+    path: ./ruleset/xbox.yaml
+  nintendo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Nintendo/Nintendo_No_Resolve.yaml
+    path: ./ruleset/nintendo.yaml
+  blizzard:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Blizzard/Blizzard_No_Resolve.yaml
+    path: ./ruleset/blizzard.yaml
+  riot:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Riot/Riot_No_Resolve.yaml
+    path: ./ruleset/riot.yaml
+  ubisoft:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Ubisoft/Ubisoft_No_Resolve.yaml
+    path: ./ruleset/ubisoft.yaml
+  ea:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/EA/EA_No_Resolve.yaml
+    path: ./ruleset/ea.yaml
+  supercell:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Supercell/Supercell_No_Resolve.yaml
+    path: ./ruleset/supercell.yaml
+  hoyoverse:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/HoYoverse/HoYoverse_No_Resolve.yaml
+    path: ./ruleset/hoyoverse.yaml
+  majsoul:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Majsoul/Majsoul_No_Resolve.yaml
+    path: ./ruleset/majsoul.yaml
+  garena:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Garena/Garena_No_Resolve.yaml
+    path: ./ruleset/garena.yaml
+  github:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitHub/GitHub_No_Resolve.yaml
+    path: ./ruleset/github.yaml
+  gitlab:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/GitLab/GitLab_No_Resolve.yaml
+    path: ./ruleset/gitlab.yaml
+  docker:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Docker/Docker_No_Resolve.yaml
+    path: ./ruleset/docker.yaml
+  npmjs:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Npmjs/Npmjs_No_Resolve.yaml
+    path: ./ruleset/npmjs.yaml
+  python:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Python/Python_No_Resolve.yaml
+    path: ./ruleset/python.yaml
+  jetbrains:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Jetbrains/Jetbrains_No_Resolve.yaml
+    path: ./ruleset/jetbrains.yaml
+  stackexchange:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Stackexchange/Stackexchange_No_Resolve.yaml
+    path: ./ruleset/stackexchange.yaml
+  sourceforge:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/SourceForge/SourceForge_No_Resolve.yaml
+    path: ./ruleset/sourceforge.yaml
+  vercel:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Vercel/Vercel_No_Resolve.yaml
+    path: ./ruleset/vercel.yaml
+  cloudflare:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Cloudflare/Cloudflare_No_Resolve.yaml
+    path: ./ruleset/cloudflare.yaml
+  digitalocean:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/DigitalOcean/DigitalOcean_No_Resolve.yaml
+    path: ./ruleset/digitalocean.yaml
+  heroku:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Heroku/Heroku_No_Resolve.yaml
+    path: ./ruleset/heroku.yaml
+  nvidia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Nvidia/Nvidia_No_Resolve.yaml
+    path: ./ruleset/nvidia.yaml
+  atlassian:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Atlassian/Atlassian_No_Resolve.yaml
+    path: ./ruleset/atlassian.yaml
+  hashicorp:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/HashiCorp/HashiCorp_No_Resolve.yaml
+    path: ./ruleset/hashicorp.yaml
+  figma:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Figma/Figma_No_Resolve.yaml
+    path: ./ruleset/figma.yaml
+  notion:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Notion/Notion_No_Resolve.yaml
+    path: ./ruleset/notion.yaml
+  slack:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Slack/Slack_No_Resolve.yaml
+    path: ./ruleset/slack.yaml
+  bilibili:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/BiliBili/BiliBili_No_Resolve.yaml
+    path: ./ruleset/bilibili.yaml
+  iqiyi:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/iQIYI/iQIYI_No_Resolve.yaml
+    path: ./ruleset/iqiyi.yaml
+  tencentvideo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/TencentVideo/TencentVideo_No_Resolve.yaml
+    path: ./ruleset/tencentvideo.yaml
+  youku:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Youku/Youku_No_Resolve.yaml
+    path: ./ruleset/youku.yaml
+  douyin:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/DouYin/DouYin_No_Resolve.yaml
+    path: ./ruleset/douyin.yaml
+  kuaishou:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/KuaiShou/KuaiShou_No_Resolve.yaml
+    path: ./ruleset/kuaishou.yaml
+  neteasemusic:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/NetEaseMusic/NetEaseMusic_No_Resolve.yaml
+    path: ./ruleset/neteasemusic.yaml
+  acfun:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/AcFun/AcFun_No_Resolve.yaml
+    path: ./ruleset/acfun.yaml
+  douyu:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Douyu/Douyu_No_Resolve.yaml
+    path: ./ruleset/douyu.yaml
+  huya:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/HuYa/HuYa_No_Resolve.yaml
+    path: ./ruleset/huya.yaml
+  migu:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Migu/Migu_No_Resolve.yaml
+    path: ./ruleset/migu.yaml
+  kugoukuwo:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/KugouKuwo/KugouKuwo_No_Resolve.yaml
+    path: ./ruleset/kugoukuwo.yaml
+  chinamedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ChinaMedia/ChinaMedia_No_Resolve.yaml
+    path: ./ruleset/chinamedia.yaml
+  proxylite:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/ProxyLite/ProxyLite_No_Resolve.yaml
+    path: ./ruleset/proxylite.yaml
+  wikipedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Wikipedia/Wikipedia_No_Resolve.yaml
+    path: ./ruleset/wikipedia.yaml
+  wikimedia:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Wikimedia/Wikimedia_No_Resolve.yaml
+    path: ./ruleset/wikimedia.yaml
+  imdb:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/IMDB/IMDB_No_Resolve.yaml
+    path: ./ruleset/imdb.yaml
+  tmdb:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Tmdb/Tmdb_No_Resolve.yaml
+    path: ./ruleset/tmdb.yaml
+  speedtest:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Speedtest/Speedtest_No_Resolve.yaml
+    path: ./ruleset/speedtest.yaml
+  dropbox:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Dropbox/Dropbox_No_Resolve.yaml
+    path: ./ruleset/dropbox.yaml
+  mega:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/MEGA/MEGA_No_Resolve.yaml
+    path: ./ruleset/mega.yaml
+  protonmail:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Protonmail/Protonmail_No_Resolve.yaml
+    path: ./ruleset/protonmail.yaml
+  pixiv:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Pixiv/Pixiv_No_Resolve.yaml
+    path: ./ruleset/pixiv.yaml
+  paypal:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/PayPal/PayPal_No_Resolve.yaml
+    path: ./ruleset/paypal.yaml
+  amazon:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Amazon/Amazon_No_Resolve.yaml
+    path: ./ruleset/amazon.yaml
+  ebay:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/eBay/eBay_No_Resolve.yaml
+    path: ./ruleset/ebay.yaml
+  shopify:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Shopify/Shopify_No_Resolve.yaml
+    path: ./ruleset/shopify.yaml
+  yandex:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Yandex/Yandex_No_Resolve.yaml
+    path: ./ruleset/yandex.yaml
+  naver:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Naver/Naver_No_Resolve.yaml
+    path: ./ruleset/naver.yaml
+  truthsocial:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/TruthSocial/TruthSocial_No_Resolve.yaml
+    path: ./ruleset/truthsocial.yaml
+  lan:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Clash/Lan/Lan_No_Resolve.yaml
+    path: ./ruleset/lan.yaml
+  reject:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt
+    path: ./ruleset/reject.yaml
+  private:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt
+    path: ./ruleset/private.yaml
+  lancidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt
+    path: ./ruleset/lancidr.yaml
+  applications:
+    type: http
+    behavior: classical
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt
+    path: ./ruleset/applications.yaml
+  direct:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt
+    path: ./ruleset/direct.yaml
+  cncidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt
+    path: ./ruleset/cncidr.yaml
+  tld_not_cn:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt
+    path: ./ruleset/tld_not_cn.yaml
+  gfw:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt
+    path: ./ruleset/gfw.yaml
+  greatfire:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/greatfire.txt
+    path: ./ruleset/greatfire.yaml
+  proxy:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt
+    path: ./ruleset/proxy.yaml
+  telegramcidr:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt
+    path: ./ruleset/telegramcidr.yaml
+  apple:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt
+    path: ./ruleset/apple.yaml
+  icloud:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt
+    path: ./ruleset/icloud.yaml
+  google:
+    type: http
+    behavior: domain
+    format: yaml
+    interval: 86400
+    url: https://fastly.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt
+    path: ./ruleset/google.yaml
+
+proxy-groups:
+  # 节点名单不再逐个列出 —— include-all-proxies 把订阅里的所有节点自动收进来,
+  # 以后加节点不用改这份文件。
+  - name: 手动切换
+    type: select
+    include-all-proxies: true
+  - name: 自动选择
+    type: url-test
+    include-all-proxies: true
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+  - name: 全球代理
+    type: select
+    proxies: [自动选择, 手动切换, DIRECT]
+    include-all-proxies: true
+  - name: 广告拦截
+    type: select
+    proxies: [REJECT, DIRECT, 全球代理]
+  - name: 本地直连
+    type: select
+    proxies: [DIRECT, 全球代理]
+  - name: 人工智能
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 谷歌
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 苹果
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 微软
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 社交
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 流媒体
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 游戏
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 开发
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+  - name: 国内媒体
+    type: select
+    proxies: [DIRECT, 全球代理, 手动切换]
+  - name: 漏网之鱼
+    type: select
+    proxies: [全球代理, 手动切换, DIRECT]
+
+rules:
+  # 一、本地网络先走直连(放最前,别让后面的规则抢走)
+  - RULE-SET,private,本地直连
+  - RULE-SET,lan,本地直连
+  - RULE-SET,lancidr,本地直连,no-resolve
+  # 二、代理客户端自己的进程,直连,避免绕圈
+  - RULE-SET,applications,本地直连
+  # 三、广告与 DNS 劫持域名
+  - RULE-SET,hijacking,广告拦截
+  - RULE-SET,reject,广告拦截
+  # 四、你自己加的域名(来自原来那份覆写)
+  - DOMAIN-SUFFIX,akile.io,全球代理
+  - DOMAIN-SUFFIX,linux.do,全球代理
+  - DOMAIN-SUFFIX,rapidroot.net,全球代理
+  - DOMAIN-SUFFIX,metamask.io,全球代理
+  - DOMAIN-SUFFIX,xlog.app,全球代理
+  - DOMAIN-SUFFIX,tradingview.com,全球代理
+  - DOMAIN-SUFFIX,codeium.com,全球代理
+  - DOMAIN-SUFFIX,simplex.chat,全球代理
+  - DOMAIN-SUFFIX,toronto.edu,全球代理
+  - DOMAIN-SUFFIX,rateyoursupervisor.com,全球代理
+  - DOMAIN-SUFFIX,googleapis.com,全球代理
+  - DOMAIN-SUFFIX,flowith.io,全球代理
+  - DOMAIN-SUFFIX,simplex.com,全球代理
+  - DOMAIN-SUFFIX,v2rayssr.com,全球代理
+  - DOMAIN-SUFFIX,trae.ai,全球代理
+  - DOMAIN-SUFFIX,open-vsx.org,全球代理
+  - DOMAIN-SUFFIX,metacubex.one,全球代理
+  - DOMAIN-SUFFIX,ahhhhfs.com,全球代理
+  - DOMAIN-SUFFIX,o3.fan,全球代理
+  - DOMAIN-SUFFIX,brew.sh,全球代理
+  - DOMAIN-SUFFIX,outlook.live.com,全球代理
+  - DOMAIN-SUFFIX,wandb.ai,全球代理
+  - DOMAIN-SUFFIX,hack.chat,全球代理
+  - DOMAIN-SUFFIX,vpsjxw.com,全球代理
+  - DOMAIN-SUFFIX,592083.xyz,全球代理
+  - DOMAIN-SUFFIX,nebula-media.org,全球代理
+  - DOMAIN-SUFFIX,ai.dev,全球代理
+  - DOMAIN-SUFFIX,club.fnnas.com,本地直连
+  - DOMAIN-SUFFIX,zfile.vip,本地直连
+  # 五、按主题分流
+  - RULE-SET,openai,人工智能
+  - RULE-SET,claude,人工智能
+  - RULE-SET,gemini,人工智能
+  - RULE-SET,copilot,人工智能
+  - RULE-SET,googledrive,谷歌
+  - RULE-SET,googlefcm,谷歌
+  - RULE-SET,googleearth,谷歌
+  - RULE-SET,googlesearch,谷歌
+  - RULE-SET,google,谷歌
+  - RULE-SET,appstore,苹果
+  - RULE-SET,appledev,苹果
+  - RULE-SET,applemusic,苹果
+  - RULE-SET,appletv,苹果
+  - RULE-SET,findmy,苹果
+  - RULE-SET,siri,苹果
+  - RULE-SET,testflight,苹果
+  - RULE-SET,apple,苹果
+  - RULE-SET,icloud,苹果
+  - RULE-SET,microsoft,微软
+  - RULE-SET,onedrive,微软
+  - RULE-SET,teams,微软
+  - RULE-SET,microsoftedge,微软
+  - RULE-SET,bing,微软
+  - RULE-SET,twitter,社交
+  - RULE-SET,discord,社交
+  - RULE-SET,reddit,社交
+  - RULE-SET,facebook,社交
+  - RULE-SET,instagram,社交
+  - RULE-SET,threads,社交
+  - RULE-SET,whatsapp,社交
+  - RULE-SET,line,社交
+  - RULE-SET,kakaotalk,社交
+  - RULE-SET,snap,社交
+  - RULE-SET,tumblr,社交
+  - RULE-SET,pinterest,社交
+  - RULE-SET,linkedin,社交
+  - RULE-SET,vk,社交
+  - RULE-SET,netflix,流媒体
+  - RULE-SET,disney,流媒体
+  - RULE-SET,hbo,流媒体
+  - RULE-SET,primevideo,流媒体
+  - RULE-SET,youtube,流媒体
+  - RULE-SET,youtubemusic,流媒体
+  - RULE-SET,spotify,流媒体
+  - RULE-SET,tidal,流媒体
+  - RULE-SET,soundcloud,流媒体
+  - RULE-SET,deezer,流媒体
+  - RULE-SET,dailymotion,流媒体
+  - RULE-SET,twitch,流媒体
+  - RULE-SET,vimeo,流媒体
+  - RULE-SET,emby,流媒体
+  - RULE-SET,hulu,流媒体
+  - RULE-SET,globalmedia,流媒体
+  - RULE-SET,steam,游戏
+  - RULE-SET,steamcn,游戏
+  - RULE-SET,epic,游戏
+  - RULE-SET,playstation,游戏
+  - RULE-SET,xbox,游戏
+  - RULE-SET,nintendo,游戏
+  - RULE-SET,blizzard,游戏
+  - RULE-SET,riot,游戏
+  - RULE-SET,ubisoft,游戏
+  - RULE-SET,ea,游戏
+  - RULE-SET,supercell,游戏
+  - RULE-SET,hoyoverse,游戏
+  - RULE-SET,majsoul,游戏
+  - RULE-SET,garena,游戏
+  - RULE-SET,github,开发
+  - RULE-SET,gitlab,开发
+  - RULE-SET,docker,开发
+  - RULE-SET,npmjs,开发
+  - RULE-SET,python,开发
+  - RULE-SET,jetbrains,开发
+  - RULE-SET,stackexchange,开发
+  - RULE-SET,sourceforge,开发
+  - RULE-SET,vercel,开发
+  - RULE-SET,cloudflare,开发
+  - RULE-SET,digitalocean,开发
+  - RULE-SET,heroku,开发
+  - RULE-SET,nvidia,开发
+  - RULE-SET,atlassian,开发
+  - RULE-SET,hashicorp,开发
+  - RULE-SET,figma,开发
+  - RULE-SET,notion,开发
+  - RULE-SET,slack,开发
+  # 六、国内媒体
+  - RULE-SET,bilibili,国内媒体
+  - RULE-SET,iqiyi,国内媒体
+  - RULE-SET,tencentvideo,国内媒体
+  - RULE-SET,youku,国内媒体
+  - RULE-SET,douyin,国内媒体
+  - RULE-SET,kuaishou,国内媒体
+  - RULE-SET,neteasemusic,国内媒体
+  - RULE-SET,acfun,国内媒体
+  - RULE-SET,douyu,国内媒体
+  - RULE-SET,huya,国内媒体
+  - RULE-SET,migu,国内媒体
+  - RULE-SET,kugoukuwo,国内媒体
+  - RULE-SET,chinamedia,国内媒体
+  # 七、境外:先按服务点名的,再上大表(排在直连表前面,冲突时以代理为准)
+  - RULE-SET,proxylite,全球代理
+  - RULE-SET,wikipedia,全球代理
+  - RULE-SET,wikimedia,全球代理
+  - RULE-SET,imdb,全球代理
+  - RULE-SET,tmdb,全球代理
+  - RULE-SET,speedtest,全球代理
+  - RULE-SET,dropbox,全球代理
+  - RULE-SET,mega,全球代理
+  - RULE-SET,protonmail,全球代理
+  - RULE-SET,pixiv,全球代理
+  - RULE-SET,paypal,全球代理
+  - RULE-SET,amazon,全球代理
+  - RULE-SET,ebay,全球代理
+  - RULE-SET,shopify,全球代理
+  - RULE-SET,yandex,全球代理
+  - RULE-SET,naver,全球代理
+  - RULE-SET,truthsocial,全球代理
+  - RULE-SET,tld_not_cn,全球代理
+  - RULE-SET,gfw,全球代理
+  - RULE-SET,greatfire,全球代理
+  - RULE-SET,telegramcidr,全球代理,no-resolve
+  - RULE-SET,proxy,全球代理
+  # 八、国内域名与 IP 直连
+  - RULE-SET,direct,本地直连
+  - RULE-SET,cncidr,本地直连,no-resolve
+  - GEOIP,CN,本地直连
+  - MATCH,漏网之鱼
+
+dns:
+  # `*` 在 mihomo 里只匹配一级域名,`+.` 才是多级(含裸域)。
+  fake-ip-filter:
+    - '+.lan'
+    - '+.local'
+    - '+.arpa'
+    - 'time.*.com'
+    - 'ntp.*.com'
+    - '+.market.xiaomi.com'
+    - 'localhost.ptlogin2.qq.com'
+    - '+.msftncsi.com'
+    - '+.msftconnecttest.com'
+  nameserver-policy:
+    geosite:cn,private,apple:
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+    +.linux.do: https://xxx.ddd.oaifree.com/query-dns

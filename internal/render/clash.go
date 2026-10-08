@@ -1,20 +1,30 @@
 // clash.go 把端点渲染成 Clash / Clash.Meta(mihomo)订阅 YAML。
 //
-// 产出的是完整可用的订阅:顶层含 proxies、proxy-groups、rules 三段。
-// meta 为 true 时按 mihomo 的字段渲染,额外写出 client-fingerprint。
+// meta 为 false 时按原版 Clash 能接受的最小集合输出:proxies、proxy-groups、
+// rules 三段,规则就三条(GEOIP,LAN / GEOIP,CN / MATCH),适合不想要完整规则表
+// 的客户端。
+//
+// meta 为 true 时按 mihomo 渲染:在一份内置的完整底稿(templates/clash-default.yaml)
+// 上注入 proxies,其余(rule-providers / proxy-groups / rules / dns)原样带出。
+// 底稿里的规则源上百个、共几十万条,由客户端自己下载更新,订阅正文只是骨架。
 //
 // REALITY 目前只有 mihomo 支持。meta 为 false 时 reality-opts 仍会写出(结构
 // 与 meta 版一致),但原版 Clash 不认这个字段,要用 REALITY 就必须走 mihomo。
 package render
 
 import (
+	_ "embed"
 	"fmt"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"gopkg.in/yaml.v3"
 )
 
-// Clash 渲染 Clash / Clash.Meta 的订阅 YAML。meta 为 true 时按 mihomo 的字段渲染。
+//go:embed templates/clash-default.yaml
+var clashDefaultTemplate []byte
+
+// Clash 渲染 Clash / Clash.Meta 的订阅 YAML。meta 为 true 时按 mihomo 的字段渲染,
+// 并套用内置的完整规则底稿;为 false 时只输出最小可用集合。
 //
 // 遇到本项目不支持的协议、传输或安全层直接报错,不静默丢节点:订阅是用户唯一
 // 的连接入口,少一条比明确失败更难排查。
@@ -28,6 +38,10 @@ func Clash(eps []Endpoint, meta bool) ([]byte, error) {
 		}
 		proxies = append(proxies, p)
 		names = append(names, ep.Remark)
+	}
+
+	if meta {
+		return clashMeta(proxies)
 	}
 
 	// PROXY 是给用户手选的总入口,AUTO 是按延迟自动选。
@@ -53,6 +67,57 @@ func Clash(eps []Endpoint, meta bool) ([]byte, error) {
 	}
 
 	return yaml.Marshal(cfg)
+}
+
+// clashMeta 在完整底稿上注入 proxies 段,产出 meta 版订阅。
+//
+// 用 yaml.Node 而不是 map 往返:map 会把键排序并丢掉文件头的注释,而这份底稿是
+// 手工维护的,注释和键序(rule-providers → proxy-groups → rules → dns)就是它
+// 的文档,值得原样保留。proxies 插在 rule-providers 之后,因为 proxy-groups 里的
+// include-all-proxies 依赖 proxies 先出现。
+func clashMeta(proxies []clashProxy) ([]byte, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(clashDefaultTemplate, &root); err != nil {
+		return nil, fmt.Errorf("render: 解析 Clash 模板: %w", err)
+	}
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("render: Clash 模板顶层不是映射")
+	}
+
+	// 把 proxies 序列化成节点,插到 rule-providers 这一对键值之后。
+	proxiesBytes, err := yaml.Marshal(proxies)
+	if err != nil {
+		return nil, fmt.Errorf("render: 序列化 proxies: %w", err)
+	}
+	var proxiesNode yaml.Node
+	if err := yaml.Unmarshal(proxiesBytes, &proxiesNode); err != nil {
+		return nil, fmt.Errorf("render: 解析 proxies: %w", err)
+	}
+
+	insertAt := -1
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == "rule-providers" {
+			insertAt = i + 2 // key+value 之后
+			break
+		}
+	}
+	if insertAt < 0 {
+		return nil, fmt.Errorf("render: Clash 模板缺 rule-providers 段")
+	}
+
+	key := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "proxies"}
+	val := proxiesNode.Content[0]
+	doc.Content = append(doc.Content, nil, nil)
+	copy(doc.Content[insertAt+2:], doc.Content[insertAt:])
+	doc.Content[insertAt] = key
+	doc.Content[insertAt+1] = val
+
+	out, err := yaml.Marshal(&root)
+	if err != nil {
+		return nil, fmt.Errorf("render: 序列化 Clash 模板: %w", err)
+	}
+	return out, nil
 }
 
 // clashConfig 是订阅 YAML 的顶层结构。

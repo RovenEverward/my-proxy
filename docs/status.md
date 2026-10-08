@@ -43,8 +43,8 @@
 | 目标里的说法 | 状态 | 说明 |
 | --- | --- | --- |
 | 服务端持有 node / inbound / host / user / 订阅规则 | 已实现 | 五张表;见 [model.md](model.md) |
-| 渲染并托管 Clash 订阅 | 已实现 | 含 Clash Meta |
-| 渲染并托管 sing-box 订阅 | 已实现 | 内嵌默认模板 |
+| 渲染并托管 Clash 订阅 | 已实现 | 含 Clash Meta;meta 版走完整规则模板 |
+| 渲染并托管 sing-box 订阅 | 已实现 | 内嵌模板:105 个 sing-geosite 规则集 + 主题分组 |
 | 渲染并托管 xray 订阅 | 已实现 | 见教训一:末段才补 |
 | 分享链接与 base64 | 已实现 | |
 | 按 User-Agent 返回对应客户端格式 | 已实现 | 另支持路径指定格式、`block` 返回 404 |
