@@ -25,9 +25,10 @@ import (
 const testToken = "test-management-token"
 
 type env struct {
-	t   *testing.T
-	st  *store.Store
-	srv *httptest.Server
+	t      *testing.T
+	st     *store.Store
+	srv    *httptest.Server
+	dbPath string
 }
 
 func newEnv(t *testing.T) *env {
@@ -39,21 +40,22 @@ func newEnv(t *testing.T) *env {
 // 那种情况下跟节点有关的接口应该回 501,而不是假装做过了。
 func newEnvWith(t *testing.T, ops NodeOps) *env {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "mpx.db"))
+	dbPath := filepath.Join(t.TempDir(), "mpx.db")
+	st, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("打开测试库: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := New(st, testToken, logger)
+	s := New(st, testToken, logger, dbPath)
 	if ops != nil {
 		s.SetNodeOps(ops)
 	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
 
-	return &env{t: t, st: st, srv: srv}
+	return &env{t: t, st: st, srv: srv, dbPath: dbPath}
 }
 
 // api 发一个带管理 token 的请求。body 为 nil 表示不带请求体。

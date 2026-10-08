@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -36,6 +37,16 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 		logger = slog.Default()
 	}
 
+	// 先把暂存的恢复换入,再打开数据库:换入必须在 Open 之前做,否则运行中的
+	// 进程正拿着旧库文件,改名换文件就乱了。这里还库没开,是唯一安全的时机。
+	// 没有暂存文件时这步什么也不做。
+	if staged, preRestore, err := applyStagedRestore(opt.DBPath); err != nil {
+		return err
+	} else if staged != "" {
+		logger.Info("已换入暂存的恢复", "staged", staged, "preRestore", preRestore,
+			"旧库保留在", preRestore)
+	}
+
 	st, err := store.Open(opt.DBPath)
 	if err != nil {
 		return err
@@ -47,7 +58,7 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	ctrl := control.New(st, node.SSH{}, logger, filepath.Join(filepath.Dir(opt.DBPath), "xray"))
 	task := control.NewTask(ctrl, st, logger, opt.Interval)
 
-	srv := New(st, opt.Token, logger)
+	srv := New(st, opt.Token, logger, opt.DBPath)
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
 
@@ -93,4 +104,59 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	<-taskDone
 	logger.Info("控制面已停止")
 	return nil
+}
+
+// applyStagedRestore 把 <db>.restore 里暂存的库换入为正式库,必须在打开数据库
+// 之前调用。
+//
+// 换入是三步:
+//  1. 现有库改名成 <db>.pre-restore-<UTC 时间戳>,连同它的 -wal/-shm 一起
+//     (旧 sidecar 不删、跟着旧库走,回退时三件套一起改回去就是完整旧状态);
+//  2. 暂存文件改名成 <db>;
+//  3. 旧的 -wal/-shm 随旧库一起挪走了,名字下不再有残留,新库不会读到它们。
+//
+// 返回 (staged, preRestore, err):没有暂存文件时 staged 为空、err 为 nil,调用
+// 方什么都不用做;有暂存文件时 staged/preRestore 是两个参与改名的路径,方便
+// 记日志。
+//
+// 为什么换入在打开之前:开库之后进程就持有文件句柄,再改名换文件会出现"半个
+// 库"——有的连接看到旧库、有的看到新库。在 Open 之前一步做完,要么整个换掉、
+// 要么整个不动。旧库留着是为了出错能回退;也因此"没有控制面也能恢复":手动
+// 把 mpx.db 改名成 mpx.db.restore 再启动,就走同一条路。
+func applyStagedRestore(dbPath string) (staged string, preRestore string, err error) {
+	staged = dbPath + ".restore"
+	if _, err := os.Stat(staged); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("检查暂存恢复文件: %w", err)
+	}
+
+	preName := dbPath + ".pre-restore-" + time.Now().UTC().Format("20060102T150405Z")
+	moved := false
+	for _, p := range []string{dbPath, dbPath + "-wal", dbPath + "-shm"} {
+		if _, err := os.Stat(p); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return "", "", fmt.Errorf("检查旧库文件 %s: %w", p, err)
+		}
+		suffix := ""
+		if p != dbPath {
+			suffix = p[len(dbPath):] // "-wal" 或 "-shm"
+		}
+		if err := os.Rename(p, preName+suffix); err != nil {
+			return "", "", fmt.Errorf("把旧库 %s 改名到 %s: %w", p, preName+suffix, err)
+		}
+		moved = true
+	}
+
+	if err := os.Rename(staged, dbPath); err != nil {
+		return "", "", fmt.Errorf("把暂存库 %s 换入为 %s: %w", staged, dbPath, err)
+	}
+	if moved {
+		preRestore = preName
+	}
+
+	return staged, preRestore, nil
 }

@@ -11,6 +11,8 @@ CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点�
 ```
 login                                    存控制面地址与 token
 serve                                    起控制面:--addr --db --interval(默认 30s)
+backup   [-o 文件]                        下载一份备份归档(默认 mpx-backup-<时间戳>.tar.gz)
+restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
 node     list | show | add | rm | config | sync | install
 inbound  list | show | add | rm
@@ -65,7 +67,22 @@ POST             /api/users/{username}/revoke-sub
 GET              /api/users/{username}/links
 
 GET|PUT          /api/settings
+
+GET              /api/backup                 流式返回 tar.gz 备份归档
+POST             /api/restore                校验并暂存一份备份(?force=1 覆盖已暂存的)
 ```
+
+`backup` 的正文是 gzip 过的 tar,不是 JSON:CLI 直接落盘,`curl` 也能重定向到文件。`restore` 的**正文就是归档本身**(非 JSON 包装),只做校验 + 暂存,不换库:
+
+```console
+$ curl -H 'Authorization: Bearer demo-token' -o mpx-backup.tar.gz localhost:8080/api/backup
+
+$ curl -H 'Authorization: Bearer demo-token' \
+    --data-binary @mpx-backup.tar.gz localhost:8080/api/restore
+{ "message": "已就绪,重启 mpx 后生效" }
+```
+
+归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**(见 [decisions.md](decisions.md) 第 16 条)。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
 
 token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
 

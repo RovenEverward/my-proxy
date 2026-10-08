@@ -61,6 +61,9 @@ const (
 	// installTimeout 是安装节点核心的上限:控制面要下载一个几十兆的发布包,再推
 	// 同样大小的东西过 ssh 到节点上,慢链路下几分钟很正常。
 	installTimeout = 15 * time.Minute
+	// backupTimeout 是下载备份的上限。备份里主要是库快照,可能随流量采样增长;
+	// 给得比普通接口宽,但不必像装核心那么长。
+	backupTimeout = 5 * time.Minute
 )
 
 // rawBody 是跳过 JSON 序列化、原样发出的请求体。模板正文就是模板本身
@@ -117,8 +120,37 @@ func (c *Client) doWithin(timeout time.Duration, method, path string, body any) 
 	return data, nil
 }
 
-// errorMessage 取出控制面 {"error": "..."} 里的那句话。
+// download 以 GET 发一次请求,把响应正文流式写进 w。
 //
+// 备份接口返回的是 tar.gz 字节流,不是 JSON:do 那条路要 io.ReadAll 全量进内存
+// 再返回 []byte,对可能长大的备份不合适,而且错误信息也拿不到。非 2xx 时照常
+// 读回正文翻成 APIError。
+func (c *Client) download(path string, w io.Writer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.server+path, nil)
+	if err != nil {
+		return err
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("连接控制面 %s 失败: %w", c.server, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data)}
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return fmt.Errorf("写入备份文件: %w", err)
+	}
+	return nil
+}
+
+// errorMessage 取出控制面 {"error": "..."} 里的那句话。
 // 拿不到合法 JSON 时退回状态码加原文:宁可把一整页 HTML 错误摆出来,也不要
 // 只留一句"status 500"把真正的原因丢掉。
 func errorMessage(code int, data []byte) string {

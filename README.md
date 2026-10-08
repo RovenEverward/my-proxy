@@ -284,6 +284,34 @@ sudo cat /var/lib/mpx/.ssh/id_ed25519.pub
   内网。这是有意的,不要为了让某个本地测试通过而删掉它。
 - 数据库里有所有用户的协议凭证(由用户 key 派生),`mpx.db` 按密钥对待。
 
+## 备份与恢复
+
+库一没,所有用户的协议凭证(由 `users.key` 派生)和节点凭据都复现不出来,节点也连不上。`mpx backup` / `mpx restore` 就是为这个准备的:
+
+```bash
+# 从控制面下载一份归档,默认 mpx-backup-<时间戳>.tar.gz,写完权限 0600
+./mpx backup
+./mpx backup -o /tmp/mpx-backup-$(date +%F).tar.gz
+
+# 把一份归档暂存到控制面,校验通过后返回「已就绪,重启 mpx 后生效」
+./mpx restore /tmp/mpx-backup-....tar.gz
+sudo systemctl restart mpx
+```
+
+归档是 gzip 过的 tar,里面有:
+
+- `manifest.json` —— 创建时间、控制面主机名、各表行数、是否含 ssh 私钥、表名清单(不含任何密钥正文);
+- `mpx.db` —— 一致快照(用户、节点、入站、流量历史都在,`users.key` 也在这里);
+- `id_ed25519` —— 控制面连节点用的系统 ssh 私钥(存在才放)。
+
+**没有管理 token** —— token 在 `/etc/mpx/env`,不在库里。这份归档等于一整套凭据,**当密码文件保管**:不传不加密的通道、不随手拷来拷去。
+
+恢复是「校验 + 暂存」:控制面只把校验过的库写成 `mpx.db.restore`,**下次启动时换入**,旧库改名 `mpx.db.pre-restore-<时间戳>` 留着回退。所以:
+
+- 恢复后**要重新 `mpx login`**:管理 token 不在归档里,若恢复到一台 token 不同的机器,用那台机器 `/etc/mpx/env` 里的 token 重新登录;
+- 归档里的 ssh 私钥**不会自动放回去**(恢复只换数据库):新机器上的私钥和节点 `authorized_keys` 对不上时,要把新公钥加到每台节点重新授权,否则控制面连不上节点;
+- 没有控制面也能恢复:把 `mpx.db` 改名成 `mpx.db.restore` 再启动,同一套换入逻辑生效。
+
 ## 开发
 
 ```bash

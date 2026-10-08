@@ -37,14 +37,21 @@ type Server struct {
 	logger  *slog.Logger
 	mux     *http.ServeMux
 	nodeOps NodeOps
+	dbPath  string
 }
 
 // New 组装一台控制面。token 为空表示不校验管理接口的鉴权,只用于本机开发。
-func New(st *store.Store, token string, logger *slog.Logger) *Server {
+//
+// dbPath 是控制面用的库文件路径,备份/恢复接口靠它知道该碰哪个文件。传空串
+// 时备份与恢复接口返回 500(正常从 Serve 进来说不清什么时候为空,但防御一下)。
+func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	s := &Server{store: st, token: token, logger: logger, mux: http.NewServeMux()}
+	if len(dbPath) > 0 {
+		s.dbPath = dbPath[0]
+	}
 	s.routes()
 	return s
 }
@@ -96,6 +103,10 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/settings/templates/{format}", s.handleGetTemplate)
 	api.HandleFunc("PUT /api/settings/templates/{format}", s.handlePutTemplate)
 	api.HandleFunc("DELETE /api/settings/templates/{format}", s.handleDeleteTemplate)
+
+	// 备份与恢复:GET 流式返回 tar.gz,POST 校验并暂存归档(重启后生效)。
+	api.HandleFunc("GET /api/backup", s.handleBackup)
+	api.HandleFunc("POST /api/restore", s.handleRestore)
 
 	s.mux.Handle("/api/", s.requireAuth(api))
 }

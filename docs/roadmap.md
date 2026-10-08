@@ -20,7 +20,7 @@
 
 **结果**:已按上面做完。`traffic_samples` 里该用户在该节点的最近一行就是「上次值」;读数回退按 xray 重启处理(记日志,该次读数成为新基准)。见 [decisions.md](decisions.md) 第 9 条。
 
-## 批 2:备份与恢复
+## 批 2:备份与恢复(已完成)
 
 **为什么**:`users.key` 是派生 UUID/密码的**种子**,只存在 SQLite 里。库没了 = 所有人的凭证都复现不出来,必须重配。现在没有 `mpx backup`、没有导出、没做过恢复演练。
 
@@ -29,6 +29,8 @@
 - 恢复演练写进验证记录。
 
 **验证**:备份 → 删库 → 恢复 → 用户/节点/入站全在,订阅 token 不变,能出订阅。
+
+**结果**:已按上面做完。备份是 gzip 过的 tar(`manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**不含管理 token**,理由见 [decisions.md](decisions.md) 第 16 条);快照用 `VACUUM INTO`(实测 modernc.org/sqlite 支持,不锁写、不用停服务)。恢复走「校验 + 暂存」:`POST /api/restore` 只把校验过的库写成 `<db>.restore`,真正换入在 `Serve()` 打开库之前——旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,没有控制面也能恢复(手动把 `mpx.db` 改名成 `<db>.restore` 再启动)。验证:备份→删库→手动放 `.restore`→启动→节点/入站/用户全在、订阅 token 不变、能出订阅(见 `internal/server/backup_test.go` 的 `TestRestoreFlowOfflineSwap`)。
 
 ## 批 3:看得见
 
