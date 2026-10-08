@@ -545,7 +545,7 @@ func TestSingBoxDefaultTemplate(t *testing.T) {
 			t.Errorf("%s 的 type = %v, 期望 selector", tag, ob["type"])
 		}
 	}
-	// route.rule_set 存在,且至少带广告与 geoip 两组规则。
+	// route.rule_set 存在,且至少带广告与国内 IP 两组规则。
 	route := cfg["route"].(map[string]any)
 	ruleSets, ok := route["rule_set"].([]any)
 	if !ok || len(ruleSets) == 0 {
@@ -557,7 +557,7 @@ func TestSingBoxDefaultTemplate(t *testing.T) {
 			ruleSetTags[m["tag"].(string)] = true
 		}
 	}
-	for _, want := range []string{"category-ads-all", "easylist", "geoip-cn"} {
+	for _, want := range []string{"category-ads-all", "easylist", "cn"} {
 		if !ruleSetTags[want] {
 			t.Errorf("rule_set 缺 %q", want)
 		}
