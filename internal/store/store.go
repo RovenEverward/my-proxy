@@ -148,6 +148,30 @@ var schema = []string{
 	`CREATE INDEX IF NOT EXISTS idx_traffic_samples_node_user_at
 		ON traffic_samples(node_id, username, sampled_at)`,
 
+	// node_status 是每台节点最近一次的观察结果,一台一行。
+	//
+	// 与 nodes 表分开的理由是两者的生命周期不同:nodes 是"我们期望这台机器是什么
+	// 样",而这里只是"刚才问它,它这么回答"。检查失败也是一次回答(Reachable=0,
+	// error 里写着原因),所以它同样占用这一行。
+	//
+	// 刻意不放 deployed_hash:那是"我们最后一次推上去的是什么",属于节点自己的
+	// 属性,在 nodes 表上。放到这里的话,每次检查写状态都会把基准覆盖成观察值,
+	// 漂移就永远看不出来了。
+	//
+	// node_id 是主键也是外键:一台节点一行,节点删掉时它的状态跟着走(不然删了
+	// 再加一台同 id 的会把旧状态捡回来)。certificates 存 JSON 文本,与 inbounds
+	// 的 alpn 一个做法。
+	`CREATE TABLE IF NOT EXISTS node_status (
+		node_id       INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+		checked_at    INTEGER NOT NULL,
+		reachable     INTEGER NOT NULL DEFAULT 0,
+		active        INTEGER NOT NULL DEFAULT 0,
+		version       TEXT    NOT NULL DEFAULT '',
+		observed_hash TEXT    NOT NULL DEFAULT '',
+		certificates  TEXT    NOT NULL DEFAULT '[]',
+		error         TEXT    NOT NULL DEFAULT ''
+	)`,
+
 	// settings 是单行表:id 恒为 1。
 	`CREATE TABLE IF NOT EXISTS settings (
 		id              INTEGER PRIMARY KEY CHECK (id = 1),
@@ -247,6 +271,13 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE users ADD COLUMN traffic_reset_at INTEGER`},
 	{"settings", "templates",
 		`ALTER TABLE settings ADD COLUMN templates TEXT NOT NULL DEFAULT '{}'`},
+	// 下发基准放在 nodes 上而不是 node_status 里:它是节点记录自己的属性(这台
+	// 机器上我们最后一次推的是什么),而观察结果才属于"一次检查"。deployed_at
+	// 可空 —— 没推过就是没有那一刻,空串的 0 会让人以为 1970 年推过一次。
+	{"nodes", "deployed_hash",
+		`ALTER TABLE nodes ADD COLUMN deployed_hash TEXT NOT NULL DEFAULT ''`},
+	{"nodes", "deployed_at",
+		`ALTER TABLE nodes ADD COLUMN deployed_at INTEGER`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

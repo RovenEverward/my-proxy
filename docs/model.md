@@ -4,20 +4,22 @@
 
 ```
 nodes ──1:N──► inbounds ──1:N──► hosts
-                  │
-                  │  users.inbound_ids(JSON 数组,空 = 全部)
-                  ▼
-                users          settings(单行)
-                                traffic_samples(只追加:node_id 外键级联,username 是文本)
+  │               │
+  │               │  users.inbound_ids(JSON 数组,空 = 全部)
+  │               ▼
+  │             users          settings(单行)
+  │                             traffic_samples(只追加:node_id 外键级联,username 是文本)
+  └──1:1──► node_status
 ```
 
-级联删除:`ON DELETE CASCADE`。删节点连带删它的入站、入口与流量采样,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
+级联删除:`ON DELETE CASCADE`。删节点连带删它的入站、入口、流量采样与状态行,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
 
-## 六张表
+## 七张表
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
-| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name` | 空值有默认:22 / `root` / 10085 / `/etc/mpx/xray/config.json` / `mpx-xray`。**不存 xray 版本**:节点上装的是哪个版本随时能读出来,存进库就是第二份真相 |
+| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name`、`deployed_hash`、`deployed_at` | 空值有默认:22 / `root` / 10085 / `/etc/mpx/xray/config.json` / `mpx-xray`。**不存 xray 版本**:节点上装的是哪个版本随时能读出来,存进库就是第二份真相。`deployed_hash` / `deployed_at` 是**下发成功之后**才记的基准;从没下发过时是空串 / NULL,那表示「没有基准」,不是「一致」 |
+| `node_status` | `node_id`(主键)、`checked_at`、`reachable`、`active`、`version`、`observed_hash`、`certificates`、`error` | 每次检查**覆盖**一行,只写这张表、不碰 `nodes`。`certificates` 是 `[{inbound_id, inbound_name, path, not_after, days_left, error}]` 的 JSON 文本 |
 | `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow` | 切片存 JSON 文本 |
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |
@@ -42,6 +44,22 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 只有 active 的用户会拿到真实节点;其余拿到一个**占位节点**(地址 `0.0.0.0:1`),这样客户端能正常拉到订阅不报错,但连不上。
 
 过期与超限只是不给真实节点,数据都还在;续费或 `reset-traffic` 之后自动恢复。
+
+### 节点状态与漂移
+
+检查一台节点时读四样东西:服务在不在跑(`is-active`)、核心版本(`xray version`)、配置文件的 sha256、每个入站证书的到期时间。一次 ssh 一条脚本读全,结果写进 `node_status`。
+
+**漂移 = 观察到的哈希 ≠ 基准**,三种情况都**不算**漂移:
+
+| 情况 | 含义 |
+| --- | --- |
+| `deployed_hash` 为空 | 从没下发过配置,没有基准可比 —— 是「不知道」 |
+| 没有状态行 / 连不上 | 没问过、或问了没答 —— 也是「不知道」 |
+| 两者相等 | 节点上就是我推的那一份 |
+
+证书那部分:到期时间读不到(文件不是证书、节点上没有 `openssl`)时 `not_after` 为空、`error` 有值;能读到就只留 `not_after`。这两件事不会同时成立。
+
+`node list` 显示的是这张缓存,不发 ssh;`?fresh=1` / `mpx node status` 才现场查。为什么基准和观察分两张表,见 [decisions.md](decisions.md) 第 20 条。
 
 ### 授权
 

@@ -49,6 +49,30 @@ func (n *Node) ServiceNameOrDefault() string {
 	return n.ServiceName
 }
 
+// Deployed 报告这台节点有没有被下发过配置。false 表示控制面从没推过东西上去
+// (刚加进来的节点、或者一直是手工维护的机器)。
+func (n *Node) Deployed() bool { return n.DeployedHash != "" }
+
+// Drift 报告「节点上的配置被人在机器上改过了」。
+//
+// 判据只有一个:节点上实际那份 config.json 的哈希,和控制面最后一次推上去的
+// 哈希不一样。三种情况分开:
+//
+//   - 从没下发过(DeployedHash 为空)→ 不是漂移。没有"我们推的"这个基准,
+//     就谈不上偏离它;把手工维护的机器报成漂移只会制造噪音。CLI 显示成
+//     "未下发"。
+//   - 节点连不上(观察值为空)→ 不是漂移,是不知道。说"有漂移"是编出来的结论。
+//   - 两边都有值且不等 → 漂移。
+//
+// 比较的是哈希而不是文件内容:节点上那份文件控制面拿不到,而且要的也只是
+// "不一样"这一个事实。
+func (n *Node) Drift(s *NodeStatus) bool {
+	if !n.Deployed() || s == nil || !s.Reachable {
+		return false
+	}
+	return s.ObservedHash != n.DeployedHash
+}
+
 // ListenOrDefault 是入站绑定的地址。
 func (i *Inbound) ListenOrDefault() string {
 	if i.Listen == "" {

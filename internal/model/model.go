@@ -96,6 +96,16 @@ type Node struct {
 	APIPort     int    `json:"api_port"`     // xray API 入站端口,仅监听回环
 	ConfigPath  string `json:"config_path"`  // 空表示 /etc/mpx/xray/config.json
 	ServiceName string `json:"service_name"` // 空表示 mpx-xray
+
+	// DeployedHash 是控制面最后一次推上去的 config.json 的 sha256,空串表示
+	// 从没下发过。它是漂移判定的基准:节点上读回来的哈希和它不一样,就说明有人
+	// 在机器上直接改过配置。
+	//
+	// 存在节点记录上而不是"一次检查"里,因为它描述的是我们这边做过什么,不会
+	// 因为某次连不上节点而改变。
+	DeployedHash string `json:"deployed_hash,omitempty"`
+	// DeployedAt 是那次下发发生的时刻;没推过时为 nil。
+	DeployedAt *time.Time `json:"deployed_at,omitempty"`
 }
 
 // Inbound 是某个节点上 xray 的一个入站。
@@ -293,6 +303,133 @@ func (s *Settings) MatchFormat(userAgent string) ClientFormat {
 		}
 	}
 	return FormatLinks
+}
+
+// NodeStatus 是一台节点「刚才被问过之后」的样子。
+//
+// 它是对一次提问的回答,所以字段都是观察值而不是期望值:里面没有我们希望节点
+// 是什么样,只有它现在是什么样。观察失败也是这个结构的一部分 —— 连不上时
+// Reachable 为 false、Error 写着原因,而不是"没有状态"。丢了那一次观察,使用者
+// 就分不清"节点上配置被改了"和"这台机器根本没理我"。
+//
+// 与之相对,「我们最后一次推上去的是什么」属于节点自己的属性,存在 nodes 表上
+// (DeployedHash),不在这里 —— 否则每次检查都会把它覆盖成观察值,漂移就永远
+// 看不出来了。
+type NodeStatus struct {
+	NodeID int64 `json:"node_id"`
+	// CheckedAt 是这次观察发生的时刻。
+	CheckedAt time.Time `json:"checked_at"`
+	// Reachable 是 ssh 有没有连上。false 时下面的观察值都不可信。
+	Reachable bool `json:"reachable"`
+	// Active 是节点上跑 xray 的那个 systemd 服务在不在跑。
+	Active bool `json:"active"`
+	// Version 是节点上核心的版本号,只留版本那一段(如 "26.3.27")。
+	Version string `json:"version"`
+	// ObservedHash 是节点上那份 config.json 的 sha256。拿它和 nodes 表里的
+	// DeployedHash 比,就能看出有人是否在机器上直接改过配置。
+	ObservedHash string `json:"observed_hash"`
+	// Certificates 是这台节点上所有用证书的入站的证书到期情况,一个入站一条。
+	Certificates []CertificateInfo `json:"certificates"`
+	// Error 是观察失败的原因(ssh 连不上、超时)。为空表示这次问到了。
+	Error string `json:"error,omitempty"`
+}
+
+// CertificateInfo 是一个入站用的证书的到期情况。
+//
+// 一个入站一条(而不是一个证书文件一条):使用者关心的是"哪个入站要到期了",
+// 多个入站共用一张证书时按入站分行,反而更容易看清要动哪一处。
+type CertificateInfo struct {
+	InboundID   int64  `json:"inbound_id"`
+	InboundName string `json:"inbound_name"`
+	// Path 是证书在节点上的路径。
+	Path string `json:"path"`
+	// NotAfter 是证书的到期时间;读不到时为 nil,原因在 Error 里。
+	NotAfter *time.Time `json:"not_after"`
+	// DaysLeft 是距到期还剩多少天(向下取整,已过期是负数)。NotAfter 为空时
+	// 这个值没有意义,看 Error。
+	DaysLeft int `json:"days_left"`
+	// Error 是这张证书没读成的原因:文件不在、打不开、不是 PEM。留空表示读到了。
+	Error string `json:"error,omitempty"`
+}
+
+// NodeView 是节点对外的返回形态:节点记录本身,外加最近一次观察到的状态。
+//
+// 与 HostView 同样的理由:服务端与 CLI 看的是同一份形状。Status 为 nil 表示
+// 这台节点还从没被检查过(刚加进来、巡检还没轮到),不是"检查失败"—— 检查
+// 失败是一次有结果的观察,Reachable=false 会写在 Status 里。
+type NodeView struct {
+	Node
+	Status *NodeStatus `json:"status"`
+}
+
+// 证书临期的两个阈值。doctor 与巡检告警共用,免得两处各写一个数字。
+const (
+	// CertWarnDays 以内要提醒:该准备换了。
+	CertWarnDays = 14
+	// CertFailDays 以内是故障:随时可能中断。
+	CertFailDays = 3
+)
+
+// Kind 是告警的种类,一个 Kind 对应一类可恢复的状况。
+type Kind string
+
+const (
+	KindNodeUnreachable Kind = "node_unreachable"
+	KindNodeInactive    Kind = "node_inactive"
+	KindNodeDrift       Kind = "node_drift"
+	KindCertExpiring    Kind = "cert_expiring"
+)
+
+// Alert 是一条告警。
+//
+// Key 是这条告警的身份:同一个 Key 在冷却期内只报一次,条件消失时用同一个 Key
+// 去 Resolve。所以 Key 必须由「哪台节点的哪一类问题」拼出来(NodeID + Kind,
+// 证书再加路径),不能带上时间戳或剩余天数 —— 那样每次算出来都是新的 Key,
+// 去重就失效了。
+type Alert struct {
+	Key      string    `json:"key"`
+	Kind     Kind      `json:"kind"`
+	NodeID   int64     `json:"node_id"`
+	NodeName string    `json:"node_name"`
+	Message  string    `json:"message"`
+	At       time.Time `json:"at"`
+}
+
+// DoctorCheck 是自检的一项结论。
+type DoctorCheck struct {
+	// Name 是这一项的名字,给人看也用来定位(如 "节点 hk-1")。
+	Name string `json:"name"`
+	// Status 取 ok / warn / fail。
+	Status string `json:"status"`
+	// Detail 是结论的依据,带具体数字。
+	Detail string `json:"detail"`
+	// Hint 是"接下来该做什么",没有可做的就为空。
+	Hint string `json:"hint,omitempty"`
+}
+
+// DoctorReport 是 GET /api/doctor 的回答,也是 mpx doctor 打印的东西。
+//
+// 与 ControlStatus / NodeView 同样的理由:服务端与 CLI 共用一份形状。
+type DoctorReport struct {
+	Checks []DoctorCheck `json:"checks"`
+}
+
+// 自检结论的三个取值。
+const (
+	DoctorOK   = "ok"
+	DoctorWarn = "warn"
+	DoctorFail = "fail"
+)
+
+// HasFailure 报告这份报告里有没有 fail。CLI 拿它决定退出码:有一项 fail 就是
+// 非零,脚本可以直接拿 doctor 当健康检查。
+func (r DoctorReport) HasFailure() bool {
+	for _, c := range r.Checks {
+		if c.Status == DoctorFail {
+			return true
+		}
+	}
+	return false
 }
 
 // ControlStatus 是控制面自报的「现在怎么样」,GET /api/status 与 mpx status 共用。

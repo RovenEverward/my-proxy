@@ -61,6 +61,15 @@ const (
 	// installTimeout 是安装节点核心的上限:控制面要下载一个几十兆的发布包,再推
 	// 同样大小的东西过 ssh 到节点上,慢链路下几分钟很正常。
 	installTimeout = 15 * time.Minute
+	// doctorTimeout 是自检的上限。自检要对每台节点各查一次(每次最多 checkBudget
+	// 30 秒),十几台节点串起来就是几分钟 —— 它本来就该慢慢跑完,中途被客户端
+	// 掐掉只会留下一半的表。
+	doctorTimeout = 10 * time.Minute
+	// nodeStatusTimeout 是现场查节点状态的上限。它必须比控制面自己的
+	// checkBudget(30 秒)长:真正在等的是控制面那条 ssh,如果这边先断,
+	// 控制面还在跑、结果也落了库,而使用者只看到一个超时 —— 他会以为没查成,
+	// 然后再查一次。留一倍余量,让控制面有机会说话。
+	nodeStatusTimeout = time.Minute
 	// backupTimeout 是下载备份的上限。备份里主要是库快照,可能随流量采样增长;
 	// 给得比普通接口宽,但不必像装核心那么长。
 	backupTimeout = 5 * time.Minute

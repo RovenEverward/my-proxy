@@ -12,10 +12,11 @@ CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点�
 login                                    存控制面地址与 token
 serve                                    起控制面:--addr --db --interval(默认 30s)
 status                                   控制面心跳、对象数量、退避中的节点(读缓存,不碰节点)
+doctor                                   自检:控制面、每台节点、六种订阅格式、采样表(有 fail 时退出码 3)
 backup   [-o 文件]                        下载一份备份归档(默认 mpx-backup-<时间戳>.tar.gz)
 restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
-node     list | show | add | rm | config | sync | install
+node     list | show | status | add | rm | config | sync | install
 inbound  list | show | add | rm
 host     list | add | rm
 user     list | show | add | rm | enable | disable
@@ -55,6 +56,8 @@ $ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
 
 ```
 GET|POST         /api/nodes          GET|PUT|DELETE  /api/nodes/{id}
+                                                     节点 + 最近一次状态(?fresh=1 现场查一次)
+GET              /api/doctor                         自检:控制面、每台节点、六种订阅格式、采样表
 GET              /api/nodes/{id}/config              预览,不下发
 POST             /api/nodes/{id}/sync                下发 + 重启
 POST             /api/nodes/{id}/install             装核心 + 下发 + 启动(?version= 指定版本)
@@ -123,6 +126,27 @@ $ curl ... /api/inbounds/2/hosts
 ```
 
 `mpx host list` 显示的是 `effective` —— 只填了备注时,光看那几个空字段看不出客户端最终会连到哪里。回落规则只有 `render.ResolveExposure` 一份,见 [model.md](model.md) 的「host 的回落」。
+
+**节点返回的是「节点 + 它最近一次的状态」。** `GET /api/nodes` 与 `GET /api/nodes/{id}` 都回 `NodeView`,在节点字段之外多一个可空的 `status`:
+
+```console
+$ curl ... /api/nodes
+[ { "id": 3, "name": "hk", "address": "203.0.113.46", "deployed_hash": "9f2c…",
+    "status": { "node_id": 3, "checked_at": "2026-10-08T06:31:02Z", "reachable": true,
+                "active": true, "version": "26.3.27", "observed_hash": "9f2c…",
+                "certificates": [ { "inbound_id": 4, "inbound_name": "reality-8443",
+                                    "path": "/etc/mpx/certs/hk.pem", "not_after": "2027-01-04T…",
+                                    "days_left": 88 } ] } } ]
+```
+
+- **列表读的是缓存**,一次 ssh 都不发 —— 否则一条 `node list` 在十几台节点上要等半分钟。
+- **`?fresh=1` 现场查一次**:ssh 过去读服务状态、核心版本、配置哈希和每张证书的到期时间,落库再回答。查过之后紧接着一次不带参数的读看到的就是它,不会出现「刚查过、列表里还是旧的」。
+- **`status` 为空是「还没查过」**,不是「查过没问题」;`reachable: false` 才是问了没答,那时 `error` 里是 ssh 的原话。
+- 漂移不在响应里算,由读的人拿 `observed_hash` 和 `deployed_hash` 比(`!deployed_hash` 或问不到就是「不知道」,不是「一致」)。为什么这样分,见 [decisions.md](decisions.md) 第 20 条。
+
+**`GET /api/doctor` 是同一批检查的一次汇总**,回 `{ "checks": [ { "name", "status", "detail", "hint" } ] }`:`status` 取 `ok` / `warn` / `fail`,`hint` 是「接下来该做什么」,没有可做的就省略。检查控制面库与心跳、每台节点(现场查,走的就是上面那条 `?fresh=1` 的路)、六种订阅格式各渲染一次、采样表行数。一台节点只出一行结论,按最重的那条定。
+
+`mpx doctor` 有 fail 时退出码是 **3**(不是 1),只有 warn 时是 0 —— 理由见 [decisions.md](decisions.md) 第 23 条。
 
 ## 3. HTTP 订阅接口
 

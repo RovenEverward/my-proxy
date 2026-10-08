@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,7 +21,7 @@ var nodeCmd = &cobra.Command{
 }
 
 func init() {
-	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd)
+	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
@@ -30,12 +33,20 @@ func init() {
 	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
 }
 
-// nodeHeaders 是节点表格的表头。列表与其它命令共用同一套列。
-var nodeHeaders = []string{"ID", "名称", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名"}
+// nodeHeaders 是节点表格的表头。列表与 show 共用同一套列。
+//
+// 后五列是批 3b 加的状态:它们全部来自库里最近一次检查的缓存,**不发 ssh**
+// —— 列表是要能随手敲的,一次列出十几台节点如果每台都连一次,它就变成一条
+// 要等半分钟的命令了。想现场问一次用 node status。
+var nodeHeaders = []string{
+	"ID", "名称", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
+	"状态", "版本", "漂移", "最后检查", "证书最短",
+}
 
 // nodeRow 按表格要展示的顺序取字段;留空的一律显示成生效的默认值,
 // 使用者看到的就是这个节点实际会用到的值。
-func nodeRow(n model.Node) []string {
+func nodeRow(v model.NodeView, now time.Time) []string {
+	n := v.Node
 	return []string{
 		strconv.FormatInt(n.ID, 10),
 		n.Name,
@@ -45,7 +56,88 @@ func nodeRow(n model.Node) []string {
 		strconv.Itoa(n.APIPortOrDefault()),
 		n.ConfigPathOrDefault(),
 		n.ServiceNameOrDefault(),
+		statusCell(v),
+		dash(versionOf(v)),
+		driftCell(v),
+		checkedCell(v, now),
+		certCell(v),
 	}
+}
+
+// statusCell 把一份状态说成一个词。
+//
+// 没查过、和查过但连不上是两件事,要分开:"未知"是还没问过,"不可达"是问了
+// 没答。合成一个"异常"会让人以为节点坏了,而其实可能只是从来没人查过。
+func statusCell(v model.NodeView) string {
+	if v.Status == nil {
+		return "未知"
+	}
+	if !v.Status.Reachable {
+		return "不可达"
+	}
+	if v.Status.Active {
+		return "active"
+	}
+	return "inactive"
+}
+
+// versionOf 取核心版本;节点连不上时没有版本可报。
+func versionOf(v model.NodeView) string {
+	if v.Status == nil {
+		return ""
+	}
+	return v.Status.Version
+}
+
+// driftCell 说漂移这件事的三种答案:是 / 否 / 未下发。
+//
+// "未下发"必须和"否"分开:一个从没推过配置的节点没有基准可比,报"否"会让人觉得
+// 它的配置是对的,而其实根本不知道上面是什么。
+func driftCell(v model.NodeView) string {
+	switch {
+	case !v.Node.Deployed():
+		return "未下发"
+	case v.Status == nil || !v.Status.Reachable:
+		// 问不到就没法比,这不是"没漂移",是"不知道"。
+		return "未知"
+	case v.Node.Drift(v.Status):
+		return "是"
+	default:
+		return "否"
+	}
+}
+
+// checkedCell 说"最后一次检查是多久以前"。
+func checkedCell(v model.NodeView, now time.Time) string {
+	if v.Status == nil || v.Status.CheckedAt.IsZero() {
+		return "从未"
+	}
+	return humanDuration(now.Sub(v.Status.CheckedAt)) + "前"
+}
+
+// certCell 报最短的证书剩余天数。
+//
+// 报最短的那张而不是全部:列表只要让人一眼看出"有没有快过期的"。读不到到期
+// 时间时显示"读不到",不显示 0 —— 0 天看起来像"今天就到期",而实际是不知道。
+func certCell(v model.NodeView) string {
+	if v.Status == nil || !v.Status.Reachable {
+		return "-"
+	}
+	if len(v.Status.Certificates) == 0 {
+		return "-"
+	}
+	// 任一张读不到到期时间就直接说"读不到":它是这一列里最该被看见的状态,
+	// 不能因为同台节点上还有一张能读的证书就被一个天数盖过去。
+	best := 0
+	for i, c := range v.Status.Certificates {
+		if c.NotAfter == nil {
+			return "读不到"
+		}
+		if i == 0 || c.DaysLeft < best {
+			best = c.DaysLeft
+		}
+	}
+	return strconv.Itoa(best) + " 天"
 }
 
 var nodeListCmd = &cobra.Command{
@@ -64,13 +156,14 @@ var nodeListCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		nodes, err := decode[[]model.Node](raw)
+		views, err := decode[[]model.NodeView](raw)
 		if err != nil {
 			return err
 		}
-		rows := make([][]string, 0, len(nodes))
-		for _, n := range nodes {
-			rows = append(rows, nodeRow(n))
+		now := time.Now()
+		rows := make([][]string, 0, len(views))
+		for _, v := range views {
+			rows = append(rows, nodeRow(v, now))
 		}
 		return writeTable(nodeHeaders, rows)
 	},
@@ -96,18 +189,233 @@ var nodeShowCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		n, err := decode[model.Node](raw)
+		v, err := decode[model.NodeView](raw)
 		if err != nil {
 			return err
 		}
 		headers := nodeHeaders
-		values := nodeRow(n)
+		values := nodeRow(v, time.Now())
 		pairs := make([][2]string, 0, len(headers))
 		for i, h := range headers {
 			pairs = append(pairs, [2]string{h, values[i]})
 		}
 		return writeKV(pairs)
 	},
+}
+
+// nodeStatusCmd 现场问一次节点状态。
+//
+// 这是 node 子命令里唯一会真的 ssh 出去问的一条(install 与 sync 也会连,但那是
+// 下发)。所以它明确说"现场",而 list 里的状态列全部来自缓存 —— 一条命令该不该
+// 有副作用、该不该慢,使用者要能一眼看出来。
+var nodeStatusCmd = &cobra.Command{
+	Use:   "status [名称或 ID]",
+	Short: "现场查一次节点的状态(会 ssh 到节点上)",
+	Long: `现场查一次节点的状态:服务在不在跑、核心什么版本、配置有没有被改过、每张证书还有几天到期。
+
+不给参数就查全部节点。查询结果会立刻落库,所以查完再看 mpx node list,那几列
+就是刚才看到的值。
+
+这和 list 里的状态列是两回事:list 读的是缓存(不发 ssh、随手就能敲),这条是
+真的连过去问一次。漂移要看的是"现在机器上是什么",所以想看准的就用这条。
+
+节点连不上不是错误:会打出"不可达"和 ssh 给的原话。这正是要查的事情之一。`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+
+		nodes, err := resolveNodeArgs(c, args)
+		if err != nil {
+			return err
+		}
+
+		now := time.Now()
+		// 一台一条请求:fresh 是"这一次读要不要绕开缓存",而每台节点各有各的
+		// 缓存,合成一条请求没有意义 —— 服务端也没法一次 ssh 到十几台机器上。
+		views := make([]model.NodeView, 0, len(nodes))
+		for _, n := range nodes {
+			raw, err := c.doWithin(nodeStatusTimeout, "GET", nodePath(n.ID)+"?fresh=1", nil)
+			if err != nil {
+				return err
+			}
+			v, err := decode[model.NodeView](raw)
+			if err != nil {
+				return err
+			}
+			if v.Status == nil {
+				// fresh=1 之后一定有一份状态;真没有就是服务端那边出了问题,
+				// 说出来比在表里显示一片空白强。
+				return fmt.Errorf("节点 %s 没返回状态", n.Name)
+			}
+			views = append(views, v)
+		}
+
+		if opts.output == outputJSON {
+			// JSON 模式下把整批一次打出去,而不是循环里各打一次 —— 一条命令的
+			// 输出要是一整个 JSON 文档,才能直接喂给 jq。
+			body, err := json.Marshal(views)
+			if err != nil {
+				return err
+			}
+			return emitJSON(body)
+		}
+
+		for i, v := range views {
+			if i > 0 {
+				fmt.Println()
+			}
+			if err := printNodeStatus(v.Node, *v.Status, now); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+}
+
+// resolveNodeArgs 把"给名字/给 ID/什么都不给"统一成一组节点 ID。
+//
+// 支持按名字找是因为节点名是给人用的,而 ID 是数据库给的;让人为了查一台节点先去
+// list 里翻 ID,是把内部的编号泄漏到了使用方式上。
+func resolveNodeArgs(c *Client, args []string) ([]model.Node, error) {
+	all, err := listNodes(c)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) == 0 {
+		if len(all) == 0 {
+			return nil, errors.New("还没有任何节点")
+		}
+		out := make([]model.Node, 0, len(all))
+		for _, v := range all {
+			out = append(out, v.Node)
+		}
+		return out, nil
+	}
+
+	// 先按 ID 试,不是数字就当名字。
+	if id, err := idArg(args[0]); err == nil {
+		for _, v := range all {
+			if v.Node.ID == id {
+				return []model.Node{v.Node}, nil
+			}
+		}
+		return nil, fmt.Errorf("没有 ID 为 %d 的节点", id)
+	}
+	for _, v := range all {
+		if v.Node.Name == args[0] {
+			return []model.Node{v.Node}, nil
+		}
+	}
+	return nil, fmt.Errorf("没有叫 %q 的节点", args[0])
+}
+
+// listNodes 取节点列表。现场查状态前要先拿到节点本身,因为"有没有漂移"要靠
+// 节点记录里的下发哈希去比 —— 单独一份 NodeStatus 里没有基准。
+func listNodes(c *Client) ([]model.NodeView, error) {
+	raw, err := c.do("GET", "/api/nodes", nil)
+	if err != nil {
+		return nil, err
+	}
+	return decode[[]model.NodeView](raw)
+}
+
+// printNodeStatus 打一台节点的现场状态。
+//
+// 漂移这一行是这条命令的重点之一:用户手改过节点上的 config.json 时,这里会
+// 明确写"是",并给出两个哈希 —— 光说一句"漂移了"没法让人确认是不是自己改的,
+// 而给出哈希他就能去机器上 sha256sum 一下对。当前哈希报不出来时也要说清楚
+// (节点上没有这个文件、或者读不到),不能显示成"否"。
+func printNodeStatus(n model.Node, st model.NodeStatus, now time.Time) error {
+	if err := writeKV([][2]string{
+		{"节点", fmt.Sprintf("%s(ID %d)", n.Name, n.ID)},
+		{"可达", yesNo(st.Reachable)},
+		{"服务", serviceCell(st)},
+		{"版本", dash(st.Version)},
+		{"配置漂移", driftText(n, st)},
+		{"检查时间", st.CheckedAt.Format(time.RFC3339) + "(" + humanDuration(now.Sub(st.CheckedAt)) + "前)"},
+	}); err != nil {
+		return err
+	}
+	if st.Error != "" {
+		fmt.Println()
+		fmt.Println("ssh 说:" + st.Error)
+	}
+	if len(st.Certificates) == 0 {
+		return nil
+	}
+	fmt.Println()
+	rows := make([][]string, 0, len(st.Certificates))
+	for _, c := range st.Certificates {
+		rows = append(rows, certRow(c))
+	}
+	return writeTable([]string{"入站", "证书路径", "到期", "剩余", "说明"}, rows)
+}
+
+// certRow 是一张证书一行。读不到的时候说清楚为什么,不留空白 ——
+// 空白会被读成"没问题"。
+func certRow(c model.CertificateInfo) []string {
+	name := c.InboundName
+	if name == "" {
+		name = strconv.FormatInt(c.InboundID, 10)
+	}
+	expire, left, note := "-", "-", ""
+	switch {
+	case c.NotAfter != nil:
+		expire = c.NotAfter.Format("2006-01-02")
+		left = strconv.Itoa(c.DaysLeft) + " 天"
+	case c.Error != "":
+		note = c.Error
+	}
+	if c.Path == "" {
+		note = strings.TrimSpace("路径读不到 " + note)
+	}
+	return []string{name, dash(c.Path), expire, left, note}
+}
+
+// serviceCell 说服务在不在跑。"问不到"要和"没在跑"分开。
+func serviceCell(st model.NodeStatus) string {
+	if !st.Reachable {
+		return "未知(节点不可达)"
+	}
+	if st.Active {
+		return "active"
+	}
+	return "inactive"
+}
+
+// driftText 说清楚漂移这四种情况,而不是一个布尔值。
+func driftText(n model.Node, st model.NodeStatus) string {
+	switch {
+	case !n.Deployed():
+		return "未下发过(没有可比对的基准)"
+	case !st.Reachable:
+		return "不知道(节点不可达,比不了)"
+	case st.ObservedHash == "":
+		return "不知道(节点上读不到配置文件的哈希)"
+	case st.ObservedHash == n.DeployedHash:
+		return "否(和下发的一致)"
+	default:
+		return fmt.Sprintf("是(下发 %s,节点上 %s)", shortHash(n.DeployedHash), shortHash(st.ObservedHash))
+	}
+}
+
+// shortHash 只显示哈希前 12 位:完整的够长、又要在终端里能一眼对上,
+// 而完整值在 -o json 里有。
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "是"
+	}
+	return "否"
 }
 
 var nodeAddFlags struct {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -46,12 +47,18 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.token, "token", "", "管理 token,覆盖 MPX_TOKEN 与配置文件")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
+	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
 func Execute() int {
 	if err := rootCmd.Execute(); err != nil {
+		// doctor 发现故障时要给一个能被脚本认出来的码。它走的是"RunE 返回
+		// 错误"这条路(cobra 只认这一种失败方式),但它的输出已经打完了、
+		// 也不该再往 stderr 上补一行,所以单独放行,把它翻译成退出码。
+		if errors.Is(err, errDoctorFailed) {
+			return doctorFailExit
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

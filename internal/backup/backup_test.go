@@ -196,6 +196,58 @@ func TestCreateWithoutSSHKey(t *testing.T) {
 	}
 }
 
+// 批 3b 之前建的备份里没有 node_status 表。那种归档必须仍然能校验通过 ——
+// 恢复一份旧备份正是备份存在的理由,不能因为后来加了张表就把老的都拒了。
+// 缺的表由 store.Open 的建表语句补出来。
+func TestValidateAcceptsBackupFromBeforeNodeStatus(t *testing.T) {
+	dir := t.TempDir()
+	st, dbPath := newPopulatedStore(t, dir)
+	// 先关掉控制面那条连接再删表:库按单连接用,另开一条连接去 DDL 会撞上锁。
+	if err := st.Close(); err != nil {
+		t.Fatalf("关库: %v", err)
+	}
+	raw, err := sql.Open("sqlite", dsn(dbPath))
+	if err != nil {
+		t.Fatalf("打开库: %v", err)
+	}
+	if _, err := raw.Exec(`DROP TABLE node_status`); err != nil {
+		t.Fatalf("删表模拟旧库: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("关库: %v", err)
+	}
+
+	var buf bytes.Buffer
+	m, _, err := Create(dbPath, "", &buf)
+	if err != nil {
+		t.Fatalf("建归档: %v", err)
+	}
+	for _, name := range m.Tables {
+		if name == "node_status" {
+			t.Fatalf("这份归档本来就不该有 node_status:%v", m.Tables)
+		}
+	}
+
+	snap, _, err := Validate(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("没有 node_status 的旧备份该能通过校验,实际: %v", err)
+	}
+	t.Cleanup(func() { os.Remove(snap) })
+
+	// 恢复起来之后这张表要用得上:建表语句会把它补出来。
+	restored, err := store.Open(snap)
+	if err != nil {
+		t.Fatalf("打开解出的库: %v", err)
+	}
+	defer restored.Close()
+
+	if err := restored.UpsertNodeStatus(model.NodeStatus{
+		NodeID: 1, CheckedAt: time.Now(), Reachable: true, Certificates: []model.CertificateInfo{},
+	}); err != nil {
+		t.Fatalf("补出来的 node_status 该能写: %v", err)
+	}
+}
+
 // TestValidateRejectsBadInputs 四类坏输入都要报错,且不留下临时文件。
 func TestValidateRejectsBadInputs(t *testing.T) {
 	dir := t.TempDir()

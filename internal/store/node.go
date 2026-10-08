@@ -1,19 +1,31 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
 // nodeColumns 是 nodes 表的列顺序,扫描时按同一顺序取值。
-const nodeColumns = `id, name, address, ssh_port, ssh_user, api_port, config_path, service_name`
+//
+// 后两列是批 3b 加的下发基准:deployed_at 可空,没下发过就是 NULL。
+const nodeColumns = `id, name, address, ssh_port, ssh_user, api_port, config_path, service_name,
+	deployed_hash, deployed_at`
 
 func scanNode(sc rowScanner) (*model.Node, error) {
-	var n model.Node
+	var (
+		n          model.Node
+		deployedAt sql.NullInt64
+	)
 	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.SSHPort, &n.SSHUser,
-		&n.APIPort, &n.ConfigPath, &n.ServiceName); err != nil {
+		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt); err != nil {
 		return nil, err
+	}
+	if deployedAt.Valid {
+		at := time.Unix(deployedAt.Int64, 0).UTC()
+		n.DeployedAt = &at
 	}
 	return &n, nil
 }

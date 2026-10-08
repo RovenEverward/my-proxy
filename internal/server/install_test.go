@@ -18,9 +18,29 @@ type fakeNodeOps struct {
 	gotVersion string
 	version    string
 	err        error
+
+	// check 是 CheckNode 要回的答案;没设时回一份"可达、服务在跑"的正常状态,
+	// 这样已有的测试不写它也能过。
+	check    *model.NodeStatus
+	checkErr error
+	checked  int
 }
 
 func (f *fakeNodeOps) DeployNode(context.Context, model.Node, time.Time) error { return nil }
+
+func (f *fakeNodeOps) CheckNode(_ context.Context, n model.Node, now time.Time) (model.NodeStatus, error) {
+	f.checked++
+	if f.checkErr != nil {
+		return model.NodeStatus{}, f.checkErr
+	}
+	if f.check != nil {
+		return *f.check, nil
+	}
+	return model.NodeStatus{
+		NodeID: n.ID, CheckedAt: now, Reachable: true, Active: true,
+		Version: "26.3.27", ObservedHash: "abcdef", Certificates: []model.CertificateInfo{},
+	}, nil
+}
 
 func (f *fakeNodeOps) InstallNode(_ context.Context, _ model.Node, version string) (string, error) {
 	f.installs++

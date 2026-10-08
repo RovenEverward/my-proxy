@@ -7,6 +7,8 @@ package control
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -80,7 +82,24 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err := node.Deploy(ctx, c.runner, n, cfg); err != nil {
 		return fmt.Errorf("下发到节点 %s 失败: %w", n.Name, err)
 	}
+
+	// 下发成功才记基准,失败不记:写下去的是"节点上现在跑的是这一份"这个断言,
+	// 而失败的部署可能连文件都没传完。记了一个没真正生效的哈希,下一次检查就会
+	// 报出一个不存在的漂移 —— 假漂移比没有漂移更坏,它会让真的那次被忽略。
+	//
+	// 存渲染内容的 sha256,与节点上 `sha256sum config.json` 得到的是同一种东西:
+	// node.Deploy 原样写入 cfg,两边算的是同一串字节。
+	if err := c.store.SetNodeDeployed(n.ID, hashOf(cfg), now); err != nil {
+		return fmt.Errorf("记录节点 %s 的下发哈希失败: %w", n.Name, err)
+	}
 	return nil
+}
+
+// hashOf 是配置内容的 sha256,十六进制小写 —— 与节点上 sha256sum 的输出同格式,
+// 这样两边的字符串可以直接比。
+func hashOf(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 // SampleTraffic 采一次该节点上的用户流量,算出相对上次采样的增量并累加进数据库。

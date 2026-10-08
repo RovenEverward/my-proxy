@@ -25,6 +25,10 @@ import (
 // 笔记本。所以 CLI 只负责说"该下发了",真正动手的在这里。
 type NodeOps interface {
 	DeployNode(ctx context.Context, n model.Node, now time.Time) error
+	// CheckNode 现场问一台节点它现在怎么样。注意它"节点连不上"时返回的是一份
+	// Reachable=false 的状态、error 为 nil —— 调用方判断节点死活要看状态里的
+	// Reachable,而不是看 error 非不非空。
+	CheckNode(ctx context.Context, n model.Node, now time.Time) (model.NodeStatus, error)
 	// InstallNode 装好节点上的 xray 核心并启动它,返回实际装上的版本。返回非空
 	// 版本表示核心已经推上去了 —— 此时出错是配置没让服务起来,不是没装成。
 	InstallNode(ctx context.Context, n model.Node, version string) (string, error)
@@ -83,7 +87,15 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
+	// GET /api/nodes/{id} 认一个 ?fresh=1:不带就读库里缓存的状态,带了就现场
+	// ssh 查一次、落库,再连同节点一起回答。
+	//
+	// 让"读"和"绕开缓存地读"共用一条路径,是因为它们回答的是同一个问题(这台
+	// 节点现在怎么样),差别只在新鲜程度 —— 那本来就是查询参数该管的事。缓存
+	// 状态因此只有这一个出口,不会再出现"哪一份是刚查的"要人去猜。
 	api.HandleFunc("GET /api/nodes/{id}", s.handleGetNode)
+
+	api.HandleFunc("GET /api/doctor", s.handleDoctor)
 	api.HandleFunc("PUT /api/nodes/{id}", s.handleUpdateNode)
 	api.HandleFunc("DELETE /api/nodes/{id}", s.handleDeleteNode)
 	api.HandleFunc("GET /api/nodes/{id}/config", s.handlePreviewNodeConfig)

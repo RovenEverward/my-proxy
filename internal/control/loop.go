@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -40,12 +41,25 @@ type Task struct {
 	// now 可注入:退避窗口和心跳都要能在测试里拨表,而不是真等 5 分钟。
 	now func() time.Time
 
+	// alerter 是巡检发现问题时往哪儿喊。留成接口是为了批 4 能换成 webhook
+	// (见 LogAlerter 上的注释),测试里也换成一个记账的假实现。
+	alerter Alerter
+
 	// mu 保护下面这一组「现在怎么样」的运行状态。它们只在内存里,不落库。
 	mu        sync.Mutex
 	startedAt time.Time
 	ticks     uint64
 	lastTick  tickRecord
 	nodeFail  map[int64]*nodeBackoff
+
+	// armed 记着每台节点最近一轮报出过哪些告警 Key(nodeID → key 集合)。
+	//
+	// 记它只为一件事:条件消失时能销。告警器自己只记得"报过没报过",不知道条件
+	// 还在不在;而"上一轮报过、这一轮没报"正是条件消失的定义。
+	//
+	// 按节点分开存,因为"这一轮没报"必须是相对**查过**的那一轮说的:节点在退避里、
+	// 或者这一轮还没轮到它时,它的记录要保持原样 —— 那是"没问",不是"好了"。
+	armed map[int64]map[string]struct{}
 }
 
 // tickRecord 是最近一轮的时间信息。
@@ -80,7 +94,22 @@ func NewTask(c *Control, st *store.Store, logger *slog.Logger, interval time.Dur
 		now:       time.Now,
 		startedAt: now,
 		nodeFail:  map[int64]*nodeBackoff{},
+		armed:     map[int64]map[string]struct{}{},
+		alerter:   NewLogAlerter(logger),
 	}
+}
+
+// SetAlerter 换掉告警出口。
+//
+// 默认就是 LogAlerter(只落日志);留这个口子是给批 4 的 webhook 用,也让
+// 测试能用一个记账的实现去断言"报了几次、什么时候销的"。
+func (t *Task) SetAlerter(a Alerter) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if a == nil {
+		a = NewLogAlerter(t.logger)
+	}
+	t.alerter = a
 }
 
 // Run 阻塞地跑周期任务,直到 ctx 结束。
@@ -113,11 +142,11 @@ func (t *Task) Run(ctx context.Context) {
 // 试了也只是再等一个预算。一台节点失败不影响其余节点:循环继续往下走。
 func (t *Task) Tick(ctx context.Context) {
 	started := t.now()
-	defer t.finishTick(started)
 
 	nodes, err := t.store.ListNodes()
 	if err != nil {
 		t.logger.Error("读取节点列表失败", "error", err)
+		t.finishTick(started)
 		return
 	}
 
@@ -149,12 +178,171 @@ func (t *Task) Tick(ctx context.Context) {
 		}
 		t.recordSuccess(n)
 	}
+
+	// 先结这一轮,再巡检。
+	//
+	// 顺序是有意的:巡检要 ssh 出去问每台节点,它的耗时**不该算进"一轮多久"**。
+	// 心跳回答的是"后台任务跟不跟得上 30 秒的周期",而巡检本来就每 10 轮才做
+	// 一次、天生比周期慢 —— 把它算进去,心跳会在每个第 10 轮跳一次、报出一个
+	// 并不存在的"落后",而真正需要警惕的(采样+收敛本身变慢)反而被掩盖。
+	t.finishTick(started)
+	t.sweepNodeStatus(ctx, nodes, t.now())
 }
 
-// finishTick 记一轮的心跳,并在这一轮超过周期时告警。
+// sweepEvery 是巡检的间隔:每多少个 Tick 查一次节点状态。
 //
-// 「这一轮超过了周期」是永久落后的早期信号:单轮超时只是慢,轮轮超时意味着任务
-// 永远追不上,得在它变成静默停摆之前说出来。
+// 10 个 Tick(默认 30 秒周期下 = 5 分钟)的理由是这三件事的频率完全不同:
+//   - 用户增删要"马上"生效,那是收敛的活,30 秒一轮;
+//   - 流量采样是计费依据,也要跟着周期走;
+//   - 而服务在不在跑、证书还有几天过期、配置有没有被人改过,这三件事的变化速度
+//     是"天"级的。每 30 秒 ssh 上去问一次,一分钟 2 次往返换来的信息几乎总是
+//     和上一轮一样,而每次都要占一条连接、一个 openssl 进程。
+//
+// 5 分钟也压得住真出事的场景:服务挂了到被发现,最坏也只延迟 5 分钟,而这批的
+// 定位本来就是"发现并告诉你",不是自动处置。再稀疏(比如 1 小时)就开始不像
+// 监控了,证书临期这类事的提前量本来就只有几天。
+const sweepEvery = 10
+
+// sweepBudget 是整轮巡检的上限。
+//
+// 一台节点的检查有自己的预算(checkBudget 30 秒),但一轮要查十几台;只按台数
+// 算的话,几台慢节点能把后台的正事(采样、到期、收敛)压住好几分钟 —— 巡检是
+// "顺便看看",不该让计费那边等。超出的节点这一轮跳过,5 分钟后下一轮继续。
+const sweepBudget = 45 * time.Second
+
+// sweepNodeStatus 抽查节点状态:查一遍、落库、该喊的喊。
+//
+// 它**绝不**能让一轮变长 —— 这是接进 Tick 时最容易犯的错。所以:
+//  1. 只有轮到的那一轮才做(每 sweepEvery 轮,第一次也做);
+//  2. 每台节点各用 checkBudget 包住自己的上下文,一台卡住不牵连别的;
+//  3. 整轮另有一个 sweepBudget 的上限,慢节点多了也不会把采样/收敛压住几分钟;
+//  4. 已经在退避里的节点直接跳过 —— 上一轮刚失败过,现在再问一遍只会让它
+//     失败得更快,而且它的状态库里已经有了(就是那条 Reachable=false)。
+//
+// 第一次也做:控制面刚起来时 `mpx node list` 不该空着五分钟没人知道为什么。
+//
+// 注意查询失败也**不进退避**:退避是给"收敛失败"用的,它会让节点这一轮完全
+// 不参与采样和同步;而"状态没问到"只是少了一条信息,不该让一个正常服务着的
+// 节点因为 ssh 抖动就被停掉采样。用各自的预算和上限分开处理。
+func (t *Task) sweepNodeStatus(ctx context.Context, nodes []model.Node, now time.Time) {
+	t.mu.Lock()
+	ticks := t.ticks
+	t.mu.Unlock()
+	// ticks 从 1 开始(第一轮在 Tick 结束时就已经结了),所以 1 就是"第一次"。
+	if ticks != 1 && ticks%sweepEvery != 0 {
+		return
+	}
+
+	sctx, cancel := context.WithTimeout(ctx, sweepBudget)
+	defer cancel()
+
+	checked := 0
+	for _, n := range nodes {
+		if sctx.Err() != nil {
+			t.logger.Warn("这一轮巡检超时,剩下的节点留到下一轮",
+				"已检查", checked, "共", len(nodes))
+			return
+		}
+		if t.inBackoff(n, now) {
+			continue
+		}
+		st, err := t.control.CheckNode(sctx, n, now)
+		if err != nil {
+			t.logger.Warn("检查节点状态失败", "node", n.Name, "error", err)
+			continue
+		}
+		if err := t.store.UpsertNodeStatus(st); err != nil {
+			t.logger.Warn("写入节点状态失败", "node", n.Name, "error", err)
+			continue
+		}
+		t.raiseNodeAlerts(n, st, now)
+		checked++
+	}
+}
+
+// raiseNodeAlerts 按一份状态决定这一轮报什么,并把上一轮报过、这一轮不再成立的销掉。
+//
+// 做法是"报一轮、比一轮":这一轮该报的 Key 收进 current,再和这台节点上一轮的
+// current 比 —— 少了的就是条件消失了。这样"报"和"销"共用同一份判断,不会出现
+// 两处各拼一遍 Key 而拼得不一样(证书告警就栽在这上面:报的时候用证书路径拼,
+// 销的时候用了空串,于是永远销不掉)。
+func (t *Task) raiseNodeAlerts(n model.Node, st model.NodeStatus, now time.Time) {
+	current := map[string]struct{}{}
+	report := func(kind model.Kind, extra, msg string) {
+		key := alertKey(kind, n.ID, extra)
+		current[key] = struct{}{}
+		t.alerter.Alert(model.Alert{
+			Key:      key,
+			Kind:     kind,
+			NodeID:   n.ID,
+			NodeName: n.Name,
+			Message:  fmt.Sprintf("节点 %s:%s", n.Name, msg),
+			At:       now,
+		})
+	}
+
+	if !st.Reachable {
+		// 连不上时只报这一件:服务在不在跑、配置对不对、证书还有几天,这时全都
+		// 无从得知,拿上一轮的值继续报只会把一条故障说成三条。
+		report(model.KindNodeUnreachable, "", "节点连不上:"+st.Error)
+
+		// 而且**不销**别的:看不到和好了是两件事。把上一轮的记录原样留着,等看得
+		// 见了再判 —— 少了这一步,一次网络抖动就会在日志里留下"证书已恢复"。
+		t.mu.Lock()
+		remains := t.armed[n.ID]
+		if remains == nil {
+			remains = map[string]struct{}{}
+		}
+		for key := range current {
+			remains[key] = struct{}{}
+		}
+		t.armed[n.ID] = remains
+		t.mu.Unlock()
+		return
+	}
+
+	if !st.Active {
+		report(model.KindNodeInactive, "", "核心服务没有在跑")
+	}
+
+	// 从没下发过不算漂移:没有基准可比,这一批的漂移定义就是"和我们推上去的那
+	// 份不一样"。接入一台本来就在跑的机器时正是这个状态(README 里那条路径),
+	// 那时报漂移是假消息。
+	if n.Deployed() && st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
+		report(model.KindNodeDrift, "",
+			"节点上的配置和我们下发的不一样(可能是你自己改的,也可能是别人改的)")
+	}
+
+	// 证书临期,每张一个 Key。按路径而不是按入站:一个文件被多个入站共用是常态
+	// (那时它只该报一次),而同一个入站换了证书文件是两件事 —— 旧的那张已经不
+	// 用了,它对应的 Key 该销掉。
+	for _, c := range st.Certificates {
+		if c.NotAfter != nil && c.DaysLeft > model.CertWarnDays {
+			continue
+		}
+		msg := fmt.Sprintf("证书 %s 还有 %d 天到期", c.Path, c.DaysLeft)
+		if c.NotAfter == nil {
+			// 读不到到期时间:openssl 没装,或者文件已经不在。报出来,因为这两种
+			// 情况都会让"什么时候到期"这个问题失去答案 —— 而失去答案比"还有
+			// 100 天"危险得多。
+			msg = "证书到期时间读不到:" + c.Error
+		}
+		report(model.KindCertExpiring, c.Path, msg)
+	}
+
+	// 上一轮报过、这一轮没再报的,就是好了。
+	t.mu.Lock()
+	previous := t.armed[n.ID]
+	t.armed[n.ID] = current
+	t.mu.Unlock()
+	for key := range previous {
+		if _, still := current[key]; !still {
+			t.alerter.Resolve(key, now)
+		}
+	}
+}
+
+// finishTick 记下这一轮的结束:次数、耗时,以及"耗时是否已经贴着周期"。
 func (t *Task) finishTick(started time.Time) {
 	duration := t.now().Sub(started)
 

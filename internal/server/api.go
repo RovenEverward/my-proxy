@@ -1,13 +1,23 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
+	"github.com/RovenEverward/my-proxy/internal/store"
 )
+
+// errNoNodeOps 是"服务端没接上节点操作"时的错误。
+//
+// 它只该出现在用 New 造出来、又没调 SetNodeOps 的服务端里(测试、或者重启期间)。
+// 说清楚比抛一个空指针好:使用者看到"没接上"会去查自己的接线,看到 panic 只会
+// 以为程序坏了。
+var errNoNodeOps = errors.New("这个服务端没有接上节点操作(SetNodeOps)")
 
 // 这一层只做三件事:解析请求、校验、调存储。任何判断逻辑都不放在这里,
 // 免得 CLI 与订阅两条路径出现两套规则。
@@ -20,10 +30,55 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
-	if nodes == nil {
-		nodes = []model.Node{}
+	views, err := s.nodeViews(nodes)
+	if err != nil {
+		s.writeStoreError(w, err, "节点状态")
+		return
 	}
-	writeJSON(w, http.StatusOK, nodes)
+	if views == nil {
+		views = []model.NodeView{}
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
+// nodeViews 把节点列表配上各自最近一次的状态。
+//
+// 一次取回全部状态再拼,而不是每台节点查一次:列表页每行都要状态,逐台查会变成
+// N 次查询。状态可能缺(还没查过),这时 Status 是 nil —— 客户端据此显示"未知"。
+func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
+	statuses, err := s.store.ListNodeStatuses()
+	if err != nil {
+		return nil, err
+	}
+	views := make([]model.NodeView, 0, len(nodes))
+	for _, n := range nodes {
+		v := model.NodeView{Node: n}
+		if st, ok := statuses[n.ID]; ok {
+			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
+			copied := st
+			v.Status = &copied
+		}
+		views = append(views, v)
+	}
+	return views, nil
+}
+
+// freshNodeStatus 现场查一次并落库。
+//
+// 被 GET /api/nodes/{id}?fresh=1 与 doctor 共用 —— 两处必须走同一条路径,
+// 否则 doctor 看到的东西和 node status 看到的会不一样。
+func (s *Server) freshNodeStatus(ctx context.Context, n model.Node, now time.Time) (model.NodeStatus, error) {
+	if s.nodeOps == nil {
+		return model.NodeStatus{}, errNoNodeOps
+	}
+	st, err := s.nodeOps.CheckNode(ctx, n, now)
+	if err != nil {
+		return model.NodeStatus{}, err
+	}
+	if err := s.store.UpsertNodeStatus(st); err != nil {
+		return model.NodeStatus{}, err
+	}
+	return st, nil
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +97,10 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, n)
 }
 
+// handleGetNode 回答一台节点,连同它最近一次的状态。
+//
+// ?fresh=1 时先现场 ssh 查一次再回答:查的结果会落库,所以客户端拿到的东西和
+// "下一次 node list"看到的一致,不会出现"刚查过、列表里还是旧的"。
 func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
@@ -52,7 +111,28 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
-	writeJSON(w, http.StatusOK, n)
+
+	view := model.NodeView{Node: *n}
+	if r.URL.Query().Get("fresh") == "1" {
+		st, err := s.freshNodeStatus(r.Context(), *n, time.Now())
+		if err != nil {
+			s.writeStoreError(w, err, "节点状态")
+			return
+		}
+		view.Status = &st
+		writeJSON(w, http.StatusOK, view)
+		return
+	}
+
+	// 状态读不出来(还没查过)不算错误:NodeView 的 Status 本来就是可空的,
+	// 而"没查过"和"查过但连不上"是两件事,前者不该冒充后者。
+	if st, err := s.store.GetNodeStatus(id); err == nil {
+		view.Status = st
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.writeStoreError(w, err, "节点状态")
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
