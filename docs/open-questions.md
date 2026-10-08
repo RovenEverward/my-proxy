@@ -2,20 +2,7 @@
 
 按影响排序。**这一份是需要拍板的地方。**
 
-## 1. 客户端分流规则:整份模板可操作(已定,粒度=整份取改传)
-
-立项时用户的原话是「操作订阅的 Clash 以及 SingBox 的规则」。实现为:客户端配置内部的分流规则(哪些域名走代理、哪些直连)以模板形式存在,控制面不重新编译就能换:
-
-- 三种格式可存自定义模板:`clash-meta` / `sing-box` / `xray`,存在 `settings.templates`(JSON 列,键是格式名);
-- `mpx settings template get FORMAT` 取当前生效的模板(没存就取内置默认的副本,当改动的起点);
-- `mpx settings template set FORMAT -f FILE` 存;写入口先校验(clash 要求 YAML 可解析且顶层是映射、有 rule-providers;sing-box / xray 要求 JSON 可解析);
-- `mpx settings template del FORMAT` 删,此后回落到内置默认;
-- `settings set -f`(整体替换)也会带 templates 字段,文件里没写就被清掉 —— 帮用户避开这个坑,`settings set` 的帮助里写了「改模板走 template set」;
-- 渲染链路:订阅时 `render.Clash(eps, meta, 模板)` / `render.SingBox(eps, 模板)` / `render.Xray(eps, 模板)`,模板为空回落 `//go:embed` 的内置默认。
-
-**已定的边界**:操作粒度就是「整份模板取改传」,没有「节点列表 / 规则列表 / 规则集地址」这类结构化口子,也不做按用户区分规则。要做那些时,这份模板机制就是承载点。
-
-## 2. 经跳板机连节点做不到(暂不做)
+## 1. 经跳板机连节点做不到(暂不做)
 
 跳板机是这么一种布置:节点自己不开 ssh,得先 ssh 到一台入口机器(跳板机),再从那里连节点。常见于节点在私网里、或者运维规定只能从一台机器登录。
 
@@ -30,7 +17,7 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 
 **已经澄清的**:真实 SSH 传输验证过了(两台 Ubuntu 24.04 真机,`BatchMode=yes` 免密,控制面的 `HOME=/var/lib/mpx`,`node install` / `node sync` 都跑通)。原先「要不要加一个只连不写的探针」的问题,现在由 `node install` 的失败信息回答:连不上会直接报出来。
 
-## 3. 单 token,没有管理员
+## 2. 单 token,没有管理员
 
 对外多用户服务(上百至上千)只靠一个固定 token,意味着:
 
@@ -40,7 +27,7 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 
 要不要引入管理员表,取决于这个控制面是否只有一个人操作。
 
-## 4. `{USERNAME}` 只在订阅名里生效,在节点名里是空串
+## 3. `{USERNAME}` 只在订阅名里生效,在节点名里是空串
 
 同一个变量名,两处行为不一致:
 
@@ -55,27 +42,7 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 
 **没有改渲染**:`ir.go` 里那一行照旧。去掉它的话 `{USERNAME}` 会原样留在节点名里,比抹掉更难看;抹掉至少是干净的。要按用户区分节点名,用订阅名那个字段。
 
-## 5. HTTP 建用户的 `enabled` 零值(已修)
-
-原来的样子:`handleCreateUser` 直接 `decodeBody` 进 `model.User`,`Enabled` 是 Go 的零值 `false`:
-
-```console
-$ curl -X POST .../api/users -d '{"username":"dave"}'
-{ "username": "dave", "enabled": false, "status": "disabled", ... }
-```
-
-而 `mpx user add` 不写 `--disabled` 就是启用。同一个字段两套默认值,而且不报错 —— 手工调 API 漏掉一个布尔字段就得到一批连不上的用户。
-
-**已修:请求体上的 `enabled` 读成 `*bool`,分得清「没说」和「说了 false」。** 「没说」时建用户按启用(和 CLI 对齐)、改用户按保持原样(只想改流量上限的 PUT 不会把停用的人悄悄启用)。
-
-落在 `internal/server/validate.go` 的 `userRequest`:嵌入 `model.User`,外层覆写 `Enabled *bool`,靠 JSON 同名取浅的那个遮住内层字段。这样三态只存在于真正需要它的地方(HTTP 请求体),`model.User.Enabled` 仍是裸 bool,存储、渲染和十几处测试一个字没动。
-
-另外两条没采纳:
-
-- 把 `model.User.Enabled` 整个换成 `*bool` —— 会把三态扩散到领域模型和所有构造点,而只有请求体需要它;
-- 要求请求必须带 `enabled`,不带就 400 —— 调用方多写一个字段,而「新建默认启用」本来就是更合理的默认。
-
-## 6. 其他待定
+## 4. 其他待定
 
 | 项 | 现状 | 需要定什么 |
 | --- | --- | --- |
@@ -93,4 +60,4 @@ $ curl -X POST .../api/users -d '{"username":"dave"}'
 1. [README.md](../README.md) 的「不做什么」表里,哪几条不该是不做,而是还没排在前面?
 2. [model.md](model.md) 的数据模型有没有缺的对象或字段?
 3. [decisions.md](decisions.md) 的十五条决策,有没有哪条的理由不成立、该换方案?
-4. 第 6 节那张表里,哪些是现在就要定的?
+4. 第 4 节那张表里,哪些是现在就要定的?

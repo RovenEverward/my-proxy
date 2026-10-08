@@ -40,7 +40,7 @@
 节点名(host 的 `remark`)与地址支持 `{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、`{TRANSPORT}`
 变量;地址里写 `*` 会按用户派生出一个稳定的随机子域(同一个人每次更新订阅看到的是同一个
 地址,换一个人就不同)。`{USERNAME}` 只在订阅名里生效,在节点名里被抹成空串 —— 节点名会
-被截图转发,不该带账号名,见 [docs/open-questions.md](docs/open-questions.md) 第 4 节。
+被截图转发,不该带账号名,见 [docs/open-questions.md](docs/open-questions.md) 第 3 节。
 
 ## 快速开始
 

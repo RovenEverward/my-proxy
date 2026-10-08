@@ -71,7 +71,7 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 
 **子域的随机部分按用户名派生,不是随机数。** 否则客户端每次更新订阅都会看到新地址,节点列表里堆一串连不上的旧条目。
 
-`{USERNAME}` 在这里**被抹成空串**,只在订阅名 `settings.profile_title` 里展开成用户名。节点名会出现在客户端的节点列表里,截图和转发都会带出去,不该写账号名 —— 这是有意的,见 [open-questions.md](open-questions.md) 第 4 节。
+`{USERNAME}` 在这里**被抹成空串**,只在订阅名 `settings.profile_title` 里展开成用户名。节点名会出现在客户端的节点列表里,截图和转发都会带出去,不该写账号名 —— 这是有意的,见 [open-questions.md](open-questions.md) 第 3 节。
 
 ### key 与 sub_token
 
