@@ -82,6 +82,8 @@ func (s *Server) routes() {
 	// 订阅:不挂 /api,和各家客户端约定俗成的路径一致。
 	s.mux.HandleFunc("GET /sub/{token}", s.handleSubscribe)
 	s.mux.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
+	// 订阅页上的"换个订阅地址":鉴权就是这个 token 本身(见 handleRotateSub)。
+	s.mux.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/status", s.handleStatus)

@@ -200,13 +200,16 @@ $ curl ... /api/nodes
 ## 3. HTTP 订阅接口
 
 ```
-GET /sub/{token}              按 User-Agent 决定格式
+GET /sub/{token}              按 User-Agent 决定格式;浏览器打开是订阅页
 GET /sub/{token}/{format}     强制格式
+POST /sub/{token}/rotate      换掉订阅 token(页面上「换个订阅地址」的落点)
 ```
 
 `format` ∈ `links | base64-links | clash | clash-meta | sing-box | xray`。
 
 **不鉴权** —— 订阅 token 即凭证。这是行业惯例,但也意味着订阅链接泄露等同于凭证泄露。所以订阅 token(`sub_token`)与协议凭证种子(`key`)是分开存的:`revoke-sub` 只换前者。
+
+**订阅页**:`GET /sub/{token}` 只有走到「没点名格式、UA 规则没命中、本来要回默认 links」这一步、且请求的 `Accept` 里点名要 `text/html` 时,才回一屏 HTML(状态、流量、到期、各格式分享链接、换地址按钮)而不是配置 —— 见 [decisions.md](decisions.md) 第 26 条。客户端(不带 Accept 或 `*/*`)与任何点名格式的请求都拿不到页面。`POST /sub/{token}/rotate` 用路径里的 token 鉴权,换完旧地址立即 404,页面把新地址亮出来。
 
 ### 响应头
 
@@ -215,11 +218,12 @@ Content-Disposition: attachment; filename=alice
 Content-Type: text/yaml; charset=utf-8
 Profile-Title: base64:YWxpY2Ug55qE6K6i6ZiF
 Profile-Update-Interval: 12
+Profile-Web-Page-Url: https://sub.example.com/sub/2Wi7rfR2XQoiNiBv
 Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 Support-Url: https://t.me/example
 ```
 
-`Profile-Title` 用 `base64:` 前缀是因为订阅名里可能是中文。`Support-Url` 与 `Profile-Update-Interval` 只在设了值时才发。
+`Profile-Title` 用 `base64:` 前缀是因为订阅名里可能是中文。`Support-Url` 与 `Profile-Update-Interval` 只在设了值时才发;`Profile-Web-Page-Url` 是浏览器打开订阅地址看到的那一屏,各家客户端会显示成「打开网页」。
 
 | 格式 | Content-Type |
 | --- | --- |

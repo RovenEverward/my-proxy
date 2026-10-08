@@ -65,9 +65,9 @@
 - 通知:快到期、快超限、节点故障(至少邮件/Webhook 接口);
 - 自助:用户自己取链接、换 token。
 
-**结果(4a 已完成)**:列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应给筛选后的 `total`;筛选复用 `model` 里那份唯一的状态与授权判定,不翻写成 SQL,理由见 [decisions.md](decisions.md) 第 24 条);`rm` / `enable` / `disable` / `renew` / `links` 收多个用户名、逐个执行并汇总成败;`export` / `import` 走 CSV,逐行独立提交,理由见第 25 条。**4b(订阅页 + 自助换 token)与 4c(通知)还没做。**
+**结果(4a 已完成)**:列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应给筛选后的 `total`;筛选复用 `model` 里那份唯一的状态与授权判定,不翻写成 SQL,理由见 [decisions.md](decisions.md) 第 24 条);`rm` / `enable` / `disable` / `renew` / `links` 收多个用户名、逐个执行并汇总成败;`export` / `import` 走 CSV,逐行独立提交,理由见第 25 条。**4b(订阅页 + 自助换 token)已完成**:同一个订阅地址,浏览器打开是订阅页(状态、流量、到期、各格式分享链接、换地址按钮),客户端照旧拿配置 —— 页面只在「没人认领的默认」这一步且 `Accept` 点名 `text/html` 时出现,理由见第 26 条;`POST /sub/{token}/rotate` 换 token,旧地址当场 404。**4c(通知)还没做。**
 
-**验证**:1000 个用户的列表与批量操作耗时达标(宽松上限);订阅页真机打开(4b 未做,待验证)。
+**验证**:1000 个用户的列表与批量操作耗时达标(宽松上限);订阅页与换地址真机验证过(浏览器拿页面、客户端拿配置、旧地址 404、新地址可用、`Profile-Web-Page-Url` 正确)。
 
 ## 批 5:协议面(产品决策,单独成批)
 

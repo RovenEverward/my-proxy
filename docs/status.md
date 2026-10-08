@@ -33,7 +33,7 @@
 | 旧备份兼容新表 | 单测:造一份 `DROP TABLE node_status` 的快照(等于批 3 之前备份出来的库),`Validate` 仍然通过,`store.Open` 会把表补出来并能写状态 —— 恢复不能卡在「备份里没有新表」上 |
 | 全量 | `gofmt` 干净、`go vet` 通过、`go test ./... -race` 九个包全绿 |
 
-生产代码 12187 行,测试 12750 行。
+生产代码 12477 行,测试 12964 行。
 
 **没验过的**:批 3b 的**真机演练** —— 在两台节点上跑 `mpx node list` / `node status` / `doctor`,并造一个死节点看整轮不被拖垮。控制面连节点的私钥只在控制面那台机器的 `/var/lib/mpx/.ssh/id_ed25519`,本机没有,所以这一批的验证全在单测里;测试用的真 xray(`26.3.27`)是从 GitHub release 取回放在 `/tmp/xray-bin/`,用 `MPX_XRAY_BIN` 指过去跑。另外经跳板机连节点没做过(见 [open-questions.md](open-questions.md) 第 1 节)。REALITY 从本机所在的网络到其中一台节点的路径不通 —— 做过对照实验,用的是节点上自产密钥的最小 REALITY 服务端,本机自连成功、从我的网络过去连连接记录都没有,所以那是链路问题,不是渲染问题。附带一条经验:**`reality_dest` 要挑节点自己真能连上的域名**,同一个节点上 `www.microsoft.com:443` 连自连都失败,换 `www.cloudflare.com:443` 立刻好。
 
@@ -102,5 +102,6 @@ ResetPeriod("") 返回 0
 | 10 | 备份与恢复 | 批 2:`mpx backup` / `mpx restore`,归档 = manifest + 一致快照 `mpx.db` + 可选系统 ssh 私钥,不含管理 token;恢复 = 校验 + 暂存 + 重启换入,旧库留 `<db>.pre-restore-*` 可回退。 |
 | 11 | 超时、退避与心跳 | 批 3a:每条远端命令一条 deadline(调用点给预算、`node` 层兜 15 分钟、ctx 自带 deadline 不覆盖);失败节点按 30s 起步、5 分钟封顶退避,成功清零;控制面心跳经 `GET /api/status` 与 `mpx status` 可读。 |
 | 12 | 节点状态、漂移与自检 | 批 3b:一条 ssh 读回服务/版本/配置哈希/证书到期,`node_status` 表存观察值、`nodes.deployed_hash` 存基准;`mpx node status` 现场查、`?fresh=1` 绕开缓存;`GET /api/doctor` 与 `mpx doctor` 一屏看完控制面、每台节点、六种订阅格式;告警「报一轮、比一轮」、每 10 个 Tick(第 1 个也跑)巡检、整轮 45 秒预算。 |
-| 13 | 规模入口(进行中) | 批 4a:用户列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应带筛选后的 `total`);`rm`/`enable`/`disable`/`renew`/`links` 收多个用户名并汇总成败;`user export` / `import` 走 CSV。批 4b(订阅页 + 自助换 token)、4c(通知)未做。 |
+| 13 | 规模入口(进行中) | 批 4a:用户列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应带筛选后的 `total`);`rm`/`enable`/`disable`/`renew`/`links` 收多个用户名并汇总成败;`user export` / `import` 走 CSV。批 4b(订阅页 + 自助换 token)已完成;4c(通知)未做。 |
 | 14 | 规模入口 · 批 4a 真机验证 | 本机起真实控制面 + 57 个用户实测:默认一页 50 个、第二页 offset 正确、`--status disabled --search u3` 只回 u3;`limit=1001`/`offset=-1`/`status=bogus` 各回 400 且提示列可选值;`offset` 超界返回 `users: []` 而非 null;批量停用 3 个成功 0 失败退出 0、掺一个不存在的名字则 1 成功 1 失败退出 1;`renew --days 30` 从各人到期日起算、两个都给与都不给都报错;CSV 导出→导入「3 个更新」且 `sub_token`/用量原样;改上限/备注/入站再导入生效(250GB、`inbound_ids=[2,3]`);可用性写错报「可用性只能是 启用 / 停用」该行失败其余照常;列数不一致带行号;缺「用户名」列整份拒绝;连续三行坏引号停下;`-o json` 批量输出是数组且含 `ok:false`/`error`;单名字输出形状不变;重复名字只执行一次 |
+| 15 | 规模入口 · 批 4b 真机验证 | 本机起真实控制面实测:浏览器(带 `Accept: text/html` 与浏览器 UA)打开订阅地址拿到 HTML 页,含状态徽章、流量条(`0 B / 10 GB`)、到期、六个分享链接、换地址按钮,且正文不含 `vless://` 明文;客户端(不带 Accept / `*/*`)照旧拿 links、`/clash` 路径的浏览器请求照旧拿 YAML;响应头带 `Profile-Web-Page-Url`;`POST /sub/{token}/rotate` 换出新 token,旧地址 404、新地址 200 且仍是 alice 的订阅(`Content-Disposition: filename=alice`),管理接口 `user links` 也指向新 token;页面与 CLI 拼地址一致(共用 `subBaseURL`)。测试进程已 kill、/tmp/mpx4b 已删 |

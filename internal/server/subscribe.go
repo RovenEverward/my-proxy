@@ -29,16 +29,25 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	format := settings.MatchFormat(r.UserAgent())
-	if f := r.PathValue("format"); f != "" {
-		format = model.ClientFormat(f)
+	format, ruleHit := settings.MatchFormat(r.UserAgent())
+	pathFormat := r.PathValue("format")
+	if pathFormat != "" {
+		format = model.ClientFormat(pathFormat)
 		if !format.Valid() {
-			writeError(w, http.StatusBadRequest, "不支持的订阅格式 "+f)
+			writeError(w, http.StatusBadRequest, "不支持的订阅格式 "+pathFormat)
 			return
 		}
 	}
 	if format == model.FormatBlock {
 		writeError(w, http.StatusNotFound, "订阅已被拒绝")
+		return
+	}
+
+	// 订阅页只在"这次本来要回没人认领的默认 links"、且对方报明是浏览器时才顶
+	// 上来。路径点名了格式、或规则真的命中过(哪怕命中的就是 links),都说明
+	// 对方要的不是页面(见 decisions 26)。
+	if pathFormat == "" && !ruleHit && format == model.FormatLinks && wantsHTML(r) {
+		s.serveSubPage(w, r, user, settings, "")
 		return
 	}
 
@@ -50,8 +59,25 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.setSubHeaders(w, user, settings, contentTypeOf(format))
+	// 各家客户端会把这一条显示成"打开网页",指向的就是浏览器打开订阅地址看到
+	// 的那一屏。
+	w.Header().Set("Profile-Web-Page-Url", subBaseURL(settings, r)+"/sub/"+user.SubToken)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// subBaseURL 是拼订阅地址用的前缀:设置里存了就用它(去掉尾部斜杠),没存就用
+// 这次请求的协议与主机。管理接口的 user links 与订阅页共用这一段,免得两处各
+// 拼一份、早晚不一致。
+func subBaseURL(settings *model.Settings, r *http.Request) string {
+	if base := strings.TrimSuffix(settings.SubURLPrefix, "/"); base != "" {
+		return base
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // renderSubscription 产出订阅正文。不可用的用户拿到的是一个占位节点而不是真

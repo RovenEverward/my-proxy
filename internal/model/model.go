@@ -303,22 +303,27 @@ func (s *Settings) TemplateFor(format ClientFormat) string {
 	return s.Templates[string(format)]
 }
 
-// MatchFormat 返回第一条匹配该 User-Agent 的规则结果;没有命中时用 FormatLinks。
+// MatchFormat 返回第一条匹配该 User-Agent 的规则结果与是否命中;没有命中时
+// 返回 FormatLinks 与 false。
+//
+// 第二个返回值区分「规则真的命中了」和「谁都没匹配上、落的默认值」:同一个
+// FormatLinks,前者是用户在规则里点名要的,后者只是没人认领。订阅入口靠它决定
+// 浏览器要不要拿订阅页 —— 只有走到「没人认领的默认」这一步,页面才顶上来。
 //
 // 规则只有个位数,每次请求重新编译的开销可以忽略,因此不缓存编译结果。
 // 写入口负责拒绝编译不过的正则;这里遇到坏正则跳过而不是报错,免得一条坏
 // 规则让整个订阅不可用。
-func (s *Settings) MatchFormat(userAgent string) ClientFormat {
+func (s *Settings) MatchFormat(userAgent string) (ClientFormat, bool) {
 	for _, r := range s.Rules {
 		re, err := regexp.Compile(r.Pattern)
 		if err != nil {
 			continue
 		}
 		if re.MatchString(userAgent) {
-			return r.Result
+			return r.Result, true
 		}
 	}
-	return FormatLinks
+	return FormatLinks, false
 }
 
 // NodeStatus 是一台节点「刚才被问过之后」的样子。

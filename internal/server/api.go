@@ -706,10 +706,7 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := strings.TrimSuffix(settings.SubURLPrefix, "/")
-	if base == "" {
-		base = "http://" + r.Host
-	}
+	base := subBaseURL(settings, r)
 	sub := base + "/sub/" + u.SubToken
 
 	out := map[string]string{"auto": sub}
