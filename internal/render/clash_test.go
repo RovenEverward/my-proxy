@@ -60,7 +60,7 @@ func clashTestEndpoints() []Endpoint {
 // clashProxies 渲染并取回节点列表。
 func clashProxies(t *testing.T, eps []Endpoint, meta bool) []map[string]any {
 	t.Helper()
-	raw, err := Clash(eps, meta)
+	raw, err := Clash(eps, meta, nil)
 	if err != nil {
 		t.Fatalf("Clash() 报错: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestClashStructure(t *testing.T) {
 	eps := clashTestEndpoints()
 
 	t.Run("clash", func(t *testing.T) {
-		raw, err := Clash(eps, false)
+		raw, err := Clash(eps, false, nil)
 		if err != nil {
 			t.Fatalf("Clash() 报错: %v", err)
 		}
@@ -146,7 +146,7 @@ func TestClashStructure(t *testing.T) {
 	})
 
 	t.Run("clash-meta", func(t *testing.T) {
-		raw, err := Clash(eps, true)
+		raw, err := Clash(eps, true, nil)
 		if err != nil {
 			t.Fatalf("Clash() 报错: %v", err)
 		}
@@ -212,6 +212,96 @@ func TestClashStructure(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestClashCustomTemplate 覆盖 meta 版套用自定义模板:proxies 注入到自定义
+// 模板的 rule-providers 之后,模板里的组与规则原样保留。
+func TestClashCustomTemplate(t *testing.T) {
+	eps := clashTestEndpoints()
+	custom := `# 自定义模板
+rule-providers:
+  myrules:
+    type: http
+    behavior: classical
+    url: https://example.com/myrules.yaml
+    path: ./ruleset/myrules.yaml
+    interval: 86400
+
+proxy-groups:
+  - name: 手动切换
+    type: select
+    include-all-proxies: true
+
+rules:
+  - DOMAIN-SUFFIX,example.com,手动切换
+  - MATCH,手动切换
+`
+	raw, err := Clash(eps, true, []byte(custom))
+	if err != nil {
+		t.Fatalf("Clash(custom) 报错: %v", err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
+	}
+
+	// 自定义模板的 rule-providers 保留。
+	rps, ok := doc["rule-providers"].(map[string]any)
+	if !ok {
+		t.Fatalf("自定义模板的 rule-providers 应保留: %#v", doc["rule-providers"])
+	}
+	if _, ok := rps["myrules"]; !ok {
+		t.Errorf("自定义模板的 myrules provider 丢失: %#v", rps)
+	}
+
+	// proxies 注入且齐全。
+	proxies, ok := doc["proxies"].([]any)
+	if !ok || len(proxies) != len(eps) {
+		t.Fatalf("proxies = %#v, want %d 个", doc["proxies"], len(eps))
+	}
+
+	// 自定义组保留(不是内置的 15 组)。
+	groups, ok := doc["proxy-groups"].([]any)
+	if !ok || len(groups) != 1 {
+		t.Fatalf("自定义模板的 proxy-groups = %#v, want 1 个", doc["proxy-groups"])
+	}
+	if groups[0].(map[string]any)["name"] != "手动切换" {
+		t.Errorf("自定义组名不对: %#v", groups[0])
+	}
+
+	rules, ok := doc["rules"].([]any)
+	if !ok || len(rules) != 2 {
+		t.Fatalf("自定义模板的 rules = %#v, want 2 条", doc["rules"])
+	}
+}
+
+// TestClashMetaTemplateFallback 覆盖 meta 版传空模板时回落内置默认。
+func TestClashMetaTemplateFallback(t *testing.T) {
+	eps := clashTestEndpoints()
+	raw, err := Clash(eps, true, nil)
+	if err != nil {
+		t.Fatalf("Clash(meta, nil) 报错: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("yaml 解析失败: %v", err)
+	}
+	if _, ok := doc["rule-providers"].(map[string]any); !ok {
+		t.Error("空模板应回落内置默认(有 rule-providers)")
+	}
+	// 空串同样回落。
+	raw2, err := Clash(eps, true, []byte(""))
+	if err != nil {
+		t.Fatalf("Clash(meta, 空串) 报错: %v", err)
+	}
+	var doc2 map[string]any
+	if err := yaml.Unmarshal(raw2, &doc2); err != nil {
+		t.Fatalf("yaml 解析失败: %v", err)
+	}
+	if _, ok := doc2["rule-providers"].(map[string]any); !ok {
+		t.Error("空串模板应回落内置默认(有 rule-providers)")
+	}
 }
 
 // TestClashProxyFields 逐个字段核对节点的渲染结果。
@@ -364,11 +454,11 @@ func TestClashProxyFields(t *testing.T) {
 func TestClashMetaOnlyFields(t *testing.T) {
 	eps := clashTestEndpoints()
 
-	metaRaw, err := Clash(eps, true)
+	metaRaw, err := Clash(eps, true, nil)
 	if err != nil {
 		t.Fatalf("Clash(meta) 报错: %v", err)
 	}
-	plainRaw, err := Clash(eps, false)
+	plainRaw, err := Clash(eps, false, nil)
 	if err != nil {
 		t.Fatalf("Clash() 报错: %v", err)
 	}
@@ -394,7 +484,7 @@ func TestClashOmitsEmptyRealityShortID(t *testing.T) {
 		Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
 		Network: model.NetworkTCP, Security: model.SecurityReality,
 		SNI: "www.microsoft.com", Fingerprint: "chrome", RealityPub: "PUB",
-	}}, true)
+	}}, true, nil)
 	if err != nil {
 		t.Fatalf("Clash() 报错: %v", err)
 	}
@@ -407,12 +497,12 @@ func TestClashOmitsEmptyRealityShortID(t *testing.T) {
 func TestClashDeterministic(t *testing.T) {
 	eps := clashTestEndpoints()
 	for _, meta := range []bool{false, true} {
-		first, err := Clash(eps, meta)
+		first, err := Clash(eps, meta, nil)
 		if err != nil {
 			t.Fatalf("Clash() 报错: %v", err)
 		}
 		for i := 0; i < 5; i++ {
-			next, err := Clash(eps, meta)
+			next, err := Clash(eps, meta, nil)
 			if err != nil {
 				t.Fatalf("Clash() 报错: %v", err)
 			}
@@ -425,7 +515,7 @@ func TestClashDeterministic(t *testing.T) {
 
 // TestClashEmpty 覆盖没有节点时的输出仍是一份可解析的订阅。
 func TestClashEmpty(t *testing.T) {
-	raw, err := Clash(nil, false)
+	raw, err := Clash(nil, false, nil)
 	if err != nil {
 		t.Fatalf("Clash() 报错: %v", err)
 	}
@@ -451,9 +541,9 @@ func TestClashEmpty(t *testing.T) {
 // TestClashMetaEmptyProxies 覆盖 meta 版模板在零节点时也能正常产出:
 // proxies 段插进去但为空,模板其余部分原样带出。
 func TestClashMetaEmptyProxies(t *testing.T) {
-	raw, err := Clash(nil, true)
+	raw, err := Clash(nil, true, nil)
 	if err != nil {
-		t.Fatalf("Clash(nil, true) 报错: %v", err)
+		t.Fatalf("Clash(nil, true, nil) 报错: %v", err)
 	}
 	var doc map[string]any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
@@ -507,7 +597,7 @@ func TestClashRejectsUnsupported(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := Clash([]Endpoint{tc.ep}, false); err == nil {
+			if _, err := Clash([]Endpoint{tc.ep}, false, nil); err == nil {
 				t.Fatal("应当报错,却返回 nil")
 			}
 		})

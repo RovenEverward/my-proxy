@@ -262,6 +262,19 @@ type Settings struct {
 	UpdateInterval int `json:"update_interval"`
 
 	Rules []SubscriptionRule `json:"rules"`
+
+	// Templates 是各格式的客户端模板,键是 ClientFormat 的字符串
+	// (clash-meta / sing-box / xray)。缺键或空串表示用内置默认模板。
+	Templates map[string]string `json:"templates"`
+}
+
+// TemplateFor 返回该格式的模板文本;没存过或存了空串时返回空串,
+// 调用方据此回落内置默认模板。
+func (s *Settings) TemplateFor(format ClientFormat) string {
+	if s == nil || s.Templates == nil {
+		return ""
+	}
+	return s.Templates[string(format)]
 }
 
 // MatchFormat 返回第一条匹配该 User-Agent 的规则结果;没有命中时用 FormatLinks。

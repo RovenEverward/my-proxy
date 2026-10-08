@@ -133,7 +133,8 @@ var schema = []string{
 		profile_title   TEXT    NOT NULL DEFAULT '{USERNAME}',
 		support_link    TEXT    NOT NULL DEFAULT '',
 		update_interval INTEGER NOT NULL DEFAULT 24,
-		rules           TEXT    NOT NULL DEFAULT '[]'
+		rules           TEXT    NOT NULL DEFAULT '[]',
+		templates       TEXT    NOT NULL DEFAULT '{}'
 	)`,
 }
 
@@ -222,6 +223,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE users ADD COLUMN lifetime_used_traffic INTEGER NOT NULL DEFAULT 0`},
 	{"users", "traffic_reset_at",
 		`ALTER TABLE users ADD COLUMN traffic_reset_at INTEGER`},
+	{"settings", "templates",
+		`ALTER TABLE settings ADD COLUMN templates TEXT NOT NULL DEFAULT '{}'`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

@@ -13,6 +13,7 @@
 package render
 
 import (
+	"bytes"
 	_ "embed"
 	"fmt"
 
@@ -24,11 +25,12 @@ import (
 var clashDefaultTemplate []byte
 
 // Clash 渲染 Clash / Clash.Meta 的订阅 YAML。meta 为 true 时按 mihomo 的字段渲染,
-// 并套用内置的完整规则底稿;为 false 时只输出最小可用集合。
+// 并套用一份完整规则底稿;为 false 时只输出最小可用集合。
 //
-// 遇到本项目不支持的协议、传输或安全层直接报错,不静默丢节点:订阅是用户唯一
-// 的连接入口,少一条比明确失败更难排查。
-func Clash(eps []Endpoint, meta bool) ([]byte, error) {
+// templateYAML 是底稿(通常是控制面里的全局模板);为 nil 或空时 meta 版用内置
+// 默认,meta=false 用最小集合。遇到本项目不支持的协议、传输或安全层直接报错,
+// 不静默丢节点:订阅是用户唯一的连接入口,少一条比明确失败更难排查。
+func Clash(eps []Endpoint, meta bool, templateYAML []byte) ([]byte, error) {
 	proxies := make([]clashProxy, 0, len(eps))
 	names := make([]string, 0, len(eps))
 	for _, ep := range eps {
@@ -41,7 +43,7 @@ func Clash(eps []Endpoint, meta bool) ([]byte, error) {
 	}
 
 	if meta {
-		return clashMeta(proxies)
+		return clashMeta(proxies, templateYAML)
 	}
 
 	// PROXY 是给用户手选的总入口,AUTO 是按延迟自动选。
@@ -75,9 +77,14 @@ func Clash(eps []Endpoint, meta bool) ([]byte, error) {
 // 手工维护的,注释和键序(rule-providers → proxy-groups → rules → dns)就是它
 // 的文档,值得原样保留。proxies 插在 rule-providers 之后,因为 proxy-groups 里的
 // include-all-proxies 依赖 proxies 先出现。
-func clashMeta(proxies []clashProxy) ([]byte, error) {
+func clashMeta(proxies []clashProxy, templateYAML []byte) ([]byte, error) {
+	base := templateYAML
+	if len(bytes.TrimSpace(base)) == 0 {
+		base = clashDefaultTemplate
+	}
+
 	var root yaml.Node
-	if err := yaml.Unmarshal(clashDefaultTemplate, &root); err != nil {
+	if err := yaml.Unmarshal(base, &root); err != nil {
 		return nil, fmt.Errorf("render: 解析 Clash 模板: %w", err)
 	}
 	doc := root.Content[0]

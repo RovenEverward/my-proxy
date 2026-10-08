@@ -93,6 +93,9 @@ func (s *Server) routes() {
 
 	api.HandleFunc("GET /api/settings", s.handleGetSettings)
 	api.HandleFunc("PUT /api/settings", s.handleSaveSettings)
+	api.HandleFunc("GET /api/settings/templates/{format}", s.handleGetTemplate)
+	api.HandleFunc("PUT /api/settings/templates/{format}", s.handlePutTemplate)
+	api.HandleFunc("DELETE /api/settings/templates/{format}", s.handleDeleteTemplate)
 
 	s.mux.Handle("/api/", s.requireAuth(api))
 }

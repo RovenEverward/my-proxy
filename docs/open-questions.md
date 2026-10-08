@@ -2,25 +2,22 @@
 
 按影响排序。**这一份是需要拍板的地方。**
 
-## 1. 客户端分流规则不可管理
+## 1. 客户端分流规则的「操作」边界还没定
 
-立项时用户的原话是「操作订阅的 Clash 以及 SingBox 的规则」。当前实现里,「规则」只有一层意思:**User-Agent → 返回哪种格式**。
+立项时用户的原话是「操作订阅的 Clash 以及 SingBox 的规则」。现在「规则」有两层意思,第一层已实现,第二层是开放项:
 
-客户端配置内部的分流规则(哪些域名走代理、哪些直连)现在**内嵌在模板里**:
+**已实现 —— 模板可存可改可回落。** 客户端配置内部的分流规则(哪些域名走代理、哪些直连)以模板形式存在,控制面不重新编译就能换:
 
-- `clash-meta` 走 `internal/render/templates/clash-default.yaml`:rule-providers(128 个源)、proxy-groups(15 组)、rules(159 条)、dns 都写在这里,`proxies` 由渲染时注入;
-- `sing-box` 走 `internal/render/templates/singbox-default.json`:route.rule_set(105 个 sing-geosite 规则集)、按主题分组的 selector、镜像 Clash 规则的 route.rules;
-- 两者都是 `//go:embed` 编进二进制,**改模板要重新编译控制面**;
-- `render.Clash(eps, meta)` 的 `meta=false` 仍是最小输出(3 条规则),`meta=true` 才走完整模板。
+- 三种格式可存自定义模板:`clash-meta` / `sing-box` / `xray`,存在 `settings.templates`(JSON 列,键是格式名);
+- `mpx settings template get FORMAT` 取当前生效的模板(没存就取内置默认的副本,当改动的起点);
+- `mpx settings template set FORMAT -f FILE` 存;写入口先校验(clash 要求 YAML 可解析且顶层是映射、有 rule-providers;sing-box / xray 要求 JSON 可解析);
+- `mpx settings template del FORMAT` 删,此后回落到内置默认;
+- `settings set -f`(整体替换)也会带 templates 字段,文件里没写就被清掉 —— 帮用户避开这个坑,`settings set` 的帮助里写了「改模板走 template set」;
+- 渲染链路:订阅时 `render.Clash(eps, meta, 模板)` / `render.SingBox(eps, 模板)` / `render.Xray(eps, 模板)`,模板为空回落 `//go:embed` 的内置默认。
 
-**要做的话大致是这个形状**(需要定):
+**开放 —— 模板里能「操作」的粒度。** 现在模板是一整份文本,CLI 只能整份取、整份改、整份传;没有「节点列表 / 规则列表 / 规则集地址」这类结构化口子,也没有按用户区分规则。
 
-1. `settings` 加「每个格式一份模板」;
-2. CLI 能把模板取下来、改、传回去;
-3. 模板里定义若干可被工具替换的位置(节点列表、规则列表、规则集地址);
-4. 模板缺失时回落内置默认。
-
-**待决策**:这是不是立项时要的「规则」?是就继续做;不是就把 [status.md](status.md) 对照表里那一行改成「显式不做」。
+**待决策**:这份粒度够不够算「操作订阅的规则」?够就把它从本文件挪进 [status.md](status.md) 的已实现;不够(比如要能单独改某条规则、或让不同用户拿到不同规则)再说要哪种形状。
 
 ## 2. 经跳板机连节点做不到(暂不做)
 

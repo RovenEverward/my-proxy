@@ -582,6 +582,21 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// 整体替换设置时,带进来的模板也要过一遍校验;但未出现的格式保持原样
+	// (整体替换语义),已出现的格式里空串表示清空该模板。
+	for format, body := range v.Templates {
+		f := model.ClientFormat(format)
+		if !templateFormats[f] {
+			writeError(w, http.StatusBadRequest, "不支持自定义模板的格式: "+format)
+			return
+		}
+		if body != "" {
+			if err := validateTemplate(f, []byte(body)); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+	}
 	if err := s.store.SaveSettings(&v); err != nil {
 		s.writeStoreError(w, err, "订阅设置")
 		return

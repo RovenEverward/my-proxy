@@ -63,6 +63,10 @@ const (
 	installTimeout = 15 * time.Minute
 )
 
+// rawBody 是跳过 JSON 序列化、原样发出的请求体。模板正文就是模板本身
+// (YAML / JSON 文本),不能包一层 JSON 引号再发。
+type rawBody []byte
+
 // do 以常规上限发一次请求。
 func (c *Client) do(method, path string, body any) ([]byte, error) {
 	return c.doWithin(defaultTimeout, method, path, body)
@@ -75,11 +79,16 @@ func (c *Client) do(method, path string, body any) ([]byte, error) {
 func (c *Client) doWithin(timeout time.Duration, method, path string, body any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {
-		payload, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("序列化请求体: %w", err)
+		switch b := body.(type) {
+		case rawBody:
+			reader = bytes.NewReader(b)
+		default:
+			payload, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("序列化请求体: %w", err)
+			}
+			reader = bytes.NewReader(payload)
 		}
-		reader = bytes.NewReader(payload)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

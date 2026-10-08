@@ -54,7 +54,7 @@
 | 面向数百至上千用户 | 已实现 | 单库单进程;每轮开销与节点数成正比,与用户数无关 |
 | 本机操作的 CLI 客户端 | 已实现 | |
 | 不复用 Marzneshin 代码 | 已实现 | 全新 Go 实现,只在模型与字段命名上参考 |
-| **操作订阅的 Clash 与 sing-box 规则** | **未实现** | 见 [open-questions.md](open-questions.md) 第 1 节 |
+| **操作订阅的 Clash 与 sing-box 规则** | **部分实现** | 模板可存可改可回落(`settings template`);「规则」粒度待定,见 [open-questions.md](open-questions.md) 第 1 节 |
 
 ### 二、边界值没定义会变成不报错的空转
 

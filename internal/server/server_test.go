@@ -95,6 +95,31 @@ func (e *env) request(method, path string, body any, headers map[string]string) 
 	return resp.StatusCode, data
 }
 
+// requestRaw 发一个带管理 token、正文原样发出的请求(不包 JSON)。
+// 模板正文就是模板本身,不能走 request 的 json.Marshal。
+func (e *env) requestRaw(method, path string, body []byte) (int, []byte) {
+	e.t.Helper()
+	var rdr io.Reader
+	if body != nil {
+		rdr = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, e.srv.URL+path, rdr)
+	if err != nil {
+		e.t.Fatalf("构造请求 %s %s: %v", method, path, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		e.t.Fatalf("请求 %s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		e.t.Fatalf("读取 %s %s 的响应: %v", method, path, err)
+	}
+	return resp.StatusCode, data
+}
+
 // sub 取一次订阅,返回状态码、响应头与正文。
 func (e *env) sub(path, userAgent string) (int, http.Header, []byte) {
 	e.t.Helper()
@@ -558,6 +583,128 @@ func TestSaveSettingsRejectsBadRule(t *testing.T) {
 	})
 	if code != http.StatusBadRequest {
 		t.Fatalf("非法格式应当 400,实际 %d", code)
+	}
+}
+
+// ---- 模板 ----
+
+func TestTemplateGetReturnsBuiltinWhenUnset(t *testing.T) {
+	e := newEnv(t)
+
+	code, body := e.api("GET", "/api/settings/templates/clash-meta", nil)
+	if code != http.StatusOK {
+		t.Fatalf("未存模板时取 clash-meta 应 200,实际 %d", code)
+	}
+	if len(body) == 0 {
+		t.Fatal("内置默认模板不应为空")
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("内置默认 clash 模板应能解析: %v", err)
+	}
+	if _, ok := doc["rule-providers"].(map[string]any); !ok {
+		t.Error("内置默认 clash 模板应有 rule-providers")
+	}
+}
+
+func TestTemplatePutGetDelete(t *testing.T) {
+	e := newEnv(t)
+
+	custom := "rule-providers:\n  x:\n    type: http\n    behavior: classical\n    url: https://example.com/x.yaml\n    path: ./x.yaml\n    interval: 86400\nrules:\n  - MATCH,全球代理\n"
+	code, _ := e.requestRaw("PUT", "/api/settings/templates/clash-meta", []byte(custom))
+	if code != http.StatusNoContent {
+		t.Fatalf("保存模板应 204,实际 %d", code)
+	}
+
+	code, body := e.api("GET", "/api/settings/templates/clash-meta", nil)
+	if code != http.StatusOK {
+		t.Fatalf("取模板应 200,实际 %d", code)
+	}
+	if string(body) != custom {
+		t.Fatalf("读回的模板与存入的不一致:\n got %q\nwant %q", body, custom)
+	}
+
+	// 整体设置里能看到这份模板。
+	code, body = e.api("GET", "/api/settings", nil)
+	if code != http.StatusOK {
+		t.Fatalf("取设置应 200,实际 %d", code)
+	}
+	var st model.Settings
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatalf("解析设置: %v", err)
+	}
+	if st.Templates["clash-meta"] != custom {
+		t.Fatalf("settings 里的模板不对:\n got %q\nwant %q", st.Templates["clash-meta"], custom)
+	}
+
+	code, _ = e.requestRaw("DELETE", "/api/settings/templates/clash-meta", nil)
+	if code != http.StatusNoContent {
+		t.Fatalf("删除模板应 204,实际 %d", code)
+	}
+	code, body = e.api("GET", "/api/settings/templates/clash-meta", nil)
+	if code != http.StatusOK {
+		t.Fatalf("删除后再取应 200,实际 %d", code)
+	}
+	if string(body) == custom {
+		t.Fatal("删除后应回落内置默认,而不是仍旧返回自定义模板")
+	}
+}
+
+func TestTemplatePutRejectsBadContent(t *testing.T) {
+	e := newEnv(t)
+
+	// 不是 YAML。
+	code, _ := e.requestRaw("PUT", "/api/settings/templates/clash-meta", []byte("proxies: [\n  - {name: 没闭合"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("坏 YAML 应 400,实际 %d", code)
+	}
+
+	// 顶层不是映射。
+	code, _ = e.requestRaw("PUT", "/api/settings/templates/clash-meta", []byte("- a\n- b\n"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("顶层非映射应 400,实际 %d", code)
+	}
+
+	// 缺 rule-providers。
+	code, _ = e.requestRaw("PUT", "/api/settings/templates/clash-meta", []byte("rules:\n  - MATCH,DIRECT\n"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("缺 rule-providers 应 400,实际 %d", code)
+	}
+
+	// sing-box / xray 不是合法 JSON。
+	code, _ = e.requestRaw("PUT", "/api/settings/templates/sing-box", []byte("not json"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("sing-box 坏 JSON 应 400,实际 %d", code)
+	}
+
+	// 不支持的格式。
+	code, _ = e.requestRaw("PUT", "/api/settings/templates/links", []byte("anything"))
+	if code != http.StatusBadRequest {
+		t.Fatalf("links 不接受模板,应 400,实际 %d", code)
+	}
+
+	// 空模板。
+	code, _ = e.requestRaw("PUT", "/api/settings/templates/xray", []byte(""))
+	if code != http.StatusBadRequest {
+		t.Fatalf("空模板应 400,实际 %d", code)
+	}
+}
+
+func TestSaveSettingsRejectsBadTemplate(t *testing.T) {
+	e := newEnv(t)
+
+	code, _ := e.api("PUT", "/api/settings", model.Settings{
+		Templates: map[string]string{"clash-meta": "不是 yaml"},
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("整体设置里带坏模板应 400,实际 %d", code)
+	}
+
+	code, _ = e.api("PUT", "/api/settings", model.Settings{
+		Templates: map[string]string{"links": "anything"},
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("整体设置里带不支持的格式应 400,实际 %d", code)
 	}
 }
 

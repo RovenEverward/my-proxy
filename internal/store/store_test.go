@@ -747,6 +747,51 @@ func TestSaveSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveSettingsTemplatesRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+
+	st := &model.Settings{
+		ProfileTitle: "tpl",
+		Templates: map[string]string{
+			"clash-meta": "proxies: []\n",
+			"sing-box":   `{"outbounds":[]}`,
+		},
+	}
+	if err := s.SaveSettings(st); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.Templates["clash-meta"] != "proxies: []\n" {
+		t.Errorf("clash-meta 模板读回不对: %q", got.Templates["clash-meta"])
+	}
+	if got.Templates["sing-box"] != `{"outbounds":[]}` {
+		t.Errorf("sing-box 模板读回不对: %q", got.Templates["sing-box"])
+	}
+	if got.TemplateFor(model.FormatXray) != "" {
+		t.Errorf("没存过的 xray 模板应为空,实际 %q", got.TemplateFor(model.FormatXray))
+	}
+
+	// 删掉一个键再存,读回时那个键应消失。
+	delete(got.Templates, "sing-box")
+	if err := s.SaveSettings(got); err != nil {
+		t.Fatalf("第二次 SaveSettings: %v", err)
+	}
+	got2, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if _, ok := got2.Templates["sing-box"]; ok {
+		t.Error("删除的 sing-box 模板应消失")
+	}
+	if got2.Templates["clash-meta"] == "" {
+		t.Error("未删除的 clash-meta 模板应保留")
+	}
+}
+
 // ---- Open / 建表 ----
 
 func TestOpenIsIdempotentAndPersistent(t *testing.T) {

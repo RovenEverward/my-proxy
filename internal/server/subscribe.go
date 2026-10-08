@@ -62,17 +62,22 @@ func (s *Server) renderSubscription(user *model.User, format model.ClientFormat)
 		return nil, err
 	}
 
+	settings, err := s.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
+
 	switch format {
 	case model.FormatLinks:
 		return []byte(strings.Join(render.Links(eps), "\n")), nil
 	case model.FormatBase64:
 		return []byte(render.LinksBase64(eps)), nil
 	case model.FormatClash, model.FormatClashMeta:
-		return render.Clash(eps, format == model.FormatClashMeta)
+		return render.Clash(eps, format == model.FormatClashMeta, []byte(settings.TemplateFor(format)))
 	case model.FormatSingBox:
-		return render.SingBox(eps, nil)
+		return render.SingBox(eps, []byte(settings.TemplateFor(model.FormatSingBox)))
 	case model.FormatXray:
-		return render.Xray(eps, nil)
+		return render.Xray(eps, []byte(settings.TemplateFor(model.FormatXray)))
 	default:
 		return nil, fmt.Errorf("不支持的订阅格式 %q", format)
 	}
