@@ -1126,7 +1126,43 @@ rules:
   - GEOIP,CN,本地直连
   - MATCH,漏网之鱼
 
+# 域名嗅探:对只带 IP 的连接(比如 app 自己做 DNS)按 TLS SNI / HTTP Host
+# 嗅出真实域名再分流,防止污染 IP 直接落空。
+sniffer:
+  enable: true
+  override-destination: false
+  sniff:
+    TLS:
+      ports: [443]
+    HTTP:
+      ports: [80]
+    QUIC:
+      ports: [443]
 dns:
+  # enable/fake-ip 是 TUN 模式的命脉:不开 enable,mihomo 不接管 DNS,
+  # 系统 DNS 在国内解析被墙域名拿到的是污染结果,规则再对也连不通。
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.0/16
+  # 启动期与规则域名(如 DoH 主机名)的兜底解析,用国内 UDP 即可。
+  default-nameserver:
+    - 119.29.29.29
+    - 223.5.5.5
+  # 节点域名用国内 DNS 解析,避免节点地址被污染或查不到。
+  proxy-server-nameserver:
+    - 119.29.29.29
+    - 223.5.5.5
+  # fake-ip 下走代理的域名本地根本不解析(域名交给节点),nameserver 主要
+  # 服务直连域名,用国内 DoH 就够。
+  nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  nameserver-policy:
+    geosite:cn,private,apple:
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+    +.linux.do: https://xxx.ddd.oaifree.com/query-dns
   # `*` 在 mihomo 里只匹配一级域名,`+.` 才是多级(含裸域)。
   fake-ip-filter:
     - '+.lan'
@@ -1138,8 +1174,3 @@ dns:
     - 'localhost.ptlogin2.qq.com'
     - '+.msftncsi.com'
     - '+.msftconnecttest.com'
-  nameserver-policy:
-    geosite:cn,private,apple:
-      - https://doh.pub/dns-query
-      - https://dns.alidns.com/dns-query
-    +.linux.do: https://xxx.ddd.oaifree.com/query-dns
