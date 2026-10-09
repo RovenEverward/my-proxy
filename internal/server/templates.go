@@ -75,6 +75,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "订阅设置")
 		return
 	}
+	s.invalidateSubCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -96,6 +97,7 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "订阅设置")
 		return
 	}
+	s.invalidateSubCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -68,7 +68,8 @@ var schema = []string{
 		ssh_user     TEXT    NOT NULL DEFAULT '',
 		api_port     INTEGER NOT NULL DEFAULT 0,
 		config_path  TEXT    NOT NULL DEFAULT '',
-		service_name TEXT    NOT NULL DEFAULT ''
+		service_name TEXT    NOT NULL DEFAULT '',
+		draining     INTEGER NOT NULL DEFAULT 0
 	)`,
 
 	`CREATE TABLE IF NOT EXISTS inbounds (
@@ -99,7 +100,8 @@ var schema = []string{
 		wg_address   TEXT    NOT NULL DEFAULT '',
 		wg_mtu       INTEGER NOT NULL DEFAULT 0,
 		mux          INTEGER NOT NULL DEFAULT 0,
-		fragment     INTEGER NOT NULL DEFAULT 0
+		fragment     INTEGER NOT NULL DEFAULT 0,
+		max_users    INTEGER NOT NULL DEFAULT 0
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_inbounds_node_id ON inbounds(node_id)`,
 
@@ -328,6 +330,10 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE inbounds ADD COLUMN mux INTEGER NOT NULL DEFAULT 0`},
 	{"inbounds", "fragment",
 		`ALTER TABLE inbounds ADD COLUMN fragment INTEGER NOT NULL DEFAULT 0`},
+	{"inbounds", "max_users",
+		`ALTER TABLE inbounds ADD COLUMN max_users INTEGER NOT NULL DEFAULT 0`},
+	{"nodes", "draining",
+		`ALTER TABLE nodes ADD COLUMN draining INTEGER NOT NULL DEFAULT 0`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

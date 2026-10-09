@@ -102,6 +102,16 @@ func hashOf(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// OnlineIPs 现场问节点:此刻每个用户连着几个 IP。
+//
+// 这是顺路读一份 xray 已经在算的统计(statsonlineiplist),不是另起一份账本。
+// 不落库、不缓存 —— 在线名单过期得太快,存它没意义;要趋势请调用方自己轮询。
+func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
+	defer cancel()
+	return node.OnlineIPs(ctx, c.runner, n)
+}
+
 // SampleTraffic 采一次该节点上的用户流量,算出相对上次采样的增量并累加进数据库。
 //
 // 读的是 xray 的累计计数(见 node.QueryUserTraffic),增量由「本次累计 − 上次

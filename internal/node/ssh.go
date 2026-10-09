@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
 	"strconv"
@@ -132,6 +133,15 @@ func sshArgs(n model.Node) []string {
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",
+		// ControlMaster 把几条相邻的 ssh 命令复用到同一条 TCP 连接上:收敛+采样+
+		// 状态轮询一轮要往同一台节点发三四条命令,每次都握手+认证一次太重。
+		// %C 是 OpenSSH 自己算的连接散列键(含目标主机/端口/用户),同一目标落
+		// 同一个 socket 文件;不同节点互不干扰。
+		// ControlPath 放临时目录而不是 ~/.ssh:控制面进程不一定有 HOME,也免得
+		// 污染用户自己的 socket。进程结束时 socket 文件随进程清理。
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPath=" + os.TempDir() + "/mpx-ssh-%C",
+		"-o", "ControlPersist=60s",
 	}
 	if p := n.SSHPortOrDefault(); p != 22 {
 		args = append(args, "-p", strconv.Itoa(p))

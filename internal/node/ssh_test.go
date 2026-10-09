@@ -17,6 +17,9 @@ func TestSSHArgsDefaults(t *testing.T) {
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPath=" + os.TempDir() + "/mpx-ssh-%C",
+		"-o", "ControlPersist=60s",
 		"root@203.0.113.10",
 	}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
@@ -27,6 +30,12 @@ func TestSSHArgsDefaults(t *testing.T) {
 	// 的提示上,整轮收敛就跟着停住。它必须一直在。
 	if !strings.Contains(strings.Join(got, " "), "BatchMode=yes") {
 		t.Fatal("少了 BatchMode=yes,ssh 会挂在等密码上")
+	}
+	// ControlMaster 三条必须同时在,漏一条要么连不上要么退化成每命令一次握手。
+	for _, opt := range []string{"ControlMaster=auto", "mpx-ssh-%C", "ControlPersist=60s"} {
+		if !strings.Contains(strings.Join(got, " "), opt) {
+			t.Fatalf("少了连接复用参数 %q: %q", opt, got)
+		}
 	}
 }
 

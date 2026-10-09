@@ -48,6 +48,12 @@ func (f *fakeNodeOps) InstallNode(_ context.Context, _ model.Node, version strin
 	return f.version, f.err
 }
 
+// OnlineIPs 在测试里没谁要在线名单 —— 写死空结果就行,真要断言上线名单的去加
+// 一个字段。它必须在,因为 NodeOps 接口定义里它凑了一份。
+func (f *fakeNodeOps) OnlineIPs(context.Context, model.Node) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
 func installPath(n model.Node, version string) string {
 	p := "/api/nodes/" + strconv.FormatInt(n.ID, 10) + "/install"
 	if version != "" {

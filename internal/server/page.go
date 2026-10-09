@@ -106,6 +106,7 @@ func (s *Server) handleRotateSub(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	s.invalidateSubCache()
 
 	s.serveSubPage(w, r, user, settings, subBaseURL(settings, r)+"/sub/"+token)
 }

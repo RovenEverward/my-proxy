@@ -21,7 +21,8 @@ var nodeCmd = &cobra.Command{
 }
 
 func init() {
-	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd)
+	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
+		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
@@ -589,6 +590,101 @@ var nodeInstallCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "已在节点 %d 上装好并启动 xray %s", id, res["version"])
+	},
+}
+
+var nodeDrainCmd = &cobra.Command{
+	Use:   "drain <id>",
+	Short: "开始排水:新订阅不再发这台节点的入口",
+	Long: `开始排水:新订阅不再发这台节点的入口。
+
+排水是订阅层的开关:已连上的用户不会立刻断线,会在下一次订阅刷新时自然漂
+走。想立刻掐线,请 node rm 或手动摘除 xray 上的用户。
+
+取消排水用 node undrain。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.do("POST", nodePath(id)+"/drain", nil)
+		if err != nil {
+			return err
+		}
+		return report(raw, "节点 %d 已开始排水", id)
+	},
+}
+
+var nodeUndrainCmd = &cobra.Command{
+	Use:   "undrain <id>",
+	Short: "取消排水",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.do("POST", nodePath(id)+"/undrain", nil)
+		if err != nil {
+			return err
+		}
+		return report(raw, "节点 %d 已取消排水", id)
+	},
+}
+
+// nodeOnlineCmd 现场问节点此刻每个用户连着几个 IP。
+//
+// 这是除了 node status 之外唯一会真发 ssh 的 node 子命令。它不落库、不缓存 —
+// 在线名单下一秒就过期,存它没意义。要趋势请自己轮询,或者看 mpx status。
+var nodeOnlineCmd = &cobra.Command{
+	Use:   "online <id>",
+	Short: "现场读出节点上每个用户此刻的在线 IP 数",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.do("GET", nodePath(id)+"/online", nil)
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		res, err := decode[struct {
+			Node   string `json:"node"`
+			Online []struct {
+				User  string   `json:"user"`
+				Count int      `json:"count"`
+				IPs   []string `json:"ips"`
+			} `json:"online"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		if len(res.Online) == 0 {
+			fmt.Println("节点 " + res.Node + " 上没有在线用户")
+			return nil
+		}
+		fmt.Printf("节点 %s 在线 %d 个用户\n", res.Node, len(res.Online))
+		for _, e := range res.Online {
+			fmt.Printf("  %s  %d IP  %s\n", e.User, e.Count, strings.Join(e.IPs, ", "))
+		}
+		return nil
 	},
 }
 

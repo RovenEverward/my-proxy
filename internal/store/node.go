@@ -12,21 +12,23 @@ import (
 //
 // 后两列是批 3b 加的下发基准:deployed_at 可空,没下发过就是 NULL。
 const nodeColumns = `id, name, address, ssh_port, ssh_user, api_port, config_path, service_name,
-	deployed_hash, deployed_at`
+	deployed_hash, deployed_at, draining`
 
 func scanNode(sc rowScanner) (*model.Node, error) {
 	var (
 		n          model.Node
 		deployedAt sql.NullInt64
+		draining   int
 	)
 	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.SSHPort, &n.SSHUser,
-		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt); err != nil {
+		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt, &draining); err != nil {
 		return nil, err
 	}
 	if deployedAt.Valid {
 		at := time.Unix(deployedAt.Int64, 0).UTC()
 		n.DeployedAt = &at
 	}
+	n.Draining = draining != 0
 	return &n, nil
 }
 
@@ -82,9 +84,9 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 func (s *Store) UpdateNode(n *model.Node) error {
 	res, err := s.db.Exec(
 		`UPDATE nodes
-		 SET name = ?, address = ?, ssh_port = ?, ssh_user = ?, api_port = ?, config_path = ?, service_name = ?
+		 SET name = ?, address = ?, ssh_port = ?, ssh_user = ?, api_port = ?, config_path = ?, service_name = ?, draining = ?
 		 WHERE id = ?`,
-		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName, n.ID)
+		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName, boolToInt(n.Draining), n.ID)
 	if err != nil {
 		return fmt.Errorf("更新节点 %d: %w", n.ID, err)
 	}

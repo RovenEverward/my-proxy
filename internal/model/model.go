@@ -118,6 +118,12 @@ type Node struct {
 	DeployedHash string `json:"deployed_hash,omitempty"`
 	// DeployedAt 是那次下发发生的时刻;没推过时为 nil。
 	DeployedAt *time.Time `json:"deployed_at,omitempty"`
+
+	// Draining 表示这台节点正在排水:订阅渲染不再把它的入口发给用户,让已连
+	// 的用户随重连自然离开。它只是订阅层的开关,不摘 xray 上已有的用户 ——
+	// 排水要快摘掉订阅里的入口,但不该把正在用的人当场断掉;真要把人摘掉由
+	// 收敛或手动同步负责,那是有各自节奏的事。
+	Draining bool `json:"draining"`
 }
 
 // Inbound 是某个节点上 xray 的一个入站。
@@ -176,6 +182,13 @@ type Inbound struct {
 	// Fragment 只在 xray 客户端生效:分片在 sockopt 层,Clash 与 sing-box
 	// 都没有对应字段。
 	Fragment bool `json:"fragment,omitempty"`
+
+	// MaxUsers 是这个入站允许容纳的用户数上限,0 表示不限制。
+	//
+	// 只在订阅渲染层生效:满了的入站不进订阅,用户自然落到别的入站上;满了
+	// 之后才被授权进来的用户由收敛负责摘掉。它不是硬性隔离 —— 已经在节点上
+	// 的用户不会因为别人订阅里少了它而突然断线,断不断由收敛那一侧决定。
+	MaxUsers int `json:"max_users,omitempty"`
 }
 
 // Host 是一个入站对外暴露的一种方式。

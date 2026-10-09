@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -98,6 +99,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusCreated, n)
 }
 
@@ -157,6 +159,7 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, n)
 }
 
@@ -169,6 +172,7 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -259,6 +263,82 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "version": installed})
 }
 
+// handleDrainNode 标记节点开始排水:订阅渲染不再把它的入口发给用户。
+//
+// 它只做订阅层的事 —— 不踢 xray 上的人(那是收敛或手动 rmu 的事,各有各的节奏)。
+// 意图是「开始把人挪走」,不是「现在切断」:已连上的客户端会随下一次刷新订阅拿到
+// 不含这台节点的列表、自然漂走;真要掐线,运维跑 node rm / 手动 rmu。
+func (s *Server) handleDrainNode(w http.ResponseWriter, r *http.Request) {
+	s.setNodeDraining(w, r, true)
+}
+
+// handleUndrainNode 取消排水。
+func (s *Server) handleUndrainNode(w http.ResponseWriter, r *http.Request) {
+	s.setNodeDraining(w, r, false)
+}
+
+func (s *Server) setNodeDraining(w http.ResponseWriter, r *http.Request, draining bool) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.store.GetNode(id)
+	if err != nil {
+		s.writeStoreError(w, err, "节点")
+		return
+	}
+	if n.Draining == draining {
+		// 幂等:重复执行直接回现状。drain 是个手动运维动作,使用者不会想为它报错。
+		writeJSON(w, http.StatusOK, n)
+		return
+	}
+	n.Draining = draining
+	if err := s.store.UpdateNode(n); err != nil {
+		s.writeStoreError(w, err, "节点")
+		return
+	}
+	s.invalidateSubCache()
+	s.logger.Info("节点排水状态已改", "node", n.Name, "draining", draining)
+	writeJSON(w, http.StatusOK, n)
+}
+
+// handleNodeOnline 现场问节点:每个用户此刻连着几个 IP。答案是 xray 的统计,
+// 不过时:不缓存、不落库,因为「此刻」就是问题本身;要趋势请自己轮询采样。
+func (s *Server) handleNodeOnline(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.store.GetNode(id)
+	if err != nil {
+		s.writeStoreError(w, err, "节点")
+		return
+	}
+	if s.nodeOps == nil {
+		writeError(w, http.StatusNotImplemented, "控制面没有接上下发通道")
+		return
+	}
+	online, err := s.nodeOps.OnlineIPs(r.Context(), *n)
+	if err != nil {
+		s.logger.Error("读节点在线名单失败", "node", n.Name, "error", err)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	// 把 IP 数算出来是为了让 CLI/前端直接显示"在线"两个字 —— IP 列表本身对
+	// 普通人没意义,但我们要留下它(排查共享账号要用)。
+	type entry struct {
+		User  string   `json:"user"`
+		Count int      `json:"count"`
+		IPs   []string `json:"ips"`
+	}
+	out := make([]entry, 0, len(online))
+	for user, ips := range online {
+		out = append(out, entry{User: user, Count: len(ips), IPs: ips})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].User < out[j].User })
+	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "online": out})
+}
+
 // renderNodeConfig 产出某节点完整的 xray config.json。
 func (s *Server) renderNodeConfig(n *model.Node) ([]byte, error) {
 	inbounds, err := s.store.ListInbounds(n.ID)
@@ -322,6 +402,7 @@ func (s *Server) handleCreateInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusCreated, in)
 }
 
@@ -374,6 +455,7 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, in)
 }
 
@@ -386,6 +468,7 @@ func (s *Server) handleDeleteInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -459,6 +542,7 @@ func (s *Server) handleCreateHost(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
+	s.invalidateSubCache()
 	s.writeHostView(w, http.StatusCreated, h)
 }
 
@@ -480,6 +564,7 @@ func (s *Server) handleUpdateHost(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
+	s.invalidateSubCache()
 	s.writeHostView(w, http.StatusOK, h)
 }
 
@@ -492,6 +577,7 @@ func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)
 }
 
@@ -614,6 +700,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusCreated, toUserView(u))
 }
 
@@ -661,6 +748,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, toUserView(u))
 }
 
@@ -701,6 +789,7 @@ func (s *Server) handleRevokeSub(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, toUserView(*u))
 }
 
@@ -788,6 +877,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "订阅设置")
 		return
 	}
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, v)
 }
 

@@ -50,6 +50,12 @@ func newEnvWith(t *testing.T, ops NodeOps) *env {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := New(st, testToken, logger, dbPath)
+	// 测试的所有请求都来自 httptest 的 127.0.0.1,真实桶会在一个用例里几十次
+	// 连续写操作时全部打成 429 —— 那是限流在正常工作,不是被测的东西坏了。
+	// routes() 在 New() 里就把桶指针闭包进了处理器,换字段到不了请求路径,
+	// 所以这里改原桶的参数而不是换一个新桶。
+	s.subLimiter.rate, s.subLimiter.burst = 1e9, 1e9
+	s.apiLimiter.rate, s.apiLimiter.burst = 1e9, 1e9
 	if ops != nil {
 		s.SetNodeOps(ops)
 	}

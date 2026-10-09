@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -17,7 +18,8 @@ import (
 // 路径里既没有用户名也没有格式:用户只带一个不可猜的 token,格式由 User-Agent
 // 规则决定。这样同一条订阅链接在 Clash 和 sing-box 里各自拿到对的配置。
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
-	user, err := s.store.GetUserBySubToken(r.PathValue("token"))
+	subToken := r.PathValue("token")
+	user, err := s.store.GetUserBySubToken(subToken)
 	if err != nil {
 		// 订阅路径猜错是常态(扫描器),不值得记日志。
 		writeError(w, http.StatusNotFound, "订阅不存在")
@@ -51,6 +53,30 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveSubBody(w, r, user, settings, format, pathFormat, subToken)
+}
+
+// serveSubBody 是给格式化订阅本体的那段:缓存命中直接回,不命中才重算。
+//
+// 缓存在这里而不是在 handleSubscribe 一开始就查,是因为上面那几段分叉(404、
+// block、订阅页)各自的处理都不一样 —— 它们走不到这里,也就不用读缓存。
+//
+// ETag 用未压缩 body 的 sha256:客户端认的校验对象是它最后要解出来的东西,
+// 不是传输时的压缩层;用它算指纹,客户端带 If-None-Match 回来就直接 304。
+func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
+	user *model.User, settings *model.Settings,
+	format model.ClientFormat, pathFormat, subToken string) {
+
+	key := subCacheKey{subToken: subToken, format: format, pathFormat: pathFormat}
+	if e := s.subCache.get(key); e != nil {
+		if r.Header.Get("If-None-Match") == e.etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeSubEntry(w, r, e)
+		return
+	}
+
 	body, err := s.renderSubscription(user, format)
 	if err != nil {
 		s.logger.Error("渲染订阅失败", "username", user.Username, "format", format, "error", err)
@@ -58,12 +84,77 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setSubHeaders(w, user, settings, contentTypeOf(format))
-	// 各家客户端会把这一条显示成"打开网页",指向的就是浏览器打开订阅地址看到
-	// 的那一屏。
-	w.Header().Set("Profile-Web-Page-Url", subBaseURL(settings, r)+"/sub/"+user.SubToken)
+	etag := `"` + fmt.Sprintf("%x", sha256.Sum256(body)) + `"`
+	entry := &subCacheEntry{
+		etag:     etag,
+		user:     user,
+		settings: settings,
+		headers:  subHeadersFor(user, settings, contentTypeOf(format)),
+	}
+	if acceptsGzip(r) {
+		if gz, err := gzipBody(body); err == nil {
+			entry.body = gz
+			entry.encoding = "gzip"
+		} else {
+			entry.body = body
+		}
+	} else {
+		entry.body = body
+	}
+	s.subCache.put(key, entry)
+
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeSubEntry(w, r, entry)
+}
+
+// writeSubEntry 把一条缓存好的订阅写出去:头重放、ETag 挂上、body 原样发。
+// 重放而不是重算,是因为头里嵌着用户态(用量、到期时间),重算就要再过一遍
+// settings + user —— 那和没缓存差不多了。
+func writeSubEntry(w http.ResponseWriter, r *http.Request, e *subCacheEntry) {
+	for k, v := range e.headers {
+		w.Header().Set(k, v)
+	}
+	w.Header().Set("ETag", e.etag)
+	if e.encoding != "" {
+		w.Header().Set("Content-Encoding", e.encoding)
+	}
+	// Profile-Web-Page-Url 是每条的(客户端把它显示成"打开网页"),不进缓存,
+	// 因为只有它依赖请求本身(Host)。
+	w.Header().Set("Profile-Web-Page-Url",
+		subBaseURL(e.settings, r)+"/sub/"+e.user.SubToken)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	_, _ = w.Write(e.body)
+}
+
+// subHeadersFor 把 setSubHeaders 的那些头收进一个 map,给缓存条目存。
+// 它和 setSubHeaders 是同一组头的两个出口:一个进缓存,一个写响应。
+func subHeadersFor(user *model.User, settings *model.Settings, contentType string) map[string]string {
+	h := map[string]string{
+		"Content-Type":          contentType,
+		"Content-Disposition":   "attachment; filename=" + user.Username,
+		"Profile-Title":         encodeTitle(expandUser(settings.ProfileTitle, user)),
+		"Subscription-Userinfo": userInfo(user),
+	}
+	if settings.SupportLink != "" {
+		h["Support-Url"] = settings.SupportLink
+	}
+	if settings.UpdateInterval > 0 {
+		h["Profile-Update-Interval"] = strconv.Itoa(settings.UpdateInterval)
+	}
+	return h
+}
+
+// acceptsGzip 看客户端愿不愿意接 gzip 编码的响应。
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		if strings.HasPrefix(strings.TrimSpace(part), "gzip") {
+			return true
+		}
+	}
+	return false
 }
 
 // subBaseURL 是拼订阅地址用的前缀:设置里存了就用它(去掉尾部斜杠),没存就用
@@ -130,9 +221,38 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	users, err := s.store.ListUsers()
+	if err != nil {
+		return nil, err
+	}
+
+	// 各入站此刻"占用着"几个名额:只数对该入站授权且当前处于可用状态的用户。
+	// 授权为空 = 全部入站都能用,所以它要给每个入站都记一笔 —— 否则不限授权的
+	// 用户会被漏算,满了的入站还会继续把名额让给他们。
+	now := time.Now()
+	occupancy := make(map[int64]int, len(inbounds))
+	for _, u := range users {
+		if u.Status(now) != model.StatusActive {
+			continue
+		}
+		if len(u.InboundIDs) == 0 {
+			for _, in := range inbounds {
+				occupancy[in.ID]++
+			}
+			continue
+		}
+		for _, id := range u.InboundIDs {
+			occupancy[id]++
+		}
+	}
 
 	byNode := make(map[int64][]model.Inbound, len(nodes))
 	for _, in := range inbounds {
+		// 入站满员 = 不再发它的入口给新订阅;已经在用的人不受影响,那边由
+		// 收敛负责摘。0 是不设上限。
+		if in.MaxUsers > 0 && occupancy[in.ID] >= in.MaxUsers {
+			continue
+		}
 		byNode[in.NodeID] = append(byNode[in.NodeID], in)
 	}
 	byInbound := make(map[int64][]model.Host, len(hosts))
@@ -142,6 +262,11 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 
 	var eps []render.Endpoint
 	for _, n := range nodes {
+		// 排水中的节点不再出现在订阅里:已连上的用户会随下一次刷新订阅自然漂
+		// 走,不主动掐线。
+		if n.Draining {
+			continue
+		}
 		eps = append(eps, render.Resolve(n, byNode[n.ID], byInbound, user)...)
 	}
 	// 节点名唯一的约束落在整份订阅这一层:同一个入站的不同入口、以及不同节点上

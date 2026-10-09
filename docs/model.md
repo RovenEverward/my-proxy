@@ -19,9 +19,9 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
-| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name`、`deployed_hash`、`deployed_at` | 空值有默认:22 / `root` / 10085 / `/etc/mpx/xray/config.json` / `mpx-xray`。**不存 xray 版本**:节点上装的是哪个版本随时能读出来,存进库就是第二份真相。`deployed_hash` / `deployed_at` 是**下发成功之后**才记的基准;从没下发过时是空串 / NULL,那表示「没有基准」,不是「一致」 |
+| `nodes` | `name`(唯一)、`address`、`ssh_port`、`ssh_user`、`api_port`、`config_path`、`service_name`、`deployed_hash`、`deployed_at`、`draining` | 空值有默认:22 / `root` / 10085 / `/etc/mpx/xray/config.json` / `mpx-xray`。**不存 xray 版本**:节点上装的是哪个版本随时能读出来,存进库就是第二份真相。`deployed_hash` / `deployed_at` 是**下发成功之后**才记的基准;从没下发过时是空串 / NULL,那表示「没有基准」,不是「一致」。`draining` 见下面「排水」一节 |
 | `node_status` | `node_id`(主键)、`checked_at`、`reachable`、`active`、`version`、`observed_hash`、`certificates`、`error` | 每次检查**覆盖**一行,只写这张表、不碰 `nodes`。`certificates` 是 `[{inbound_id, inbound_name, path, not_after, days_left, error}]` 的 JSON 文本 |
-| `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow`、`xhttp_path`、`xhttp_host`、`xhttp_mode`、`wg_secret`、`wg_address`、`wg_mtu`、`mux`、`fragment` | 切片存 JSON 文本 |
+| `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow`、`xhttp_path`、`xhttp_host`、`xhttp_mode`、`wg_secret`、`wg_address`、`wg_mtu`、`mux`、`fragment`、`max_users` | 切片存 JSON 文本;`max_users` 是 0 或正整数,0 表示不限 |
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |
 | `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules`、`templates`、`webhook_url`、`notify_days_left`、`notify_usage_percent` | `rules` 是 `[{pattern, result}]` 的 JSON 文本,`templates` 是 `{格式: 正文}`。`notify_days_left` / `notify_usage_percent` 为 0 表示关掉这一类提醒 |
@@ -66,6 +66,22 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 ### 授权
 
 `inbound_ids` 为空 = 全部入站。这个方向是有意的:**新建用户默认什么都能用,要限权才填**。
+
+### 排水与容量
+
+订阅是过滤器的最后一道。三件事都只在订阅层生效、不去动 xray 上的现状 ——
+在线用户会随客户端自然刷新漂走,不需要当场掐断(那是 `node rm` 或收敛的事):
+
+| 信号 | 在哪设 | 订阅里的表现 |
+| --- | --- | --- |
+| 节点 `draining` | `mpx node drain` / `undrain` | 不再发这台节点的入口 |
+| 入站 `max_users` | `mpx inbound add --max-users` | 占用满 ≥ 上限后,新订阅不再发它 |
+| 用户状态 ≠ active | 用户字段 | 只发占位节点 |
+
+占用数按「当前 active 且被授权给这个入站」的用户数算;`inbound_ids` 为空的用户对
+每个入站都记一笔。
+
+「在线名单」(`mpx node online`)不落库:它下一秒就过期,存下来只有误导性。
 
 ### host 的回落
 

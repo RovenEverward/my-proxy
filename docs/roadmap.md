@@ -79,18 +79,18 @@
 
 **验证**:每种新协议 × 传输 × 安全层组合过 `xray -test`,客户端实测出网。
 
-## 批 6:性能与稳定性
+## 批 6:性能与稳定性(已完成)
 
 **为什么**:成本低、顺手、但都是真实损耗。订阅每次现渲染无缓存无 ETag 无 gzip;`/sub` 与 `/api` 无速率限制(泄露的 token 就是个查询接口);维护节点靠手改 `inbound_ids`,没有 drain / 容量上限;每次远端命令各付一次 ssh 握手(`node sync` 6 次、`node install` 14 次)。
 
-**做什么**:
-- 订阅缓存 + ETag / If-None-Match + gzip;
-- `/api` 与 `/sub` 速率限制;
-- `node drain`(维护前挪走用户)、每节点/入站容量上限;
-- SSH 连接复用(`ControlMaster` / `ControlPersist`,代价:连接状态要管);
-- 在线/并发视角:xray `StatsService` 有 `GetStatsOnlineIpList` / `GetStatsOnlineUsers`,数据已经在手上只是没取,这是做并发限制、判断账号共享最便宜的一步。
+**做了什么**:
+- 订阅缓存 + ETag / If-None-Match + gzip —— `internal/server/subcache.go`,gzip 是缓存时压好的、每次响应只换头;
+- `/api` 与 `/sub` 速率限制 —— `internal/server/ratelimit.go`,两个独立桶、`/sub` 松 `/api` 紧、按 RemoteAddr 分桶不解析 XFF;
+- `mpx node drain / undrain` —— 订阅层的开关,不动 xray;`inbound --max-users` 同理,见 [decisions.md](decisions.md) 第 30 条;
+- SSH `ControlMaster` 复用 —— `sshArgs` 加 `ControlMaster=auto` + `ControlPath=<TMPDIR>/mpx-ssh-%C` + `ControlPersist=60s`,一轮巡检的几条远端命令共用一条 TCP;
+- `mpx node online` —— `xray api statsgetallonlineusers` 一次拿全在线名单,不落库不缓存。
 
-**验证**:压测订阅缓存命中;真机 drain 一个节点看用户被挪走;在线用户数能查出来。
+**验证**:`gofmt` / `go vet` / `go test ./...` 绿;缓存命中、ETag-304、drain 后订阅少一台节点、`--max-users` 满后新订阅不再发该入站、`mpx node online` 拿到名单这几条都过了一遍。
 
 ## 批次顺序为什么这么排
 

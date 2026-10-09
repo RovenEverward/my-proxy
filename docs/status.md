@@ -32,6 +32,10 @@
 | 告警与巡检 | 单测(假 Alerter):报出去的 Key 在条件消失后被销;不可达那一轮**只加不减**(网络抖动不会留下「已恢复」);节点恢复后所有 Key 在同一轮里销掉;`LogAlerter` 冷却期内只报一次、窗口外再报、没报过的 Key 销不掉任何东西;巡检第 1 个 Tick 就跑、之后每 10 个 Tick 一次;整轮预算用完后剩下的留到下一轮并记日志 |
 | 提醒(批 4c) | 单测(假 webhook 服务端):到期提醒只发一次、续费销账后再临近能重发、超限提醒与周期重置同理、没配地址不发也不记账、投递失败不记账且下一轮重试成功、停用用户跳过;`PostWebhook` 2xx 算成功、非 2xx 带状态码报错、空地址报错;`WebhookAlerter` 冷却内只发一条、恢复发 resolved 且带回原告警、没报过的 Key 不销;`FanoutAlerter` 每个出口都收到;设置校验(负天数 / 百分比越界 / 非 URL / 非 http(s) / 缺主机名全 400);`POST /api/settings/test-webhook` 没配地址 400、配好 200 且对面收到 `test` 事件、对面 502 时如实回 502。活服务上端到端走了一遍(真 webhook 接收端):`settings test` 收到 `test` 事件、alice 只剩 2 天时收到一条 `user_notice` 且后续几轮不再重复、续期到明年后销账、再改回临近重新收到一条;对面挂掉时那条只进日志(`发用户通知 webhook 失败 user=alice kind=expiring`)不记账,对面起回来后下一轮重试成功 |
 | 旧备份兼容新表 | 单测:造一份 `DROP TABLE node_status` 的快照(等于批 3 之前备份出来的库),`Validate` 仍然通过,`store.Open` 会把表补出来并能写状态 —— 恢复不能卡在「备份里没有新表」上。`user_notices` 刻意不在必需表清单里:它是流水账,没有它照样起来 |
+| 订阅缓存 + 速率限制(批 6) | `GET /sub/{token}` 渲染一次之后进 `subCache`;同 token+format 第二次命中缓存;任何一条管理写入(节点/入站/host/用户/设置/轮换 sub token)都会全清缓存;`If-None-Match` 命中 ETag 返 304;`Accept-Encoding: gzip` 拿 gzip 压缩缓存 —— gzip 数据是缓存时压好的,每次响应只换头;`/sub` 与 `/api` 各有独立桶(`/sub` 10 qps burst 30、`/api` 5 burst 10),按 RemoteAddr 分桶不解析 `X-Forwarded-For`(前面没有可信代理,认了等于把限流钥匙交给请求方) |
+| 排水与容量(批 6) | `mpx node drain` 置 `draining`,订阅里不再发这台节点的入口,`undrain` 恢复;`inbound --max-users N` 后占用满 ≥ N 的入站不进订阅;占用数按「active + 授权该入站」算,授权为空对每个入站都记。排水/上限不动 xray 现状,已连上的等它自然漂走,要硬摘用收敛或 `node rm` |
+| `mpx node online` | 直连 `xray api statsgetallonlineusers` 一次拿全,不遍历每个用户发 `statsonlineiplist`;不落库不缓存 —— 答案下一秒就过期 |
+| SSH ControlMaster | `sshArgs` 加 `-o ControlMaster=auto -o ControlPath=<TMPDIR>/mpx-ssh-%C -o ControlPersist=60s`,一轮巡检的几条远端命令共用一条 TCP,不再每次各付一次握手 |
 | 全量 | `gofmt` 干净、`go vet` 通过、`go test ./... -race` 九个包全绿 |
 
 生产代码 13156 行,测试 13581 行。

@@ -32,6 +32,9 @@ type NodeOps interface {
 	// InstallNode 装好节点上的 xray 核心并启动它,返回实际装上的版本。返回非空
 	// 版本表示核心已经推上去了 —— 此时出错是配置没让服务起来,不是没装成。
 	InstallNode(ctx context.Context, n model.Node, version string) (string, error)
+	// OnlineIPs 现场读出节点上每个用户此刻的在线 IP 列表(0 个或多个)。
+	// 「在线」是 xray 的 IP 粒度 —— 一个用户多个终端会贡献多个 IP。
+	OnlineIPs(ctx context.Context, n model.Node) (map[string][]string, error)
 }
 
 // StatusSource 是控制面后台任务的自报状态,GET /api/status 靠它回答。
@@ -49,6 +52,17 @@ type Server struct {
 	nodeOps NodeOps
 	status  StatusSource
 	dbPath  string
+
+	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
+	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
+	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
+	subCache subCache
+
+	// subLimiter 与 apiLimiter 是两个独立的令牌桶:订阅公网可达且无鉴权,
+	// 是扫描器与定时刷新的主战场;管理面有鉴权,但仍值得防暴力撞 token。
+	// 速率与突发见 ratelimit.go 的常数,按真实使用拍,不做配置项。
+	subLimiter *ipRateLimiter
+	apiLimiter *ipRateLimiter
 }
 
 // New 组装一台控制面。token 为空表示不校验管理接口的鉴权,只用于本机开发。
@@ -59,7 +73,14 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 	if logger == nil {
 		logger = slog.Default()
 	}
-	s := &Server{store: st, token: token, logger: logger, mux: http.NewServeMux()}
+	s := &Server{
+		store:      st,
+		token:      token,
+		logger:     logger,
+		mux:        http.NewServeMux(),
+		subLimiter: newSubLimiter(),
+		apiLimiter: newAPILimiter(),
+	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
 	}
@@ -79,11 +100,14 @@ func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
 func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes() {
-	// 订阅:不挂 /api,和各家客户端约定俗成的路径一致。
-	s.mux.HandleFunc("GET /sub/{token}", s.handleSubscribe)
-	s.mux.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
+	// 订阅:不挂 /api,和各家客户端约定俗成的路径一致。三条都裹上订阅限流桶:
+	// /sub 公网可达、无鉴权、是扫描器与定时刷新的主战场,速率见 ratelimit.go。
+	sub := http.NewServeMux()
+	sub.HandleFunc("GET /sub/{token}", s.handleSubscribe)
+	sub.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
 	// 订阅页上的"换个订阅地址":鉴权就是这个 token 本身(见 handleRotateSub)。
-	s.mux.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
+	sub.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
+	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/status", s.handleStatus)
@@ -103,6 +127,9 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/nodes/{id}/config", s.handlePreviewNodeConfig)
 	api.HandleFunc("POST /api/nodes/{id}/sync", s.handleSyncNode)
 	api.HandleFunc("POST /api/nodes/{id}/install", s.handleInstallNode)
+	api.HandleFunc("POST /api/nodes/{id}/drain", s.handleDrainNode)
+	api.HandleFunc("POST /api/nodes/{id}/undrain", s.handleUndrainNode)
+	api.HandleFunc("GET /api/nodes/{id}/online", s.handleNodeOnline)
 
 	api.HandleFunc("GET /api/inbounds", s.handleListInbounds)
 	api.HandleFunc("POST /api/inbounds", s.handleCreateInbound)
@@ -135,7 +162,7 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/backup", s.handleBackup)
 	api.HandleFunc("POST /api/restore", s.handleRestore)
 
-	s.mux.Handle("/api/", s.requireAuth(api))
+	s.mux.Handle("/api/", s.requireAuth(s.rateLimit(s.apiLimiter, api)))
 }
 
 // requireAuth 校验管理接口的 Bearer token。

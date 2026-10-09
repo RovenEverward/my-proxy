@@ -182,6 +182,54 @@ func parseUserTraffic(out string) (map[string]UserTraffic, error) {
 	return result, nil
 }
 
+// OnlineIPs 现场读出节点上每个用户此刻的在线 IP 列表。
+//
+// 用的是 `xray api statsgetallonlineusers` —— 它一次性返回整棵 onlineMap,
+// 不用为每个用户各发一次 `statsonlineiplist`(后者对一台节点上几百个用户会跑
+// 几百次 API 调用)。返回的 username → ips 的顺序不保证稳定。
+//
+// 不落库、不缓存:这个名单每一秒都在变,存了也是过期的;调用方要趋势就自己轮询。
+func OnlineIPs(ctx context.Context, r Runner, n model.Node) (map[string][]string, error) {
+	out, err := apiRun(ctx, r, n, "statsgetallonlineusers", nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseOnlineIPs(out)
+}
+
+// onlineUserEntry 是 statsgetallonlineusers 返回里单个用户的条目。
+//
+// 字段名按 xray protojson 的命名习惯猜:user / ips。
+// 剩下的字段(每个 IP 的最近活跃时间戳)目前用不上,这里不解析 —— 需要时再加。
+type onlineUserEntry struct {
+	User string   `json:"user"`
+	IPs  []string `json:"ips"`
+}
+
+type onlineUsersResponse struct {
+	Users []onlineUserEntry `json:"users"`
+}
+
+func parseOnlineIPs(out string) (map[string][]string, error) {
+	out = strings.TrimSpace(out)
+	start := strings.Index(out, "{")
+	if start < 0 {
+		return nil, fmt.Errorf("读不到 statsgetallonlineusers 响应:%s", out)
+	}
+	var resp onlineUsersResponse
+	if err := json.Unmarshal([]byte(out[start:]), &resp); err != nil {
+		return nil, fmt.Errorf("解析 statsgetallonlineusers 响应失败: %w", err)
+	}
+	result := make(map[string][]string, len(resp.Users))
+	for _, u := range resp.Users {
+		if u.User == "" {
+			continue
+		}
+		result[u.User] = u.IPs
+	}
+	return result, nil
+}
+
 func statValue(raw json.RawMessage) (int64, error) {
 	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
 	if s == "" {

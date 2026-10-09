@@ -16,7 +16,7 @@ var inboundCmd = &cobra.Command{
 	Short: "管理节点上的 xray 入站",
 }
 
-var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全", "监听", "端口", "参数"}
+var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全", "监听", "端口", "上限", "参数"}
 
 func init() {
 	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundRmCmd)
@@ -47,6 +47,7 @@ func init() {
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.wgMTU, "wg-mtu", 1420, "wireguard MTU")
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.mux, "mux", false, "订阅里给客户端开 mux")
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
+	inboundAddCmd.Flags().IntVar(&inboundAddFlags.maxUsers, "max-users", 0, "该入站能容纳的用户数上限,0 表示不限")
 }
 
 var inboundListNode int64
@@ -76,6 +77,16 @@ var inboundAddFlags struct {
 	wgMTU       int
 	mux         bool
 	fragment    bool
+	maxUsers    int
+}
+
+// maxUsersCell 把入站的用户数上限说成一个词:0 表示不限,不打印 0 让人误读成
+// 「这个入站装不下任何人」。
+func maxUsersCell(max int) string {
+	if max <= 0 {
+		return "不限"
+	}
+	return strconv.Itoa(max)
 }
 
 // inboundDetail 把传输与安全层的几个可选参数压成一列,免得表格宽到看不完。
@@ -121,6 +132,7 @@ func inboundRow(in model.Inbound) []string {
 		string(in.Security),
 		in.ListenOrDefault(),
 		strconv.Itoa(in.Port),
+		maxUsersCell(in.MaxUsers),
 		inboundDetail(in),
 	}
 }
@@ -210,6 +222,7 @@ var inboundShowCmd = &cobra.Command{
 			{"wg MTU", strconv.Itoa(in.WGMTU)},
 			{"mux", strconv.FormatBool(in.Mux)},
 			{"fragment", strconv.FormatBool(in.Fragment)},
+			{"用户上限", maxUsersCell(in.MaxUsers)},
 		})
 	},
 }
@@ -254,6 +267,7 @@ var inboundAddCmd = &cobra.Command{
 			WGMTU:       inboundAddFlags.wgMTU,
 			Mux:         inboundAddFlags.mux,
 			Fragment:    inboundAddFlags.fragment,
+			MaxUsers:    inboundAddFlags.maxUsers,
 		}
 		c, err := newClient()
 		if err != nil {
