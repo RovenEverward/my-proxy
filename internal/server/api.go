@@ -216,7 +216,9 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "控制面没有接上下发通道")
 		return
 	}
-	if err := s.nodeOps.DeployNode(r.Context(), *n, time.Now()); err != nil {
+	// 不用 r.Context():客户端断连不该把已经发出的下发半途杀掉 —— 那会让节点
+	// 停在旧配置、运维还以为是失败。HTTP 层的 deadline 已由 deployBudget 罩住。
+	if err := s.nodeOps.DeployNode(context.Background(), *n, time.Now()); err != nil {
 		// 下发失败的原因原样回给使用者:那是要照着去节点上修的东西,
 		// 换成一句"下发失败"等于把唯一的线索扔掉。
 		s.logger.Error("下发节点失败", "node", n.Name, "error", err)
@@ -247,7 +249,8 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := r.URL.Query().Get("version")
-	installed, err := s.nodeOps.InstallNode(r.Context(), *n, version)
+	// 同 sync:install 可能跑十几分钟,客户端断连不该把它半途杀掉。
+	installed, err := s.nodeOps.InstallNode(context.Background(), *n, version)
 	if err != nil {
 		s.logger.Error("安装节点核心失败", "node", n.Name, "error", err)
 		// 版本非空说明核心确实已经推上去了,是后面的配置没让服务起来 ——
