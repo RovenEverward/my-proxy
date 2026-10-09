@@ -59,6 +59,9 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	task := control.NewTask(ctrl, st, logger, opt.Interval)
 
 	srv := New(st, opt.Token, logger, opt.DBPath)
+	// 控制面连节点的密钥放在数据目录下:systemd 的 StateDirectory=mpx 保证它有、
+	// 权限对,而且备份/迁移时跟着库一起走,不会留在某个 home 里找不到。
+	srv.sshKeyPath = filepath.Join(filepath.Dir(opt.DBPath), ".ssh", "id_ed25519")
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。

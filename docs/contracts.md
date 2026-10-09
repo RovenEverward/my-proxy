@@ -254,7 +254,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
     [-p <非 22 端口>] user@address <脚本>
 ```
 
-`BatchMode=yes` 是这条设计里最要紧的一项:控制面是常驻进程,`ssh` 一旦停在等密码的提示上,整轮收敛就跟着停住。**必须先配好免密。**
+`BatchMode=yes` 是这条设计里最要紧的一项:控制面是常驻进程,`ssh` 一旦停在等密码的提示上,整轮收敛就跟着停住。**日常维护必须依赖免密公钥认证。**
+新节点首次录入时，支持通过 `mpx node add --ssh-password` 由控制面执行一次密码引导（通过 `SSH_ASKPASS` 注入，不进历史、不进参数），将控制面自身公钥追加至远端 `authorized_keys`，引导完毕后密码即刻销毁，后续全部收敛继续保持 `BatchMode=yes` 免密。
 
 `ConnectTimeout=10` 只管到握手为止,**远端命令本身另有一条 deadline**:调用点按操作给预算(采样 20 秒、收敛 60 秒、`node sync` 2 分钟、`node install` 15 分钟),`internal/node` 再兜一个 15 分钟的下限,调用方自己带了更短的 deadline 就以调用方为准。超时和连不上是两种错,报错文本分开写:超时是「命令超时(节点卡住了)」,连不上还是 `ssh` 原话。理由见 [decisions.md](decisions.md) 第 17、18 条。
 

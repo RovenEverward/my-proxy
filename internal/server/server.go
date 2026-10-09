@@ -53,6 +53,11 @@ type Server struct {
 	status  StatusSource
 	dbPath  string
 
+	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
+	// 由 serve.go 定在数据目录下(与 systemd StateDirectory 对齐);测试里没设的
+	// 话 EnsureSSHKey 会回退到 ~/.ssh。
+	sshKeyPath string
+
 	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。

@@ -194,6 +194,10 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 
 ## 其他文档
 
+### 用户帮助与运维指南
+- [用户手册导航](user/README.md)：包含新手教程（Tutorial）、各场景运维指南（How-to Guides）与参考手册（Reference）。
+
+### 内部工程与决策文档
 | 文档 | 回答什么 |
 | --- | --- |
 | [model.md](model.md) | 数据长什么样、状态怎么判 |

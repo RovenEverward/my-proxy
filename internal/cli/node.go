@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -30,6 +31,10 @@ func init() {
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.apiPort, "api-port", 0, "xray API 入站端口,0 表示 10085")
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.configPath, "config-path", "", "节点上的 config.json 路径,空表示 /etc/mpx/xray/config.json")
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serviceName, "service-name", "", "systemd 服务名,空表示 mpx-xray")
+	// 密码报到:非空时控制面先拿它登进去装公钥,装不上就当这次建节点没发生。
+	// 空表示节点上已经信任控制面的密钥(装过了 / 手工放过),直接落库。
+	nodeAddCmd.Flags().BoolVar(&nodeAddFlags.sshPassword, "ssh-password", false,
+		"提示输一次 SSH 密码,用它把控制面的公钥装上节点(之后全程用密钥)")
 
 	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
 }
@@ -426,6 +431,7 @@ var nodeAddFlags struct {
 	apiPort     int
 	configPath  string
 	serviceName string
+	sshPassword bool
 }
 
 var nodeAddCmd = &cobra.Command{
@@ -445,11 +451,28 @@ var nodeAddCmd = &cobra.Command{
 			ConfigPath:  nodeAddFlags.configPath,
 			ServiceName: nodeAddFlags.serviceName,
 		}
+
+		var password string
+		if nodeAddFlags.sshPassword {
+			// 密码走 TTY 提示而不是 flag 值:--password xxx 会留在 shell 历史和
+			// ps 里,提示输入不会。
+			pw, err := promptPassword(fmt.Sprintf("节点 %s 的 SSH 密码: ", n.Address))
+			if err != nil {
+				return err
+			}
+			password = pw
+		}
+
 		c, err := newClient()
 		if err != nil {
 			return err
 		}
-		raw, err := c.do("POST", "/api/nodes", n)
+		// 请求体在 Node 之外多个 ssh_password:它只是一次性的钥匙,不进 model.Node。
+		body := struct {
+			model.Node
+			SSHPassword string `json:"ssh_password,omitempty"`
+		}{Node: n, SSHPassword: password}
+		raw, err := c.do("POST", "/api/nodes", body)
 		if err != nil {
 			return err
 		}
@@ -462,6 +485,34 @@ var nodeAddCmd = &cobra.Command{
 		}
 		return report(raw, "已创建节点 %d(%s)", created.ID, created.Name)
 	},
+}
+
+// promptPassword 在 TTY 上问一次密码,不回显。
+//
+// 用 term.ReadPassword 而不是自己读 stdin:回显开关是终端自己的事,读错模式会把
+// 密码原样打出来。stdin 不是 TTY(管道、重定向)时退回读一行 —— 脚本里没法交互,
+// 只能走 stdin 喂。
+func promptPassword(prompt string) (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		var pw string
+		if _, err := fmt.Fscanln(os.Stdin, &pw); err != nil {
+			return "", fmt.Errorf("从 stdin 读密码: %w", err)
+		}
+		if pw == "" {
+			return "", errors.New("密码不能为空")
+		}
+		return pw, nil
+	}
+	fmt.Fprint(os.Stderr, prompt)
+	pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr) // ReadPassword 不吃回车,补个换行让提示符回行首
+	if err != nil {
+		return "", fmt.Errorf("读密码: %w", err)
+	}
+	if len(pw) == 0 {
+		return "", errors.New("密码不能为空")
+	}
+	return string(pw), nil
 }
 
 var nodeRmCmd = &cobra.Command{

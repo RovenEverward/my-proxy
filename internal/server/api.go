@@ -13,6 +13,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/control"
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
@@ -86,15 +87,44 @@ func (s *Server) freshNodeStatus(ctx context.Context, n model.Node, now time.Tim
 	return st, nil
 }
 
+// createNodeRequest 是 POST /api/nodes 的请求体。
+//
+// Node 之外的字段都不是库里的东西:SSHPassword 只是一次性的钥匙,登一次就烧掉,
+// 所以不进 model.Node —— 进库就等于「密码存了下来」,那是另一回事。
+type createNodeRequest struct {
+	model.Node
+	SSHPassword string `json:"ssh_password,omitempty"`
+}
+
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
-	var n model.Node
-	if !decodeBody(w, r, &n) {
+	var req createNodeRequest
+	if !decodeBody(w, r, &req) {
 		return
 	}
+	n := req.Node
 	if msg := validateNode(&n); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+
+	if req.SSHPassword != "" {
+		// 密码来报到:先用它把控制面公钥装上节点,装不上就当这次建节点没发生。
+		// 失败原样回给使用者:密码错、密码认证没开、连不上,都是从 ssh 那边
+		// 原话带回来的线索。
+		pubkey, err := node.EnsureSSHKey(s.sshKeyPath)
+		if err != nil {
+			s.logger.Error("准备控制面 SSH 密钥失败", "error", err)
+			writeError(w, http.StatusInternalServerError, "准备控制面 SSH 密钥失败: "+err.Error())
+			return
+		}
+		if err := node.BootstrapNode(r.Context(), n, pubkey, req.SSHPassword); err != nil {
+			s.logger.Error("密码引导节点失败", "node", n.Name, "error", err)
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		s.logger.Info("已用密码把公钥装上节点", "node", n.Name, "address", n.Address)
+	}
+
 	if err := s.store.CreateNode(&n); err != nil {
 		s.writeStoreError(w, err, "节点")
 		return
