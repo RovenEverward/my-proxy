@@ -117,7 +117,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "准备控制面 SSH 密钥失败: "+err.Error())
 			return
 		}
-		if err := node.BootstrapNode(r.Context(), n, pubkey, req.SSHPassword); err != nil {
+		if err := node.BootstrapNode(r.Context(), n, s.sshKeyPath, pubkey, req.SSHPassword); err != nil {
 			s.logger.Error("密码引导节点失败", "node", n.Name, "error", err)
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
