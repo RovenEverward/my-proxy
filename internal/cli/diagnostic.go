@@ -601,7 +601,7 @@ func printFusionReport(cmd *cobra.Command, raw json.RawMessage) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "Fusion 体检原因: %s\n", report.Error)
 	}
 	if report.Truncated {
-		fmt.Fprintln(cmd.OutOrStdout(), "提示: Fusion 报告已达到大小上限,输出已截断")
+		fmt.Fprintln(cmd.OutOrStdout(), "提示: Fusion 报告已压缩或截断;省略字段见各模块")
 	}
 	for _, warning := range report.Warnings {
 		fmt.Fprintf(cmd.OutOrStdout(), "提示: %s\n", warning)
@@ -611,18 +611,38 @@ func printFusionReport(cmd *cobra.Command, raw json.RawMessage) error {
 
 func printFusionComponents(cmd *cobra.Command, raw json.RawMessage) {
 	var data struct {
+		Composed   bool                 `json:"adapter_composed"`
+		Stages     []fusion.StageRecord `json:"adapter_stages"`
 		Components []struct {
-			Name          string          `json:"name"`
-			SchemaVersion string          `json:"schema_version"`
-			Status        string          `json:"status"`
-			Payload       json.RawMessage `json:"payload"`
+			Name           string          `json:"name"`
+			SchemaVersion  string          `json:"schema_version"`
+			Status         string          `json:"status"`
+			Payload        json.RawMessage `json:"payload"`
+			Omissions      json.RawMessage `json:"payload_omissions"`
+			OmissionReason string          `json:"payload_omission_reason"`
 		} `json:"components"`
 	}
 	if json.Unmarshal(raw, &data) != nil {
 		return
 	}
+	if data.Composed {
+		fmt.Fprintln(cmd.OutOrStdout(), "Fusion 报告按阶段保留官方运行结果;后阶段不会覆盖前阶段证据")
+	}
+	for _, stage := range data.Stages {
+		fmt.Fprintf(cmd.OutOrStdout(), "Fusion 阶段: %s  状态: %s  上游状态: %s  耗时: %.0f ms\n", stage.Name, dash(stage.Status), dash(stage.OfficialStatus), stage.DurationMS)
+		fmt.Fprintf(cmd.OutOrStdout(), "阶段已执行: %s\n", yesNo(stage.Attempted))
+		if stage.Error != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "阶段原因: %s\n", stage.Error)
+		}
+	}
 	for _, component := range data.Components {
 		fmt.Fprintf(cmd.OutOrStdout(), "Fusion 模块: %s  状态: %s  格式: %s\n", dash(component.Name), dash(component.Status), dash(component.SchemaVersion))
+		if component.OmissionReason != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "载荷省略原因: %s\n", component.OmissionReason)
+		}
+		if len(component.Omissions) > 0 && string(component.Omissions) != "null" {
+			fmt.Fprintf(cmd.OutOrStdout(), "精简字段清单: %s\n", component.Omissions)
+		}
 		if len(component.Payload) == 0 || string(component.Payload) == "null" {
 			continue
 		}
