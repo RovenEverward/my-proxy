@@ -70,9 +70,9 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			r := cfg["route"].(map[string]any)
-			first := r["rules"].([]any)[0].(map[string]any)
-			if first["outbound"] != "mpx-media" || r["final"] == "mpx-media" {
-				t.Fatal(r)
+			rules := r["rules"].([]any)
+			if len(rules) < 3 || rules[0].(map[string]any)["action"] != "sniff" || rules[1].(map[string]any)["action"] != "hijack-dns" || rules[2].(map[string]any)["outbound"] != "mpx-media" || r["final"] == "mpx-media" {
+				t.Fatal("purpose must follow preprocessing and precede domain routes")
 			}
 			for _, o := range cfg["outbounds"].([]any) {
 				m := o.(map[string]any)
@@ -110,7 +110,7 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 			var cfg map[string]any
 			_ = json.Unmarshal(b, &cfg)
 			route := cfg["route"].(map[string]any)
-			if route["final"] != "mpx-daily" || route["rules"].([]any)[0].(map[string]any)["outbound"] != "mpx-media" {
+			if route["final"] != "mpx-daily" || route["rules"].([]any)[2].(map[string]any)["outbound"] != "mpx-media" {
 				t.Fatal(route)
 			}
 		}
