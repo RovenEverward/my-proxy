@@ -77,7 +77,8 @@ export default defineConfig({
             { text: '关键决策与理由', link: '/internal/decisions' },
             { text: '现状', link: '/internal/status' },
             { text: '路线图', link: '/internal/roadmap' },
-            { text: '缺口与待定项', link: '/internal/open-questions' }
+            { text: '缺口与待定项', link: '/internal/open-questions' },
+            { text: '节点能力检测验证记录', link: '/internal/capability-validation' }
           ]
         }
       ]
