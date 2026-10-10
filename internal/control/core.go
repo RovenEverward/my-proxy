@@ -159,6 +159,40 @@ func (c *Control) sampleSingBox(ctx context.Context, n model.Node, d model.CoreD
 	return errors.Join(errs...)
 }
 
+func (c *Control) coreSampleBudget() time.Duration {
+	if c.sampleTimeout > 0 {
+		return c.sampleTimeout
+	}
+	return sampleBudget
+}
+func (c *Control) coreReconcileBudget() time.Duration {
+	if c.reconcileTimeout > 0 {
+		return c.reconcileTimeout
+	}
+	return reconcileBudget
+}
+
+func coreRequirements(n model.Node, d model.CoreDeployment, inbounds []model.Inbound) (xray, quic bool) {
+	quic = len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0 || d.DeployedHash != ""
+	xray = len(model.InboundsForCore(inbounds, model.CoreXray)) > 0 || n.DeployedHash != "" || (len(inbounds) == 0 && !quic)
+	return
+}
+
+// hasMultipleCores conservatively keeps reconciliation active if metadata cannot
+// be read: a bookkeeping error must not turn into a healthy-core revocation skip.
+func (c *Control) hasMultipleCores(n model.Node) bool {
+	inbounds, err := c.store.ListInbounds(n.ID)
+	if err != nil {
+		return true
+	}
+	d, err := c.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		return true
+	}
+	xray, quic := coreRequirements(n, *d, inbounds)
+	return quic && xray
+}
+
 func (c *Control) sampleCores(ctx context.Context, n model.Node, now time.Time) error {
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
@@ -169,16 +203,21 @@ func (c *Control) sampleCores(ctx context.Context, n model.Node, now time.Time) 
 		return err
 	}
 	var errs []error
+	xray, quic := coreRequirements(n, *d, inbounds)
 	// An existing deployment still needs sampling after its last inbound is removed.
-	if len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0 || d.DeployedHash != "" {
-		if err := c.sampleSingBox(ctx, n, *d, now); err != nil {
+	if quic {
+		coreCtx, cancel := context.WithTimeout(ctx, c.coreSampleBudget())
+		if err := c.sampleSingBox(coreCtx, n, *d, now); err != nil {
 			errs = append(errs, err)
 		}
+		cancel()
 	}
-	if len(model.InboundsForCore(inbounds, model.CoreXray)) > 0 || len(inbounds) == 0 {
-		if err := c.sampleXrayTraffic(ctx, n, now); err != nil {
+	if xray {
+		coreCtx, cancel := context.WithTimeout(ctx, c.coreSampleBudget())
+		if err := c.sampleXrayTraffic(coreCtx, n, now); err != nil {
 			errs = append(errs, err)
 		}
+		cancel()
 	}
 	return errors.Join(errs...)
 }

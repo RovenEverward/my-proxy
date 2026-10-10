@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -20,19 +21,15 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 单节点操作的预算:一个节点在一轮动作里最多花多久。
-//
-// 这是「上限」而不是「预期耗时」:超了就把这一节点这一轮记成失败,继续下一个 ——
-// 一台节点卡住不该让其余节点这一轮什么都收不到。每个数都比 node.DefaultTimeout
-// 紧得多,因为调用方知道这类命令要多久,兜底值只是保险。
+// 每核心操作预算。混合节点分别创建上下文，故障核心不能耗尽健康核心的预算。
+// 这是上限而不是预期耗时；两核心均到达上限时，一轮可能超过后台采样周期。
 const (
-	// sampleBudget 是采样一台节点的上限:节点上就一条 statsquery。20 秒必须留在
-	// 30 秒的周期之内,慢过周期就会让后台任务永久落后。
+	// sampleBudget 是一个核心采样的上限，通常只有一次 statsquery。
 	sampleBudget = 20 * time.Second
-	// reconcileBudget 是收敛一台节点的上限:可能连着加很多用户,每条 xray api
+	// reconcileBudget 是一个核心收敛的上限:可能连着加很多用户,每条 xray api
 	// 约 0.3 秒,几十条也就十几秒;60 秒是余量,不是常态。
 	reconcileBudget = 60 * time.Second
-	// deployBudget 是 node sync 下发一台节点的上限:推一份几十 KB 的配置 +
+	// deployBudget 是 node sync 下发一个核心的上限:推一份几十 KB 的配置 +
 	// xray -test + 重启 + 等它起来,两分钟足够。
 	deployBudget = 2 * time.Minute
 	// installBudget 是 node install 的上限:要推 65MB(核心加两份 geodata),
@@ -47,6 +44,9 @@ type Control struct {
 	runner   node.Runner
 	logger   *slog.Logger
 	cacheDir string
+	// Internal overrides keep deadline-exhaustion regression tests fast.
+	sampleTimeout    time.Duration
+	reconcileTimeout time.Duration
 }
 
 // New 接起这一层。
@@ -65,30 +65,34 @@ func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *
 func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) error {
 	unlock := c.lockNode(n.ID)
 	defer unlock()
-	ctx, cancel := context.WithTimeout(ctx, deployBudget)
-	defer cancel()
-
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
 		return err
 	}
-	if err := c.deploySingBox(ctx, n, now, false); err != nil {
+	d, err := c.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
 		return err
 	}
+	xrayRequired, _ := coreRequirements(n, *d, inbounds)
+	quicCtx, cancelQUIC := context.WithTimeout(ctx, deployBudget)
+	quicErr := c.deploySingBox(quicCtx, n, now, false)
+	cancelQUIC()
+	ctx, cancelXray := context.WithTimeout(ctx, deployBudget)
+	defer cancelXray()
 	// Final QUIC accounting may change a shared user's quota status.
 	users, err := c.store.ListUsers()
 	if err != nil {
 		return err
 	}
-	if len(model.InboundsForCore(inbounds, model.CoreXray)) == 0 && len(inbounds) > 0 && n.DeployedHash == "" {
-		return nil
+	if !xrayRequired {
+		return quicErr
 	}
 	cfg, err := render.ServerConfig(n, inbounds, users, now)
 	if err != nil {
-		return fmt.Errorf("渲染节点 %s 的配置失败: %w", n.Name, err)
+		return errors.Join(quicErr, fmt.Errorf("渲染节点 %s 的配置失败: %w", n.Name, err))
 	}
 	if err := node.Deploy(ctx, c.runner, n, cfg); err != nil {
-		return fmt.Errorf("下发到节点 %s 失败: %w", n.Name, err)
+		return errors.Join(quicErr, fmt.Errorf("下发到节点 %s 失败: %w", n.Name, err))
 	}
 
 	// 下发成功才记基准,失败不记:写下去的是"节点上现在跑的是这一份"这个断言,
@@ -98,9 +102,9 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	// 存渲染内容的 sha256,与节点上 `sha256sum config.json` 得到的是同一种东西:
 	// node.Deploy 原样写入 cfg,两边算的是同一串字节。
 	if err := c.store.SetNodeDeployed(n.ID, hashOf(cfg), now); err != nil {
-		return fmt.Errorf("记录节点 %s 的下发哈希失败: %w", n.Name, err)
+		return errors.Join(quicErr, fmt.Errorf("记录节点 %s 的下发哈希失败: %w", n.Name, err))
 	}
-	return nil
+	return quicErr
 }
 
 // hashOf 是配置内容的 sha256,十六进制小写 —— 与节点上 sha256sum 的输出同格式,
@@ -139,8 +143,6 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 // 单个用户的写入失败只记日志、不中断整轮:一个用户的流量对不上,不该让其余
 // 几百个人的用量也停止累计。
 func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time) error {
-	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
-	defer cancel()
 	unlock := c.lockNode(n.ID)
 	defer unlock()
 	return c.sampleCores(ctx, n, now)
@@ -200,23 +202,24 @@ func (c *Control) sampleXrayTraffic(ctx context.Context, n model.Node, now time.
 func (c *Control) ReconcileUsers(ctx context.Context, n model.Node, now time.Time) error {
 	unlock := c.lockNode(n.ID)
 	defer unlock()
-	ctx, cancel := context.WithTimeout(ctx, reconcileBudget)
-	defer cancel()
-
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
 		return err
 	}
 	var firstErr error
-	if err := c.deploySingBox(ctx, n, now, false); err != nil {
+	quicCtx, cancelQUIC := context.WithTimeout(ctx, c.coreReconcileBudget())
+	if err := c.deploySingBox(quicCtx, n, now, false); err != nil {
 		firstErr = err
 	}
+	cancelQUIC()
+	xrayCtx, cancelXray := context.WithTimeout(ctx, c.coreReconcileBudget())
+	defer cancelXray()
 	users, err := c.store.ListUsers()
 	if err != nil {
 		return err
 	}
 	for _, in := range model.InboundsForCore(inbounds, model.CoreXray) {
-		if err := c.reconcileInbound(ctx, n, in, users, now); err != nil {
+		if err := c.reconcileInbound(xrayCtx, n, in, users, now); err != nil {
 			c.logger.Warn("同步入站人员失败", "node", n.Name, "inbound", in.TagOrDefault(), "error", err)
 			if firstErr == nil {
 				firstErr = err

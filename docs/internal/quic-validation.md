@@ -39,6 +39,8 @@ MPX_SINGBOX_LIVE_CLIENT="$PWD/.spike/sing-box-1.14.3-darwin-arm64/sing-box" \
 
 控制器测试使用 fake SSH 与进程内 gRPC，属于单元集成证据：两核心计数隔离、进程世代变更、配额摘除、最终采样跨限后的重新暂存、删除用户残留计数、稳定配置不重启、采样/启动失败不写成功哈希。SQLite 测试覆盖原子记账、重复并发采样与旧库迁移；备份测试覆盖恢复后核心元数据、流量与进程世代。
 
+混合核心回归进一步覆盖 Xray 和 sing-box 故障的两个方向：三轮执行超限摘除、禁用和恢复授权，整节点退避窗口不阻断健康核心，每轮失败计数仅增加一次。实际 gRPC 处理器阻塞到请求上下文取消，在 30 毫秒测试预算耗尽后，Xray 仍得到未取消的独立上下文。删除最后一个 QUIC 入站会最终采样并下发空入站配置，不查询不存在的 Xray。`go test -race ./internal/control -run '^TestSingBox' -count=1 -v` 全十组通过，耗时 4.181 秒。
+
 最终检查命令：
 
 ```sh
@@ -52,7 +54,27 @@ npm run docs:build
 
 全量 Go 检查与文档构建通过。首次文档构建因未安装 VitePress 返回 `sh: vitepress: command not found`，安装锁定依赖后通过；npm 报告现有锁定依赖的 2 个 moderate、1 个 high 漏洞，未更改依赖锁。
 
-真实运行证明认证、分用户 TCP/UDP 计量与核心重启撤销。到期、续费、配额、排水和备份行为由模型、渲染、存储与控制器测试覆盖；没有将它们全部描述为远端真实生命周期验收。混合 Xray/QUIC 的配置隔离有测试，未在同一远端容器运行 Xray 作为完整混合核心验收。
+## 混合核心真实生命周期
+
+另外在隔离 Ubuntu 22.04 Linux arm64 systemd 容器同机运行 Xray 与 sing-box，SSH 端口 `19422`，入站端口 `19401`、`19402`、`19403`。Xray 为官方 v26.3.27、提交 `d2758a0`，Linux 二进制 SHA256 为 `c2d20a7045250497083afea0d79db0672f6c89a25aaaf37c92de034d6b764b04`；sing-box 为同一固定 v1.14.3 源码构建，SHA256 为 `a37a25914f63e7a8e3be2e29678ead8108fac487e647abd545f16f41db6e786d`，两服务均实际 active。
+
+运行器直接调用生产 `Control`、SSH、安装与备份接口，使用官方 macOS 客户端。排水与订阅经过真实 HTTP 处理器；用户重置、授权、到期和续费通过生产 Store 方法加 Control 收敛完成，没有覆盖这些用户变更的 HTTP 路由。证书为自签，测试客户端允许 insecure。echo 的 `8.8.8.8:19490` 仅分配在专用容器回环，不发送公网流量，生产私网目标限制保持启用。
+
+```sh
+PATH="$PWD/.spike/mixed-live:$PATH" \
+  go run ./.spike/mixed-live >.spike/mixed-live/run.log 2>&1
+```
+
+运行结果为 `PASS mixed SSH+Control lifecycle runtime`，包含下列实际观察：
+
+- Alice 的 sing-box 上下行各 `50,176` 字节，Xray 上下行各 `50,176` 字节，合并 used/lifetime 为 `200,704/200,704`；Bob 为 `24,576`。重复采样没有再次累加。
+- 配额设为 `180,000` 后，Alice 的已有 Hysteria2 连接断开，Hysteria2、TUIC、VLESS 新认证全部被拒绝。已有 Xray TCP 连接仍可 echo；未单独持有 TUIC 活跃连接作该项验证。
+- 排水使真实 HTTP 订阅候选由 `3` 变为 `0`；已有 Hysteria2 和 Xray 连接仍传输，sing-box `InvocationID` 不变。
+- 用量重置保留累计用量 `201,728`；再次传输后 used/lifetime 为 `4,160/205,888`，三协议均可重新认证。
+- 将授权收窄到 Hysteria2 和 VLESS 后，TUIC 拒绝认证，另外两协议正常；到期后两核心拒绝新连接，续费并恢复授权后全部三协议恢复。
+- `Backup.Create`、`Validate` 和恢复后的 Store 比较通过：核心部署元数据、两个核心计数基准、节点部署哈希、三个入站均一致，used/lifetime 为 `9,280/211,008`。
+
+运行器、日志和包含测试凭据的备份留在本地 spike 中，不作为源码提交。容器由验证代理按其名称、ID 核对后清理；其他节点不受影响。
 
 ## 已知运行边界
 
