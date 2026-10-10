@@ -32,6 +32,8 @@ type ServeOptions struct {
 // 使用者显式触发(CLI 的 node sync);启动后自动做的只有人员名单的收敛,那是不
 // 重启就能完成的。
 func Serve(ctx context.Context, opt ServeOptions) error {
+	ctx, stopWorkers := context.WithCancel(ctx)
+	defer stopWorkers()
 	logger := opt.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -76,11 +78,16 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 
+	capabilityDone := make(chan struct{})
+	go func() { defer close(capabilityDone); ctrl.RunCapabilityChecks(ctx) }()
+	defer func() { stopWorkers(); <-capabilityDone }()
+
 	taskDone := make(chan struct{})
 	go func() {
 		defer close(taskDone)
 		task.Run(ctx)
 	}()
+	defer func() { stopWorkers(); <-taskDone }()
 
 	errCh := make(chan error, 1)
 	go func() {

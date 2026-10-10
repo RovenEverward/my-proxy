@@ -30,8 +30,9 @@ type subPageData struct {
 	Token      string
 	// Rotated 非空表示刚换过地址,页面上要把新地址亮出来 —— 这一次渲染是用户
 	// 保存新地址的唯一机会。
-	Rotated string
-	Links   []subPageLink
+	Rotated      string
+	Links        []subPageLink
+	Capabilities []subCapability
 }
 
 var subPageTmpl = template.Must(template.New("subpage").Parse(subPageHTML))
@@ -67,6 +68,13 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 		{Name: "sing-box", URL: sub + "/sing-box"},
 		{Name: "xray", URL: sub + "/xray"},
 		{Name: "base64", URL: sub + "/base64-links"},
+	}
+
+	var err error
+	data.Capabilities, err = s.subscriberCapabilities(user, now)
+	if err != nil {
+		s.writeStoreError(w, err, "节点能力")
+		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -232,6 +240,12 @@ button { font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer;
 {{range .Links}}<li><span class="name">{{.Name}}</span><code>{{.URL}}</code><button type="button" data-url="{{.URL}}">复制</button></li>
 {{end}}</ul>
 <div id="qr"></div>
+
+{{if .Capabilities}}<h2>节点能力</h2>
+<p class="muted">结果来自指定入口的代理出口。YouTube 表示连通；Netflix 表示目录检测，不能保证登录播放。过期或变化的结果显示未知。</p>
+{{range .Capabilities}}<details><summary>{{.Entrance}} · {{.Target}} · {{.Status}}{{if .Region}} · {{.Region}}{{end}}</summary>
+<p>{{if .ExitIP}}出口 IP:{{.ExitIP}}<br>{{end}}检测时间:{{.Checked}}<br>有效至:{{.Expires}}<br>检测位置:{{.Location}}{{if .Reason}}<br>{{.Reason}}{{end}}</p></details>{{end}}
+{{end}}
 
 <form class="rotate" method="post" action="/sub/{{.Token}}/rotate">
 <button type="submit">换个订阅地址</button>

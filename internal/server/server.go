@@ -135,6 +135,9 @@ func (s *Server) routes() {
 	api.HandleFunc("POST /api/nodes/{id}/drain", s.handleDrainNode)
 	api.HandleFunc("POST /api/nodes/{id}/undrain", s.handleUndrainNode)
 	api.HandleFunc("GET /api/nodes/{id}/online", s.handleNodeOnline)
+	api.HandleFunc("GET /api/nodes/{id}/capabilities", s.handleGetCapabilities)
+	api.HandleFunc("PUT /api/nodes/{id}/capabilities", s.handlePutCapabilities)
+	api.HandleFunc("POST /api/nodes/{id}/capabilities/probe", s.handleProbeCapabilities)
 
 	api.HandleFunc("GET /api/inbounds", s.handleListInbounds)
 	api.HandleFunc("POST /api/inbounds", s.handleCreateInbound)

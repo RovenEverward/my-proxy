@@ -43,10 +43,11 @@ const (
 
 // Control 持有跨节点动作需要的依赖。
 type Control struct {
-	store    *store.Store
-	runner   node.Runner
-	logger   *slog.Logger
-	cacheDir string
+	store          *store.Store
+	runner         node.Runner
+	logger         *slog.Logger
+	cacheDir       string
+	capabilitySlot chan struct{}
 }
 
 // New 接起这一层。
@@ -57,7 +58,7 @@ func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir}
+	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir, capabilitySlot: make(chan struct{}, 1)}
 }
 
 // DeployNode 渲染该节点的完整配置并下发,然后重启 xray。
