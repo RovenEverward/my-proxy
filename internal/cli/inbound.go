@@ -19,7 +19,7 @@ var inboundCmd = &cobra.Command{
 var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全", "监听", "端口", "上限", "参数"}
 
 func init() {
-	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundRmCmd)
+	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundEditCmd, inboundRmCmd)
 
 	inboundListCmd.Flags().Int64Var(&inboundListNode, "node", 0, "只看这个节点上的入站")
 
@@ -48,6 +48,31 @@ func init() {
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.mux, "mux", false, "订阅里给客户端开 mux")
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.maxUsers, "max-users", 0, "该入站能容纳的用户数上限,0 表示不限")
+
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.tag, "tag", "", "新的入站 tag")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.protocol, "protocol", "", "新的协议:vless / vmess / trojan / shadowsocks / wireguard")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.listen, "listen", "", "新的监听地址,空表示 0.0.0.0")
+	inboundEditCmd.Flags().IntVar(&inboundEditFlags.port, "port", 0, "新的监听端口")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.network, "network", "", "新的传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.security, "security", "", "新的安全层:none / tls / reality")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.wsPath, "ws-path", "", "ws 传输的路径")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.grpcService, "grpc-service", "", "gRPC 传输的 serviceName")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.sni, "sni", "", "TLS / REALITY 的 SNI")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.alpn, "alpn", "", "ALPN,逗号分隔;给空串表示清空")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.fingerprint, "fingerprint", "", "客户端 uTLS 指纹")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.certFile, "cert-file", "", "TLS 证书在节点上的路径")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.keyFile, "key-file", "", "TLS 私钥在节点上的路径")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.realityDest, "reality-dest", "", "REALITY 回落目标,如 www.microsoft.com:443")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.shortIDs, "short-ids", "", "REALITY shortId,逗号分隔;给空串表示清空")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.flow, "flow", "", "VLESS flow,如 xtls-rprx-vision")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.xhttpPath, "xhttp-path", "", "xhttp / splithttp / httpupgrade 的路径")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.xhttpHost, "xhttp-host", "", "xhttp / splithttp / httpupgrade 的 Host")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.xhttpMode, "xhttp-mode", "", "xhttp mode:auto / packet-up / stream-up / stream-one")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.wgAddress, "wg-address", "", "wireguard 服务端隧道地址,如 10.0.0.1/24")
+	inboundEditCmd.Flags().IntVar(&inboundEditFlags.wgMTU, "wg-mtu", 0, "wireguard MTU")
+	inboundEditCmd.Flags().BoolVar(&inboundEditFlags.mux, "mux", false, "订阅里给客户端开 mux")
+	inboundEditCmd.Flags().BoolVar(&inboundEditFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
+	inboundEditCmd.Flags().IntVar(&inboundEditFlags.maxUsers, "max-users", 0, "该入站能容纳的用户数上限,0 表示不限")
 }
 
 var inboundListNode int64
@@ -306,6 +331,175 @@ var inboundRmCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "已删除入站 %d", id)
+	},
+}
+
+// inboundEditFlags 是 inbound edit 的可选字段。
+//
+// 和 node edit 一样,只认 Changed() 过的 flag:入站有二十多个字段,要求调用方
+// 把没改的抄一遍既啰嗦又容易抄错。
+var inboundEditFlags struct {
+	tag         string
+	protocol    string
+	listen      string
+	port        int
+	network     string
+	security    string
+	wsPath      string
+	grpcService string
+	sni         string
+	alpn        string
+	fingerprint string
+	certFile    string
+	keyFile     string
+	realityDest string
+	shortIDs    string
+	flow        string
+	xhttpPath   string
+	xhttpHost   string
+	xhttpMode   string
+	wgAddress   string
+	wgMTU       int
+	mux         bool
+	fragment    bool
+	maxUsers    int
+}
+
+var inboundEditCmd = &cobra.Command{
+	Use:   "edit <id>",
+	Short: "改一个入站",
+	Long: `改一个入站。只改给出来的字段,没给的保持原样。
+
+  mpx inbound edit 7 --port 8443
+  mpx inbound edit 7 --max-users 100 --sni example.com
+
+改结构(端口、协议、传输、安全层、证书)之后节点上还是旧的,要跑一次
+mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-users 不用
+下发:它只在订阅层生效。
+
+改协议或安全层时,服务端自己那侧的密钥(REALITY 密钥对、wireguard 私钥)
+在原本就是同一协议的情况下会原样留住;换过协议再换回来则是新的一对,客户端
+要用新配置。
+
+--alpn / --short-ids 给空串表示清空这个列表,不给则是保持原样。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		// 读-改-写:服务端那条 PUT 是整体替换,只发改动的字段会把别的清掉。
+		// 入站字段多,这一点比节点更要紧。
+		raw, err := c.do("GET", inboundPath(id), nil)
+		if err != nil {
+			return err
+		}
+		in, err := decode[model.Inbound](raw)
+		if err != nil {
+			return err
+		}
+		oldPort := in.Port
+		oldNetwork := in.Network
+		oldSecurity := in.Security
+
+		changed := func(name string) bool { return cmd.Flags().Changed(name) }
+		if changed("tag") {
+			in.Tag = inboundEditFlags.tag
+		}
+		if changed("protocol") {
+			in.Protocol = model.Protocol(inboundEditFlags.protocol)
+		}
+		if changed("listen") {
+			in.Listen = inboundEditFlags.listen
+		}
+		if changed("port") {
+			in.Port = inboundEditFlags.port
+		}
+		if changed("network") {
+			in.Network = model.Network(inboundEditFlags.network)
+		}
+		if changed("security") {
+			in.Security = model.Security(inboundEditFlags.security)
+		}
+		if changed("ws-path") {
+			in.WSPath = inboundEditFlags.wsPath
+		}
+		if changed("grpc-service") {
+			in.GRPCService = inboundEditFlags.grpcService
+		}
+		if changed("sni") {
+			in.SNI = inboundEditFlags.sni
+		}
+		if changed("alpn") {
+			in.ALPN = splitCSV(inboundEditFlags.alpn)
+		}
+		if changed("fingerprint") {
+			in.Fingerprint = inboundEditFlags.fingerprint
+		}
+		if changed("cert-file") {
+			in.CertFile = inboundEditFlags.certFile
+		}
+		if changed("key-file") {
+			in.KeyFile = inboundEditFlags.keyFile
+		}
+		if changed("reality-dest") {
+			in.RealityDest = inboundEditFlags.realityDest
+		}
+		if changed("short-ids") {
+			in.ShortIDs = splitCSV(inboundEditFlags.shortIDs)
+		}
+		if changed("flow") {
+			in.Flow = inboundEditFlags.flow
+		}
+		if changed("xhttp-path") {
+			in.XHTTPPath = inboundEditFlags.xhttpPath
+		}
+		if changed("xhttp-host") {
+			in.XHTTPHost = inboundEditFlags.xhttpHost
+		}
+		if changed("xhttp-mode") {
+			in.XHTTPMode = inboundEditFlags.xhttpMode
+		}
+		if changed("wg-address") {
+			in.WGAddress = inboundEditFlags.wgAddress
+		}
+		if changed("wg-mtu") {
+			in.WGMTU = inboundEditFlags.wgMTU
+		}
+		if changed("mux") {
+			in.Mux = inboundEditFlags.mux
+		}
+		if changed("fragment") {
+			in.Fragment = inboundEditFlags.fragment
+		}
+		if changed("max-users") {
+			in.MaxUsers = inboundEditFlags.maxUsers
+		}
+
+		raw, err = c.do("PUT", inboundPath(id), in)
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		updated, err := decode[model.Inbound](raw)
+		if err != nil {
+			return err
+		}
+		if err := report(raw, "已更新入站 %d(%s)", updated.ID, updated.TagOrDefault()); err != nil {
+			return err
+		}
+		// 改了端口 / 传输 / 安全层 = 节点上那份 config.json 已经对不上了。
+		if in.Port != oldPort || in.Network != oldNetwork || in.Security != oldSecurity {
+			fmt.Println("注意:改的是节点配置,节点上还是旧的;跑 mpx node sync " +
+				strconv.FormatInt(updated.ID, 10) + " 才生效(会重启 xray)")
+		}
+		return nil
 	},
 }
 

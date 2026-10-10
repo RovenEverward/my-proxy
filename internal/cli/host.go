@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -18,7 +19,7 @@ var hostCmd = &cobra.Command{
 var hostHeaders = []string{"ID", "入站", "备注", "地址", "端口", "SNI", "Host 头", "路径", "ALPN"}
 
 func init() {
-	hostCmd.AddCommand(hostListCmd, hostAddCmd, hostRmCmd)
+	hostCmd.AddCommand(hostListCmd, hostAddCmd, hostEditCmd, hostRmCmd)
 
 	hostListCmd.Flags().Int64Var(&hostListInbound, "inbound", 0, "所属入站 id,必填")
 
@@ -30,6 +31,15 @@ func init() {
 	hostAddCmd.Flags().StringVar(&hostAddFlags.host, "host", "", "ws / grpc 的 Host 头")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.path, "path", "", "ws 路径")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.alpn, "alpn", "", "ALPN,逗号分隔")
+
+	hostEditCmd.Flags().Int64Var(&hostEditFlags.inbound, "inbound", 0, "所属入站 id,必填")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.remark, "remark", "", "客户端看到的节点名")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.address, "address", "", "对外地址,给空串表示回落成节点地址")
+	hostEditCmd.Flags().IntVar(&hostEditFlags.port, "port", 0, "对外端口,给 0 表示回落成入站端口")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.sni, "sni", "", "TLS SNI")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.host, "host", "", "ws / grpc 的 Host 头")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.path, "path", "", "ws 路径")
+	hostEditCmd.Flags().StringVar(&hostEditFlags.alpn, "alpn", "", "ALPN,逗号分隔;给空串表示清空")
 }
 
 var hostListInbound int64
@@ -134,6 +144,107 @@ var hostAddCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "已创建对外入口 %d", created.ID)
+	},
+}
+
+// hostEditFlags 是 host edit 的可选字段。
+//
+// 只认 Changed() 过的 flag。入口上"空"是有含义的(回落到节点/入站),所以
+// 需要一个办法把字段显式改回空 —— 那就是 --address "" 这种写法,Changed()
+// 一样认得出来。
+var hostEditFlags struct {
+	inbound int64
+	remark  string
+	address string
+	port    int
+	sni     string
+	host    string
+	path    string
+	alpn    string
+}
+
+var hostEditCmd = &cobra.Command{
+	Use:   "edit <id> --inbound ID",
+	Short: "改一个对外入口",
+	Long: `改一个对外入口。只改给出来的字段,没给的保持原样。
+
+  mpx host edit 13 --inbound 2 --remark "东京 WS 备用"
+  mpx host edit 13 --inbound 2 --address jp.example.com --port 443
+
+--inbound 是必填的:控制面没有"按 id 读一个入口"的接口,要先把那个入站的
+入口列出来才能找到它,所以得知道它属于哪个入站。
+
+把某个字段显式改回空(回落成节点/入站的值)就传空串:
+  mpx host edit 13 --inbound 2 --address ""
+
+改地址或端口会改变订阅里发出去的入口,用户下次刷新订阅就跟着变;入站本身
+不受影响,不用下发配置。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		if hostEditFlags.inbound == 0 {
+			return errors.New("必须给 --inbound(入口属于哪个入站)")
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		// 没有 GET /api/hosts/{id} 这个端点,只能从所属入站的列表里找出来。
+		raw, err := c.do("GET", inboundPath(hostEditFlags.inbound)+"/hosts", nil)
+		if err != nil {
+			return err
+		}
+		hosts, err := decode[[]model.HostView](raw)
+		if err != nil {
+			return err
+		}
+		var found *model.Host
+		for i := range hosts {
+			if hosts[i].ID == id {
+				h := hosts[i].Host
+				found = &h
+				break
+			}
+		}
+		if found == nil {
+			return fmt.Errorf("入站 %d 上没有 id 为 %d 的对外入口", hostEditFlags.inbound, id)
+		}
+
+		h := *found
+		changed := func(name string) bool { return cmd.Flags().Changed(name) }
+		if changed("remark") {
+			h.Remark = hostEditFlags.remark
+		}
+		if changed("address") {
+			h.Address = hostEditFlags.address
+		}
+		if changed("port") {
+			h.Port = hostEditFlags.port
+		}
+		if changed("sni") {
+			h.SNI = hostEditFlags.sni
+		}
+		if changed("host") {
+			h.Host = hostEditFlags.host
+		}
+		if changed("path") {
+			h.Path = hostEditFlags.path
+		}
+		if changed("alpn") {
+			h.ALPN = splitCSV(hostEditFlags.alpn)
+		}
+
+		raw, err = c.do("PUT", "/api/hosts/"+strconv.FormatInt(id, 10), h)
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		return report(raw, "已更新对外入口 %d", id)
 	},
 }
 

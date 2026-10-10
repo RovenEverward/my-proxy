@@ -21,7 +21,12 @@ var userCmd = &cobra.Command{
 	Short: "管理用户与订阅",
 }
 
-var userHeaders = []string{"ID", "用户名", "状态", "已用", "上限", "到期", "重置策略", "入站", "备注"}
+// userHeaders 是用户表格的列名。
+//
+// "可用"和"状态"是两回事:状态是算出来的(过期、超限都会反映出来),可用是
+// 显式开关。停用的用户状态仍可能是 active,只有这一列能把它们分开 ——
+// CSV 导出一直有"可用性"列,表格少了它就跟导出的对不上。
+var userHeaders = []string{"ID", "用户名", "可用", "状态", "已用", "上限", "到期", "重置策略", "入站", "备注"}
 
 // userRow 是 CLI 侧对服务端 userView 的映射。
 //
@@ -45,11 +50,12 @@ func (u userRow) row() []string {
 	return []string{
 		strconv.FormatInt(u.ID, 10),
 		u.Username,
+		enabledText(u.Enabled),
 		u.Status,
 		humanBytes(u.UsedTraffic),
 		limitText(u.DataLimit),
 		expireText(u.ExpireAt),
-		u.ResetStrategy,
+		strategyText(u.ResetStrategy),
 		joinIDs(u.InboundIDs),
 		u.Note,
 	}
@@ -285,6 +291,100 @@ var userAddCmd = &cobra.Command{
 	},
 }
 
+// userEditFlags 是 user edit 的可选字段。
+//
+// 全部走 Changed() 判断,因为好几个字段的零值是有含义的:--limit 0 是"不限",
+// --expire "" 是"永不过期",--inbounds "" 是"全部入站"。用零值判断就没法
+// 把已经设过的值改回这些"空"状态了。
+var userEditFlags struct {
+	limit         string
+	expire        string
+	resetStrategy string
+	inbounds      string
+	note          string
+}
+
+var userEditCmd = &cobra.Command{
+	Use:   "edit <username>",
+	Short: "改一个用户",
+	Long: `改一个用户。只改给出来的字段,没给的保持原样。
+
+  mpx user edit alice --limit 200GB
+  mpx user edit alice --note "同事,已续费"
+  mpx user edit alice --reset-strategy monthly --inbounds 2,5
+
+把字段改回"空"状态得显式给空值,不给则是保持原样:
+  --limit 0        改成不限流量
+  --expire ""      改成永不过期
+  --inbounds ""    改成可用全部入站
+  --note ""        改成没有备注
+
+启用/停用请用 mpx user enable / disable,重置已用流量请用 user reset-traffic,
+它们各有专门的命令。
+
+改完之后用户下次拉订阅就能看到新上限;已经连上的客户端不受影响,要立即生效
+得让用户重连。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		// 读-改-写:PUT 是整体替换,不先把现值读回来就会把没提到的字段清掉。
+		// 这里读到的 userView 不含 key/sub_token(服务端对空值会沿用旧值),
+		// 往返不会毁掉订阅凭证。
+		path := userPath(name)
+		raw, err := c.do("GET", path, nil)
+		if err != nil {
+			return err
+		}
+		u, err := decode[model.User](raw)
+		if err != nil {
+			return err
+		}
+
+		changed := func(f string) bool { return cmd.Flags().Changed(f) }
+		if changed("limit") {
+			limit, err := parseBytes(userEditFlags.limit)
+			if err != nil {
+				return err
+			}
+			u.DataLimit = limit
+		}
+		if changed("expire") {
+			if strings.TrimSpace(userEditFlags.expire) == "" {
+				u.ExpireAt = nil
+			} else {
+				expire, err := parseExpire(userEditFlags.expire)
+				if err != nil {
+					return err
+				}
+				u.ExpireAt = &expire
+			}
+		}
+		if changed("reset-strategy") {
+			u.ResetStrategy = model.ResetStrategy(userEditFlags.resetStrategy)
+		}
+		if changed("inbounds") {
+			ids, err := parseInboundIDs(userEditFlags.inbounds)
+			if err != nil {
+				return err
+			}
+			u.InboundIDs = ids
+		}
+		if changed("note") {
+			u.Note = userEditFlags.note
+		}
+
+		raw, err = c.do("PUT", path, u)
+		if err != nil {
+			return err
+		}
+		return report(raw, "已更新用户 %s", name)
+	},
+}
+
 var userRmCmd = &cobra.Command{
 	Use:   "rm <username>...",
 	Short: "删除一个或多个用户",
@@ -435,7 +535,7 @@ func revokeUserSub(c *Client, username string) (string, []byte, error) {
 }
 
 func init() {
-	userCmd.AddCommand(userListCmd, userShowCmd, userAddCmd, userRmCmd,
+	userCmd.AddCommand(userListCmd, userShowCmd, userAddCmd, userEditCmd, userRmCmd,
 		userEnableCmd, userDisableCmd, userRenewCmd, userLinksCmd,
 		userResetTrafficCmd, userRevokeSubCmd, userExportCmd, userImportCmd)
 
@@ -456,6 +556,12 @@ func init() {
 	userAddCmd.Flags().StringVar(&userAddFlags.inbounds, "inbounds", "", "可用的入站 id,逗号分隔;空表示全部")
 	userAddCmd.Flags().StringVar(&userAddFlags.note, "note", "", "备注")
 	userAddCmd.Flags().BoolVar(&userAddFlags.disabled, "disabled", false, "建好后先停用")
+
+	userEditCmd.Flags().StringVar(&userEditFlags.limit, "limit", "", "新的流量上限,如 100GB;给 0 表示不限")
+	userEditCmd.Flags().StringVar(&userEditFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD;给空串表示永不过期")
+	userEditCmd.Flags().StringVar(&userEditFlags.resetStrategy, "reset-strategy", "", "新的重置策略:none / daily / weekly / monthly")
+	userEditCmd.Flags().StringVar(&userEditFlags.inbounds, "inbounds", "", "新的可用入站 id,逗号分隔;给空串表示全部")
+	userEditCmd.Flags().StringVar(&userEditFlags.note, "note", "", "新的备注;给空串表示清掉")
 }
 
 // userPath 拼出用户资源的路径。用户名虽然限定了字符集,仍然转义一次,

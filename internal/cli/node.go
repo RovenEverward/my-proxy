@@ -22,7 +22,7 @@ var nodeCmd = &cobra.Command{
 }
 
 func init() {
-	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
+	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
 		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
@@ -37,6 +37,14 @@ func init() {
 		"提示输一次 SSH 密码,用它把控制面的公钥装上节点(之后全程用密钥)")
 
 	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
+
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.name, "name", "", "新的节点名")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.address, "address", "", "新的对外地址(IP 或域名)")
+	nodeEditCmd.Flags().IntVar(&nodeEditFlags.sshPort, "ssh-port", 0, "新的 SSH 端口,0 表示 22")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.sshUser, "ssh-user", "", "新的 SSH 用户,空表示 root")
+	nodeEditCmd.Flags().IntVar(&nodeEditFlags.apiPort, "api-port", 0, "新的 xray API 端口,0 表示 10085")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.configPath, "config-path", "", "节点上新的 config.json 路径")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.serviceName, "service-name", "", "新的 systemd 服务名")
 }
 
 // nodeHeaders 是节点表格的表头。列表与 show 共用同一套列。
@@ -533,6 +541,109 @@ var nodeRmCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "已删除节点 %d", id)
+	},
+}
+
+// nodeEditFlags 是 node edit 的可选字段。
+//
+// 全部用 Changed() 判断"这次到底改没改":一个只给了 --name 的调用不该把
+// address 悄悄清空。这是"读-改-写",不是"整体替换" —— 后者要求把十几个字段
+// 原样抄一遍,抄漏一个就是一次静默的数据损坏。
+var nodeEditFlags struct {
+	name        string
+	address     string
+	sshPort     int
+	sshUser     string
+	apiPort     int
+	configPath  string
+	serviceName string
+}
+
+var nodeEditCmd = &cobra.Command{
+	Use:   "edit <id>",
+	Short: "改一个节点的连接参数或名字",
+	Long: `改一个节点的名字与连接参数。只改给出来的字段,没给的保持原样。
+
+  mpx node edit 2 --name jp-1
+  mpx node edit 4 --ssh-port 2222 --ssh-user deploy
+
+注意几个连带影响:
+
+改 address 会同时改掉订阅里发出去的地址 —— 除非某个对外入口自己写了地址
+(host 的 address 字段非空时优先)。所以换 IP 之前先看一眼 mpx host list,
+否则用户订阅会跟着变。
+
+改 ssh-port / ssh-user / config-path / service-name 只影响控制面以后怎么连它,
+不会立刻碰节点;要真正生效跑一次 mpx node sync。
+
+改完不会自动下发配置:名字与连接参数都不进节点上的 config.json。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := idArg(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		// 先读回来:控制面那条 PUT 是整体替换,只发这次要改的字段会把其余
+		// 字段清空。连接参数抄漏一个,下一次 ssh 就找不到节点了。
+		raw, err := c.do("GET", nodePath(id), nil)
+		if err != nil {
+			return err
+		}
+		v, err := decode[model.NodeView](raw)
+		if err != nil {
+			return err
+		}
+		n := v.Node
+		oldAddress := n.Address
+
+		if cmd.Flags().Changed("name") {
+			n.Name = nodeEditFlags.name
+		}
+		if cmd.Flags().Changed("address") {
+			n.Address = nodeEditFlags.address
+		}
+		if cmd.Flags().Changed("ssh-port") {
+			n.SSHPort = nodeEditFlags.sshPort
+		}
+		if cmd.Flags().Changed("ssh-user") {
+			n.SSHUser = nodeEditFlags.sshUser
+		}
+		if cmd.Flags().Changed("api-port") {
+			n.APIPort = nodeEditFlags.apiPort
+		}
+		if cmd.Flags().Changed("config-path") {
+			n.ConfigPath = nodeEditFlags.configPath
+		}
+		if cmd.Flags().Changed("service-name") {
+			n.ServiceName = nodeEditFlags.serviceName
+		}
+
+		// DeployedHash / DeployedAt 是"我们这边推过什么"的基准,换地址不改变
+		// 这个事实,所以原样带回去(上面是整体 Node,本来就在)。
+		raw, err = c.do("PUT", nodePath(id), n)
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		updated, err := decode[model.Node](raw)
+		if err != nil {
+			return err
+		}
+		if err := report(raw, "已更新节点 %d(%s)", updated.ID, updated.Name); err != nil {
+			return err
+		}
+		// 换了地址就提醒一句:订阅里的地址多半跟着变了,这是最容易踩的地方。
+		if n.Address != oldAddress {
+			fmt.Printf("注意:节点地址由 %s 变成 %s,订阅里没显式写地址的入口会跟着变。\n", oldAddress, n.Address)
+			fmt.Println("      想确认哪些入口用了节点地址:mpx host list --inbound <id>")
+		}
+		return nil
 	},
 }
 
