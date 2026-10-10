@@ -89,6 +89,17 @@ docs/user/tutorial/getting-started.md 一步步来。
 
 重复跑不会炸:已有的节点、入站、入口、用户都会复用。但订阅前缀一旦设过就不再覆盖
 (除非显式给 --sub-prefix),免得把手工配好的域名冲掉。`,
+	Example: `  # 最省事的一路:提示输密码,装完把订阅链接打出来
+  mpx init --host 203.0.113.10 --ssh-user root --ssh-password
+
+  # 已经能用密钥登进去了(或者给 --identity 指一把私钥)
+  mpx init --host 203.0.113.10
+
+  # 自己编的二进制送上去装,不依赖 GitHub Releases
+  mpx init --host 203.0.113.10 --binary ./mpx
+
+  # 想直接给出订阅域名(前面挂了 TLS 反代)就用这个
+  mpx init --host 203.0.113.10 --sub-prefix https://sub.example.com`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error { return runInit() },
 }

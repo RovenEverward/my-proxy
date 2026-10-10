@@ -19,6 +19,19 @@ import (
 var userCmd = &cobra.Command{
 	Use:   "user",
 	Short: "管理用户与订阅",
+	Long: `管理用户与订阅 —— 谁可以用、能用多少、能连哪里。
+
+一个用户有两套互相独立的凭证:协议凭证(xray 里认的就是它)与订阅 token(用来
+取订阅的 URL)。user revoke-sub 只换后者,不影响已经连上的客户端;user rm 则把
+两样一起删掉。
+
+"入站"列决定这个用户被授权到哪些入站,留空表示全部放行 —— 这是最容易踩的一条:
+想把某人挡在新入站外面,得给他明确列出允许的入站,而不是留空。
+
+"可用"是显式开关,"状态"是按用量与到期算出来的,两者是两回事:停用的用户状态
+仍可能显示 active。user disable/enable 管前者,user reset-traffic/renew 管后者的
+两个来源。user links 打印订阅地址,加了 mpx settings rules 之后,同一个地址按
+User-Agent 自动给出不同格式。`,
 }
 
 // userHeaders 是用户表格的列名。
@@ -251,7 +264,16 @@ var userAddFlags struct {
 var userAddCmd = &cobra.Command{
 	Use:   "add <username>",
 	Short: "新增一个用户",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # 建一个用户,不限流量、不过期
+  mpx user add alice
+
+  # 100GB、每月重置、2026 年底到期,只允许连入站 1 和 2
+  mpx user add bob --limit 100GB --reset-strategy monthly \
+      --expire 2026-12-31 --inbounds 1,2
+
+  # 建完把订阅地址打出来
+  mpx user links bob`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		u := model.User{
 			Username:      args[0],
@@ -388,7 +410,15 @@ var userEditCmd = &cobra.Command{
 var userRmCmd = &cobra.Command{
 	Use:   "rm <username>...",
 	Short: "删除一个或多个用户",
-	Args:  cobra.MinimumNArgs(1),
+	Long: `删除一个或多个用户 —— 不可逆。
+
+协议凭证与订阅 token 一起删掉:已经连上的客户端会断开,订阅地址立刻 404,没有
+确认提示。命令行上给了几个名字就删几个,不会只删掉认得出来的那些 —— 打错一个字
+就是一个不存在的用户名报错,其余照删。
+
+只想让人连不上、但把记录留着,用 user disable;只想换订阅地址、不动协议凭证,
+用 user revoke-sub。确认用户名用 mpx user list。`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runUserBatch(args, func(c *Client, name string) (string, []byte, error) {
 			raw, err := c.do("DELETE", userPath(name), nil)
@@ -455,7 +485,15 @@ var linkOrder = []string{"auto", string(model.FormatLinks), string(model.FormatB
 var userLinksCmd = &cobra.Command{
 	Use:   "links <username>...",
 	Short: "显示一个或多个用户的各格式订阅地址",
-	Args:  cobra.MinimumNArgs(1),
+	Example: `  # 看 alice 的各格式订阅地址
+  mpx user links alice
+
+  # 要能直接解析的输出,就给 alice 的订阅地址加上 -o json
+  mpx user links alice -o json
+
+  # 批量看几个人的
+  mpx user links alice bob carol`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runUserBatch(args, userLinksText)
 	},

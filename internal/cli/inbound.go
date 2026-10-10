@@ -14,6 +14,17 @@ import (
 var inboundCmd = &cobra.Command{
 	Use:   "inbound",
 	Short: "管理节点上的 xray 入站",
+	Long: `管理节点上的 xray 入站 —— 客户端连上来的那一种协议。
+
+一个入站 = 节点上的一段监听(协议 + 传输 + 安全层 + 端口)。它自己就带着连接
+参数,所以"入站建好了"不等于"订阅里出现了":入站没有配对外入口时,订阅会直接
+用入站自己的地址与端口(见 mpx host --help)。
+
+几个约束是服务端强制、本地看不出来的:REALITY 只支持 tcp 传输且必须填 SNI 与
+回落目标;TLS 必须给证书与私钥在节点上的路径;flow 只有 VLESS 支持;gRPC 传输
+必须给 serviceName。REALITY 的密钥对由控制面自己生成,不用你填。
+
+建完入站记得 mpx node sync,否则改动只落在库里、没进节点上的 config.json。`,
 }
 
 var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全", "监听", "端口", "上限", "参数"}
@@ -255,7 +266,18 @@ var inboundShowCmd = &cobra.Command{
 var inboundAddCmd = &cobra.Command{
 	Use:   "add",
 	Short: "新增一个入站",
-	Args:  cobra.NoArgs,
+	Example: `  # 最常用的一种:VLESS + TCP + REALITY,监听 443
+  mpx inbound add --node 1 --protocol vless --port 443 \
+      --security reality --sni www.cloudflare.com --reality-dest www.cloudflare.com:443 \
+      --flow xtls-rprx-vision
+
+  # 套 CDN 就用 ws:入站监听本地端口,入口再写对外域名与路径
+  mpx inbound add --node 1 --protocol vless --port 8080 \
+      --network ws --ws-path /ws
+
+  # 建完把配置推到节点上,否则只在库里
+  mpx node sync 1`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 服务端也会校验,这里先拦一道是为了省一次往返,并给出更具体的提示。
 		if inboundAddFlags.node == 0 {
@@ -316,7 +338,14 @@ var inboundAddCmd = &cobra.Command{
 var inboundRmCmd = &cobra.Command{
 	Use:   "rm <id>",
 	Short: "删除一个入站",
-	Args:  cobra.ExactArgs(1),
+	Long: `删除一个入站 —— 不可逆。
+
+挂在它上面的对外入口会一起删掉,没有确认提示。这个入站的协议参数随之消失,
+用它连着的客户端在下次订阅刷新后就没了入口 —— 除非你同时 node sync 把节点上的
+config.json 重写一遍,否则节点上的 xray 还会照旧监听一段时间。
+
+确认入站 id 用 mpx inbound list。`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := idArg(args[0])
 		if err != nil {

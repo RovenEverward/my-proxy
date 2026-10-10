@@ -31,7 +31,15 @@ var rootCmd = &cobra.Command{
 	Long: `mpx 是自建 xray 多节点管理工具的命令行客户端。
 
 它通过控制面的 /api 管理节点、入站、对外入口、用户与订阅设置。控制面地址由
---server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。`,
+--server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。
+
+第一次用:一台新 VPS 上跑 mpx init,装完控制面、节点、入站、用户,并打印订阅链接。
+已经有控制面了:先 mpx login 存下地址与 token,再 mpx doctor 看它是否健康。
+
+不知道下一步该敲什么,就先跑 mpx status 与 mpx doctor —— 这两条只读,不改动任何
+东西,它们会告诉你哪里不对。每个命令组(mpx node/inbound/host/user/settings)自己
+的 --help 里写了这类对象的含义与常见坑,具体子命令的 --help 里带真实可跑的例子,
+拿不准就去翻。`,
 	// 错误统一由 Execute 打印一次;cobra 默认还会补一份 usage,那对使用者是噪音。
 	SilenceUsage:  true,
 	SilenceErrors: true,

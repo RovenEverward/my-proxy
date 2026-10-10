@@ -14,6 +14,17 @@ import (
 var hostCmd = &cobra.Command{
 	Use:   "host",
 	Short: "管理入站对外暴露的方式",
+	Long: `管理入站对外暴露的方式 —— 客户端实际连的那个地址。
+
+入站描述的是"节点上怎么听",入口描述的是"外面怎么写"。两者可以不一样:入站
+监听 443,入口可以告诉客户端去连 cdn.example.com:8443;入口没填的字段一律回落到
+入站自己的值(地址回落到节点地址,端口回落到入站端口,SNI 回落到入站 SNI)。
+
+一个入站可以挂多个入口 —— 同一个入站既可以直连 IP,也可以走域名;反过来,一个
+入站一个入口都不建也能用,订阅会拿入站自己的地址与端口。所以"订阅里有一堆重复
+条目"通常是给同一个入站建了多个入口,而不是建多了入站。
+
+入口只影响订阅里写什么,不改节点上 xray 的监听——改完不需要 node sync。`,
 }
 
 var hostHeaders = []string{"ID", "入站", "备注", "地址", "端口", "SNI", "Host 头", "路径", "ALPN"}
@@ -113,7 +124,15 @@ var hostListCmd = &cobra.Command{
 var hostAddCmd = &cobra.Command{
 	Use:   "add --inbound ID",
 	Short: "给一个入站加一种对外暴露方式",
-	Args:  cobra.NoArgs,
+	Example: `  # 让入站 1 对外走域名与 8443 端口(节点前面可能有反代)
+  mpx host add --inbound 1 --address cdn.example.com --port 8443 --sni cdn.example.com
+
+  # 给同一个入站再加一个直连 IP 的入口 —— 一个入站可以有多个入口
+  mpx host add --inbound 1 --remark 直连
+
+  # 看看这个入站现在有哪些入口
+  mpx host list --inbound 1`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if hostAddFlags.inbound == 0 {
 			return errors.New("必须给 --inbound")
@@ -251,7 +270,14 @@ var hostEditCmd = &cobra.Command{
 var hostRmCmd = &cobra.Command{
 	Use:   "rm <id>",
 	Short: "删除一个对外入口",
-	Args:  cobra.ExactArgs(1),
+	Long: `删除一个对外入口 —— 不可逆,但没有确认提示。
+
+它只影响订阅里写什么:客户端下次刷新订阅后这个地址就没了,节点上的 xray 与已经
+连着的用户都不受影响。删掉最后一个入口也不会出事,订阅会回落到入站自己的地址与
+端口。
+
+确认入口 id 用 mpx host list --inbound <id>。`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := idArg(args[0])
 		if err != nil {

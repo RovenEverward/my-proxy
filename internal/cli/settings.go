@@ -18,6 +18,19 @@ import (
 var settingsCmd = &cobra.Command{
 	Use:   "settings",
 	Short: "查看与修改订阅设置",
+	Long: `查看与修改订阅设置 —— 用户拿到的订阅长什么样。
+
+三类东西在这里配:订阅地址前缀与标题、各格式的客户端模板(template)、以及按
+User-Agent 决定返回哪种格式的规则(rules)。
+
+改设置一律是"先读、改、整体写回"(settings set 收的是一份完整 JSON)。谁想只动
+一项而不用手写整份 JSON,就用专门的子命令:settings rules add/rm/move 只碰规则,
+settings template set 只碰一个格式 —— 它们自己会先把当前设置读回来,不会把别的
+字段冲掉。
+
+rules 出场即带内置默认,认得出主流客户端;没命中任何规则的客户端拿到的是一串
+分享链接(links),这不是错误。要查看当前生效的是内置还是自定义,跑
+mpx settings rules list,它第一行就写着来源。`,
 }
 
 func init() {

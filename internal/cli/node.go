@@ -19,6 +19,16 @@ import (
 var nodeCmd = &cobra.Command{
 	Use:   "node",
 	Short: "管理 xray 节点",
+	Long: `管理 xray 节点 —— 真的跑 xray 的那台机器。
+
+节点是四类对象里最靠下的一个:入站挂在节点上,对外入口挂在入站上,用户则被单独
+授权到某些入站。所以顺序是 节点 → 入站 → 入口 → 用户,反过来建没有东西可挂。
+
+新机器的常规流程:node add 把它登记进来(此时只是数据库里一行,机器上什么都没装)
+→ node install 在上面装好核心并启动 → 之后 node sync 把配置推下去。
+
+节点上的 xray 由 systemd 管,单元名就是节点的"服务名"字段。node status 会 ssh
+过去现场查一次,node online 则读节点上每个用户此刻的在线 IP 数。`,
 }
 
 func init() {
@@ -445,7 +455,15 @@ var nodeAddFlags struct {
 var nodeAddCmd = &cobra.Command{
 	Use:   "add <name>",
 	Short: "新增一个节点",
-	Args:  cobra.ExactArgs(1),
+	Example: `  # 登记一台机器,地址就是对外 IP
+  mpx node add hk --address 203.0.113.10
+
+  # 非 22 端口、非 root 用户,并且当场把控制面的公钥装上去(会提示输密码)
+  mpx node add us --address 198.51.100.7 --ssh-port 2222 --ssh-user ubuntu --ssh-password
+
+  # 登记完在它上面装核心并启动
+  mpx node install 1`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if nodeAddFlags.address == "" {
 			return errors.New("必须给 --address")
@@ -526,7 +544,15 @@ func promptPassword(prompt string) (string, error) {
 var nodeRmCmd = &cobra.Command{
 	Use:   "rm <id>",
 	Short: "删除一个节点",
-	Args:  cobra.ExactArgs(1),
+	Long: `删除一个节点 —— 不可逆。
+
+它连同这台节点上的入站、以及挂在那些入站上的对外入口一起删掉,数据库里立刻生效,
+没有确认提示。节点本身不会被动:机器上的 xray 还在跑、配置还在,只是控制面再也
+不管它了,要清理得自己登上去。
+
+只想让新订阅别再发这台节点,用 node drain(已连上的用户会在下次刷新订阅时自然
+漂走),不必删。确认节点 id 用 mpx node list。`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := idArg(args[0])
 		if err != nil {
@@ -729,6 +755,11 @@ var nodeInstallCmd = &cobra.Command{
 核心已装好、配置也通过了校验,但服务没起来时,会回滚到上一份配置并把节点日志的
 末尾带回来。下载和推送加起来几十兆,慢链路下要几分钟,所以这条命令的上限比其它
 命令长得多。`,
+	Example: `  # 全新节点,装最新版
+  mpx node install 1
+
+  # 装指定的核心版本(也可以用来退回旧版)
+  mpx node install 1 --xray-version v25.1.1`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := idArg(args[0])
