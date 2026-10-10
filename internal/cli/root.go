@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 )
 
 // 输出格式的取值。
@@ -43,6 +45,11 @@ var rootCmd = &cobra.Command{
 	// 错误统一由 Execute 打印一次;cobra 默认还会补一份 usage,那对使用者是噪音。
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	// 有了它 cobra 自动提供 --version。版本号来自编译期注入(见 buildinfo)。
+	//
+	// 空版本必须换成一个非空的说法: cobra 见到 Version == "" 就干脆不注册
+	// --version 这个 flag,于是"从源码编的"这份连问都问不了,比答"不知道"更糟。
+	Version: cliVersion(),
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if opts.output != outputTable && opts.output != outputJSON {
 			return fmt.Errorf("--output 只能是 %s 或 %s,收到 %q", outputTable, outputJSON, opts.output)
@@ -62,6 +69,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
 	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
+
+	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
+	// 而这一行最该说清的恰恰是版本号本身是从哪来的。
+	rootCmd.SetVersionTemplate("mpx {{.Version}}\n")
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
@@ -158,6 +169,17 @@ var loginCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// cliVersion 是 --version 打出来的那一行。
+//
+// 从源码直接编出来时 buildinfo 说不出自己是谁,这里如实说不知道,而不是报一个
+// 空串 —— 空串会让 cobra 连 --version 这个 flag 都不注册。
+func cliVersion() string {
+	if v := buildinfo.Version(); v != "" {
+		return v
+	}
+	return "未知(从源码直接编译,没带版本号;发布件会带)"
 }
 
 // showLogin 打印当前生效的控制面与 token,以及存在哪些配置档。

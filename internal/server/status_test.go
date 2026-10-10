@@ -38,6 +38,7 @@ func TestStatusReportsHeartbeatCountsAndBackoffs(t *testing.T) {
 
 	started := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	lastTick := started.Add(2 * time.Minute)
+	checked := started.Add(time.Hour)
 	e.s.SetStatusSource(fixedStatus{st: model.ControlStatus{
 		StartedAt:       started,
 		UptimeSeconds:   3600,
@@ -45,6 +46,13 @@ func TestStatusReportsHeartbeatCountsAndBackoffs(t *testing.T) {
 		Ticks:           42,
 		LastTickAt:      &lastTick,
 		LastTickSeconds: 1.5,
+		// 带上版本与一次查到的更新,好让这两个键真的出现在响应里。
+		Version: "v0.2.0",
+		Update: model.UpdateInfo{
+			Current: "v0.2.0", Latest: "v0.3.0", Behind: 1,
+			URL: "https://example.test/r", Notes: "改了什么",
+			PublishedAt: &checked, CheckedAt: &checked,
+		},
 		Backoffs: []model.NodeBackoff{{
 			NodeID: n.ID, NodeName: "hk", Failures: 3, SkipUntil: lastTick.Add(time.Minute),
 		}},
@@ -56,11 +64,21 @@ func TestStatusReportsHeartbeatCountsAndBackoffs(t *testing.T) {
 	}
 
 	// 字段名是 CLI 与其它调用方看到的东西,单独钉一遍,别只靠结构体往返。
+	//
+	// `version` 不在这里:它带 omitempty,编译期没注入版本号时整个键会消失(这正是
+	// 源码直接编译出来的那份的表现)。要钉它的存在得先给它一个值,见下面那段。
 	for _, key := range []string{
 		"started_at", "uptime_seconds", "interval_seconds", "ticks",
 		"last_tick_at", "last_tick_seconds", "counts", "backoffs",
 		"nodes", "inbounds", "hosts", "users",
 		"node_id", "node_name", "failures", "skip_until",
+		// 更新检查(见 decisions.md 第 37 条):"要不要升级"的全部信息来源,名字被
+		// 改掉或漏掉序列化时,调用方只会看到空值而不是报错。
+		//
+		// 除 behind 外都带 omitempty,所以先在上面的 StatusSource 里把它们填上 ——
+		// 空值下这些键本来就不该出现,拿空值去钉存在性会得出错误结论。
+		"update",
+		"current", "latest", "behind", "url", "notes", "published_at", "checked_at",
 	} {
 		if !strings.Contains(string(body), `"`+key+`"`) {
 			t.Errorf("响应里缺少字段 %s:%s", key, body)

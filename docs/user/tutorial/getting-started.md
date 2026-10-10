@@ -235,3 +235,34 @@ sing-box      http://<控制面IP>:8080/sub/<token>/sing-box
    所有 11 项检查应全为 `ok`，退出码为 0。
 
 至此，多节点代理管理系统已成功跑通！下一步可阅读 [日常运维指南](../guides/node-operations.md) 了解节点扩容与维护。
+
+---
+
+## 第 7 步：以后怎么升级
+
+`mpx status` 里有两行专门回答这个问题：
+
+```
+版本       v0.2.0
+更新       落后 1 个发布 → v0.3.0,见 https://github.com/RovenEverward/my-proxy/releases/tag/v0.3.0
+```
+
+「更新」一行会把发布说明的摘要一并带出来。控制面自己**只查不问、只提醒不动手** —— 自动
+替换的正是控制面本身，换来一个起不来的版本，连「查一下现在什么状态」这条退路都没了。所以
+升级由你在控制面机器上手工跑一次：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
+```
+
+这条命令和当初安装时**完全一样**，重复跑不会动已有的 token、数据库和 SSH 密钥 —— 只会把
+二进制换成新版再把服务重启起来。装完 `mpx --version` 确认一下，然后重跑 `mpx doctor` 看各项
+是否仍然全 `ok`。
+
+> **版本号从哪来？** 发布件里的版本是发布流程写进去的。如果你是从源码直接 `go build` 的，
+> `mpx --version` 会显示「未知」并说明原因 —— 那是缺版本号，不是命令坏了；更新检查也会
+> 因此比不出新旧，只会告诉你「已是最新」。
+
+**每次改了什么都写在 [GitHub Releases 页](https://github.com/RovenEverward/my-proxy/releases) 上**，
+仓库里没有单独的 CHANGELOG.md：发布说明跟发布走，什么时候发的、对应哪个二进制、要留意什么，
+全在一处。

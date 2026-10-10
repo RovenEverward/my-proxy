@@ -66,6 +66,7 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		backoff = fmt.Sprintf("%d 台", len(st.Backoffs))
 	}
 	return [][2]string{
+		{"版本", versionText(st)},
 		{"启动时间", st.StartedAt.Format("2006-01-02 15:04:05")},
 		{"已运行", humanDuration(time.Duration(st.UptimeSeconds * float64(time.Second)))},
 		{"后台周期", humanDuration(time.Duration(st.IntervalSeconds * float64(time.Second)))},
@@ -77,6 +78,42 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"对外入口", strconv.Itoa(st.Counts.Hosts)},
 		{"用户", strconv.Itoa(st.Counts.Users)},
 		{"退避中的节点", backoff},
+		{"更新", updateText(st.Update)},
+	}
+}
+
+// versionText 写控制面报的版本。
+//
+// 从源码直接编出来、又没打 tag 时控制面不知道自己是谁,这时说"未知"并给出怎么
+// 才能知道 —— 光一句"未知"会让人以为是命令坏了。
+func versionText(st model.ControlStatus) string {
+	if st.Version == "" {
+		return "未知(这份 mpx 没带版本号;用发布件装的会带)"
+	}
+	return st.Version
+}
+
+// updateText 写一行更新提示。
+//
+// 三种情形分开说,因为要人做的事完全不同:有新版要人去升;没有就是一句确认;
+// 问不成(断网等)必须说清是"没问成"而不是"已经最新" —— 把后者说成前者会让人
+// 放心,而真相只是不知道。
+func updateText(u model.UpdateInfo) string {
+	switch {
+	case u.Error != "":
+		// 上一次的结论还有效时一并留着:连不上不代表之前查到的"有新版本"不作数。
+		if u.Newer() {
+			return fmt.Sprintf("检查失败(%s);上次查到有 %s,见 %s", u.Error, u.Latest, u.URL)
+		}
+		return "检查失败(" + u.Error + ")"
+	case u.Newer():
+		return fmt.Sprintf("落后 %d 个发布 → %s,见 %s", u.Behind, u.Latest, u.URL)
+	case u.CheckedAt == nil:
+		return "还没查过"
+	case u.Latest == "":
+		return "已是最新(问过,但没问到发布)"
+	default:
+		return "已是最新(" + u.Latest + ")"
 	}
 }
 

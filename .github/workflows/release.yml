@@ -3,7 +3,12 @@ name: release
 # 推一个 v 开头的 tag 就出一批发布件,deploy/install.sh 和 deploy/install-cli.sh
 # 下载的正是这些文件名 —— 改这里的命名要同步改那两个脚本里的 ARCHIVE。
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag -a v0.2.0 -m "这次改了什么"
+#   git push origin v0.2.0
+#
+# 发布说明(changelog)就放在 GitHub 的 Releases 页上,没有单独的 CHANGELOG.md:
+# 正文取自注解式 tag 的消息(-a 加 -m),所以请把 tag 消息当成发布说明来写。
+# 轻量 tag(git tag v0.2.0,没消息)会退回让 GitHub 按提交标题凑一份。
 
 on:
   push:
@@ -36,7 +41,12 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '0'
-        run: go build -trimpath -ldflags '-s -w' -o mpx${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/mpx
+        # 版本号必须编进去:自动更新检查靠它判断"我这一版和上游差多少",没注入
+        # 的话控制面只能回答"不知道我是哪一版",于是永远提醒不了新版本。
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/RovenEverward/my-proxy/internal/buildinfo.version=${{ github.ref_name }}" \
+            -o mpx${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/mpx
 
       - name: 打包
         run: |
@@ -56,12 +66,46 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # 要读注解式 tag 的消息,浅克隆里没有它。
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: 取出 tag 消息当发布说明
+        id: notes
+        run: |
+          set -eu
+          # 注解式 tag(-a)的消息就是这次发布要讲的话。轻量 tag 没有消息,这里会
+          # 得到空串,后面退回让 GitHub 按提交标题生成。
+          git tag -l --format='%(contents)' "${{ github.ref_name }}" > NOTES.md
+          if [ -n "$(tr -d '[:space:]' < NOTES.md)" ]; then
+            echo "有 tag 消息,用它当发布说明:"
+            cat NOTES.md
+            echo "annotated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "这个 tag 没有消息,退回自动生成的发布说明"
+            rm -f NOTES.md
+            echo "annotated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 两个步骤二选一,而不是把 body_path 与 generate_release_notes 一起给:
+      # 同时给时后者会把自动生成的那份**追加**到正文后面,于是人工写的话和凑
+      # 出来的提交列表混在一起。分开写,谁生效一目了然。
+      - name: 用 tag 消息发布
+        if: steps.notes.outputs.annotated == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body_path: NOTES.md
+
+      - name: 用自动生成的说明发布
+        if: steps.notes.outputs.annotated != 'true'
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true

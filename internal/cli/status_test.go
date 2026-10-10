@@ -145,3 +145,94 @@ func TestStatusBackoffRow(t *testing.T) {
 		t.Errorf("行有 %d 列,表头有 %d 列", len(got), len(statusBackoffHeaders))
 	}
 }
+
+// 版本那一行要能把「不知道」和「知道」分开说 —— 从源码编出来的那份报"未知"时,
+// 得让人看得出这是缺版本号,而不是命令坏了。
+func TestStatusVersionText(t *testing.T) {
+	if got := versionText(model.ControlStatus{Version: "v0.2.0"}); got != "v0.2.0" {
+		t.Errorf("有版本时 = %q", got)
+	}
+	got := versionText(model.ControlStatus{})
+	if !strings.Contains(got, "未知") || !strings.Contains(got, "没带版本号") {
+		t.Errorf("没版本时要说明为什么,得到 %q", got)
+	}
+}
+
+// 「更新」那一行的四种情形必须分得开:要人做的事完全不同。最容易出错的是把
+// 「没问成」说成「已经最新」—— 那会让人放心,而真相只是不知道。
+func TestStatusUpdateText(t *testing.T) {
+	checked := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		in   model.UpdateInfo
+		want string
+		miss string // 不该出现的说法
+	}{
+		{
+			name: "落后若干发布",
+			in:   model.UpdateInfo{Current: "v0.1.0", Latest: "v0.2.0", Behind: 2, URL: "https://example.test/r", CheckedAt: &checked},
+			want: "落后 2 个发布",
+		},
+		{
+			name: "已是最新",
+			in:   model.UpdateInfo{Current: "v0.2.0", Latest: "v0.2.0", CheckedAt: &checked},
+			want: "已是最新",
+			miss: "落后",
+		},
+		{
+			name: "还没查过",
+			in:   model.UpdateInfo{Current: "v0.2.0"},
+			want: "还没查过",
+			miss: "已是最新", // 没查过不等于最新
+		},
+		{
+			name: "检查失败但上次查到有新版",
+			in:   model.UpdateInfo{Current: "v0.1.0", Latest: "v0.2.0", Behind: 1, URL: "https://example.test/r", CheckedAt: &checked, Error: "请求 GitHub: HTTP 403"},
+			want: "检查失败",
+		},
+		{
+			name: "检查失败且没有旧结论",
+			in:   model.UpdateInfo{Current: "v0.1.0", Error: "请求 GitHub: HTTP 403"},
+			want: "检查失败",
+			miss: "已是最新", // 问不成不是最新
+		},
+	}
+	for _, c := range cases {
+		got := updateText(c.in)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: = %q, 应含 %q", c.name, got, c.want)
+		}
+		if c.miss != "" && strings.Contains(got, c.miss) {
+			t.Errorf("%s: = %q, 不该含 %q", c.name, got, c.miss)
+		}
+	}
+
+	// 检查失败时上一次查到的版本与地址要一并留着,否则用户只看到"失败了",
+	// 而其实他知道有新版这件事仍然成立。
+	failed := updateText(model.UpdateInfo{
+		Current: "v0.1.0", Latest: "v0.2.0", Behind: 1,
+		URL: "https://example.test/r", CheckedAt: &checked, Error: "请求 GitHub: 拨号失败",
+	})
+	if !strings.Contains(failed, "v0.2.0") || !strings.Contains(failed, "https://example.test/r") {
+		t.Errorf("检查失败时应保留上次查到的版本与地址,得到 %q", failed)
+	}
+}
+
+// 状态表里必须有「版本」与「更新」两行,不然上面那些文字没人看得到。
+func TestStatusPairsCarriesVersionAndUpdate(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	checked := now.Add(-time.Hour)
+	got := map[string]string{}
+	for _, p := range statusPairs(model.ControlStatus{
+		Version: "v0.1.0",
+		Update:  model.UpdateInfo{Current: "v0.1.0", Latest: "v0.2.0", Behind: 1, URL: "https://example.test/r", CheckedAt: &checked},
+	}, now) {
+		got[p[0]] = p[1]
+	}
+	if got["版本"] != "v0.1.0" {
+		t.Errorf("版本 = %q", got["版本"])
+	}
+	if !strings.Contains(got["更新"], "v0.2.0") {
+		t.Errorf("更新 = %q, 应指向新版本", got["更新"])
+	}
+}

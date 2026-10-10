@@ -109,6 +109,18 @@ curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/
 单元并启动服务，跑完把 token 和公钥打印出来。**装和更新是同一条命令，重复跑不会
 动已有的 token、数据库和密钥。**
 
+想升级就是再跑一遍同一条命令。`mpx status` 会告诉你现在装的是哪一版、有没有更新的发布：
+
+```
+版本       v0.2.0
+更新       落后 1 个发布 → v0.3.0,见 https://github.com/RovenEverward/my-proxy/releases/tag/v0.3.0
+```
+
+控制面**只提醒，不会自己替换二进制** —— 换掉的正是控制面自己，换来一个起不来的版本就连
+「查一下现在什么状态」都没了。升级始终由你跑上面那条命令完成。**每次改了什么、要注意什么，
+写在 [Releases 页](https://github.com/RovenEverward/my-proxy/releases) 上**（仓库里没有单独的
+CHANGELOG.md）。
+
 没有发布件、也不方便联网时，脚本会退回本机编译。也可以把二进制直接递给它：
 
 ```bash
@@ -184,7 +196,7 @@ markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user
 - **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
 - [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
 - [核心领域数据模型](docs/internal/model.md)
-- [架构决策记录 (35 条关键 ADR)](docs/internal/decisions.md)
+- [架构决策记录 (37 条关键 ADR)](docs/internal/decisions.md)
 - [版本批次与演进路线](docs/internal/roadmap.md)
 - [验证矩阵与测试记录](docs/internal/status.md)
 

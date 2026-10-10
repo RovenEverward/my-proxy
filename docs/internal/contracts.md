@@ -253,6 +253,8 @@ $ curl -H 'Authorization: Bearer demo-token' \
 
 `status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/model.go` 里的 `ControlStatus`。
 
+`status` 里的 `version` 是**这份控制面自己的版本**(编译期注入,拿不到时为空串),`update` 是后台每 6 小时问一次 GitHub 的结果:`current` / `latest` / `behind`(落后几次发布)/ `url`(发布页)/ `notes`(发布说明摘要,按 rune 截到 2000 字)/ `published_at` / `checked_at` / `error`。**它只报告不升级** —— 替换的正是控制面自己,详见 [decisions.md](decisions.md) 第 37 条。检查失败时 `error` 有值而上次的结论仍然保留(`checked_at` 不变),因为断网不等于没有新版本;`checked_at` 为 `null` 表示还没查过。判断"有没有更新"只需看 `behind > 0`,`behind` 为 0 涵盖了「已是最新」「比不出来(伪版本)」「没装版本号」三种情形。
+
 token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
 
 ```console
