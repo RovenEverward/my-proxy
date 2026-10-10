@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  // 项目页站点的地址是 https://<用户名>.github.io/<仓库名>/,资源必须带这个前缀才
+  // 找得到;本地 `npm run docs:dev` 同样落在 /my-proxy/ 下,和线上一致。
+  base: '/my-proxy/',
+
   lang: 'zh-CN',
   title: 'mpx',
   description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，本地命令行是全部入口。',

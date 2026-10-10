@@ -94,7 +94,9 @@ ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
 
 ## 文档站
 
-`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，分「使用指南」「参考手册」「内部工程」三个页签：
+在线文档：**https://RovenEverward.github.io/my-proxy/**
+
+`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，分「使用指南」「参考手册」「内部工程」三个页签。推 `main` 后由 [.github/workflows/docs.yml](.github/workflows/docs.yml) 自动发布到 GitHub Pages；本地这样跑：
 
 ```bash
 npm install        # 装一次即可
