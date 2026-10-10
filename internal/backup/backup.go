@@ -8,7 +8,7 @@
 //	id_ed25519     — 控制面连节点用的系统 ssh 私钥,存在才放。
 //
 // 管理 token 不放进来:它在 /etc/mpx/env 里,塞进归档等于把凭据复制进一个
-// 会被到处拷的文件(理由见 docs/decisions.md 第 16 条)。
+// 会被到处拷的文件(理由见 docs/internal/decisions.md 第 16 条)。
 //
 // 本包只用标准库(archive/tar、compress/gzip)加 modernc.org/sqlite
 // (仓库已有的驱动,store 包也在用),不新增任何依赖。

@@ -62,7 +62,7 @@ shadowsocks-2022、wireguard、xhttp / splithttp / httpupgrade、mux、fragment�
 
 ## 待确认项
 
-1. [README.md](../README.md) 的「不做什么」表里,哪几条不该是不做,而是还没排在前面?
+1. [首页「不做什么」](index.md#不做什么)表里,哪几条不该是不做,而是还没排在前面?
 2. [model.md](model.md) 的数据模型有没有缺的对象或字段?
 3. [decisions.md](decisions.md) 的三十条决策,有没有哪条的理由不成立、该换方案?
 4. 第 4 节那张表里,哪些是现在就要定的?

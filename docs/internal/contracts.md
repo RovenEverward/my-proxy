@@ -4,25 +4,65 @@
 
 ## 1. CLI(`mpx`)
 
-全局 flag:`--server`(覆盖 `MPX_SERVER` 与配置文件)、`--token`(覆盖 `MPX_TOKEN`)、`-o table|json`。
+全局 flag:`--server`(覆盖 `MPX_SERVER` 与配置文件)、`--token`(覆盖 `MPX_TOKEN`)、`--profile`(覆盖 `MPX_PROFILE` 与文件里的 `current`)、`-o table|json`。
+
+`--server` / `--token` 是**这一次**用这个地址,不碰配置文件 —— 临时对另一台控制面敲一条命令就靠它。
+要长期记住另一台,用 `login --profile <档名>`,不填档名就是 `default`。
 
 CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
 
 ```
-login                                    存控制面地址与 token
+login   [--profile 档名] [--server 地址] [--token token]
+                                         存控制面地址与 token;不带参数时显示当前生效的值
 serve                                    起控制面:--addr --db --interval(默认 30s)
 status                                   控制面心跳、对象数量、退避中的节点(读缓存,不碰节点)
 doctor                                   自检:控制面、每台节点、六种订阅格式、采样表(有 fail 时退出码 3)
 backup   [-o 文件]                        下载一份备份归档(默认 mpx-backup-<时间戳>.tar.gz)
 restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
-node     list | show | status | add | rm | config | sync | install
-inbound  list | show | add | rm
-host     list | add | rm
-user     list | show | add | rm | enable | disable | renew | export | import
+node     list | show | status | add | edit | rm | config | sync | install
+inbound  list | show | add | edit | rm
+host     list | add | edit | rm
+user     list | show | add | edit | rm | enable | disable | renew | export | import
          | links | reset-traffic | revoke-sub
 settings show | set | test | template get|set|del
 ```
+
+### 连哪一台控制面(`login` 与配置档)
+
+配置文件里能同时放多套控制面,各有一个档名:
+
+```console
+$ mpx login --server https://a.example:8080 --token <token>     # 存进 default,并切过去
+已写入 /Users/me/Library/Application Support/mpx/config.json(当前配置档 default)
+
+$ mpx login --profile scratch --server http://127.0.0.1:18080 --token docstoken
+已写入 /Users/me/Library/Application Support/mpx/config.json(当前配置档 scratch)
+
+$ mpx login                                                     # 不带参数 = 看,不写文件
+server: http://127.0.0.1:18080
+token:  docsto…
+配置档:  default  *scratch
+
+$ mpx login --profile default                                   # 只给档名 = 切换
+已切到配置档 default(server: https://a.example:8080)
+```
+
+覆盖已有档时会先回显变化,方便出事时一眼看见:
+
+```
+配置档 default 的地址:https://a.example:8080 → http://127.0.0.1:18080
+配置档 default 的 token:abc123… → docsto…
+已写入 /Users/me/Library/Application Support/mpx/config.json(当前配置档 default)
+```
+
+- **只想临时换一台**用 `--server` / `--token`(或 `MPX_SERVER` / `MPX_TOKEN`):只影响本次,不写文件。
+- **切档只给 `--profile` 就够**,不用把 token 再敲一遍 —— token 只存在服务器上,切回来是一次本地操作。
+  但档名必须已经存在:拼错了会报错并列出有哪些档,而不是静静地建一个空档。
+- 选档优先级:`--profile` > `MPX_PROFILE` > 文件里的 `current`。
+- 旧格式(顶层直接写 `server`/`token`)读得懂,会自动折成 `default` 档;保存时不再写回旧字段。
+  读取不会顺手改文件。
+- 写配置走「同目录临时文件 → 写 → fsync → rename」,不会留下半个 JSON。
 
 `user list` 默认只给一页(50 个),`--page` / `--page-size` 翻页,`--status` / `--search` / `--inbound` 筛选;
 末尾会写共多少个、还有多少个没显示,以及照着敲就能看下一页的命令(带上刚才的筛选条件)。
@@ -33,15 +73,63 @@ settings show | set | test | template get|set|del
 
 各命令的参数用 `mpx <命令> --help` 看(那是代码的职责,不在文档里抄第二份)。
 
+### 改一个已有的对象(四个 `edit`)
+
+`node` / `inbound` / `host` / `user` 各有一个 `edit`,只改**命令行里给出来的**字段,没给的保持原样:
+
+```console
+$ mpx node edit 2 --name jp-1
+已更新节点 2(jp-1)
+
+$ mpx user edit alice --limit 200GB
+已更新用户 alice
+
+$ mpx inbound edit 7 --port 9443
+注意:改的是节点配置,节点上还是旧的;跑 mpx node sync 7 才生效(会重启 xray)
+已更新入站 7(东京 WS)
+
+$ mpx host edit 13 --inbound 2 --remark "东京 WS 备用"
+已更新对外入口 13
+```
+
+改节点地址时还会多一行提醒(地址没变就不打):
+
+```
+注意:节点地址由 203.0.113.45 变成 203.0.113.9,订阅里没显式写地址的入口会跟着变。
+      想确认哪些入口用了节点地址:mpx host list --inbound <id>
+```
+
+这条规则不是装饰:控制面的 `PUT` 是**整体替换**,所以 CLI 每次都先 `GET` 回来、只覆盖动过的字段、再整个写回去。
+不这么做,「只想加个备注」会把流量上限和到期日一起抹掉。
+
+「没给」和「给了空值」是两回事。要把字段改回**空状态**得显式给空值:
+
+| 命令 | 写法 | 含义 |
+| --- | --- | --- |
+| `user edit` | `--limit 0` | 不限流量 |
+| `user edit` | `--expire ""` | 永不过期 |
+| `user edit` | `--inbounds ""` | 可用全部入站 |
+| `host edit` | `--address ""` | 回落成节点地址 |
+| `host edit` | `--port 0` | 回落成入站端口 |
+| `inbound edit` | `--alpn ""` / `--short-ids ""` | 清空该列表 |
+
+因此实现的判断依据是「这个 flag 这次到底出现过没有」,不是「值是不是零」—— 用零值判断就永远改不回上面的状态。
+
+`host edit` 需要 `--inbound`:控制面没有「按 id 读一个入口」的接口,只能把那个入站的入口列出来再找。
+
+改 `node` 的地址、或改 `host` 的地址/端口,会改变订阅里发出去的入口,用户下次刷新订阅就跟着变;
+改 `inbound` 的端口/传输/安全层动的是节点上的配置,要跑 `mpx node sync <id>` 才生效(会重启 xray)。
+`--max-users` 只在订阅层算,不用下发。
+
 ```console
 $ mpx user add alice --limit 100GB --reset-strategy monthly --note "老朋友"
 已创建用户 alice
 
 $ mpx user list
-ID  用户名    状态        已用  上限     到期          重置策略     入站  备注
-1   alice  active    0B  100GB  不过期         monthly  全部  老朋友
-2   bob    active    0B  不限     2030-01-01  none     全部
-3   carol  disabled  0B  不限     不过期         none     全部
+ID  用户名   可用  状态      已用  上限   到期        重置策略  入站  备注
+1   alice   启用  active    0B    100GB  不过期      monthly   全部  老朋友
+2   bob     启用  active    0B    不限   2030-01-01  none      全部
+3   carol   停用  active    0B    不限   不过期      none      全部
 共 3 个用户
 
 $ mpx user list --status expired --search li --inbound 2
@@ -126,7 +214,7 @@ $ curl -H 'Authorization: Bearer demo-token' \
 
 归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**(见 [decisions.md](decisions.md) 第 16 条)。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
 
-`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 [model.go](../internal/model/model.go) 的 `ControlStatus`。
+`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/model.go` 里的 `ControlStatus`。
 
 token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
 

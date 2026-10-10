@@ -1,0 +1,227 @@
+/* mpx 文档站主题定制
+ *
+ * 只做四件事，其余一律沿用 VitePress 默认主题：
+ *   1. 用仓库自带的 Mona Sans 变量字体替换默认字体
+ *   2. 去掉功能格的卡片边框（列表本身就是分组，不需要再画框）
+ *   3. 首页正文的左右交替版式
+ *   4. 让白底截图在深色页面上站得住
+ */
+
+/* ── 1. 字体 ─────────────────────────────────────────────── */
+
+@font-face {
+  font-family: 'Mona Sans VF';
+  src: url('/fonts/MonaSansVF.woff2') format('woff2-variations');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Mona Sans Mono VF';
+  src: url('/fonts/MonaSansMonoVF.woff2') format('woff2-variations');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --vp-font-family-base: 'Mona Sans VF', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', 'Noto Sans Backtick Fix', 'Noto Sans', Helvetica, Arial,
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --vp-font-family-mono: 'Mona Sans Mono VF', ui-monospace, 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', monospace;
+}
+
+/* Mona Sans 的中文靠系统黑体兜底，字重交给字体自身的可变轴 */
+.vp-doc strong,
+.vp-doc b {
+  font-weight: 650;
+}
+
+/* ── 2. 功能格去卡片化 ───────────────────────────────────── */
+
+/* 选择器要比组件自带的 scoped 规则更具体，否则压不住它 */
+.VPFeatures .VPFeature {
+  border: none;
+  background-color: transparent;
+  border-radius: 0;
+}
+
+.VPFeatures .VPFeature .box {
+  padding: 0 0 8px;
+}
+
+.VPFeatures .VPFeature .icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 16px;
+  background-color: transparent;
+}
+
+.VPFeatures .VPFeature .icon img,
+.VPFeatures .VPFeature .icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.VPFeatures .VPFeature .title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.VPFeatures .VPFeature .details {
+  padding-top: 6px;
+  font-size: 14px;
+  font-weight: 450;
+}
+
+/* 图标底色去掉后，图标本身用品牌色，避免空一块 */
+.VPFeatures .VPFeature .icon svg {
+  fill: var(--vp-c-brand-1);
+}
+
+/* 功能格之间不再靠边框分隔，靠留白 */
+.VPFeatures .item {
+  padding: 8px 20px 8px 0;
+}
+
+.VPFeatures .items {
+  margin: -8px 0;
+}
+
+/* ── 代码块语言角标 ─────────────────────────────────────── */
+
+/* console / bash 这些标记对读者没有信息量，且会和复制按钮打架 */
+.vp-doc [class*='language-'] > span.lang {
+  display: none;
+}
+
+/* ── 3. 首页正文 ─────────────────────────────────────────── */
+
+.mpx-home {
+  max-width: 1152px;
+  margin: 0 auto;
+}
+
+/* 左右交替的两栏：文字一栏、图或代码一栏 */
+.mpx-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: center;
+  margin: 0 0 56px;
+}
+
+.mpx-row > * {
+  min-width: 0;
+}
+
+.mpx-row--flip .mpx-row__media {
+  order: -1;
+}
+
+.mpx-row__text h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.5;
+  border: none;
+  padding: 0;
+}
+
+.mpx-row__text p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--vp-c-text-2);
+}
+
+.mpx-row__text p:last-child {
+  margin-bottom: 0;
+}
+
+/* 图：圆角 + 极淡描边，与正文的直角形成区分 */
+.mpx-row__media figure {
+  margin: 0;
+}
+
+.mpx-row__media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.mpx-caption {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--vp-c-text-3);
+}
+
+/* 代码块：不受两栏挤压，永远通栏 */
+.mpx-figure {
+  margin: 0 0 56px;
+}
+
+.mpx-figure .mpx-caption {
+  margin-top: 14px;
+  text-align: center;
+}
+
+/* 首页里的代码块收一点边距，跟正文对齐 */
+.mpx-home .mpx-figure div[class*='language-'] {
+  margin: 0;
+  border-radius: 10px;
+}
+
+.mpx-home .mpx-figure div[class*='language-'] pre {
+  padding: 20px 0;
+}
+
+.mpx-home .mpx-figure div[class*='language-'] code {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── 4. 白底截图 ─────────────────────────────────────────── */
+
+/* 订阅页截图本身是白底，直接放进深色页面会像一块悬空白板。
+   给它套一层浅色底板，让它看起来是"一张纸"而不是"一个洞"。
+   浅色模式下底板与页面同色，靠一圈描边把截图和正文分开。 */
+.mpx-shot {
+  padding: 12px;
+  border-radius: 12px;
+  background-color: #ffffff;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.dark .mpx-shot {
+  background-color: #f2f2f4;
+  border-color: transparent;
+}
+
+.mpx-shot img {
+  border: none;
+  border-radius: 6px;
+}
+
+/* ── 5. 响应式 ───────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .mpx-row {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+
+  .mpx-row--flip .mpx-row__media {
+    order: 0;
+  }
+
+  .VPFeatures .item {
+    padding: 8px 0;
+  }
+}

@@ -4,30 +4,41 @@
 
 ## 前置准备
 
-1. **控制面机器**：一台可运行 Linux 二进制的服务器或本机，具有 systemd 环境（开发体验也可直接在前台运行）。
+1. **控制面机器**：一台可运行 Linux 二进制的服务器，具有 systemd 环境。
 2. **节点机器**：一台带有公网 IP 的 Linux 服务器（如 Ubuntu 22.04+），已开启 SSH 且可通过公钥免密登录。
-3. **本机构建环境**：Go 1.22+，或直接使用编译好的 `mpx` 二进制。
+3. **操作机**：你日常用的电脑（macOS、Linux 或 Windows），用来跑 `mpx` 命令行。
+
+不需要预先安装 Go，也不需要自己编译。
 
 ---
 
 ## 第 1 步：部署控制面
 
-首先在控制面机器上运行服务。以生产部署为例：
+在控制面机器上执行一行安装命令：
 
 ```bash
-# 1. 编译 Linux 版本二进制并连同部署脚本上传
-GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/mpx ./cmd/mpx
-scp -r /tmp/mpx deploy root@<控制面IP>:/tmp/
-
-# 2. 在控制面机器上执行安装脚本
-sudo /tmp/deploy/install.sh /tmp/mpx
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 ```
 
-安装脚本会创建 `mpx` 系统用户、生成首个管理 Token 与 SSH 密钥对，并启动 systemd 服务。命令完成时会打印出以下关键凭证：
+脚本会自动完成：下载对应架构的二进制、创建 `mpx` 系统用户、生成管理 Token 与 SSH 密钥对、写入 systemd 单元并启动服务。命令结束时会打印出以下关键凭证：
+
 - **管理 Token**（保存在 `/etc/mpx/env`）
 - **控制面公钥**（路径为 `/var/lib/mpx/.ssh/id_ed25519.pub`）
 
-> **开发试跑**：如果仅在本地体验，可直接运行：
+> **装和更新是同一条命令**：以后升级版本再跑一次即可。已经存在的 Token、数据库和密钥不会被覆盖。
+
+如果控制面机器无法访问 GitHub，可以先把二进制传上去，再用手边的脚本装：
+
+```bash
+# 在操作机上
+GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/mpx ./cmd/mpx
+scp -r /tmp/mpx deploy root@<控制面IP>:/tmp/
+
+# 在控制面机器上
+sudo /tmp/deploy/install.sh /tmp/mpx
+```
+
+> **开发试跑**：如果只想在本地体验，不必装成服务，直接前台运行：
 > ```bash
 > go build -o mpx ./cmd/mpx
 > ./mpx serve --db ~/mpx.db
@@ -36,12 +47,32 @@ sudo /tmp/deploy/install.sh /tmp/mpx
 
 ---
 
-## 第 2 步：配置 CLI 客户端登录
+## 第 2 步：安装 CLI 并登录
 
-在你的日常操作机（笔记本或管理跳板机）上配置 CLI：
+在你的日常操作机上装 `mpx` 命令行。
+
+macOS / Linux：
 
 ```bash
-mpx login --server http://<控制面IP>:8080 --token "<管理Token>"
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
+```
+
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.ps1 | iex
+```
+
+装好后接上控制面。控制面只监听回环地址，先从操作机拉一条 SSH 隧道：
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 root@<控制面IP>
+```
+
+另开一个终端登录：
+
+```bash
+mpx login --server http://127.0.0.1:8080 --token "<管理Token>"
 ```
 
 验证连接：

@@ -63,8 +63,10 @@ mpx restore /tmp/mpx-backup-20261009115000.tar.gz
 
 在新服务器上执行全新安装：
 ```bash
-sudo ./deploy/install.sh /usr/local/bin/mpx
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 ```
+
+脚本会生成一份新的管理 Token 与 SSH 密钥对。记下它打印的 Token，下一步要用。
 
 ### 步骤 2：恢复数据库
 

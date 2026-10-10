@@ -15,7 +15,7 @@ import (
 //
 // 正文就是 gzip 的 tar 字节流,不是 JSON 包装:CLI 直接落盘,curl 也能
 // 重定向到文件。归档里的东西见 backup 包:manifest.json + mpx.db + 可选的
-// id_ed25519,不含管理 token(理由见 docs/decisions.md 第 16 条)。
+// id_ed25519,不含管理 token(理由见 docs/internal/decisions.md 第 16 条)。
 //
 // 备份本身不锁库:快照由 VACUUM INTO 产生,控制面正常读写时也能出。
 func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {

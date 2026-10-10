@@ -18,7 +18,7 @@ mpx user add alice \
 关键参数说明：
 - `--limit`：流量总额，支持单位 `MB`、`GB`、`TB`（按 1024 进制解析）。未指定时为不限流量。
 - `--expire`：过期时间，格式支持 `YYYY-MM-DD` 或 `YYYY-MM-DDTHH:MM:SS`。
-- `--reset-strategy`：周期性流量重置策略。支持 `never`（不重置，默认）、`monthly`（自然月第一天 00:00 自动重置已用流量）。
+- `--reset-strategy`：周期性流量重置策略。支持 `none`（不重置，默认）、`daily`（每 24 小时重置一次）、`weekly`（每 7 天重置一次）、`monthly`（自然月第一天 00:00 重置）。`daily` 与 `weekly` 从创建时间起算并保持相位，比如 15:00 创建的用户每天 15:00 重置；`monthly` 固定在每月 1 日 00:00。
 
 ### 调整配额与续期
 

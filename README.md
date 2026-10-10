@@ -34,28 +34,78 @@
 
 ## 快速上手 (Quick Start)
 
-三步体验本地最小闭环：
+### 装控制面
+
+在要当控制面的那台 Linux 机器上跑一行（有 systemd 即可，不用先装 Go）：
 
 ```bash
-# 1. 编译并启动本地控制面
-go build -o mpx ./cmd/mpx
-./mpx serve --db ~/mpx.db &
-
-# 2. CLI 登录并创建测试用户
-./mpx login --server http://127.0.0.1:8080
-./mpx user add alice --limit 100GB --reset-strategy monthly
-
-# 3. 查看订阅链接
-./mpx user links alice
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 ```
+
+它会装好二进制、建好 `mpx` 系统用户、随机生成管理 token 与 SSH 密钥、写好 systemd
+单元并启动服务，跑完把 token 和公钥打印出来。**装和更新是同一条命令，重复跑不会
+动已有的 token、数据库和密钥。**
+
+没有发布件、也不方便联网时，脚本会退回本机编译。也可以把二进制直接递给它：
+
+```bash
+sudo ./deploy/install.sh /tmp/mpx
+```
+
+### 装命令行
+
+在你自己日常用的机器上（macOS / Linux）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
+```
+
+Windows 上用 PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.ps1 | iex
+```
+
+两个脚本都按同一个顺序找二进制：手边的 → 发布件 → 用本机 Go 从源码编。
+
+### 接上并跑通
+
+```bash
+mpx login --server http://127.0.0.1:8080 --token '<管理 token>'
+mpx user add alice --limit 100GB --reset-strategy monthly
+mpx user links alice
+```
+
+控制面只监听回环地址。要从别的机器连，先拉一条隧道：
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
+```
+
+> **想先本地试一把？** 不装服务，直接跑前台进程：
+> ```bash
+> go build -o mpx ./cmd/mpx
+> ./mpx serve --db ~/mpx.db
+> ```
 
 > **生产环境部署？** 请阅读 [新手教程：从零搭建多节点代理服务](docs/user/tutorial/getting-started.md)。
 
 ---
 
-## 文档导航
+## 文档站
 
-### 📖 用户与运维指南 ([docs/user/](docs/user/))
+`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，分「使用指南」「参考手册」「内部工程」三个页签：
+
+```bash
+npm install        # 装一次即可
+npm run docs:dev   # 本地预览，改文件自动刷新，终端会打印访问地址
+npm run docs:build # 构建静态站到 docs/.vitepress/dist/
+```
+
+markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user/)，内部工程文档在 [docs/internal/](docs/internal/)。
+
+### 📖 用户与运维指南
+- **索引**：[用户文档导航](docs/user/index.md)
 - **入门教程**：[从零搭建多节点代理管理服务](docs/user/tutorial/getting-started.md)
 - **终端用户**：[客户端订阅导入与 Web 仪表盘使用](docs/user/guides/client-setup.md)
 - **节点运维**：[节点安装、配置同步、平滑排空 (Drain) 与在线活跃查询](docs/user/guides/node-operations.md)
@@ -65,13 +115,13 @@ go build -o mpx ./cmd/mpx
 - **故障排查**：[Doctor 诊断指南与常见问题速查](docs/user/guides/troubleshooting.md)
 - **配置字典**：[Settings 全局配置与 UA 规则](docs/user/reference/settings.md) ｜ [协议组合矩阵](docs/user/reference/protocols.md) ｜ [CSV 格式规格](docs/user/reference/csv-format.md)
 
-### 🛠 架构设计与内部决策 ([docs/](docs/README.md))
-- [系统架构与分层机制](docs/README.md)
-- [对外契约 (CLI、API、订阅、节点)](docs/contracts.md)
-- [核心领域数据模型](docs/model.md)
-- [架构决策记录 (30 条关键 ADR)](docs/decisions.md)
-- [版本批次与演进路线](docs/roadmap.md)
-- [验证矩阵与测试记录](docs/status.md)
+### 🛠 架构设计与内部决策
+- **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
+- [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
+- [核心领域数据模型](docs/internal/model.md)
+- [架构决策记录 (30 条关键 ADR)](docs/internal/decisions.md)
+- [版本批次与演进路线](docs/internal/roadmap.md)
+- [验证矩阵与测试记录](docs/internal/status.md)
 
 ---
 
