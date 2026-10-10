@@ -18,7 +18,7 @@ import (
 
 // CapabilityDetector identifies the fixed request and parsing contract, not the proxy core version.
 const CapabilityDetector = "mpx-proxy-capability"
-const CapabilityDetectorVersion = "2"
+const CapabilityDetectorVersion = "3"
 
 const (
 	CapabilityAvailable   = "available"
@@ -30,7 +30,11 @@ const (
 	capabilityLicensedURL = "https://www.netflix.com/title/81280792"
 	capabilityOriginalURL = "https://www.netflix.com/title/80018499"
 	capabilityBudget      = 80 * time.Second
-	capabilityBodyLimit   = 1024 * 1024
+	// Real Netflix title pages exceed 1 MiB. Bound disk and transport independently
+	// of curl's version; the extra byte detects a truncated response.
+	capabilityBodyLimit = 8 * 1024 * 1024
+	capabilityMetaLimit = 8 * 1024
+	capabilityLineLimit = 4*((capabilityBodyLimit+2)/3) + capabilityMetaLimit + 128
 )
 
 // CapabilityObservation is an observation through one actual user endpoint.
@@ -52,6 +56,8 @@ type capabilityResponse struct {
 	url  string
 	mime string
 	body []byte
+	// A damaged known request must not invalidate unrelated target evidence.
+	reason string
 }
 
 // ProbeCapabilities runs an ephemeral Xray or sing-box client on n using ep as supplied.
@@ -73,7 +79,17 @@ func ProbeCapabilities(ctx context.Context, r Runner, n model.Node, ep render.En
 	}
 	ctx, cancel := context.WithTimeout(ctx, capabilityBudget)
 	defer cancel()
-	out, err := r.RunWithInput(ctx, n, capabilityScriptForCore(requests, ep.Protocol.Core()), cfg)
+	script := capabilityScriptForCore(requests, ep.Protocol.Core())
+	var out string
+	// SSH bounds capture before allocation; test/embedded runners retain the
+	// fixed shell stream limits and parser validation through the base interface.
+	if bounded, ok := r.(interface {
+		RunBounded(context.Context, model.Node, string, []byte, int) (string, error)
+	}); ok {
+		out, err = bounded.RunBounded(ctx, n, script, cfg, len(requests)*capabilityLineLimit)
+	} else {
+		out, err = r.RunWithInput(ctx, n, script, cfg)
+	}
 	if err != nil {
 		observations := make([]CapabilityObservation, 0, len(targets))
 		for _, target := range targets {
@@ -84,7 +100,7 @@ func ProbeCapabilities(ctx context.Context, r Runner, n model.Node, ep render.En
 	responses, parseErr := capabilityResponses(out, requests)
 	observations := make([]CapabilityObservation, 0, len(targets))
 	for _, target := range targets {
-		if parseErr != nil {
+		if parseErr != nil && responses == nil {
 			observations = append(observations, CapabilityObservation{Target: target, Status: CapabilityUnknown, Reason: "parser_error: response_envelope"})
 			continue
 		}
@@ -186,10 +202,10 @@ command -v curl >/dev/null
 [ -x "$PROBE_BIN" ]
 tmp=$(mktemp -d /tmp/mpx-capability.XXXXXX)
 chmod 700 "$tmp"
-pid= guard= curlpid=
+pid= guard= curlpid= bodypid= metapid=
 cleanup() {
   trap - EXIT HUP INT TERM
-  for child in "$curlpid" "$pid" "$guard"; do
+  for child in "$curlpid" "$bodypid" "$metapid" "$pid" "$guard"; do
     if [ -n "$child" ]; then kill "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi
   done
   rm -rf -- "${tmp:?}"
@@ -223,23 +239,41 @@ request() {
   key=$1
   address=$2
   rc=0
-  # -q ignores .curlrc; noproxy empty defeats NO_PROXY, including loopback.
-  # DNS for the target is carried by SOCKS5. Redirects keep this same proxy.
-  ( ulimit -f 2048; exec curl -q --silent --show-error --location --max-redirs 3 \
+  # Bound both streams before they reach disk, including chunked responses on
+  # curl 7.81. head closes at limit+1: curl gets EPIPE, not an unbounded file.
+  mkfifo "$tmp/body.pipe" "$tmp/meta.pipe"
+  head -c ` + strconv.Itoa(capabilityBodyLimit+1) + ` < "$tmp/body.pipe" > "$tmp/body" & bodypid=$!
+  head -c ` + strconv.Itoa(capabilityMetaLimit+1) + ` < "$tmp/meta.pipe" > "$tmp/meta" & metapid=$!
+  # -q ignores .curlrc; empty noproxy defeats NO_PROXY. Target DNS and redirects
+  # stay on SOCKS. %{stderr} (curl >=7.63) separates bounded metadata from body.
+  # Silent errors prevent bodies, URLs or credentials appearing in diagnostics.
+  curl -q --silent --location --max-redirs 3 \
     --proto '=http,https' --proto-redir '=http,https' \
     --socks5-hostname "127.0.0.1:$port" --noproxy '' \
-    --connect-timeout 4 --max-time 12 --max-filesize 1048576 \
+    --connect-timeout 4 --max-time 12 --max-filesize ` + strconv.Itoa(capabilityBodyLimit) + ` \
     --user-agent '` + CapabilityDetector + `/` + CapabilityDetectorVersion + `' --header 'Accept-Language: en-US,en;q=0.9' \
-    --output "$tmp/body" --write-out '%{http_code}\t%{url_effective}\t%{content_type}' \
-    --url "$address" ) > "$tmp/meta" 2>/dev/null & curlpid=$!
+    --output - --write-out '%{stderr}%{http_code}\t%{url_effective}\t%{content_type}' \
+    --url "$address" > "$tmp/body.pipe" 2> "$tmp/meta.pipe" & curlpid=$!
   wait "$curlpid" || rc=$?
   curlpid=
+  wait "$bodypid" || :
+  bodypid=
+  wait "$metapid" || :
+  metapid=
+  bodybytes=$(wc -c < "$tmp/body")
+  metabytes=$(wc -c < "$tmp/meta")
+  if [ "$bodybytes" -gt ` + strconv.Itoa(capabilityBodyLimit) + ` ] || [ "$metabytes" -gt ` + strconv.Itoa(capabilityMetaLimit) + ` ]; then rc=63; fi
   printf 'MPX1\t%s\t%s\t' "$key" "$rc"
-  cat "$tmp/meta"
-  printf '\t'
-  if [ -f "$tmp/body" ]; then base64 < "$tmp/body" | tr -d '\n'; fi
-  printf '\n'
-  rm -f -- "$tmp/body" "$tmp/meta"
+  if [ "$rc" -ne 0 ]; then
+    # Partial bodies and metadata are never evidence. Keep only the exit class.
+    printf '000\t\t\t\n'
+  else
+    cat "$tmp/meta"
+    printf '\t'
+    base64 < "$tmp/body" | tr -d '\r\n'
+    printf '\n'
+  fi
+  rm -f -- "$tmp/body" "$tmp/meta" "$tmp/body.pipe" "$tmp/meta.pipe"
 }
 `
 	for _, request := range requests {
@@ -251,34 +285,74 @@ request() {
 }
 
 func capabilityResponses(out string, requests []capabilityRequest) (map[string]capabilityResponse, error) {
-	if len(out) > len(requests)*(capabilityBodyLimit*4/3+8192) {
-		return nil, fmt.Errorf("oversized output")
-	}
 	expected := map[string]bool{}
 	for _, request := range requests {
+		if request.key == "" || expected[request.key] {
+			return nil, fmt.Errorf("invalid request envelope")
+		}
 		expected[request.key] = true
 	}
 	responses := map[string]capabilityResponse{}
-	for _, line := range strings.Split(strings.TrimSuffix(out, "\n"), "\n") {
-		fields := strings.Split(line, "\t")
-		if len(fields) != 7 || fields[0] != "MPX1" || !expected[fields[1]] {
+	var parseErr error
+	// Cut keeps allocation bounded even for an oversized known record. Validate
+	// the request identity before decoding; no damaged record can be overwritten.
+	for remaining := strings.TrimSuffix(out, "\n"); remaining != ""; {
+		line, rest, more := strings.Cut(remaining, "\n")
+		if more && rest == "" {
 			return nil, fmt.Errorf("invalid response envelope")
 		}
-		if _, ok := responses[fields[1]]; ok {
-			return nil, fmt.Errorf("duplicate response")
+		remaining = rest
+		header := strings.SplitN(line, "\t", 3)
+		// Unattributable output cannot establish a trustworthy request set.
+		if len(header) < 2 || header[0] != "MPX1" || !expected[header[1]] {
+			return nil, fmt.Errorf("invalid response envelope")
 		}
-		rc, rcErr := strconv.Atoi(fields[2])
-		code, codeErr := strconv.Atoi(fields[3])
-		body, bodyErr := base64.StdEncoding.DecodeString(fields[6])
-		if rcErr != nil || codeErr != nil || bodyErr != nil || rc < 0 || rc > 255 || code < 0 || code > 599 || len(body) > capabilityBodyLimit {
-			return nil, fmt.Errorf("invalid response fields")
+		key := header[1]
+		r := capabilityResponse{reason: "parser_error: response_envelope"}
+		if _, duplicate := responses[key]; duplicate {
+			responses[key] = r
+			parseErr = fmt.Errorf("duplicate response")
+			continue
 		}
-		responses[fields[1]] = capabilityResponse{code, rc, fields[4], fields[5], body}
+		if len(line) > capabilityLineLimit {
+			r.reason = "parser_error: response_too_large"
+		} else if fields := strings.SplitN(line, "\t", 8); len(fields) == 7 {
+			r = capabilityResponseFields(fields)
+		}
+		if r.reason != "" {
+			parseErr = fmt.Errorf("invalid response fields")
+		}
+		responses[key] = r
 	}
-	if len(responses) != len(expected) {
-		return nil, fmt.Errorf("missing response")
+	for key := range expected {
+		if _, ok := responses[key]; !ok {
+			responses[key] = capabilityResponse{reason: "parser_error: response_envelope"}
+			parseErr = fmt.Errorf("missing response")
+		}
 	}
-	return responses, nil
+	return responses, parseErr
+}
+
+func capabilityResponseFields(fields []string) capabilityResponse {
+	r := capabilityResponse{reason: "parser_error: response_envelope"}
+	rc, rcErr := strconv.Atoi(fields[2])
+	code, codeErr := strconv.Atoi(fields[3])
+	if rcErr != nil || codeErr != nil || rc < 0 || rc > 255 || code < 0 || code > 599 {
+		return r
+	}
+	if len(fields[4])+len(fields[5]) > capabilityMetaLimit || len(fields[6]) > base64.StdEncoding.EncodedLen(capabilityBodyLimit) {
+		r.reason = "parser_error: response_too_large"
+		return r
+	}
+	body, bodyErr := base64.StdEncoding.DecodeString(fields[6])
+	if bodyErr != nil {
+		return r
+	}
+	if len(body) > capabilityBodyLimit {
+		r.reason = "parser_error: response_too_large"
+		return r
+	}
+	return capabilityResponse{code: code, curl: rc, url: fields[4], mime: fields[5], body: body}
 }
 
 func capabilityObserve(target string, responses map[string]capabilityResponse) CapabilityObservation {
@@ -287,7 +361,25 @@ func capabilityObserve(target string, responses map[string]capabilityResponse) C
 	if target == "netflix" {
 		key = "licensed"
 	}
-	r := responses[key]
+	r, ok := responses[key]
+	if !ok {
+		o.Reason = "parser_error: response_envelope"
+		return o
+	}
+	if r.reason != "" {
+		o.Reason = r.reason
+		return o
+	}
+	if target == "netflix" {
+		original, ok := responses["original"]
+		if !ok || original.reason != "" {
+			o.Reason = "parser_error: response_envelope"
+			if original.reason != "" {
+				o.Reason = original.reason
+			}
+			return o
+		}
+	}
 	if r.curl != 0 {
 		o.Reason = capabilityCurlReason(r.curl)
 		return o

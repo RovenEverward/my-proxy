@@ -54,6 +54,24 @@ func (r *capabilityRunner) RunWithInput(ctx context.Context, n model.Node, scrip
 	return r.output, r.err
 }
 
+type boundedCapabilityRunner struct {
+	capabilityRunner
+	limit int
+}
+
+func (r *boundedCapabilityRunner) RunBounded(ctx context.Context, n model.Node, script string, stdin []byte, limit int) (string, error) {
+	r.limit = limit
+	return r.capabilityRunner.RunWithInput(ctx, n, script, stdin)
+}
+
+func TestProbeCapabilitiesBoundedTransport(t *testing.T) {
+	r := &boundedCapabilityRunner{capabilityRunner: capabilityRunner{output: capabilityEnvelope("youtube", capabilityResponse{code: 204, url: capabilityYouTubeURL})}}
+	got, err := ProbeCapabilities(context.Background(), r, model.Node{}, capabilityEndpoint(), []string{"youtube"})
+	if err != nil || got[0].Status != CapabilityAvailable || r.limit != capabilityLineLimit || r.calls != 1 {
+		t.Fatalf("bounded transport: observations=%+v limit=%d calls=%d err=%v", got, r.limit, r.calls, err)
+	}
+}
+
 func capabilityEndpoint() render.Endpoint {
 	return render.Endpoint{Address: "actual.example.com", Port: 443, Protocol: model.ProtocolVLESS, UUID: "8db4cae4-d335-467f-8b68-a9e0626fc91a", Network: model.NetworkWS, Path: "/actual", Host: "edge.example.com", Security: model.SecurityTLS, SNI: "edge.example.com"}
 }
@@ -101,7 +119,7 @@ func TestProbeCapabilitiesContract(t *testing.T) {
 			t.Fatalf("actual endpoint lost: %q", value)
 		}
 	}
-	for _, fragment := range []string{"umask 077", "chmod 700", "chmod 600", "trap cleanup EXIT", "HUP INT TERM", "sleep 65", "wait", "mktemp -d /tmp/mpx-capability", "/dev/urandom", "--socks5-hostname", "--noproxy", "--max-time 12", "--connect-timeout 4", "--max-filesize 1048576", "curl -q", "rm -rf --", "${tmp:?}"} {
+	for _, fragment := range []string{"umask 077", "chmod 700", "chmod 600", "trap cleanup EXIT", "HUP INT TERM", "sleep 65", "wait", "mktemp -d /tmp/mpx-capability", "/dev/urandom", "--socks5-hostname", "--noproxy", "--max-time 12", "--connect-timeout 4", "--max-filesize " + strconv.Itoa(capabilityBodyLimit), "mkfifo", "head -c " + strconv.Itoa(capabilityBodyLimit+1), "head -c " + strconv.Itoa(capabilityMetaLimit+1), "curl -q", "rm -rf --", "${tmp:?}"} {
 		if !strings.Contains(r.script, fragment) {
 			t.Fatalf("missing shell safety %q", fragment)
 		}
@@ -307,6 +325,50 @@ func TestCapabilityYouTubeAndEnvelope(t *testing.T) {
 	}
 }
 
+func TestCapabilityIndependentEnvelopes(t *testing.T) {
+	requests, _ := capabilityRequests([]string{"egress", "youtube", "netflix"})
+	egress := capabilityEnvelope("egress", capabilityResponse{code: 200, url: capabilityEgressURL, mime: "application/json", body: []byte(`{"ip":"8.8.8.8","country_code":"US"}`)})
+	youtube := capabilityEnvelope("youtube", capabilityResponse{code: 204, url: capabilityYouTubeURL})
+	licensed := capabilityEnvelope("licensed", netflixResponse("81280792", "US"))
+	original := capabilityEnvelope("original", netflixResponse("80018499", "US"))
+	for _, tc := range []struct {
+		name, netflix, reason string
+	}{
+		{"malformed", "MPX1\tlicensed\t0\t200\n" + original, "parser_error: response_envelope"},
+		{"broken base64", "MPX1\tlicensed\t0\t200\tx\tx\t%%\n" + original, "parser_error: response_envelope"},
+		{"missing original", licensed, "parser_error: response_envelope"},
+		{"duplicate licensed", licensed + original + licensed, "parser_error: response_envelope"},
+		{"duplicate original", licensed + original + original, "parser_error: response_envelope"},
+		{"oversized", capabilityEnvelope("licensed", capabilityResponse{code: 200, body: bytes.Repeat([]byte("a"), capabilityBodyLimit+1)}) + original, "parser_error: response_too_large"},
+		{"oversized metadata", capabilityEnvelope("licensed", capabilityResponse{code: 200, url: strings.Repeat("x", capabilityMetaLimit+1)}) + original, "parser_error: response_too_large"},
+		{"curl limit", capabilityEnvelope("licensed", capabilityResponse{curl: 63}) + original, "parser_error: response_too_large"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &capabilityRunner{output: egress + youtube + tc.netflix}
+			got, err := ProbeCapabilities(context.Background(), r, model.Node{}, capabilityEndpoint(), []string{"egress", "youtube", "netflix"})
+			if err != nil || len(got) != 3 || got[0].Status != CapabilityAvailable || got[1].Status != CapabilityAvailable || got[2].Status != CapabilityUnknown || got[2].Reason != tc.reason {
+				t.Fatalf("isolated observations=%+v err=%v", got, err)
+			}
+		})
+	}
+	for _, bad := range []string{egress + youtube + licensed + original + "unattributed\n", egress + youtube + licensed + original + "\n", strings.Replace(egress+youtube+licensed+original, "MPX1\tlicensed", "MPX2\tlicensed", 1), egress + youtube + capabilityEnvelope("not-requested", capabilityResponse{})} {
+		responses, err := capabilityResponses(bad, requests)
+		if err == nil || responses != nil {
+			t.Fatal("unattributable request envelope retained evidence")
+		}
+	}
+	if _, err := capabilityResponses(youtube, append(requests, requests[0])); err == nil {
+		t.Fatal("duplicate request envelope accepted")
+	}
+	// A page larger than the former 1 MiB bound must retain title/region evidence.
+	r := netflixResponse("81280792", "US")
+	r.body = append(bytes.Repeat([]byte(" "), 2*1024*1024), r.body...)
+	parsed, err := capabilityResponses(egress+youtube+capabilityEnvelope("licensed", r)+original, requests)
+	if err != nil || capabilityObserve("netflix", parsed).Status != CapabilityAvailable {
+		t.Fatalf("large valid title rejected: %v", err)
+	}
+}
+
 func TestCapabilityShellSyntaxAndQuoting(t *testing.T) {
 	for _, core := range []model.Core{model.CoreXray, model.CoreSingBox} {
 		script := capabilityScriptForCore([]capabilityRequest{{"safe", "http://example.test/'$(touch /tmp/never);echo '"}}, core)
@@ -330,8 +392,27 @@ func TestLiveCapabilityActualProxy(t *testing.T) {
 			<-r.Context().Done()
 			return
 		}
-		if r.Host != "capability-only.invalid" || r.URL.Path != "/geoip" {
+		if r.Host != "capability-only.invalid" {
 			t.Errorf("wrong request: host=%q path=%q", r.Host, r.URL.Path)
+		}
+		if r.URL.Path == "/oversizemeta" {
+			w.Header().Set("Content-Type", strings.Repeat("a", capabilityMetaLimit+1024))
+			_, _ = w.Write([]byte("bounded body"))
+			return
+		}
+		if r.URL.Path == "/oversized" || r.URL.Path == "/largevalid" {
+			size := 2 * 1024 * 1024
+			if r.URL.Path == "/oversized" {
+				size = capabilityBodyLimit + 1024*1024
+			}
+			// Flushing before the body forces unknown length, the curl 7.81 gap.
+			w.Header().Set("Content-Type", "text/html")
+			w.(http.Flusher).Flush()
+			_, _ = w.Write(bytes.Repeat([]byte("a"), size))
+			return
+		}
+		if r.URL.Path != "/geoip" {
+			t.Errorf("wrong path=%q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"ip":"8.8.8.8","country_code":"US"}`)
@@ -386,6 +467,10 @@ func TestLiveCapabilityActualProxy(t *testing.T) {
 		script = strings.Replace(script, `chmod 700 "$tmp"`, `printf 'tmp:%s\n' "$tmp" >> `+shellQuote(tracePath)+"\n"+`chmod 700 "$tmp"`, 1)
 		script = strings.Replace(script, `& pid=$!`, `& pid=$!; printf 'pid:%s\n' "$pid" >> `+shellQuote(tracePath), 1)
 		script = strings.Replace(script, `& guard=$!`, `& guard=$!; printf 'pid:%s\n' "$guard" >> `+shellQuote(tracePath), 1)
+		for _, name := range []string{"sleeper", "curlpid", "bodypid", "metapid"} {
+			script = strings.Replace(script, "& "+name+"=$!", "& "+name+"=$!; printf 'pid:%s\\n' \"$"+name+"\" >> "+shellQuote(tracePath), 1)
+		}
+		script = strings.Replace(script, `  printf 'MPX1`, `  printf 'sizes:%s:%s\n' "$bodybytes" "$metabytes" >> `+shellQuote(tracePath)+"\n"+`  printf 'MPX1`, 1)
 		return "sh -c " + shellQuote(script)
 	}
 	assertCleanup := func() {
@@ -398,6 +483,9 @@ func TestLiveCapabilityActualProxy(t *testing.T) {
 			key, value, ok := strings.Cut(line, ":")
 			if !ok {
 				t.Fatalf("invalid cleanup trace %q", line)
+			}
+			if key == "sizes" {
+				continue
 			}
 			if key == "tmp" {
 				if _, err := os.Stat(value); !os.IsNotExist(err) {
@@ -443,6 +531,65 @@ func TestLiveCapabilityActualProxy(t *testing.T) {
 		t.Fatalf("failed credentials fell back or reached target: %+v count=%d err=%v", responses, count.Load(), err)
 	}
 	assertCleanup()
+	// Simulate curl 7.81 by forwarding to the real curl without --max-filesize.
+	// The actual Xray/SOCKS/HTTP chain still runs; FIFO bounds must do the work.
+	realCurl, err := exec.LookPath("curl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(dir, "curl")
+	// Put the explicit filesize option first, then discard exactly that pair.
+	wrapperBody := "#!/bin/sh\n[ \"$1\" = '--max-filesize' ] || exit 91\nshift 2\nexec " + shellQuote(realCurl) + " \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(wrapperBody), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := os.Getenv("PATH")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath)
+	ep.UUID = uuid
+	client, err = capabilityConfig(ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalRequests := requests
+	requests = []capabilityRequest{{"licensed", "http://capability-only.invalid/oversized"}, {"youtube", "http://capability-only.invalid/oversizemeta"}, {"egress", "http://capability-only.invalid/geoip"}, {"original", "http://capability-only.invalid/largevalid"}}
+	boundedScript := strings.Replace(traceScript(), "curl -q", "curl --max-filesize "+strconv.Itoa(capabilityBodyLimit)+" -q", 1)
+	boundedScript = strings.Replace(boundedScript, "--max-time 12 --max-filesize "+strconv.Itoa(capabilityBodyLimit), "--max-time 12", 1)
+	// Start a fresh context: wrong-auth curl above may consume the first budget.
+	boundedCtx, boundedCancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer boundedCancel()
+	out, err = (localRunner{xrayBin: bin}).RunWithInput(boundedCtx, model.Node{}, boundedScript, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responses, err = capabilityResponses(out, requests)
+	if err != nil || len(out) > len(requests)*capabilityLineLimit || responses["licensed"].curl != 63 || len(responses["licensed"].body) != 0 || responses["youtube"].curl != 63 || len(responses["youtube"].body) != 0 || responses["egress"].curl != 0 || responses["original"].curl != 0 || len(responses["original"].body) != 2*1024*1024 {
+		t.Fatalf("legacy curl bounds failed: err=%v output_bytes=%d oversized_rc=%d egress_rc=%d valid_bytes=%d", err, len(out), responses["licensed"].curl, responses["egress"].curl, len(responses["original"].body))
+	}
+	assertCleanup()
+	traceData, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reachedBodyLimit, reachedMetaLimit := false, false
+	for _, line := range strings.Split(string(traceData), "\n") {
+		if !strings.HasPrefix(line, "sizes:") {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		bodySize, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+		metaSize, _ := strconv.Atoi(strings.TrimSpace(parts[2]))
+		if bodySize > capabilityBodyLimit+1 || metaSize > capabilityMetaLimit+1 {
+			t.Fatalf("disk bounds exceeded: body=%d meta=%d", bodySize, metaSize)
+		}
+		reachedBodyLimit = reachedBodyLimit || bodySize == capabilityBodyLimit+1
+		reachedMetaLimit = reachedMetaLimit || metaSize == capabilityMetaLimit+1
+	}
+	if !reachedBodyLimit || !reachedMetaLimit {
+		t.Fatal("oversize fixtures did not reach both hard bounds")
+	}
+	t.Log("legacy curl simulation: chunked body and metadata stopped at limit+1; failed bodies omitted; next egress and 2MiB response retained")
+	t.Setenv("PATH", oldPath)
+	requests = originalRequests
 	// Exercise the remote watchdog while curl is still active. Shorten only its
 	// test budget; the same trap must kill/reap curl, Xray, guard and its sleeper.
 	ep.UUID = uuid
@@ -490,6 +637,8 @@ func (r capabilityQUICRunner) RunWithInput(ctx context.Context, _ model.Node, sc
 		{`& guard=$!`, `& guard=$!; printf 'pid:%s\n' "$guard" >> ` + shellQuote(r.trace)},
 		{`& sleeper=$!`, `& sleeper=$!; printf 'pid:%s\n' "$sleeper" >> ` + shellQuote(r.trace)},
 		{`& curlpid=$!`, `& curlpid=$!; printf 'pid:%s\n' "$curlpid" >> ` + shellQuote(r.trace)},
+		{`& bodypid=$!`, `& bodypid=$!; printf 'pid:%s\n' "$bodypid" >> ` + shellQuote(r.trace)},
+		{`& metapid=$!`, `& metapid=$!; printf 'pid:%s\n' "$metapid" >> ` + shellQuote(r.trace)},
 	} {
 		script = strings.Replace(script, item.before, item.after, 1)
 	}

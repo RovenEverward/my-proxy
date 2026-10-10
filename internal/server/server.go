@@ -118,6 +118,7 @@ func (s *Server) routes() {
 
 	api := http.NewServeMux()
 	s.purposeRoutes(api)
+	s.diagnosticRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)

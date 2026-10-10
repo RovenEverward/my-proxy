@@ -28,6 +28,7 @@
 - **用户与统一配额**：Xray 用户通过 gRPC 热更新；Hysteria2 / TUIC 使用独立凭据和逐用户计量，名单变化会重启该节点全部 QUIC 连接。
 - **用途订阅**：按日常、流媒体、下载和游戏用途选择候选与路由策略，保留原有直连、拦截规则。见 [用途订阅指南](docs/user/guides/purpose-subscriptions.md)。
 - **真实入口能力**：通过指定代理入口检测出口 IP、地区、YouTube 连通性和 Netflix 页面证据，按有效结果筛选用途候选。见 [能力检测指南](docs/user/guides/node-capabilities.md)。
+- **一键体检**：`mpx node diagnose ID` 或 `--all` 一次汇总健康、全部真实代理入口能力、延迟丢包、线路、多站有界测速与 IP 信息。见 [一键体检指南](docs/user/guides/node-diagnostics.md)。
 - **多协议与客户端**：按 `User-Agent` 下发 Clash Meta、sing-box 或 Base64 订阅；浏览器呈现用量与能力结果。Hysteria2 / TUIC 支持现代客户端及分享链接，见 [QUIC 节点指南](docs/user/guides/quic-protocols.md)。
 - **节点平滑维护**：支持 `drain` 优雅排空模式，维护时不强踢活跃连接，新订阅平滑切走。
 - **高韧性运维**：下发前自动运行 `xray -test`，失败秒级回滚；节点掉线指数退避重试；内置 SQLite 在线热备与暂存换入。

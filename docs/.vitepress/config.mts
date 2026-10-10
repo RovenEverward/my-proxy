@@ -22,7 +22,8 @@ export default defineConfig({
           { text: '全局配置字典', link: '/user/reference/settings' },
           { text: '协议与传输层支持矩阵', link: '/user/reference/protocols' },
           { text: '用户 CSV 导入导出规格', link: '/user/reference/csv-format' },
-          { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' }
+          { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
+          { text: '节点综合体检', link: '/user/guides/node-diagnostics' }
         ]
       },
       { text: '内部工程', link: '/internal/' }
@@ -45,6 +46,7 @@ export default defineConfig({
             { text: '节点运维与生命周期管理', link: '/user/guides/node-operations' },
             { text: 'Hysteria2 与 TUIC 节点', link: '/user/guides/quic-protocols' },
             { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
+            { text: '节点综合体检', link: '/user/guides/node-diagnostics' },
             { text: '用户与配额管理', link: '/user/guides/user-management' },
             { text: '告警与到期通知配置', link: '/user/guides/notifications' },
             { text: '备份与灾备恢复实操', link: '/user/guides/backup-and-restore' },
@@ -81,7 +83,8 @@ export default defineConfig({
             { text: '路线图', link: '/internal/roadmap' },
             { text: '缺口与待定项', link: '/internal/open-questions' },
             { text: 'QUIC 运行验证记录', link: '/internal/quic-validation' },
-            { text: '节点能力检测验证记录', link: '/internal/capability-validation' }
+            { text: '节点能力检测验证记录', link: '/internal/capability-validation' },
+            { text: '一键体检验证记录', link: '/internal/diagnostic-validation' }
           ]
         }
       ]

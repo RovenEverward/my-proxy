@@ -14,6 +14,7 @@ import (
 func TestSSHArgsDefaults(t *testing.T) {
 	got := sshArgs(model.Node{Name: "hk", Address: "203.0.113.10"})
 	want := []string{
+		"-T",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",
