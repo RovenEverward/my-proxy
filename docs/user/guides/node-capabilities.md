@@ -80,6 +80,27 @@ mpx node capability-set 1 --inbound 2 --host 3 --enabled=false
 
 时长可使用 `5m`、`1h` 等 Go duration 格式，必须为整秒。三个命令都支持 `--output json`，详细参数见 `mpx node probe --help`、`mpx node capabilities --help` 和 `mpx node capability-set --help`。
 
+## 用检测结果筛选用途订阅
+
+先为各候选入站和入口开启检测，再将检测要求加入已有用途：
+
+在完整用途 JSON 中合并以下字段（其他标签、策略和域名字段保留）：
+
+```json
+{"required_capabilities":["netflix","egress"],"capability_region":"US"}
+```
+
+保存完整配置后应用并预览：
+
+```bash
+mpx purpose set media -f media.json
+mpx purpose preview media alice clash-meta
+```
+
+请把用途名、用户和地区换成实际配置。只有已获该用户授权、未 drain、符合手动标签且每项检测均为有效 `available` 的入口会进入候选；未知、不可用和过期结果会退出，恢复稳定可用后重新进入。地区条件来自 Netflix 片库地区或出口 IP 地理信息，单独要求 YouTube 连通性时不能判断地区。候选为空会返回明确错误，并保留普通订阅作为回退入口。
+
+用途订阅读取当前证据，不会启动检测，也不会沿用已经过期的缓存候选。客户端已下载的配置仍需更新订阅才能得到候选变化。
+
 ## 运行要求与结果展示
 
 节点需要已安装的 Xray 和 `curl`。控制面经 SSH 启动临时客户端，使用当前获授权用户的独立凭证连接指定入口，再通过本地 SOCKS5 发起所有检测请求；目标 DNS 也交给代理解析。客户端配置只写入权限为 `600` 的临时文件，结束、超时和断连时清理。检测失败不会改用机器的直连出口。检测流量使用该用户凭证，会计入该用户配额；每次响应有大小上限，建议保持低频检测。
