@@ -296,8 +296,13 @@ func (s *Store) migrate() error {
 	if err := s.addMissingColumns(); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_core ON traffic_samples(node_id, core, username, id)`)
-	return err
+	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_core ON traffic_samples(node_id, core, username, id)`); err != nil {
+		return err
+	}
+	if err := s.migrateCapabilities(); err != nil {
+		return err
+	}
+	return s.migratePurposes()
 }
 
 // addedColumns 是建表语句之后补加的列。CREATE TABLE IF NOT EXISTS 对已存在的表

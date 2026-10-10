@@ -56,9 +56,13 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
+	capabilities, err := s.capabilityResultsForNodes(nodes, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	views := make([]model.NodeView, 0, len(nodes))
 	for _, n := range nodes {
-		v := model.NodeView{Node: n}
+		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID]}
 		if st, ok := statuses[n.ID]; ok {
 			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
 			copied := st
@@ -156,6 +160,11 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := model.NodeView{Node: *n}
+	view.Capabilities, err = s.capabilityResults(*n, time.Now())
+	if err != nil {
+		s.writeStoreError(w, err, "节点能力")
+		return
+	}
 	if r.URL.Query().Get("fresh") == "1" {
 		st, err := s.freshNodeStatus(r.Context(), *n, time.Now())
 		if err != nil {

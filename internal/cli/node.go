@@ -66,7 +66,7 @@ func init() {
 // 要等半分钟的命令了。想现场问一次用 node status。
 var nodeHeaders = []string{
 	"ID", "名称", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
-	"状态", "版本", "漂移", "最后检查", "证书最短",
+	"状态", "版本", "漂移", "最后检查", "证书最短", "能力",
 }
 
 // nodeRow 按表格要展示的顺序取字段;留空的一律显示成生效的默认值,
@@ -87,6 +87,7 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 		driftCell(v),
 		checkedCell(v, now),
 		certCell(v),
+		capabilitySummary(v.Capabilities),
 	}
 }
 
