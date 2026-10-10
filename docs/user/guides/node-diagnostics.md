@@ -22,7 +22,7 @@ mpx node diagnose --all -o json
 
 ## 默认预算
 
-完整体检默认开启有限流量的多站上传下载：Cloudflare anycast 接口和 LibreSpeed 官方注册表列出的 Clouvider 洛杉矶站，每站每方向请求 1 MiB。网络体检 HTTP 预算为 32 MiB，默认最多 120 秒；单次请求 5 秒，延迟采样 3 次。完整流程另包含节点健康和逐入口能力检测，总时限为 6 分钟。
+完整体检默认开启有限流量的多站上传下载：Cloudflare anycast 接口和 LibreSpeed 官方注册表列出的 Clouvider 洛杉矶站，每站每方向请求 1 MiB。网络体检 HTTP 预算为 32 MiB，默认最多 120 秒；HTTP、DNS 和 ping 单次执行 5 秒，延迟采样 3 次。每个目标的 mtr 和 traceroute 回退共享最多 20 秒，仍计入网络总时限。完整流程另包含节点健康和逐入口能力检测，总时限为 6 分钟。
 
 入口能力检测有自己的正文与时间上限：每个入口最多四次请求，每次正文最多 8 MiB（通常远小于上限），单入口最长 65 秒。32 MiB 是网络体检的应用数据预算，不包含这些单独列出的入口请求，也不包含 HTTP 头、TLS、TCP 重传。完整报告显示各部分结果与预算；全部节点按相同限制逐个检查。
 
@@ -70,4 +70,4 @@ MPX_ABUSEIPDB_KEY 可补充社区举报置信度，它是供应商数据，不�
 
 控制面测量的出口 IP 属于控制面，不能当作目标节点出口。本地 SOCKS 模式全部 HTTP 请求通过指定代理，DNS 交给代理端，原生 ICMP 和路由明确跳过；SOCKS URL 暂不支持凭证。本地结果只输出，不写入控制面的最新报告。
 
-重复 --target 可添加最多六个目标，--target-http、--target-name 与 --target-region 按顺序对应。地区标签由操作者提供。单次时间上限 15 秒、总网络时间上限 170 秒、样本上限五次、测速站上限三个。本地 --ip-quality-key-env 和 --ip-reputation-key-env 可指定密钥所在环境变量，详细参数见命令 --help。
+重复 --target 可添加最多六个目标，--target-http、--target-name 与 --target-region 按顺序对应。地区标签由操作者提供。HTTP、DNS 和 ping 单次时间上限 15 秒、单目标路由预算 20 秒、总网络时间上限 170 秒、样本上限五次、测速站上限三个。本地 --ip-quality-key-env 和 --ip-reputation-key-env 可指定密钥所在环境变量，详细参数见命令 --help。
