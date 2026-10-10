@@ -195,6 +195,114 @@ func coreBaseline(t *testing.T, st *store.Store, n model.Node, core model.Core, 
 	return v
 }
 
+func TestSingBoxDeployFailureDoesNotBlockXray(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	alice := addUser(t, st, activeUser("alice"))
+	if err := c.ReconcileUsers(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addInbound(t, st, n.ID, "vless-ws", 19232)
+	alice.Enabled = false
+	if err := st.UpdateUser(&alice); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.calls, r.stdin = nil, nil
+	r.replies = append(r.replies, reply{"cp -f", ""}, reply{"-test -config", ""}, reply{"systemctl restart", ""})
+	r.mu.Unlock()
+	r.statsMu.Lock()
+	r.statsErr = status.Error(codes.Unavailable, "sing-box final sample offline")
+	r.statsMu.Unlock()
+	var quicContext, xrayContext context.Context
+	r.inspectContext = func(ctx context.Context, script string) {
+		if strings.Contains(script, "check -c") {
+			quicContext = ctx
+		}
+		if strings.Contains(script, "-test -config") {
+			xrayContext = ctx
+			if ctx.Err() != nil {
+				t.Fatalf("healthy Xray deploy inherited QUIC cancellation: %v", ctx.Err())
+			}
+		}
+	}
+	if err := c.DeployNode(context.Background(), n, time.Now()); err == nil || !strings.Contains(err.Error(), "sing-box final sample offline") {
+		t.Fatalf("QUIC failure must still be returned: %v", err)
+	}
+	if quicContext == nil || xrayContext == nil || quicContext == xrayContext {
+		t.Fatal("deployment cores did not use independent contexts")
+	}
+	if !r.ran("-test -config") || !r.ran("systemctl restart") || r.ran("systemctl stop") || r.ran("systemctl start") {
+		t.Fatalf("healthy Xray deployment blocked or failed QUIC restarted: %v", r.callList())
+	}
+	r.mu.Lock()
+	var xrayConfig string
+	for i, call := range r.calls {
+		if strings.Contains(call, "umask 077") && strings.Contains(call, n.ConfigPathOrDefault()) {
+			xrayConfig = r.stdin[i]
+		}
+	}
+	r.mu.Unlock()
+	if !json.Valid([]byte(xrayConfig)) || !strings.Contains(xrayConfig, `"vless"`) || strings.Contains(xrayConfig, `"hysteria2"`) {
+		t.Fatalf("Xray configuration not written: %s", xrayConfig)
+	}
+	storedNode, err := st.GetNode(n.ID)
+	if err != nil || storedNode.DeployedHash != hashOf([]byte(xrayConfig)) || storedNode.DeployedAt == nil {
+		t.Fatalf("healthy Xray deployed hash not recorded: %+v, %v", storedNode, err)
+	}
+	after, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("failed QUIC deployment changed success record: before=%+v after=%+v err=%v", before, after, err)
+	}
+}
+
+func TestSingBoxDeleteLastInboundDirectDeployNoXray(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	addUser(t, st, activeUser("alice"))
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbounds, err := st.ListInbounds(n.ID)
+	if err != nil || len(inbounds) != 1 {
+		t.Fatalf("unexpected fixture inbounds: %v, %v", inbounds, err)
+	}
+	if err := st.DeleteInbound(inbounds[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.calls, r.stdin = nil, nil
+	r.mu.Unlock()
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range r.callList() {
+		if strings.Contains(call, "XRAY_BIN") || strings.Contains(call, n.ConfigPathOrDefault()) || strings.Contains(call, "'"+n.ServiceNameOrDefault()+"'") {
+			t.Fatalf("empty QUIC-only deployment touched Xray: %s", call)
+		}
+	}
+	if !r.ran("systemctl stop") || !r.ran("systemctl start") {
+		t.Fatalf("last QUIC inbound not revoked: %v", r.callList())
+	}
+	raw := r.stdinFor("config.json.next")
+	var cfg struct {
+		Inbounds []json.RawMessage `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || len(cfg.Inbounds) != 0 {
+		t.Fatalf("last-inbound revocation configuration not empty: %s, %v", raw, err)
+	}
+	d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil || d.DeployedHash != hashOf([]byte(raw)) {
+		t.Fatalf("QUIC revocation hash not recorded: %+v, %v", d, err)
+	}
+	storedNode, err := st.GetNode(n.ID)
+	if err != nil || storedNode.DeployedHash != "" {
+		t.Fatalf("absent Xray acquired a deployment hash: %+v, %v", storedNode, err)
+	}
+}
+
 func TestSingBoxDeleteLastInboundNoXrayQuery(t *testing.T) {
 	c, st, r, n := coreFixture(t)
 	addUser(t, st, activeUser("alice"))
