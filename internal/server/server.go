@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -61,7 +62,8 @@ type Server struct {
 	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
-	subCache subCache
+	subCache      subCache
+	purposeFilter func(model.Purpose, []render.Endpoint) ([]render.Endpoint, error)
 
 	// subLimiter 与 apiLimiter 是两个独立的令牌桶:订阅公网可达且无鉴权,
 	// 是扫描器与定时刷新的主战场;管理面有鉴权,但仍值得防暴力撞 token。
@@ -115,6 +117,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
+	s.purposeRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)

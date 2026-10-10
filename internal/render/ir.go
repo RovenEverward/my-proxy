@@ -71,9 +71,12 @@ func uniqueTag(base, fallback string, used map[string]struct{}) string {
 // 它是渲染的中间表示:Resolve 负责产出它,各客户端格式只负责把它序列化。
 // 新增一种客户端格式只需读它,不需要再碰领域模型。
 type Endpoint struct {
-	Remark  string
-	Address string
-	Port    int
+	NodeID    int64
+	InboundID int64
+	HostID    int64 // zero identifies the default inbound exposure
+	Remark    string
+	Address   string
+	Port      int
 
 	Protocol model.Protocol
 	UUID     string // vless / vmess
@@ -154,6 +157,7 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, user *model.User,
 	}
 
 	ep := Endpoint{
+		NodeID: node.ID, InboundID: in.ID, HostID: h.ID,
 		Remark:  remark,
 		Address: expand(ex.Address, vars, salt),
 		Port:    ex.Port,

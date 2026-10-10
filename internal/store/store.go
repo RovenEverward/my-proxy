@@ -283,7 +283,10 @@ func (s *Store) migrate() error {
 			return fmt.Errorf("建表(第 %d 条语句): %w", i+1, err)
 		}
 	}
-	return s.addMissingColumns()
+	if err := s.addMissingColumns(); err != nil {
+		return err
+	}
+	return s.migratePurposes()
 }
 
 // addedColumns 是建表语句之后补加的列。CREATE TABLE IF NOT EXISTS 对已存在的表
