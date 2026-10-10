@@ -78,10 +78,11 @@ type Endpoint struct {
 	Address   string
 	Port      int
 
-	Protocol model.Protocol
-	UUID     string // vless / vmess
-	Password string // trojan / shadowsocks-2022 的用户密钥
-	Flow     string // vless
+	Protocol          model.Protocol
+	UUID              string // vless / vmess / tuic
+	Password          string // trojan / shadowsocks-2022 / hysteria2 / tuic 的用户密钥
+	CongestionControl string // TUIC:空表示 bbr
+	Flow              string // vless
 
 	// Wireguard 的字段单独放:它是 L3,不需要传输/安全层,复用 Path/Host 会让
 	// 渲染器分不清「该写哪个键」。
@@ -184,6 +185,15 @@ func endpoint(node model.Node, in model.Inbound, h model.Host, user *model.User,
 	}
 
 	switch in.Protocol {
+	case model.ProtocolHysteria2, model.ProtocolTUIC:
+		ep.Network = model.NetworkUDP
+		ep.Security = model.SecurityTLS
+		ep.Fingerprint = ""
+		ep.Mux, ep.Fragment = false, false
+		ep.CongestionControl = in.CongestionControl
+		if in.Protocol == model.ProtocolHysteria2 {
+			ep.UUID = ""
+		}
 	case model.ProtocolShadowsocks:
 		ep.Password = model.DeriveSS2022Key(user.Key)
 	case model.ProtocolWireguard:

@@ -439,9 +439,11 @@ func TestSampleTrafficSkipsZerosAndSurvivesBadUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读回采样: %v", err)
 	}
-	// 没在 users 里的用户也照样落一行:节点上报的是事实,基准不能因为库里没这个
-	// 人就停在原地。
-	for _, name := range []string{"alice", "carol", "没这个人"} {
+	// 历史与用量同一事务:未知用户写失败回滚,其余用户仍独立计入。
+	if _, ok := samples["没这个人"]; ok {
+		t.Errorf("未知用户账本失败后仍推进基准: %v", samples)
+	}
+	for _, name := range []string{"alice", "carol"} {
 		if _, ok := samples[name]; !ok {
 			t.Errorf("%s 的采样没落进历史表:%v", name, samples)
 		}

@@ -173,9 +173,11 @@ type clashProxy struct {
 	RealityOpts       *clashRealityOpts     `yaml:"reality-opts,omitempty"`
 
 	// ss-2022 没有 uuid/flow;wireguard 没有 server/port/网络层。
-	PrivateKey string `yaml:"private-key,omitempty"` // wireguard / ss-2022
-	PublicKey  string `yaml:"public-key,omitempty"`  // wireguard
-	IP         string `yaml:"ip,omitempty"`          // wireguard 隧道地址
+	PrivateKey        string `yaml:"private-key,omitempty"`           // wireguard / ss-2022
+	PublicKey         string `yaml:"public-key,omitempty"`            // wireguard
+	IP                string `yaml:"ip,omitempty"`                    // wireguard 隧道地址
+	SNI               string `yaml:"sni,omitempty"`                   // HY2 / TUIC
+	CongestionControl string `yaml:"congestion-controller,omitempty"` // TUIC
 }
 
 // clashWSOpts 是 ws 的传输参数。
@@ -210,6 +212,9 @@ type clashRealityOpts struct {
 
 // clashNode 把一个端点转成 Clash 节点。
 func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
+	if ep.Protocol.QUIC() {
+		return clashQUICNode(ep, meta)
+	}
 	switch ep.Protocol {
 	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan,
 		model.ProtocolShadowsocks, model.ProtocolWireguard:

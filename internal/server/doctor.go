@@ -204,12 +204,49 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "核心服务没在跑",
 			Hint: "ssh 上去 systemctl status " + n.ServiceNameOrDefault() + " 看原因"})
 	}
-	if !n.Deployed() {
+	inbounds, listErr := s.store.ListInbounds(n.ID)
+	if listErr != nil {
+		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: listErr.Error()})
+	}
+	d, deploymentErr := s.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if deploymentErr != nil {
+		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: deploymentErr.Error()})
+	}
+	quicRequired := len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0 || (d != nil && d.DeployedHash != "")
+	xrayRequired := len(model.InboundsForCore(inbounds, model.CoreXray)) > 0 || n.DeployedHash != "" || (len(inbounds) == 0 && !quicRequired)
+	if xrayRequired && !n.Deployed() {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "从没下发过配置",
 			Hint: "mpx node sync " + n.Name + " 推一次"})
-	} else if st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
+	} else if xrayRequired && st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "配置和下发的不一致(节点上被改过)",
 			Hint: "可能是你自己改的,也可能是别人改的;确认后 mpx node sync " + n.Name + " 覆盖回去"})
+	}
+
+	quicObserved := false
+	for _, core := range st.Cores {
+		if core.Core != model.CoreSingBox {
+			continue
+		}
+		quicObserved = true
+		if !core.Active {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 服务没在跑"})
+		}
+		if !core.StatsAvailable {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 单用户统计不可用: " + core.Error, Hint: "mpx node install " + n.Name + " --core sing-box; 需 with_v2ray_api 构建与 SSH 转发"})
+		}
+		d, err := s.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+		if err != nil {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: err.Error()})
+			continue
+		}
+		if d.DeployedHash == "" {
+			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 从没下发过配置"})
+		} else if core.ObservedHash == "" || core.ObservedHash != d.DeployedHash {
+			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 配置未读取或与下发内容不一致"})
+		}
+	}
+	if quicRequired && !quicObserved {
+		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 状态未观察,无法证明认证和单用户计量可用"})
 	}
 
 	for _, c := range st.Certificates {
@@ -274,8 +311,27 @@ func (s *Server) checkSubscriptions(now time.Time) []model.DoctorCheck {
 		}}
 	}
 
+	eps, err := s.endpointsFor(sample)
+	if err != nil {
+		return []model.DoctorCheck{{Name: "订阅渲染", Status: model.DoctorFail, Detail: "读取订阅候选失败:" + err.Error()}}
+	}
+	hasQUIC := false
+	for _, ep := range eps {
+		if ep.Protocol.QUIC() {
+			hasQUIC = true
+			break
+		}
+	}
 	var checks []model.DoctorCheck
 	for _, format := range doctorFormats {
+		if hasQUIC && (format == model.FormatClash || format == model.FormatXray) {
+			checks = append(checks, model.DoctorCheck{
+				Name: "订阅 " + string(format), Status: model.DoctorWarn,
+				Detail: "客户端格式不支持当前 QUIC 候选，未渲染该格式",
+				Hint:   "请使用 clash-meta / sing-box / links / base64-links",
+			})
+			continue
+		}
 		out, err := s.renderSubscription(sample, format)
 		if err != nil {
 			checks = append(checks, model.DoctorCheck{

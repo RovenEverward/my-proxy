@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -130,7 +133,7 @@ func TestCapabilityOptionalOpsAndError(t *testing.T) {
 }
 
 func TestCapabilityReadInvalidatesEvidence(t *testing.T) {
-	for _, kind := range []string{"valid", "expired", "fingerprint", "disabled", "expired-user", "limited-user", "unauthorized", "draining", "default-replaced", "host-changed", "inbound-changed"} {
+	for _, kind := range []string{"valid", "expired", "fingerprint", "previous-detector", "disabled", "expired-user", "limited-user", "unauthorized", "draining", "default-replaced", "host-changed", "inbound-changed"} {
 		t.Run(kind, func(t *testing.T) {
 			e := newEnv(t)
 			n := e.createNode("test", "node.example.com")
@@ -160,6 +163,20 @@ func TestCapabilityReadInvalidatesEvidence(t *testing.T) {
 			}
 			if kind == "fingerprint" {
 				result.Fingerprint = "old"
+			}
+			if kind == "previous-detector" {
+				// Evidence generated before the detector identity joined the fingerprint
+				// must become unknown even when the public endpoint is unchanged.
+				body, err := json.Marshal(struct {
+					Node    model.Node
+					Inbound model.Inbound
+					Host    model.Host
+				}{n, in, model.Host{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				sum := sha256.Sum256(body)
+				result.Fingerprint = hex.EncodeToString(sum[:])
 			}
 			if err := e.st.SaveCapabilityResults([]model.CapabilityResult{result}); err != nil {
 				t.Fatal(err)

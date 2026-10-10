@@ -1,15 +1,15 @@
 # mpx
 
-轻量、可靠的自建 xray 多节点管理控制面：一台控制面 + 若干代理节点 + 一个本地 CLI 工具。
+轻量的自建多节点代理控制面：一台控制面 + 若干 Xray / sing-box 节点 + 一个本地 CLI 工具。
 
-用户流量直连各节点，控制面不介入数据转发通路；节点配置通过 SSH 声明式下发，用户名单与用量通过 xray gRPC API 动态维护。
+用户流量直连各节点，节点配置通过 SSH 声明式下发。Xray 用户通过 gRPC 动态维护；Hysteria2 / TUIC 使用独立 sing-box 服务，两核心流量计入同一用户配额。用途订阅可以按手动标签和实际入口能力选择候选。
 
 ---
 
 ## 30 秒看懂
 
 ```
-  mpx CLI (本机管理)                          终端客户端 (Clash / sing-box / v2rayN)
+  mpx CLI (本机管理)                          终端客户端 (mihomo / sing-box / v2rayN)
          │                                               │
          │ /api (管理鉴权)                               │ /sub/<token> (无鉴权订阅)
          ▼                                               ▼
@@ -18,15 +18,17 @@
     │  订阅分发: links / clash-meta / sing-box / xray / HTML 仪表盘 │
     │  后台循环: 流量采样 → 周期重置 → 人员收敛 → 节点探活         │
     └──────────────────────────────┬───────────────────────────────┘
-                                   │ ssh + xray gRPC API
+                                   │ SSH + 各核心统计 API
                  ┌─────────────────┼─────────────────┐
                  ▼                 ▼                 ▼
-              节点 A            节点 B            节点 C    (各跑一个 xray)
+              节点 A            节点 B            节点 C    (Xray / sing-box)
 ```
 
 - **免证书防探测**：原生支持 VLESS REALITY，零配置借用主流域名 TLS 指纹。
-- **动态用户收敛**：增删改查用户实时通过 gRPC 热生效，**不中断节点现有连接，不重启服务**。
-- **全客户端自适应**：按 `User-Agent` 自动下发 Clash Meta、sing-box 或 Base64 订阅；浏览器访问自动呈现用量仪表盘。
+- **用户与统一配额**：Xray 用户通过 gRPC 热更新；Hysteria2 / TUIC 使用独立凭据和逐用户计量，名单变化会重启该节点全部 QUIC 连接。
+- **用途订阅**：按日常、流媒体、下载和游戏用途选择候选与路由策略，保留原有直连、拦截规则。见 [用途订阅指南](docs/user/guides/purpose-subscriptions.md)。
+- **真实入口能力**：通过指定代理入口检测出口 IP、地区、YouTube 连通性和 Netflix 页面证据，按有效结果筛选用途候选。见 [能力检测指南](docs/user/guides/node-capabilities.md)。
+- **多协议与客户端**：按 `User-Agent` 下发 Clash Meta、sing-box 或 Base64 订阅；浏览器呈现用量与能力结果。Hysteria2 / TUIC 支持现代客户端及分享链接，见 [QUIC 节点指南](docs/user/guides/quic-protocols.md)。
 - **节点平滑维护**：支持 `drain` 优雅排空模式，维护时不强踢活跃连接，新订阅平滑切走。
 - **高韧性运维**：下发前自动运行 `xray -test`，失败秒级回滚；节点掉线指数退避重试；内置 SQLite 在线热备与暂存换入。
 

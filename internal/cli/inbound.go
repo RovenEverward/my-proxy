@@ -13,8 +13,8 @@ import (
 
 var inboundCmd = &cobra.Command{
 	Use:   "inbound",
-	Short: "管理节点上的 xray 入站",
-	Long: `管理节点上的 xray 入站 —— 客户端连上来的那一种协议。
+	Short: "管理节点上的入站",
+	Long: `管理节点上的入站 —— 客户端连上来的那一种协议。
 
 一个入站 = 节点上的一段监听(协议 + 传输 + 安全层 + 端口)。它自己就带着连接
 参数,所以"入站建好了"不等于"订阅里出现了":入站没有配对外入口时,订阅会直接
@@ -36,11 +36,11 @@ func init() {
 
 	inboundAddCmd.Flags().Int64Var(&inboundAddFlags.node, "node", 0, "所属节点 id,必填")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.tag, "tag", "", "入站 tag,空表示按协议与端口生成")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.protocol, "protocol", "", "协议:vless / vmess / trojan / shadowsocks / wireguard,必填")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.protocol, "protocol", "", "协议:vless / vmess / trojan / shadowsocks / wireguard / hysteria2 / tuic,必填")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.listen, "listen", "", "监听地址,空表示 0.0.0.0")
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.port, "port", 0, "监听端口,必填")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.network, "network", string(model.NetworkTCP), "传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.security, "security", string(model.SecurityNone), "安全层:none / tls / reality")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.network, "network", string(model.NetworkTCP), "传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade / udp;QUIC 默认 udp")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.security, "security", string(model.SecurityNone), "安全层:none / tls / reality;QUIC 默认 tls")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.wsPath, "ws-path", "", "ws 传输的路径")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.grpcService, "grpc-service", "", "gRPC 传输的 serviceName")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.sni, "sni", "", "TLS / REALITY 的 SNI")
@@ -58,13 +58,14 @@ func init() {
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.wgMTU, "wg-mtu", 1420, "wireguard MTU")
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.mux, "mux", false, "订阅里给客户端开 mux")
 	inboundAddCmd.Flags().BoolVar(&inboundAddFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.congestion, "congestion-control", "", "TUIC 拥塞控制:bbr / cubic / new_reno,空表示 bbr")
 	inboundAddCmd.Flags().IntVar(&inboundAddFlags.maxUsers, "max-users", 0, "该入站能容纳的用户数上限,0 表示不限")
 
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.tag, "tag", "", "新的入站 tag")
-	inboundEditCmd.Flags().StringVar(&inboundEditFlags.protocol, "protocol", "", "新的协议:vless / vmess / trojan / shadowsocks / wireguard")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.protocol, "protocol", "", "新的协议:vless / vmess / trojan / shadowsocks / wireguard / hysteria2 / tuic")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.listen, "listen", "", "新的监听地址,空表示 0.0.0.0")
 	inboundEditCmd.Flags().IntVar(&inboundEditFlags.port, "port", 0, "新的监听端口")
-	inboundEditCmd.Flags().StringVar(&inboundEditFlags.network, "network", "", "新的传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.network, "network", "", "新的传输方式:tcp / ws / grpc / xhttp / splithttp / httpupgrade / udp")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.security, "security", "", "新的安全层:none / tls / reality")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.wsPath, "ws-path", "", "ws 传输的路径")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.grpcService, "grpc-service", "", "gRPC 传输的 serviceName")
@@ -83,6 +84,7 @@ func init() {
 	inboundEditCmd.Flags().IntVar(&inboundEditFlags.wgMTU, "wg-mtu", 0, "wireguard MTU")
 	inboundEditCmd.Flags().BoolVar(&inboundEditFlags.mux, "mux", false, "订阅里给客户端开 mux")
 	inboundEditCmd.Flags().BoolVar(&inboundEditFlags.fragment, "fragment", false, "订阅里给客户端开分片(仅 xray)")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.congestion, "congestion-control", "", "TUIC 拥塞控制:bbr / cubic / new_reno")
 	inboundEditCmd.Flags().IntVar(&inboundEditFlags.maxUsers, "max-users", 0, "该入站能容纳的用户数上限,0 表示不限")
 }
 
@@ -114,6 +116,7 @@ var inboundAddFlags struct {
 	mux         bool
 	fragment    bool
 	maxUsers    int
+	congestion  string
 }
 
 // maxUsersCell 把入站的用户数上限说成一个词:0 表示不限,不打印 0 让人误读成
@@ -154,6 +157,9 @@ func inboundDetail(in model.Inbound) string {
 	}
 	if in.Flow != "" {
 		parts = append(parts, "flow="+in.Flow)
+	}
+	if in.CongestionControl != "" {
+		parts = append(parts, "congestion="+in.CongestionControl)
 	}
 	return strings.Join(parts, " ")
 }
@@ -250,6 +256,7 @@ var inboundShowCmd = &cobra.Command{
 			{"REALITY 公钥", in.RealityPub},
 			{"REALITY shortId", strings.Join(in.ShortIDs, ",")},
 			{"flow", in.Flow},
+			{"拥塞控制", in.CongestionControl},
 			{"xhttp 路径", in.XHTTPPath},
 			{"xhttp Host", in.XHTTPHost},
 			{"xhttp mode", in.XHTTPMode},
@@ -290,35 +297,44 @@ var inboundAddCmd = &cobra.Command{
 			return fmt.Errorf("--port 必须在 1-65535 之间,收到 %d", inboundAddFlags.port)
 		}
 		in := model.Inbound{
-			NodeID:      inboundAddFlags.node,
-			Tag:         inboundAddFlags.tag,
-			Protocol:    model.Protocol(inboundAddFlags.protocol),
-			Listen:      inboundAddFlags.listen,
-			Port:        inboundAddFlags.port,
-			Network:     model.Network(inboundAddFlags.network),
-			Security:    model.Security(inboundAddFlags.security),
-			WSPath:      inboundAddFlags.wsPath,
-			GRPCService: inboundAddFlags.grpcService,
-			SNI:         inboundAddFlags.sni,
-			ALPN:        splitCSV(inboundAddFlags.alpn),
-			Fingerprint: inboundAddFlags.fingerprint,
-			CertFile:    inboundAddFlags.certFile,
-			KeyFile:     inboundAddFlags.keyFile,
-			RealityDest: inboundAddFlags.realityDest,
-			ShortIDs:    splitCSV(inboundAddFlags.shortIDs),
-			Flow:        inboundAddFlags.flow,
-			XHTTPPath:   inboundAddFlags.xhttpPath,
-			XHTTPHost:   inboundAddFlags.xhttpHost,
-			XHTTPMode:   inboundAddFlags.xhttpMode,
-			WGAddress:   inboundAddFlags.wgAddress,
-			WGMTU:       inboundAddFlags.wgMTU,
-			Mux:         inboundAddFlags.mux,
-			Fragment:    inboundAddFlags.fragment,
-			MaxUsers:    inboundAddFlags.maxUsers,
+			NodeID:            inboundAddFlags.node,
+			Tag:               inboundAddFlags.tag,
+			Protocol:          model.Protocol(inboundAddFlags.protocol),
+			Listen:            inboundAddFlags.listen,
+			Port:              inboundAddFlags.port,
+			Network:           model.Network(inboundAddFlags.network),
+			Security:          model.Security(inboundAddFlags.security),
+			WSPath:            inboundAddFlags.wsPath,
+			GRPCService:       inboundAddFlags.grpcService,
+			SNI:               inboundAddFlags.sni,
+			ALPN:              splitCSV(inboundAddFlags.alpn),
+			Fingerprint:       inboundAddFlags.fingerprint,
+			CertFile:          inboundAddFlags.certFile,
+			KeyFile:           inboundAddFlags.keyFile,
+			RealityDest:       inboundAddFlags.realityDest,
+			ShortIDs:          splitCSV(inboundAddFlags.shortIDs),
+			Flow:              inboundAddFlags.flow,
+			XHTTPPath:         inboundAddFlags.xhttpPath,
+			XHTTPHost:         inboundAddFlags.xhttpHost,
+			XHTTPMode:         inboundAddFlags.xhttpMode,
+			WGAddress:         inboundAddFlags.wgAddress,
+			WGMTU:             inboundAddFlags.wgMTU,
+			Mux:               inboundAddFlags.mux,
+			Fragment:          inboundAddFlags.fragment,
+			MaxUsers:          inboundAddFlags.maxUsers,
+			CongestionControl: inboundAddFlags.congestion,
 		}
 		c, err := newClient()
 		if err != nil {
 			return err
+		}
+		if in.Protocol.QUIC() {
+			if !cmd.Flags().Changed("network") {
+				in.Network = model.NetworkUDP
+			}
+			if !cmd.Flags().Changed("security") {
+				in.Security = model.SecurityTLS
+			}
 		}
 		raw, err := c.do("POST", "/api/inbounds", in)
 		if err != nil {
@@ -392,6 +408,7 @@ var inboundEditFlags struct {
 	mux         bool
 	fragment    bool
 	maxUsers    int
+	congestion  string
 }
 
 var inboundEditCmd = &cobra.Command{
@@ -441,6 +458,14 @@ mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-u
 		}
 		if changed("protocol") {
 			in.Protocol = model.Protocol(inboundEditFlags.protocol)
+			if in.Protocol.QUIC() {
+				if !changed("network") {
+					in.Network = model.NetworkUDP
+				}
+				if !changed("security") {
+					in.Security = model.SecurityTLS
+				}
+			}
 		}
 		if changed("listen") {
 			in.Listen = inboundEditFlags.listen
@@ -505,6 +530,9 @@ mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-u
 		if changed("fragment") {
 			in.Fragment = inboundEditFlags.fragment
 		}
+		if changed("congestion-control") {
+			in.CongestionControl = inboundEditFlags.congestion
+		}
 		if changed("max-users") {
 			in.MaxUsers = inboundEditFlags.maxUsers
 		}
@@ -526,7 +554,7 @@ mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-u
 		// 改了端口 / 传输 / 安全层 = 节点上那份 config.json 已经对不上了。
 		if in.Port != oldPort || in.Network != oldNetwork || in.Security != oldSecurity {
 			fmt.Println("注意:改的是节点配置,节点上还是旧的;跑 mpx node sync " +
-				strconv.FormatInt(updated.ID, 10) + " 才生效(会重启 xray)")
+				strconv.FormatInt(updated.NodeID, 10) + " 才生效(会重启对应核心)")
 		}
 		return nil
 	},

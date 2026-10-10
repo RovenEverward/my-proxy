@@ -1,11 +1,20 @@
 package node
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -115,7 +124,7 @@ func TestProbeCapabilitiesValidationAndFailures(t *testing.T) {
 		func(ep *render.Endpoint) { ep.Address = "" },
 		func(ep *render.Endpoint) { ep.UUID = "" },
 		func(ep *render.Endpoint) { ep.AllowInsecure = true },
-		func(ep *render.Endpoint) { ep.Protocol = "hysteria2" },
+		func(ep *render.Endpoint) { ep.Protocol = "unsupported" },
 	} {
 		ep := capabilityEndpoint()
 		change(&ep)
@@ -132,6 +141,56 @@ func TestProbeCapabilitiesValidationAndFailures(t *testing.T) {
 	got, err = ProbeCapabilities(context.Background(), r, model.Node{}, capabilityEndpoint(), []string{"youtube"})
 	if err != nil || got[0].Status != CapabilityUnknown || got[0].Reason != "parser_error: response_envelope" {
 		t.Fatalf("parser error: %+v %v", got, err)
+	}
+}
+
+func TestProbeCapabilitiesQUICContract(t *testing.T) {
+	for _, protocol := range []model.Protocol{model.ProtocolHysteria2, model.ProtocolTUIC} {
+		ep := capabilityEndpoint()
+		ep.Protocol, ep.Network, ep.Security = protocol, model.NetworkUDP, model.SecurityTLS
+		ep.Password, ep.CongestionControl = "secret'$(echo nope)\n\"listen_port\": 0", "cubic"
+		r := &capabilityRunner{output: capabilityEnvelope("youtube", capabilityResponse{code: 204, url: capabilityYouTubeURL})}
+		if _, err := ProbeCapabilities(context.Background(), r, model.Node{}, ep, []string{"youtube"}); err != nil {
+			t.Fatal(err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal(r.stdin, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		inbounds := cfg["inbounds"].([]any)
+		outbounds := cfg["outbounds"].([]any)
+		in, out := inbounds[0].(map[string]any), outbounds[0].(map[string]any)
+		if len(inbounds) != 1 || len(outbounds) != 1 || in["type"] != "socks" || in["listen"] != "127.0.0.1" || in["listen_port"] != float64(0) || out["type"] != string(protocol) || out["password"] != ep.Password || out["server_port"] != float64(ep.Port) || out["server"] != ep.Address {
+			t.Fatalf("QUIC endpoint altered: %s", r.stdin)
+		}
+		if strings.Contains(r.script, ep.Password) || strings.Contains(r.script, ep.Address) || !strings.Contains(r.script, singBoxBin) || !strings.Contains(r.script, CapabilityDetector+"/"+CapabilityDetectorVersion) {
+			t.Fatal("QUIC script core selection or secret isolation failed")
+		}
+		for _, change := range []func(*render.Endpoint){
+			func(ep *render.Endpoint) { ep.Password = "" },
+			func(ep *render.Endpoint) { ep.Port = 0 },
+			func(ep *render.Endpoint) { ep.Address = "" },
+			func(ep *render.Endpoint) { ep.Network = model.NetworkTCP },
+			func(ep *render.Endpoint) { ep.Security = model.SecurityNone },
+			func(ep *render.Endpoint) { ep.AllowInsecure = true },
+		} {
+			bad := ep
+			change(&bad)
+			runner := &capabilityRunner{}
+			if _, err := ProbeCapabilities(context.Background(), runner, model.Node{}, bad, []string{"egress"}); err == nil || runner.calls != 0 {
+				t.Fatal("invalid QUIC endpoint reached SSH")
+			}
+		}
+		if protocol == model.ProtocolTUIC {
+			for _, change := range []func(*render.Endpoint){func(ep *render.Endpoint) { ep.UUID = "" }, func(ep *render.Endpoint) { ep.CongestionControl = "invalid" }} {
+				bad := ep
+				change(&bad)
+				runner := &capabilityRunner{}
+				if _, err := ProbeCapabilities(context.Background(), runner, model.Node{}, bad, []string{"egress"}); err == nil || runner.calls != 0 {
+					t.Fatal("invalid TUIC auth/cc reached SSH")
+				}
+			}
+		}
 	}
 }
 
@@ -249,10 +308,12 @@ func TestCapabilityYouTubeAndEnvelope(t *testing.T) {
 }
 
 func TestCapabilityShellSyntaxAndQuoting(t *testing.T) {
-	script := capabilityScript([]capabilityRequest{{"safe", "http://example.test/'$(touch /tmp/never);echo '"}})
-	cmd := exec.Command("sh", "-n", "-c", script)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("POSIX shell syntax: %v %s", err, out)
+	for _, core := range []model.Core{model.CoreXray, model.CoreSingBox} {
+		script := capabilityScriptForCore([]capabilityRequest{{"safe", "http://example.test/'$(touch /tmp/never);echo '"}}, core)
+		cmd := exec.Command("sh", "-n", "-c", script)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%s POSIX shell syntax: %v %s", core, err, out)
+		}
 	}
 }
 
@@ -396,6 +457,205 @@ func TestLiveCapabilityActualProxy(t *testing.T) {
 		t.Fatalf("watchdog not bounded: err=%v elapsed=%v", err, time.Since(started))
 	}
 	assertCleanup()
+}
+
+// capabilityQUICRunner executes the production script with local trusted cores.
+// Instrumentation records cleanup resources without changing proxy requests.
+type capabilityQUICRunner struct {
+	bin, trust, trace string
+	watchdog          bool
+}
+
+func (r capabilityQUICRunner) Run(ctx context.Context, n model.Node, script string) (string, error) {
+	return r.RunWithInput(ctx, n, script, nil)
+}
+func (r capabilityQUICRunner) RunWithInput(ctx context.Context, _ model.Node, script string, input []byte) (string, error) {
+	// macOS native Go trust ignores SSL_CERT_FILE. Supply the fixture CA via
+	// sing-box's TLS trust setting; hostname and signature checks remain enabled.
+	var cfg map[string]any
+	if err := json.Unmarshal(input, &cfg); err != nil {
+		return "", err
+	}
+	cfg["outbounds"].([]any)[0].(map[string]any)["tls"].(map[string]any)["certificate_path"] = r.trust
+	var err error
+	input, err = json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	script = strings.TrimSuffix(strings.TrimPrefix(script, "sh -c '"), "'")
+	script = strings.ReplaceAll(script, `'\''`, `'`)
+	for _, item := range []struct{ before, after string }{
+		{`chmod 700 "$tmp"`, `printf 'tmp:%s\n' "$tmp" >> ` + shellQuote(r.trace) + "\n" + `chmod 700 "$tmp"`},
+		{`& pid=$!`, `& pid=$!; printf 'pid:%s\n' "$pid" >> ` + shellQuote(r.trace)},
+		{`& guard=$!`, `& guard=$!; printf 'pid:%s\n' "$guard" >> ` + shellQuote(r.trace)},
+		{`& sleeper=$!`, `& sleeper=$!; printf 'pid:%s\n' "$sleeper" >> ` + shellQuote(r.trace)},
+		{`& curlpid=$!`, `& curlpid=$!; printf 'pid:%s\n' "$curlpid" >> ` + shellQuote(r.trace)},
+	} {
+		script = strings.Replace(script, item.before, item.after, 1)
+	}
+	if r.watchdog {
+		script = strings.Replace(script, "sleep 65", "sleep 3", 1)
+	}
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	cmd.Env = append(os.Environ(), "MPX_SING_BOX_BIN="+r.bin, "SSL_CERT_FILE="+r.trust, "NO_PROXY=*")
+	cmd.Stdin = bytes.NewReader(input)
+	// SIGTERM gives the same production trap a chance to clean canceled requests.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 3 * time.Second
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.String(), fmt.Errorf("local QUIC probe: %w: %s", err, stderr.String())
+	}
+	return stdout.String(), nil
+}
+func capabilityAssertCleanup(t *testing.T, tracePath string) {
+	t.Helper()
+	trace, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(trace)), "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			t.Fatalf("invalid trace %q", line)
+		}
+		if key == "tmp" {
+			if _, err := os.Stat(value); !os.IsNotExist(err) {
+				t.Fatalf("credential directory leaked: %q err=%v", value, err)
+			}
+		} else {
+			pid, err := strconv.Atoi(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := syscall.Kill(pid, 0); err == nil {
+				t.Fatalf("process leaked: %d", pid)
+			}
+		}
+	}
+}
+func capabilityTrustedCertificate(t *testing.T, dir string) (tls.Certificate, string, string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "mpx capability local test"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), DNSNames: []string{"api.ip.sb", "probe.example.test"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	certPath, keyPath := filepath.Join(dir, "trust.pem"), filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, certPath, keyPath
+}
+
+// The official URL remains unchanged. Only the actual server redirects that
+// destination to the local trusted HTTPS origin: SOCKS -> QUIC ep -> HTTPS.
+func TestLiveCapabilityQUICActualProxy(t *testing.T) {
+	bin := os.Getenv("MPX_SING_BOX_BIN")
+	if bin == "" {
+		t.Skip("set MPX_SING_BOX_BIN to an official sing-box with_quic binary")
+	}
+	for _, protocol := range []model.Protocol{model.ProtocolHysteria2, model.ProtocolTUIC} {
+		t.Run(string(protocol), func(t *testing.T) {
+			dir := t.TempDir()
+			cert, certPath, keyPath := capabilityTrustedCertificate(t, dir)
+			var count atomic.Int32
+			var slow atomic.Bool
+			target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				count.Add(1)
+				if slow.Load() {
+					<-r.Context().Done()
+					return
+				}
+				if r.Host != "api.ip.sb" || r.URL.Path != "/geoip" || r.UserAgent() != CapabilityDetector+"/"+CapabilityDetectorVersion {
+					t.Errorf("unexpected official request host=%q path=%q agent=%q", r.Host, r.URL.Path, r.UserAgent())
+				}
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"ip":"8.8.8.8","country_code":"US"}`)
+			}))
+			target.TLS = &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+			target.StartTLS()
+			defer target.Close()
+			l, err := net.ListenPacket("udp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port := l.LocalAddr().(*net.UDPAddr).Port
+			_ = l.Close()
+			password, uuid := "authorized-independent-test-password", "8db4cae4-d335-467f-8b68-a9e0626fc91a"
+			user := map[string]any{"password": password}
+			in := map[string]any{"type": string(protocol), "listen": "127.0.0.1", "listen_port": port, "users": []any{user}, "tls": map[string]any{"enabled": true, "certificate_path": certPath, "key_path": keyPath}}
+			if protocol == model.ProtocolTUIC {
+				user["uuid"] = uuid
+				in["congestion_control"] = "cubic"
+			}
+			targetPort := target.Listener.Addr().(*net.TCPAddr).Port
+			config := map[string]any{"log": map[string]any{"level": "error"}, "inbounds": []any{in}, "outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}}, "route": map[string]any{"rules": []any{map[string]any{"action": "route-options", "override_address": "127.0.0.1", "override_port": targetPort}}, "final": "direct"}}
+			body, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(dir, "quic-server.json")
+			if err := os.WriteFile(configPath, body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			server := exec.Command(bin, "run", "-c", configPath)
+			if err := server.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = server.Process.Kill(); _ = server.Wait() }()
+			t.Setenv("CURL_CA_BUNDLE", certPath)
+			ep := render.Endpoint{Address: "127.0.0.1", Port: port, Protocol: protocol, Password: password, UUID: uuid, Network: model.NetworkUDP, Security: model.SecurityTLS, SNI: "probe.example.test", CongestionControl: "cubic"}
+			runner := capabilityQUICRunner{bin: bin, trust: certPath, trace: filepath.Join(dir, "trace")}
+			observations, err := ProbeCapabilities(context.Background(), runner, model.Node{}, ep, []string{"egress"})
+			if err != nil || len(observations) != 1 || observations[0].Status != CapabilityAvailable || observations[0].Region != "US" || count.Load() != 1 {
+				t.Fatalf("actual QUIC proxy failed: obs=%+v err=%v hits=%d", observations, err, count.Load())
+			}
+			capabilityAssertCleanup(t, runner.trace)
+			ep.Password = "wrong-authentication"
+			observations, err = ProbeCapabilities(context.Background(), runner, model.Node{}, ep, []string{"egress"})
+			if err != nil || len(observations) != 1 || observations[0].Status != CapabilityUnknown || !strings.HasPrefix(observations[0].Reason, "request_") || count.Load() != 1 {
+				t.Fatalf("wrong auth fallback: obs=%+v err=%v hits=%d", observations, err, count.Load())
+			}
+			capabilityAssertCleanup(t, runner.trace)
+			ep.Password = password
+			slow.Store(true)
+			runner.watchdog = true
+			started := time.Now()
+			observations, err = ProbeCapabilities(context.Background(), runner, model.Node{}, ep, []string{"egress"})
+			if err == nil || observations[0].Status != CapabilityUnknown || time.Since(started) > 6*time.Second {
+				t.Fatalf("watchdog unbounded: %+v %v", observations, err)
+			}
+			capabilityAssertCleanup(t, runner.trace)
+			runner.watchdog = false
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			observations, err = ProbeCapabilities(ctx, runner, model.Node{}, ep, []string{"egress"})
+			if err == nil || observations[0].Status != CapabilityUnknown {
+				t.Fatalf("cancel definitive: %+v %v", observations, err)
+			}
+			capabilityAssertCleanup(t, runner.trace)
+			t.Logf("%s production entry: trusted TLS, authorized hit, wrong auth no hit, watchdog/cancel cleanup verified", protocol)
+		})
+	}
 }
 
 // Public availability varies with the machine's route. This opt-in observation

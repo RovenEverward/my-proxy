@@ -111,6 +111,13 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	d := model.CoreDeployment{APIPort: n.APIPortOrDefault(), ConfigPath: n.ConfigPathOrDefault(), ServiceName: n.ServiceNameOrDefault()}
+	other := model.CoreDeployment{Core: model.CoreSingBox}
+	other.APIPort, other.ConfigPath, other.ServiceName = other.APIPortOrDefault(), other.ConfigPathOrDefault(), other.ServiceNameOrDefault()
+	if msg := validateCoreDeployment(&d, other, nil); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 	if req.SSHPassword != "" {
 		// 密码来报到:先用它把控制面公钥装上节点,装不上就当这次建节点没发生。
 		// 失败原样回给使用者:密码错、密码认证没开、连不上,都是从 ssh 那边
@@ -191,6 +198,21 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	n.ID = id
 	if msg := validateNode(&n); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	other, err := s.store.GetCoreDeployment(id, model.CoreSingBox)
+	if err != nil {
+		s.writeStoreError(w, err, "节点核心")
+		return
+	}
+	inbounds, err := s.store.ListInbounds(id)
+	if err != nil {
+		s.writeStoreError(w, err, "入站")
+		return
+	}
+	d := model.CoreDeployment{APIPort: n.APIPortOrDefault(), ConfigPath: n.ConfigPathOrDefault(), ServiceName: n.ServiceNameOrDefault()}
+	if msg := validateCoreDeployment(&d, *other, inbounds); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -289,7 +311,23 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 	}
 	version := r.URL.Query().Get("version")
 	// 同 sync:install 可能跑十几分钟,客户端断连不该把它半途杀掉。
-	installed, err := s.nodeOps.InstallNode(context.Background(), *n, version)
+	core := model.Core(r.URL.Query().Get("core"))
+	if core == "" {
+		core = model.CoreXray
+	}
+	if !core.Valid() {
+		writeError(w, http.StatusBadRequest, "核心只能是 xray / sing-box")
+		return
+	}
+	var installed string
+	if installer, ok := s.nodeOps.(CoreInstaller); ok {
+		installed, err = installer.InstallNodeCore(context.Background(), *n, core, version)
+	} else if core == model.CoreXray {
+		installed, err = s.nodeOps.InstallNode(context.Background(), *n, version)
+	} else {
+		writeError(w, http.StatusNotImplemented, "控制面没有接上 sing-box 安装通道")
+		return
+	}
 	if err != nil {
 		s.logger.Error("安装节点核心失败", "node", n.Name, "error", err)
 		// 版本非空说明核心确实已经推上去了,是后面的配置没让服务起来 ——
@@ -302,7 +340,7 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("已安装节点核心", "node", n.Name, "version", installed, "address", n.Address)
-	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "version": installed})
+	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "core": core, "version": installed})
 }
 
 // handleDrainNode 标记节点开始排水:订阅渲染不再把它的入口发给用户。

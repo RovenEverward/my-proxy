@@ -11,7 +11,7 @@ const inboundColumns = `id, node_id, tag, protocol, listen, port, network, secur
 	ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
 	reality_dest, reality_priv, reality_pub, short_ids, flow,
 	xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
-	mux, fragment, max_users`
+	mux, fragment, max_users, congestion_control`
 
 func scanInbound(sc rowScanner) (*model.Inbound, error) {
 	var (
@@ -24,7 +24,7 @@ func scanInbound(sc rowScanner) (*model.Inbound, error) {
 		&i.Fingerprint, &i.CertFile, &i.KeyFile, &i.RealityDest, &i.RealityPriv,
 		&i.RealityPub, &shortIDs, &i.Flow,
 		&i.XHTTPPath, &i.XHTTPHost, &i.XHTTPMode,
-		&i.WGSecretKey, &i.WGAddress, &i.WGMTU, &mux, &fragment, &i.MaxUsers); err != nil {
+		&i.WGSecretKey, &i.WGAddress, &i.WGMTU, &mux, &fragment, &i.MaxUsers, &i.CongestionControl); err != nil {
 		return nil, err
 	}
 	i.Mux = mux != 0
@@ -56,16 +56,16 @@ func (s *Store) CreateInbound(i *model.Inbound) error {
 			ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
 			reality_dest, reality_priv, reality_pub, short_ids, flow,
 			xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
-			mux, fragment, max_users)
+			mux, fragment, max_users, congestion_control)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-		         ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
 		i.CertFile, i.KeyFile, i.RealityDest, i.RealityPriv, i.RealityPub,
 		shortIDs, i.Flow,
 		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
 		i.WGSecretKey, i.WGAddress, i.WGMTU,
-		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers)
+		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl)
 	if err != nil {
 		return fmt.Errorf("创建入站 %q: %w", i.Tag, err)
 	}
@@ -133,7 +133,7 @@ func (s *Store) UpdateInbound(i *model.Inbound) error {
 		     ws_path = ?, grpc_service = ?, sni = ?, alpn = ?, fingerprint = ?, cert_file = ?, key_file = ?,
 		     reality_dest = ?, reality_priv = ?, reality_pub = ?, short_ids = ?, flow = ?,
 		     xhttp_path = ?, xhttp_host = ?, xhttp_mode = ?,
-		     wg_secret = ?, wg_address = ?, wg_mtu = ?, mux = ?, fragment = ?, max_users = ?
+		     wg_secret = ?, wg_address = ?, wg_mtu = ?, mux = ?, fragment = ?, max_users = ?, congestion_control = ?
 		 WHERE id = ?`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
@@ -141,7 +141,7 @@ func (s *Store) UpdateInbound(i *model.Inbound) error {
 		shortIDs, i.Flow,
 		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
 		i.WGSecretKey, i.WGAddress, i.WGMTU,
-		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.ID)
+		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl, i.ID)
 	if err != nil {
 		return fmt.Errorf("更新入站 %d: %w", i.ID, err)
 	}

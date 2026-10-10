@@ -14,16 +14,16 @@ import (
 )
 
 const capabilityBudget = 2 * time.Minute
-const capabilityDetector = "mpx-proxy-v1"
 
 // CapabilityFingerprint excludes subscriber-specific credentials; results describe
 // one concrete exposure and deployed route, never the machine's default egress.
 func CapabilityFingerprint(n model.Node, in model.Inbound, h model.Host) string {
 	body, _ := json.Marshal(struct {
-		Node    model.Node
-		Inbound model.Inbound
-		Host    model.Host
-	}{n, in, h})
+		Node            model.Node
+		Inbound         model.Inbound
+		Host            model.Host
+		DetectorVersion string
+	}{n, in, h, node.CapabilityDetector + "/" + node.CapabilityDetectorVersion})
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])
 }

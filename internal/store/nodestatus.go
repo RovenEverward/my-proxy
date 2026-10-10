@@ -9,7 +9,7 @@ import (
 )
 
 // nodeStatusColumns 是 node_status 表的列顺序,扫描时按同一顺序取值。
-const nodeStatusColumns = `node_id, checked_at, reachable, active, version, observed_hash, certificates, error`
+const nodeStatusColumns = `node_id, checked_at, reachable, active, version, observed_hash, certificates, error, cores`
 
 func scanNodeStatus(sc rowScanner) (*model.NodeStatus, error) {
 	var (
@@ -18,9 +18,10 @@ func scanNodeStatus(sc rowScanner) (*model.NodeStatus, error) {
 		reach   int
 		active  int
 		certs   string
+		cores   string
 	)
 	if err := sc.Scan(&s.NodeID, &checked, &reach, &active, &s.Version,
-		&s.ObservedHash, &certs, &s.Error); err != nil {
+		&s.ObservedHash, &certs, &s.Error, &cores); err != nil {
 		return nil, err
 	}
 	s.CheckedAt = time.Unix(checked, 0).UTC()
@@ -31,6 +32,10 @@ func scanNodeStatus(sc rowScanner) (*model.NodeStatus, error) {
 		return nil, fmt.Errorf("解析节点 %d 的证书列表: %w", s.NodeID, err)
 	}
 	s.Certificates = list
+	s.Cores, err = decodeSlice[model.CoreStatus](cores)
+	if err != nil {
+		return nil, fmt.Errorf("解析节点 %d 的核心状态: %w", s.NodeID, err)
+	}
 	return &s, nil
 }
 
@@ -48,9 +53,13 @@ func (s *Store) UpsertNodeStatus(st model.NodeStatus) error {
 	if err != nil {
 		return fmt.Errorf("序列化节点 %d 的证书列表: %w", st.NodeID, err)
 	}
+	cores, err := encodeSlice(st.Cores)
+	if err != nil {
+		return fmt.Errorf("序列化节点 %d 的核心状态: %w", st.NodeID, err)
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO node_status (node_id, checked_at, reachable, active, version, observed_hash, certificates, error)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO node_status (node_id, checked_at, reachable, active, version, observed_hash, certificates, error, cores)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(node_id) DO UPDATE SET
 			checked_at    = excluded.checked_at,
 			reachable     = excluded.reachable,
@@ -58,9 +67,10 @@ func (s *Store) UpsertNodeStatus(st model.NodeStatus) error {
 			version       = excluded.version,
 			observed_hash = excluded.observed_hash,
 			certificates  = excluded.certificates,
-			error         = excluded.error`,
+			error         = excluded.error,
+			cores = excluded.cores`,
 		st.NodeID, normalizeTime(st.CheckedAt).Unix(), boolToInt(st.Reachable), boolToInt(st.Active),
-		st.Version, st.ObservedHash, certs, st.Error)
+		st.Version, st.ObservedHash, certs, st.Error, cores)
 	if err != nil {
 		return fmt.Errorf("写入节点 %d 的状态: %w", st.NodeID, err)
 	}

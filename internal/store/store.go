@@ -60,6 +60,16 @@ const pragmas = "_pragma=journal_mode(WAL)" +
 // DELETE。users.expire_at 可空,存 Unix 秒;created_at 也存 Unix 秒,不用
 // SQLite 的日期文本,免得时区与格式来回转换。
 var schema = []string{
+	`CREATE TABLE IF NOT EXISTS core_deployments (
+		node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+		core TEXT NOT NULL,
+		api_port INTEGER NOT NULL DEFAULT 0,
+		config_path TEXT NOT NULL DEFAULT '',
+		service_name TEXT NOT NULL DEFAULT '',
+		deployed_hash TEXT NOT NULL DEFAULT '',
+		deployed_at INTEGER,
+		PRIMARY KEY(node_id, core)
+	)`,
 	`CREATE TABLE IF NOT EXISTS nodes (
 		id           INTEGER PRIMARY KEY AUTOINCREMENT,
 		name         TEXT    NOT NULL UNIQUE,
@@ -286,6 +296,9 @@ func (s *Store) migrate() error {
 	if err := s.addMissingColumns(); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_core ON traffic_samples(node_id, core, username, id)`); err != nil {
+		return err
+	}
 	if err := s.migrateCapabilities(); err != nil {
 		return err
 	}
@@ -296,6 +309,10 @@ func (s *Store) migrate() error {
 // 什么都不做,所以更早版本建的库要靠这里补。每条都先查一下列在不在,因此对任何
 // 状态的库都是幂等的。
 var addedColumns = []struct{ table, column, ddl string }{
+	{"traffic_samples", "generation", `ALTER TABLE traffic_samples ADD COLUMN generation TEXT NOT NULL DEFAULT ''`},
+	{"node_status", "cores", `ALTER TABLE node_status ADD COLUMN cores TEXT NOT NULL DEFAULT '[]'`},
+	{"inbounds", "congestion_control", `ALTER TABLE inbounds ADD COLUMN congestion_control TEXT NOT NULL DEFAULT ''`},
+	{"traffic_samples", "core", `ALTER TABLE traffic_samples ADD COLUMN core TEXT NOT NULL DEFAULT 'xray'`},
 	{"users", "lifetime_used_traffic",
 		`ALTER TABLE users ADD COLUMN lifetime_used_traffic INTEGER NOT NULL DEFAULT 0`},
 	{"users", "traffic_reset_at",

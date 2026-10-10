@@ -202,6 +202,22 @@ func validateInbound(i *model.Inbound) string {
 	if !i.Protocol.Valid() {
 		return "不支持的协议: " + string(i.Protocol)
 	}
+	if i.Protocol.QUIC() {
+		if i.Network == "" {
+			i.Network = model.NetworkUDP
+		}
+		if i.Security == "" {
+			i.Security = model.SecurityTLS
+		}
+		if msg := validateQUICInbound(i); msg != "" {
+			return msg
+		}
+	} else if i.Network == model.NetworkUDP {
+		return "udp 传输只支持 hysteria2 / tuic"
+	}
+	if !i.Protocol.QUIC() && i.CongestionControl != "" {
+		return "拥塞控制只支持 TUIC"
+	}
 	if !i.Network.Valid() {
 		return "不支持的传输方式: " + string(i.Network)
 	}

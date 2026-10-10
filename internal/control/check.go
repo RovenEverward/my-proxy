@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 )
 
 // checkBudget 是查一台节点状态的上限。
@@ -63,6 +64,45 @@ func (c *Control) CheckNode(ctx context.Context, n model.Node, now time.Time) (m
 	for i := range st.Certificates {
 		if st.Certificates[i].InboundName == "" {
 			st.Certificates[i].InboundName = names[st.Certificates[i].InboundID]
+		}
+	}
+	d, err := c.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		return st, err
+	}
+	if len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0 || d.DeployedHash != "" {
+		core := model.CoreStatus{Core: model.CoreSingBox}
+		core.Active, err = node.CoreIsActive(ctx, c.runner, n, *d)
+		if err != nil {
+			core.Error = err.Error()
+		} else {
+			core.Version, err = node.SingBoxVersion(ctx, c.runner, n)
+			if err != nil {
+				core.Error = err.Error()
+			}
+			out, hashErr := c.runner.Run(ctx, n, "sha256sum "+shellQuote(d.ConfigPathOrDefault()))
+			if hashErr == nil {
+				fields := strings.Fields(out)
+				if len(fields) > 0 {
+					core.ObservedHash = fields[0]
+				}
+			} else {
+				core.Error += "; config hash: " + hashErr.Error()
+			}
+			if core.Active {
+				_, statsErr := node.QuerySingBoxTraffic(ctx, c.runner, n, *d)
+				core.StatsAvailable = statsErr == nil
+				if statsErr != nil {
+					core.Error += "; individual stats: " + statsErr.Error()
+				}
+			}
+		}
+		st.Cores = append(st.Cores, core)
+		// The legacy summary observes the required cores on a QUIC-only node.
+		if len(model.InboundsForCore(inbounds, model.CoreXray)) == 0 && n.DeployedHash == "" {
+			st.Active = core.Active
+			st.Version = core.Version
+			st.ObservedHash = core.ObservedHash
 		}
 	}
 	return st, nil

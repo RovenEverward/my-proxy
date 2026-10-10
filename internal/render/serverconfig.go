@@ -266,6 +266,9 @@ func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User,
 	}
 
 	for _, in := range inbounds {
+		if in.Protocol.Core() != model.CoreXray {
+			continue
+		}
 		rendered, err := serverRenderInbound(in, users, now)
 		if err != nil {
 			return nil, err

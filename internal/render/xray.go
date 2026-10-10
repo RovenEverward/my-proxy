@@ -162,6 +162,9 @@ func xrayTemplateOutbounds(v any) ([]string, error) {
 
 // xrayNode 把一个端点渲染成 xray 的 outbound。
 func xrayNode(ep Endpoint, tag string) (map[string]any, error) {
+	if ep.Protocol.QUIC() {
+		return nil, fmt.Errorf("xray: 不支持 QUIC 协议 %q,请使用 sing-box 或 Clash.Meta", ep.Protocol)
+	}
 	if !ep.Protocol.Valid() {
 		return nil, fmt.Errorf("xray: 端点 %q 的协议 %q 不受支持", tag, ep.Protocol)
 	}

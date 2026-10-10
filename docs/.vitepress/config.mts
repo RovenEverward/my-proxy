@@ -43,6 +43,7 @@ export default defineConfig({
             { text: '客户端订阅导入与使用', link: '/user/guides/client-setup' },
             { text: '用途订阅与日常/流媒体分流', link: '/user/guides/purpose-subscriptions' },
             { text: '节点运维与生命周期管理', link: '/user/guides/node-operations' },
+            { text: 'Hysteria2 与 TUIC 节点', link: '/user/guides/quic-protocols' },
             { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
             { text: '用户与配额管理', link: '/user/guides/user-management' },
             { text: '告警与到期通知配置', link: '/user/guides/notifications' },
@@ -79,6 +80,7 @@ export default defineConfig({
             { text: '现状', link: '/internal/status' },
             { text: '路线图', link: '/internal/roadmap' },
             { text: '缺口与待定项', link: '/internal/open-questions' },
+            { text: 'QUIC 运行验证记录', link: '/internal/quic-validation' },
             { text: '节点能力检测验证记录', link: '/internal/capability-validation' }
           ]
         }

@@ -128,6 +128,8 @@ func (s *Server) routes() {
 	// 节点现在怎么样),差别只在新鲜程度 —— 那本来就是查询参数该管的事。缓存
 	// 状态因此只有这一个出口,不会再出现"哪一份是刚查的"要人去猜。
 	api.HandleFunc("GET /api/nodes/{id}", s.handleGetNode)
+	api.HandleFunc("GET /api/nodes/{id}/cores/{core}", s.handleGetCoreDeployment)
+	api.HandleFunc("PUT /api/nodes/{id}/cores/{core}", s.handleSetCoreDeployment)
 
 	api.HandleFunc("GET /api/doctor", s.handleDoctor)
 	api.HandleFunc("PUT /api/nodes/{id}", s.handleUpdateNode)

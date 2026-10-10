@@ -170,8 +170,8 @@ func (t *Task) Run(ctx context.Context) {
 //     重置只动 users.used_traffic,traffic_samples 不动,所以区间用量仍然算得回来。
 //  3. 收敛名单。用重置并采样后的状态决定谁该在节点上,该加的加、该摘的摘。
 //
-// 正在退避的节点整轮跳过;采样就失败的节点这一轮不再收敛 —— 它已经不通了,收敛
-// 试了也只是再等一个预算。一台节点失败不影响其余节点:循环继续往下走。
+// 单核心节点保留整节点退避。混合节点不能用一个核心的故障跳过另一个核心：
+// 每轮分别尝试采样和收敛，错误仍记录退避状态，但该状态不阻止健康核心处理用户。
 //
 // 结账之后还有两件"顺便做"的事:给用户发提醒、抽查节点状态。两者都在 finishTick
 // 之后,理由同 sweepNodeStatus 上的注释 —— 它们的耗时不该算进"一轮多久"。
@@ -186,18 +186,21 @@ func (t *Task) Tick(ctx context.Context) {
 		return
 	}
 
-	// 这一轮不再处理该节点的标记。采样失败与「本来就在退避」都进这里。
+	// 单核心继续整节点退避；混合核心故障不能阻断另一个核心的撤销。
 	skip := make(map[int64]bool, len(nodes))
-
+	mixed := make(map[int64]bool, len(nodes))
+	failed := make(map[int64]bool, len(nodes))
 	for _, n := range nodes {
-		if t.inBackoff(n, started) {
+		mixed[n.ID] = t.control.hasMultipleCores(n)
+		if !mixed[n.ID] && t.inBackoff(n, started) {
 			skip[n.ID] = true
 			continue
 		}
 		if err := t.control.SampleTraffic(ctx, n, started); err != nil {
 			t.logger.Warn("采样节点流量失败", "node", n.Name, "error", err)
 			t.recordFailure(n, started)
-			skip[n.ID] = true
+			failed[n.ID] = true
+			skip[n.ID] = !mixed[n.ID]
 		}
 	}
 
@@ -209,10 +212,14 @@ func (t *Task) Tick(ctx context.Context) {
 		}
 		if err := t.control.ReconcileUsers(ctx, n, started); err != nil {
 			t.logger.Warn("同步节点用户失败", "node", n.Name, "error", err)
-			t.recordFailure(n, started)
+			if !failed[n.ID] {
+				t.recordFailure(n, started)
+			}
 			continue
 		}
-		t.recordSuccess(n)
+		if !failed[n.ID] {
+			t.recordSuccess(n)
+		}
 	}
 
 	// 先结这一轮,再巡检。
