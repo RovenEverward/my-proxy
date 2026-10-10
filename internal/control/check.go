@@ -99,7 +99,7 @@ func (c *Control) CheckNode(ctx context.Context, n model.Node, now time.Time) (m
 		}
 		st.Cores = append(st.Cores, core)
 		// The legacy summary observes the required cores on a QUIC-only node.
-		if len(model.InboundsForCore(inbounds, model.CoreXray)) == 0 {
+		if len(model.InboundsForCore(inbounds, model.CoreXray)) == 0 && n.DeployedHash == "" {
 			st.Active = core.Active
 			st.Version = core.Version
 			st.ObservedHash = core.ObservedHash

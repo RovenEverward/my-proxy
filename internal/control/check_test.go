@@ -437,5 +437,50 @@ func TestCheckNodeTellsMissingOpenSSLApartFromBadFile(t *testing.T) {
 	}
 }
 
+func TestCheckNodeRetainsDeployedXrayWithoutCurrentInbounds(t *testing.T) {
+	for _, deployedXray := range []bool{true, false} {
+		t.Run(fmt.Sprintf("deployed-xray=%t", deployedXray), func(t *testing.T) {
+			c, st := newTestControl(t, nil)
+			n := addNode(t, st, "mixed", "203.0.113.10")
+			now := time.Now()
+			if deployedXray {
+				if err := st.SetNodeDeployed(n.ID, "xray-hash", now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := st.SetCoreDeployed(n.ID, model.CoreSingBox, "sing-box-hash", now); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := st.GetNode(n.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n = *stored
+			// Both cores remain deployed after their current inbounds are deleted.
+			// Different active states and hashes expose accidental summary replacement.
+			c.runner = &fakeRunner{replies: []reply{
+				{keyword: "XRAY_BIN=", out: "k=service:active\nk=version:26.3.27\nk=hash:xray-hash"},
+				{keyword: "systemctl is-active", out: "inactive"},
+				{keyword: "SING_BOX_BIN=", out: "sing-box version 1.14.3"},
+				{keyword: "sha256sum", out: "sing-box-hash  /etc/mpx/sing-box/config.json"},
+			}}
+			got, err := c.CheckNode(context.Background(), n, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Cores) != 1 || got.Cores[0].Core != model.CoreSingBox || got.Cores[0].Active || got.Cores[0].ObservedHash != "sing-box-hash" {
+				t.Fatalf("sing-box status=%+v", got.Cores)
+			}
+			if deployedXray {
+				if !got.Active || got.Version != "26.3.27" || got.ObservedHash != "xray-hash" {
+					t.Fatalf("deployed Xray summary overwritten: %+v", got)
+				}
+			} else if got.Active || got.Version != "1.14.3" || got.ObservedHash != "sing-box-hash" {
+				t.Fatalf("QUIC-only summary=%+v", got)
+			}
+		})
+	}
+}
+
 // 假 runner 在包内已被 control_test.go 定义;这里只确认它仍然满足 Runner。
 var _ node.Runner = (*fakeRunner)(nil)
