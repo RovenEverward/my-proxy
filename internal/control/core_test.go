@@ -46,14 +46,16 @@ func (coreWireCodec) Unmarshal(b []byte, v any) error {
 
 type coreTestRunner struct {
 	*fakeRunner
-	listener    *bufconn.Listener
-	statsMu     sync.Mutex
-	traffic     map[string]node.UserTraffic
-	statsErr    error
-	generation  string
-	generations []string
-	beforeStop  func()
-	beforeStart func()
+	listener       *bufconn.Listener
+	statsMu        sync.Mutex
+	traffic        map[string]node.UserTraffic
+	statsErr       error
+	statsBlock     bool
+	generation     string
+	generations    []string
+	beforeStop     func()
+	beforeStart    func()
+	inspectContext func(context.Context, string)
 }
 
 func newCoreTestRunner(t *testing.T) *coreTestRunner {
@@ -74,6 +76,11 @@ func newCoreTestRunner(t *testing.T) *coreTestRunner {
 			return status.Error(codes.InvalidArgument, "stats query must not reset counters")
 		}
 		r.statsMu.Lock()
+		if r.statsBlock {
+			r.statsMu.Unlock()
+			<-stream.Context().Done()
+			return status.FromContextError(stream.Context().Err()).Err()
+		}
 		defer r.statsMu.Unlock()
 		if r.statsErr != nil {
 			return r.statsErr
@@ -104,7 +111,16 @@ func (r *coreTestRunner) DialStats(ctx context.Context, _ model.Node, port int) 
 	}
 	return r.listener.DialContext(ctx)
 }
+func (r *coreTestRunner) RunWithInput(ctx context.Context, n model.Node, script string, input []byte) (string, error) {
+	if r.inspectContext != nil {
+		r.inspectContext(ctx, script)
+	}
+	return r.fakeRunner.RunWithInput(ctx, n, script, input)
+}
 func (r *coreTestRunner) Run(ctx context.Context, n model.Node, script string) (string, error) {
+	if r.inspectContext != nil {
+		r.inspectContext(ctx, script)
+	}
 	if strings.Contains(script, "systemctl show -p InvocationID --value") {
 		r.statsMu.Lock()
 		defer r.statsMu.Unlock()
@@ -177,6 +193,202 @@ func coreBaseline(t *testing.T, st *store.Store, n model.Node, core model.Core, 
 		t.Fatalf("missing %s baseline for %s", core, name)
 	}
 	return v
+}
+
+func TestSingBoxDeleteLastInboundNoXrayQuery(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	addUser(t, st, activeUser("alice"))
+	if err := c.ReconcileUsers(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	inbounds, err := st.ListInbounds(n.ID)
+	if err != nil || len(inbounds) != 1 {
+		t.Fatalf("unexpected fixture inbounds: %v, %v", inbounds, err)
+	}
+	if err := st.DeleteInbound(inbounds[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 4, Downlink: 6}})
+	r.mu.Lock()
+	r.calls, r.stdin = nil, nil
+	r.mu.Unlock()
+	task := NewTask(c, st, slog.New(slog.DiscardHandler), DefaultInterval)
+	task.ticks = 1 // Keep this regression focused on accounting and revocation.
+	task.Tick(context.Background())
+	coreUsage(t, st, "alice", 10)
+	if r.ran("statsquery") || r.ran("inbounduser") {
+		t.Fatalf("QUIC-only revocation queried absent Xray: %v", r.callList())
+	}
+	if !r.ran("systemctl stop") || !r.ran("systemctl start") {
+		t.Fatalf("last QUIC inbound not removed from running process: %v", r.callList())
+	}
+	raw := r.stdinFor("config.json.next")
+	var cfg struct {
+		Inbounds []json.RawMessage `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil || len(cfg.Inbounds) != 0 {
+		t.Fatalf("revocation must deploy empty inbounds: %s, %v", raw, err)
+	}
+	d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil || d.DeployedHash != hashOf([]byte(raw)) {
+		t.Fatalf("empty configuration not recorded: %+v, %v", d, err)
+	}
+	if got := task.Snapshot(time.Now()).Backoffs; len(got) != 0 {
+		t.Fatalf("healthy QUIC-only revocation caused backoff: %+v", got)
+	}
+}
+
+func TestSingBoxMixedCoreContextsIndependent(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	c.sampleTimeout, c.reconcileTimeout = 30*time.Millisecond, 30*time.Millisecond
+	addInbound(t, st, n.ID, "vless-ws", 19232)
+	r.mu.Lock()
+	r.replies = append(r.replies, reply{"statsquery", trafficReply()}, reply{"inbounduser", inbounduserReply()})
+	r.mu.Unlock()
+	r.statsMu.Lock()
+	r.statsBlock = true
+	r.statsMu.Unlock()
+	var quicContext, xrayContext context.Context
+	phase := "sample"
+	r.inspectContext = func(ctx context.Context, script string) {
+		if strings.Contains(script, "systemctl show -p InvocationID") && quicContext == nil {
+			quicContext = ctx
+		}
+		if (phase == "sample" && strings.Contains(script, "statsquery")) || (phase == "reconcile" && strings.Contains(script, "inbounduser")) {
+			xrayContext = ctx
+			if ctx.Err() != nil {
+				t.Fatalf("Xray inherited QUIC cancellation: %v", ctx.Err())
+			}
+		}
+	}
+	assertContexts := func() {
+		t.Helper()
+		if quicContext == nil || xrayContext == nil {
+			t.Fatalf("both core contexts not observed in %s", phase)
+		}
+		if quicContext == xrayContext {
+			t.Fatalf("%s cores share the same budget context", phase)
+		}
+		if quicContext.Err() != context.DeadlineExceeded || xrayContext.Err() != context.Canceled {
+			t.Fatalf("QUIC deadline must expire without exhausting Xray: %v, %v", quicContext.Err(), xrayContext.Err())
+		}
+		if _, ok := xrayContext.Deadline(); !ok {
+			t.Fatalf("Xray %s has no deadline", phase)
+		}
+	}
+	if err := c.SampleTraffic(context.Background(), n, time.Now()); err == nil {
+		t.Fatal("QUIC sampling failure not reported")
+	}
+	assertContexts()
+	quicContext, xrayContext = nil, nil
+	phase = "reconcile"
+	if err := c.ReconcileUsers(context.Background(), n, time.Now()); err == nil {
+		t.Fatal("QUIC deployment failure not reported")
+	}
+	assertContexts()
+}
+
+func TestSingBoxMixedCoreTickFailureIndependence(t *testing.T) {
+	for _, failingCore := range []model.Core{model.CoreXray, model.CoreSingBox} {
+		t.Run(string(failingCore), func(t *testing.T) {
+			c, st, r, n := coreFixture(t)
+			addInbound(t, st, n.ID, "vless-ws", 19232)
+			alice := activeUser("alice")
+			alice.DataLimit = 100
+			addUser(t, st, alice)
+			addUser(t, st, activeUser("bob"))
+			r.mu.Lock()
+			r.replies = append(r.replies, reply{"statsquery", trafficReply("alice", "uplink", 40, "alice", "downlink", 60)},
+				reply{"inbounduser", inbounduserReply("alice", "bob")}, reply{"api adu", "Added 1 user(s)\n"}, reply{"api rmu", "Removed 1 user(s)\n"})
+			if failingCore == model.CoreXray {
+				// Both Xray sampling and reconciliation fail; QUIC must still revoke.
+				r.failOn = "api "
+			}
+			r.mu.Unlock()
+			if failingCore == model.CoreSingBox {
+				r.statsMu.Lock()
+				r.statsErr = status.Error(codes.Unavailable, "sing-box stats offline")
+				r.statsMu.Unlock()
+			}
+			r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 40, Downlink: 60}})
+			clk := newFakeClock()
+			task := NewTask(c, st, slog.New(slog.DiscardHandler), DefaultInterval)
+			task.now = clk.Now
+			assertTick := func(round int, wantQUIC []string, xrayRemove string, xrayAdd bool) {
+				t.Helper()
+				task.Tick(context.Background())
+				coreUsage(t, st, "alice", 100)
+				snap := task.Snapshot(clk.Now())
+				if len(snap.Backoffs) != 1 || snap.Backoffs[0].Failures != round {
+					t.Fatalf("failure must be recorded once per tick: %+v", snap.Backoffs)
+				}
+				if failingCore == model.CoreXray {
+					var cfg struct {
+						Inbounds []struct {
+							Users []struct {
+								Name string `json:"name"`
+							} `json:"users"`
+						} `json:"inbounds"`
+					}
+					raw := r.stdinFor("config.json.next")
+					if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+						t.Fatalf("healthy QUIC configuration missing: %v; calls=%v", err, r.callList())
+					}
+					if len(cfg.Inbounds) != 1 {
+						t.Fatalf("unexpected configuration: %s", raw)
+					}
+					var got []string
+					for _, u := range cfg.Inbounds[0].Users {
+						got = append(got, u.Name)
+					}
+					if !reflect.DeepEqual(got, wantQUIC) || !r.ran("systemctl start") {
+						t.Fatalf("Xray failure blocked QUIC users %v: %s; calls=%v", wantQUIC, raw, r.callList())
+					}
+					d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+					if err != nil || d.DeployedHash != hashOf([]byte(raw)) {
+						t.Fatalf("QUIC success not persisted: %+v, %v", d, err)
+					}
+				} else {
+					if !r.ran("api rmu") || !r.ran(xrayRemove) {
+						t.Fatalf("QUIC failure blocked Xray revocation: %v", r.callList())
+					}
+					if xrayAdd && (!r.ran("api adu") || !strings.Contains(r.stdinFor("api adu"), `"bob"`)) {
+						t.Fatalf("QUIC failure blocked Xray renewal: %v", r.callList())
+					}
+					if r.ran("systemctl stop") || r.ran("systemctl start") {
+						t.Fatalf("failed QUIC final sample restarted service: %v", r.callList())
+					}
+				}
+			}
+			assertTick(1, []string{"bob"}, "'alice'", false)
+			for round := 2; round <= 3; round++ {
+				bob, err := st.GetUser("bob")
+				if err != nil {
+					t.Fatal(err)
+				}
+				bob.Enabled = round == 3
+				if err := st.UpdateUser(bob); err != nil {
+					t.Fatal(err)
+				}
+				r.mu.Lock()
+				r.calls, r.stdin = nil, nil
+				if round == 3 {
+					for i := range r.replies {
+						if r.replies[i].keyword == "inbounduser" {
+							r.replies[i].out = inbounduserReply("alice")
+						}
+					}
+				}
+				r.mu.Unlock()
+				clk.advance(time.Second) // Still inside the node-wide backoff window.
+				if round == 2 {
+					assertTick(round, nil, "'bob'", false)
+				} else {
+					assertTick(round, []string{"bob"}, "'alice'", true)
+				}
+			}
+		})
+	}
 }
 
 func TestSingBoxQuotaReconcileAndUnchangedConfig(t *testing.T) {
