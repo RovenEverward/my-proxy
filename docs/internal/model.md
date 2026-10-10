@@ -15,7 +15,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 级联删除:`ON DELETE CASCADE`。删节点连带删它的入站、入口、流量采样与状态行,删入站连带删它的入口。删入站**不**动用户,用户只是不再映射到任何节点。
 
-## 八张表
+## 数据表
 
 | 表 | 关键列 | 备注 |
 | --- | --- | --- |
@@ -27,6 +27,10 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules`、`templates`、`webhook_url`、`notify_days_left`、`notify_usage_percent` | `rules` 是 `[{pattern, result}]` 的 JSON 文本,`templates` 是 `{格式: 正文}`。`notify_days_left` / `notify_usage_percent` 为 0 表示关掉这一类提醒 |
 | `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
 | `user_notices` | `user_id`、`kind`、`sent_at`(主键 `(user_id, kind)`) | 只是「这条用户提醒已经发过了」的流水账,不承载业务数据:整张表删掉用户、流量、订阅照常工作,只是下一轮可能重发。所以备份校验的必需表清单里**刻意没有它** |
+
+用途另存三张表：`purposes(slug PRIMARY KEY, config JSON TEXT)`、`node_metadata(id REFERENCES nodes ON DELETE CASCADE, config JSON TEXT)`、`host_metadata(id REFERENCES hosts ON DELETE CASCADE, config JSON TEXT)`。不为历史数据库自动创建用途，删除后的 URL 不会被重新初始化。元数据字段为 `region`、`line`、`purposes`，host 非空字段覆盖 node 对应字段。用途条件 regions / lines 是 AND，tags 与元数据 purposes 的交集是 OR；空条件不限制。筛选只作用于已授权、非排水、容量允许的 Endpoint，identity 为 `(NodeID, InboundID, HostID)`，默认 exposure 的 HostID 为 0。
+
+用途要求 `required_capabilities` 时仅接受 egress / youtube / netflix；`capability_region` 可指定两位大写国家代码。能力 hook 未接入时明确拒绝。hook 结果与输入 identity 取交集且保留输入凭证，不能扩大授权。用途请求每次重算，避免能力 TTL、用户到期或实时配额产生过时结果。
 
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
 

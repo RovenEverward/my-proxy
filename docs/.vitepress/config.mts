@@ -40,6 +40,7 @@ export default defineConfig({
           text: '操作指南',
           items: [
             { text: '客户端订阅导入与使用', link: '/user/guides/client-setup' },
+            { text: '用途订阅与日常/流媒体分流', link: '/user/guides/purpose-subscriptions' },
             { text: '节点运维与生命周期管理', link: '/user/guides/node-operations' },
             { text: '用户与配额管理', link: '/user/guides/user-management' },
             { text: '告警与到期通知配置', link: '/user/guides/notifications' },
@@ -65,7 +66,8 @@ export default defineConfig({
           text: '设计与契约',
           items: [
             { text: '对外契约', link: '/internal/contracts' },
-            { text: '数据模型与语义', link: '/internal/model' }
+            { text: '数据模型与语义', link: '/internal/model' },
+            { text: '用途订阅验证记录', link: '/internal/purpose-validation' }
           ]
         },
         {

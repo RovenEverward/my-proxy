@@ -102,4 +102,43 @@ mpx settings template set clash-meta -f my-template.yaml
 mpx settings template del clash-meta
 ```
 
-模板中使用标准的 Go `text/template` 语法，内置变量包含 `.Nodes`、`.ProfileTitle`、`.UpdateInterval` 等核心上下文。
+模板是 YAML（clash-meta）或 JSON（sing-box / xray）配置底稿；服务端把已授权节点注入底稿。Clash Meta 底稿需要保留 `rule-providers` 键。标题中的 `{USERNAME}` 由订阅响应头展开。
+
+## 4. 用途订阅
+
+用途配置独立于全局设置，通过管理 token 保护的 `mpx purpose` / `/api/purposes` 管理。先为节点或 host 手动标注，再保存用途：
+
+```json
+{"region":"US","line":"premium","purposes":["media"]}
+```
+
+```bash
+mpx purpose metadata set nodes 1 -f metadata.json
+mpx purpose metadata get hosts 2
+mpx purpose create media -f media.json
+mpx purpose list
+mpx purpose get media
+mpx purpose set media -f media.json
+mpx purpose preview media alice clash-meta
+mpx purpose del media
+```
+
+`create` / `set` 接受完整 JSON（`-f -` 读 stdin），预览输出真实配置并包含用户凭证。下面配置让流媒体域名走 media 组、其他代理流量走显式指定的 daily 组；先创建 `kind: daily` 的 daily 用途。没有 `daily_purpose` 时，其他流量沿用原始默认或自定义模板路由。
+
+```json
+{
+  "slug":"media", "name":"流媒体", "description":"美国精品线路",
+  "kind":"media", "regions":["US"], "lines":["premium"], "tags":["media"],
+  "domains":["netflix.com","nflxvideo.net","youtube.com","googlevideo.com"],
+  "strategy":"url-test", "test_url":"https://www.gstatic.com/generate_204", "interval":300,
+  "daily_purpose":"daily"
+}
+```
+
+`slug` 是稳定的 URL 标识：1–48 位小写字母、数字或连字符，以字母开头。`kind` 支持 daily / media / download / game。regions 和 lines 同时约束，tags 与元数据 purposes 有任一交集即可；空条件不限制。host 非空字段覆盖 node 对应字段。daily 将模板的代理路由目标改写为候选组，保留直连/拒绝决定（包括默认选择直连/拒绝的嵌套 selector 包装组）；其他用途为 domains 增加优先域名后缀规则。候选组支持 select / url-test。media 未给 domains 时有常见流媒体默认域名；download / game 必须显式配置域名。
+
+`required_capabilities` 可选 `egress`、`youtube`、`netflix`（全部满足，最多 3 项，不允许重复），`capability_region` 可选两位大写地区代码，必须同时要求 `egress` 或 `netflix`；youtube 不提供地区观测。留空表示手动标签阶段；要求能力但检测未接入时会报错。`templates` 可按 `clash-meta` / `sing-box` 覆盖本用途底稿。`daily_purpose` 只能指向 daily 用途；目标不存在、被删除、无候选或能力要求不满足时明确报错。
+
+订阅地址为 `/sub/<token>/clash-meta?purpose=media` 或 `/sub/<token>/sing-box?purpose=media`；浏览器打开 `/sub/<token>?purpose=media` 可选择用途、复制地址。用途不增加任何授权：停用、到期、超限、排水、入站权限及容量仍生效。未知/已删除用途返回 404，候选为空或客户端格式不支持返回 422 并提示默认订阅地址。用途请求每次重新筛选；修改配置或标签同时使默认订阅缓存失效。
+
+此批用途路由支持 Mihomo（clash-meta）和 sing-box。links、base64、普通 Clash 与 Xray 保持默认订阅可用，但选择用途时明确提示格式限制。下载与游戏只是可配置标签/规则组：客户端 url-test 测的是 HTTP 延迟，下载吞吐、游戏 RTT、抖动、丢包需在本地实际观察；WireGuard 在 sing-box 用途中可手动选择，不参加 urltest。

@@ -25,6 +25,8 @@ type subCacheKey struct {
 	subToken   string
 	format     model.ClientFormat
 	pathFormat string
+	purpose    string
+	gzip       bool
 }
 
 type subCacheEntry struct {
