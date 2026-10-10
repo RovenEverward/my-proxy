@@ -96,12 +96,28 @@ jobs:
       # 两个步骤二选一,而不是把 body_path 与 generate_release_notes 一起给:
       # 同时给时后者会把自动生成的那份**追加**到正文后面,于是人工写的话和凑
       # 出来的提交列表混在一起。分开写,谁生效一目了然。
+      #
+      # 注明:推 tag 时 GitHub 会先自己建一个 release(正文是自动生成的提交列表),
+      # publish job 跑起来时它已经在那儿了,action 于是走"更新已有 release"那条路。
+      # v0.3.0 实测正文仍是提交消息 —— body_path 没能覆盖已有的。所以下面用
+      # gh release edit 再显式写一次正文,不依赖 action 内部的合并逻辑。
       - name: 用 tag 消息发布
         if: steps.notes.outputs.annotated == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           body_path: NOTES.md
+
+      - name: 确保正文就是 tag 消息
+        if: steps.notes.outputs.annotated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # action 若没能覆盖预建 release 的正文,这里补上。幂等,已是目标内容
+          # 时只是又写一遍同样的字。
+          gh release edit "${{ github.ref_name }}" --notes-file NOTES.md
+          echo "现在正文开头是:$(gh release view '${{ github.ref_name }}' --json body -q .body | head -1)"
 
       - name: 用自动生成的说明发布
         if: steps.notes.outputs.annotated != 'true'
