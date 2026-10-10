@@ -2,6 +2,8 @@
 
 **能用。** 从配置渲染、下发回滚、xray API 增删用户与流量统计,到六种订阅格式和 User-Agent 规则,都在真实 xray 上跑通过;并且在两台真机上端到端跑通了「装核心 → 下发 → 订阅 → 真实出网流量 → 加人不断别人的连接」。
 
+用途订阅、入口能力检测及 Hysteria2 / TUIC 已实现。用途路由使用官方 mihomo / sing-box 解析和真实 SOCKS 请求验证；能力检测通过实际入口验证出口，失败保留未知状态；第二核心通过 Linux arm64 SSH/systemd 混合节点验证认证、计量、撤销与备份。范围和限制分别见 [用途订阅验证](purpose-validation.md)、[能力检测验证](capability-validation.md) 和 [QUIC 验证](quic-validation.md)。以下旧记录保留原批次的验证边界。
+
 ## 验证现状
 
 | 项 | 怎么验的 |

@@ -54,12 +54,11 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 
 > 注：原待定项中「HTML 订阅页」「Webhook 告警通知」「CSV 数据导出」「SSH ControlMaster 连接复用」已分别在批 4 与批 6 中实现并验证落地，移出待定列表。
 
-## 5. hysteria2 与 tuic 不在 xray 支持里
+## 5. Hysteria2 / TUIC 已由第二核心承载
 
-批 5 最初列了这两个协议,实测 xray 26.3.27 的 `inbound.protocol` 不认 `hysteria2` /
-`tuic`,配置直接被拒。它们只在 sing-box / mihomo 有。这一批只做 xray 能跑的:
-shadowsocks-2022、wireguard、xhttp / splithttp / httpupgrade、mux、fragment。
-要加 hy2 / tuic 就得让节点同时跑第二种协议实现,是另一个数量级的改动,先记在这里。
+批 5 确认 Xray 26.3.27 不接受这两个协议。issue #3 已通过独立 sing-box 服务实现 Hysteria2 与 TUIC，并将两核心用量计入同一用户配额。服务端采用官方源码带统计构建标签，不修改上游实现。
+
+操作步骤见 [Hysteria2 与 TUIC 节点](../user/guides/quic-protocols.md)，真实认证、计量、撤销及混合节点结果见 [QUIC 验证记录](quic-validation.md)。名单变化会重启该节点全部 QUIC 连接；Xray 已建立的 TCP 连接可能在用户摘除后继续传输。这些限制保留在指南中。
 
 ## 待确认项
 

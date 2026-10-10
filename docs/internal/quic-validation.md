@@ -76,6 +76,17 @@ PATH="$PWD/.spike/mixed-live:$PATH" \
 
 运行器、日志和包含测试凭据的备份留在本地 spike 中，不作为源码提交。容器由验证代理按其名称、ID 核对后清理；其他节点不受影响。
 
+## 与用途订阅、能力检测的集成
+
+混合 HTTP 测试验证 Hysteria2、TUIC 和 Xray 的独立 Endpoint 身份与原始凭证、授权撤回、排水、用户到期和停用。能力证据按入站及 Host 隔离：无结果、未知、过期、地区不符和配置指纹变化退出候选，恢复后重新加入；日常用途依赖也检查自身 TTL。不兼容用途格式返回明确 422 与普通订阅 URL。默认、自定义模板分别通过 mihomo 和 sing-box 官方解析，共四份混合 QUIC 配置。
+
+```sh
+MPX_TEST_MIHOMO=/path/to/mihomo MPX_TEST_SINGBOX=/path/to/sing-box \
+  go test ./internal/render ./internal/server -run '^TestQUICPurpose' -count=1 -race -v
+```
+
+QUIC 入口检测的真实认证、可信 TLS、无直连回退和进程清理见 [能力检测验证](capability-validation.md)。`doctor` 对原版 Clash、Xray 的 QUIC 格式限制报告兼容性警告，兼容格式的坏模板仍报告失败；删除最后 QUIC 入站后保留正确的历史核心状态归属。
+
 ## 已知运行边界
 
 sing-box 没有可用的动态用户增删 API；名单变化会断开该节点所有 QUIC 连接。计划重启先采样再停止；采样与停止之间的字节以及未经采样的崩溃尾部流量无法追回。进程 `InvocationID` 可防止重启后的累计值误当旧差值，不能恢复已经丢失的旧进程统计。配额在采样周期内可能超额。在线 IP 列表不支持 QUIC。具体操作见 [Hysteria2 与 TUIC 节点](../user/guides/quic-protocols.md)。

@@ -1,6 +1,6 @@
 # 节点能力检测验证记录
 
-检测器 `mpx-xray-capability/1` 通过指定入站/入口启动临时 SOCKS 客户端。所有目标请求及目标 DNS 都经过该代理；临时配置包含当前有效授权用户的独立凭证，检测流量计入该用户配额。
+当前检测器 `mpx-proxy-capability/2` 通过指定入站/入口启动临时 SOCKS 客户端，Xray 与 Hysteria2 / TUIC 分别选择对应核心。所有目标请求及目标 DNS 都经过该代理；临时配置包含当前有效授权用户的独立凭证，检测流量计入该用户配额。检测器版本属于证据指纹，升级后旧版本结果显示未知，需重新检测。以下 Xray 公网结果记录于 v1，保留当时的运行边界。
 
 ## 真实运行证据
 
@@ -22,6 +22,17 @@ MPX_CAPABILITY_PUBLIC_TEST=1 MPX_XRAY_BIN=/path/to/xray \
 ```bash
 MPX_XRAY_BIN=/path/to/xray go test ./internal/node -count=1
 ```
+
+## Hysteria2 / TUIC 入口验证
+
+v2 在两个协议的真实 sing-box 服务端上调用生产 `node.ProbeCapabilities`。固定目标 `https://api.ip.sb/geoip` 不变，测试服务端把出口转到本地可信 HTTPS fixture；TLS 保留证书签名与主机名校验，`NO_PROXY=*` 不导致直连。测试仅向客户端注入 fixture CA，未启用 insecure，未修改生产配置。
+
+```bash
+MPX_SING_BOX_BIN=/path/to/sing-box \
+  go test ./internal/node -run TestLiveCapabilityQUICActualProxy -count=1 -v
+```
+
+官方 sing-box 1.14.2（提交 `af6e64c`，`with_quic`）运行通过，16.476 秒。每协议正确认证使源站恰好收到一次请求，得到 `available/US`；错误密码不增加源站计数，返回未知。watchdog 和调用方取消分别验证客户端、curl、守护进程、sleep 子进程及临时凭证目录清理。该 fixture 证明两种真实协议、身份和代理路径，不声称两种公网出口的服务解锁结果。
 
 ## 判断依据与覆盖范围
 

@@ -16,9 +16,9 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/render"
 )
 
-// CapabilityDetector identifies the fixed request and parsing contract, not the Xray version.
-const CapabilityDetector = "mpx-xray-capability"
-const CapabilityDetectorVersion = "1"
+// CapabilityDetector identifies the fixed request and parsing contract, not the proxy core version.
+const CapabilityDetector = "mpx-proxy-capability"
+const CapabilityDetectorVersion = "2"
 
 const (
 	CapabilityAvailable   = "available"
@@ -54,7 +54,7 @@ type capabilityResponse struct {
 	body []byte
 }
 
-// ProbeCapabilities runs an ephemeral Xray client on n using ep as supplied.
+// ProbeCapabilities runs an ephemeral Xray or sing-box client on n using ep as supplied.
 // The caller must resolve ep using current, independent, authorized user credentials.
 // No resident agent, downloaded script, direct outbound, or direct curl fallback is used.
 // Unsupported targets and invalid endpoint configuration are errors; remote execution
@@ -73,7 +73,7 @@ func ProbeCapabilities(ctx context.Context, r Runner, n model.Node, ep render.En
 	}
 	ctx, cancel := context.WithTimeout(ctx, capabilityBudget)
 	defer cancel()
-	out, err := r.RunWithInput(ctx, n, capabilityScript(requests), cfg)
+	out, err := r.RunWithInput(ctx, n, capabilityScriptForCore(requests, ep.Protocol.Core()), cfg)
 	if err != nil {
 		observations := make([]CapabilityObservation, 0, len(targets))
 		for _, target := range targets {
@@ -119,6 +119,26 @@ func capabilityConfig(ep render.Endpoint) ([]byte, error) {
 	if strings.TrimSpace(ep.Address) == "" || ep.Port < 1 || ep.Port > 65535 || ep.AllowInsecure {
 		return nil, fmt.Errorf("capability probe: invalid address, port, or insecure TLS endpoint")
 	}
+	if ep.Protocol.QUIC() {
+		// ProbeClient requires a nonzero port. Normalize only its sole loopback
+		// inbound to a script placeholder; outbound endpoint ports stay untouched.
+		body, err := render.ProbeClient(ep, 1)
+		if err != nil {
+			return nil, fmt.Errorf("capability probe: %w", err)
+		}
+		var cfg struct {
+			Inbounds  []map[string]any  `json:"inbounds"`
+			Outbounds []json.RawMessage `json:"outbounds"`
+			Route     json.RawMessage   `json:"route"`
+			Log       json.RawMessage   `json:"log"`
+		}
+		if err := json.Unmarshal(body, &cfg); err != nil || len(cfg.Inbounds) != 1 || len(cfg.Outbounds) != 1 {
+			return nil, fmt.Errorf("capability probe: invalid rendered QUIC config")
+		}
+		cfg.Inbounds[0]["listen_port"] = 0
+		cfg.Inbounds[0]["type"] = "socks"
+		return json.MarshalIndent(cfg, "", "  ")
+	}
 	switch ep.Protocol {
 	case model.ProtocolVLESS, model.ProtocolVMess:
 		if ep.UUID == "" {
@@ -148,13 +168,22 @@ func capabilityConfig(ep render.Endpoint) ([]byte, error) {
 }
 
 func capabilityScript(requests []capabilityRequest) string {
+	return capabilityScriptForCore(requests, model.CoreXray)
+}
+
+func capabilityScriptForCore(requests []capabilityRequest, core model.Core) string {
+	binSetup, binVariable, portKey := xrayBin, "XRAY_BIN", "port"
+	if core == model.CoreSingBox {
+		binSetup, binVariable, portKey = singBoxBin, "SING_BOX_BIN", "listen_port"
+	}
 	// The watchdog outlives an SSH disconnect and bounds remote processes even if
 	// the caller's context is canceled. Its own sleep is killed and reaped on exit.
 	script := `set -eu
 umask 077
-` + xrayBin + `
+` + binSetup + `
+PROBE_BIN="$` + binVariable + `"
 command -v curl >/dev/null
-[ -x "$XRAY_BIN" ]
+[ -x "$PROBE_BIN" ]
 tmp=$(mktemp -d /tmp/mpx-capability.XXXXXX)
 chmod 700 "$tmp"
 pid= guard= curlpid=
@@ -181,9 +210,9 @@ ready=0
 for attempt in 1 2 3; do
   random=$(od -An -N2 -tu2 /dev/urandom)
   port=$((49152 + random % 16384))
-  sed "s/\"port\": 0/\"port\": $port/" "$tmp/input.json" > "$tmp/config.json"
+  sed "s/^\\([[:space:]]*\"` + portKey + `\": \\)0\\([,]*[[:space:]]*\\)$/\\1$port\\2/" "$tmp/input.json" > "$tmp/config.json"
   chmod 600 "$tmp/config.json"
-  "$XRAY_BIN" run -c "$tmp/config.json" >/dev/null 2>&1 & pid=$!
+  "$PROBE_BIN" run -c "$tmp/config.json" >/dev/null 2>&1 & pid=$!
   sleep 1
   if kill -0 "$pid" 2>/dev/null; then ready=1; break; fi
   wait "$pid" 2>/dev/null || :
@@ -200,7 +229,7 @@ request() {
     --proto '=http,https' --proto-redir '=http,https' \
     --socks5-hostname "127.0.0.1:$port" --noproxy '' \
     --connect-timeout 4 --max-time 12 --max-filesize 1048576 \
-    --user-agent 'mpx-xray-capability/1' --header 'Accept-Language: en-US,en;q=0.9' \
+    --user-agent '` + CapabilityDetector + `/` + CapabilityDetectorVersion + `' --header 'Accept-Language: en-US,en;q=0.9' \
     --output "$tmp/body" --write-out '%{http_code}\t%{url_effective}\t%{content_type}' \
     --url "$address" ) > "$tmp/meta" 2>/dev/null & curlpid=$!
   wait "$curlpid" || rc=$?
