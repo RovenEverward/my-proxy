@@ -16,11 +16,12 @@ const (
 	outputJSON  = "json"
 )
 
-// opts 是三个全局 flag 的落点。
+// opts 是全局 flag 的落点。
 var opts struct {
-	server string
-	token  string
-	output string
+	server  string
+	token   string
+	profile string
+	output  string
 }
 
 // rootCmd 定义在包级:另一个文件里的 serveCmd 要挂到它上面。
@@ -45,6 +46,11 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.server, "server", "", "控制面地址,覆盖 MPX_SERVER 与配置文件")
 	rootCmd.PersistentFlags().StringVar(&opts.token, "token", "", "管理 token,覆盖 MPX_TOKEN 与配置文件")
+	// --profile 只注册这一次,而且必须是 persistent 的:login 也要用它,而根命令上
+	// 的 persistent flag 对子命令同样可见。别在 loginCmd.Flags() 上再注册一个同名的
+	// —— 那是个被忽略的重复注册,还会让 cmd.Flags().Changed("profile") 永远为 false
+	// (它只看本命令自己的 flag,看不到继承来的)。
+	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个配置档,覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
 	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
@@ -65,11 +71,18 @@ func Execute() int {
 	return 0
 }
 
-// loginCmd 把控制面地址与 token 记进配置文件,省得每次敲 flag。
+// loginCmd 把一个控制面的地址与 token 记进某个配置档,省得每次敲 flag。
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "保存控制面地址与 token;不带参数时显示当前生效的值",
-	Args:  cobra.NoArgs,
+	Short: "保存控制面地址与 token(可存成不同的配置档);不带参数时显示当前生效的值",
+	Long: `保存控制面地址与 token。
+
+--profile 指定存到哪个配置档(默认 default),存完就把当前档切过去。配置文件里
+能同时放多套:临时起一个控制面试命令时用另一个档名,原来的连接原封不动,切回来
+是一次本地操作 —— token 只在服务器上,丢了要跑一趟机器。
+
+不带 --server/--token 时只显示当前生效的值,不写文件。`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -77,25 +90,43 @@ var loginCmd = &cobra.Command{
 		}
 		changedServer := cmd.Flags().Changed("server")
 		changedToken := cmd.Flags().Changed("token")
+		// 三个 flag 都是根命令上的 persistent flag,所以要用 InheritedFlags 查 ——
+		// cmd.Flags() 只包含本命令自己注册的,查不到继承来的(恒为 false)。
+		changedProfile := cmd.InheritedFlags().Changed("profile")
 
-		// 一个都没给就是查看:显示当前生效值,而不是配置文件里那半份。
-		if !changedServer && !changedToken {
-			server, token, err := resolve()
-			if err != nil {
-				return err
-			}
-			fmt.Printf("server: %s\n", dash(server))
-			fmt.Printf("token:  %s\n", maskToken(token))
-			return nil
+		// 什么都没给 = 看。给了 --profile 而没给地址/token 是"切换",不是"看":
+		// 切档本来就该只需要一个档名(令牌只在服务器上,切回来不该逼人去把它
+		// 翻出来),所以它不能落进"查看"这一支。
+		if !changedServer && !changedToken && !changedProfile {
+			return showLogin(cfg)
 		}
 
-		// 只覆盖这次给了的项,没给的沿用文件里已有的值。
+		name := opts.profile
+		if name == "" {
+			name = defaultProfile
+		}
+		old, hadOld := cfg.Profiles[name]
+
+		// 切档要求这个档已经存在:否则一个拼错的档名会静静地建出一个空档,
+		// 之后每条命令都因为"没有控制面地址"失败,却看不出是拼错了。
+		if changedProfile && !changedServer && !changedToken && !hadOld {
+			return fmt.Errorf("没有名为 %q 的配置档,%s", name, cfg.profileHint())
+		}
+
+		// 只覆盖这次给了的项,没给的沿用该档里已有的值。
+		p := old
 		if changedServer {
-			cfg.Server = opts.server
+			p.Server = opts.server
 		}
 		if changedToken {
-			cfg.Token = opts.token
+			p.Token = opts.token
 		}
+		if cfg.Profiles == nil {
+			cfg.Profiles = map[string]Profile{}
+		}
+		cfg.Profiles[name] = p
+		cfg.Current = name
+
 		if err := saveConfig(cfg); err != nil {
 			return err
 		}
@@ -103,9 +134,54 @@ var loginCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("已写入 %s\n", path)
+		// 回显"从什么变成了什么"。这不是确认步骤(正常的换控制面不该被拦),
+		// 只是让覆盖旧地址这件事在屏幕上留一行,出事时一眼看得见。
+		if hadOld && old.Server != p.Server {
+			fmt.Printf("配置档 %s 的地址:%s → %s\n", name, dash(old.Server), dash(p.Server))
+		}
+		if hadOld && old.Token != p.Token {
+			fmt.Printf("配置档 %s 的 token:%s → %s\n", name, maskToken(old.Token), maskToken(p.Token))
+		}
+		// 纯切换时上面两行都不打,得说清楚切到哪了。
+		if old == p {
+			fmt.Printf("已切到配置档 %s(server: %s)\n", name, dash(p.Server))
+		} else {
+			fmt.Printf("已写入 %s(当前配置档 %s)\n", path, name)
+		}
 		return nil
 	},
+}
+
+// showLogin 打印当前生效的控制面与 token,以及存在哪些配置档。
+func showLogin(cfg Config) error {
+	server, token, err := resolve()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("server: %s\n", dash(server))
+	fmt.Printf("token:  %s\n", maskToken(token))
+
+	names := cfg.names()
+	if len(names) == 0 {
+		return nil
+	}
+	// 生效档和文件里的 current 可能不同(--profile / MPX_PROFILE 会盖掉它),
+	// 所以标记跟着 resolve 的口径走,不能直接读 cfg.Current —— 否则打了
+	// "--profile scratch" 却把 * 标在 default 上。
+	current := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current)
+	fmt.Printf("配置档: ")
+	for i, name := range names {
+		if i > 0 {
+			fmt.Printf("  ")
+		}
+		mark := " "
+		if name == current {
+			mark = "*"
+		}
+		fmt.Printf("%s%s", mark, name)
+	}
+	fmt.Println()
+	return nil
 }
 
 // idArg 先把位置参数校验成本地能看懂的错,免得为一个手误跑一趟网络。
