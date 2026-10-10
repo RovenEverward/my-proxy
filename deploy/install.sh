@@ -6,29 +6,122 @@
 # 已经存在的东西(token、数据库、密钥)一律不动,所以重复跑是安全的。
 #
 # 这个脚本只管控制面。节点上装 xray 是 `mpx node install` 的事(由控制面自己 SSH
-# 过去做),操作者本机的 CLI 则是 `go build -o ~/.local/bin/mpx ./cmd/mpx`。
+# 过去做);操作者本机的命令行用 deploy/install-cli.sh(或 Windows 上的
+# deploy/install-cli.ps1)。
 #
 # 用法:
-#   sudo ./install.sh [mpx 二进制的路径]
+#   sudo ./deploy/install.sh [mpx 二进制的路径]
+#   sudo ./deploy/install.sh --version v0.2.0
 #
-# 不给路径时按顺序找:脚本旁边的 mpx、当前目录的 mpx、/tmp/mpx。
-# 在开发机上交叉编译一个:
-#   GOOS=linux GOARCH=amd64 go build -trimpath -o /tmp/mpx ./cmd/mpx
+# 也可以不下载仓库、直接一行装(脚本会自己去取二进制和 systemd 单元):
+#   curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
+#
+# 二进制按顺序找:参数给的那个 → 脚本旁边的 mpx → 当前目录的 mpx → /tmp/mpx
+#               → GitHub Releases 的 linux 发布件 → 用本机 Go 从源码编。
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 被 `curl | sudo bash` 这么跑的时候 BASH_SOURCE 是空的,退回当前目录。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+
+MPX_REPO="${MPX_REPO:-RovenEverward/my-proxy}"
+MPX_REF="${MPX_REF:-main}"
+# 想走自建镜像就把这个换成 https://<你的域名>/mpx
+DOWNLOAD_BASE="${MPX_DOWNLOAD_BASE:-https://github.com/$MPX_REPO/releases}"
+RAW_BASE="${MPX_RAW_BASE:-https://raw.githubusercontent.com/$MPX_REPO/$MPX_REF}"
 
 die() {
 	printf '错误:%s\n' "$1" >&2
 	exit 1
 }
 
+note() {
+	printf '    %s\n' "$1"
+}
+
+usage() {
+	cat <<'EOF'
+在控制面这台机器上安装或更新 mpx。
+
+用法:
+  sudo ./deploy/install.sh [mpx 二进制的路径]
+  sudo ./deploy/install.sh --version v0.2.0
+
+二进制按顺序找:参数 → 脚本旁边 → ./mpx → /tmp/mpx → GitHub Releases → 本机 Go 编译。
+EOF
+	exit 0
+}
+
+# ---- 参数 -------------------------------------------------------------------
+
+BIN_ARG=
+VERSION=latest
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--version) VERSION="${2:-}"; shift 2 ;;
+		-h|--help) usage ;;
+		-*) die "不认识的参数:$1(试试 --help)" ;;
+		*) BIN_ARG="$1"; shift ;;
+	esac
+done
+
 [[ ${EUID} -eq 0 ]] || die "要 root 才能装服务:sudo $0 $*"
+
+# ---- 这个系统要哪一份 -------------------------------------------------------
+
+case "$(uname -s)" in
+	Linux) OS=linux ;;
+	*) die "控制面要在 Linux 上跑(这个系统是 $(uname -s))。装 CLI 请用 deploy/install-cli.sh。" ;;
+esac
+
+case "$(uname -m)" in
+	x86_64|amd64) ARCH=amd64 ;;
+	arm64|aarch64) ARCH=arm64 ;;
+	*) die "不认识的架构:$(uname -m)" ;;
+esac
+
+ARCHIVE="mpx_${OS}_${ARCH}.tar.gz"
+
+if command -v curl >/dev/null; then
+	FETCH="curl -fsSL"
+elif command -v wget >/dev/null; then
+	FETCH="wget -qO-"
+else
+	FETCH=
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# 在仓库里吗?往上找 go.mod。
+REPO_ROOT=
+dir="$SCRIPT_DIR"
+while [[ "$dir" != / ]]; do
+	if [[ -f "$dir/go.mod" && -f "$dir/cmd/mpx/main.go" ]]; then
+		REPO_ROOT="$dir"
+		break
+	fi
+	dir="$(dirname "$dir")"
+done
+
+# 从源码编。用 sudo 跑的时候本机 Go 多半装在那个普通用户名下,root 的 PATH 里没有,
+# 所以退回去借他的环境跑一次。
+build_binary() {
+	local root="$1" out="$2"
+	if command -v go >/dev/null; then
+		( cd "$root" && go build -trimpath -o "$out" ./cmd/mpx )
+	elif [[ -n "${SUDO_USER:-}" ]] && sudo -u "$SUDO_USER" bash -lc 'command -v go' >/dev/null 2>&1; then
+		note "root 的 PATH 里没有 go,借 $SUDO_USER 的编"
+		sudo -u "$SUDO_USER" bash -lc "cd '$root' && go build -trimpath -o '$out' ./cmd/mpx"
+	else
+		return 1
+	fi
+}
 
 # ---- 二进制 -----------------------------------------------------------------
 
-BIN="${1:-}"
+BIN="$BIN_ARG"
 if [[ -z "$BIN" ]]; then
 	for candidate in "$SCRIPT_DIR/mpx" "./mpx" "/tmp/mpx"; do
 		if [[ -f "$candidate" ]]; then
@@ -37,12 +130,49 @@ if [[ -z "$BIN" ]]; then
 		fi
 	done
 fi
-[[ -n "$BIN" && -f "$BIN" ]] || die "找不到要装的 mpx 二进制。把它放到 $SCRIPT_DIR/mpx,或者把路径当第一个参数传进来。"
 
-echo "==> 二进制 $BIN → /usr/local/bin/mpx"
+if [[ -n "$BIN" ]]; then
+	[[ -f "$BIN" ]] || die "找不到要装的 mpx 二进制:$BIN"
+	echo "==> 二进制 $BIN"
+else
+	# 手边没有,那就自己去找一个。
+	if [[ -n "$FETCH" ]]; then
+		if [[ "$VERSION" == latest ]]; then
+			URL="$DOWNLOAD_BASE/latest/download/$ARCHIVE"
+		else
+			URL="$DOWNLOAD_BASE/download/$VERSION/$ARCHIVE"
+		fi
+		echo "==> 下载 $URL"
+		if $FETCH "$URL" > "$TMP/$ARCHIVE" 2>/dev/null && tar -xzf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null; then
+			BIN="$(find "$TMP" -maxdepth 2 -type f -name mpx -print -quit)"
+			[[ -n "$BIN" ]] || note "发布件里没有 mpx"
+		else
+			note "这个版本没有发布件,换下一条路"
+		fi
+	fi
+
+	if [[ -z "$BIN" ]]; then
+		root="$REPO_ROOT"
+		if [[ -z "$root" ]]; then
+			command -v git >/dev/null || die "手边没有二进制,也没有 git。把二进制放到 $SCRIPT_DIR/mpx,或者把路径当参数传进来。"
+			echo "==> 本地没有源码,clone 一份 $MPX_REPO"
+			if git clone --depth 1 --branch "$MPX_REF" "https://github.com/$MPX_REPO.git" "$TMP/src" >/dev/null 2>&1; then
+				root="$TMP/src"
+			else
+				die "clone 不下来(仓库还没公开?)。在开发机上编一个传上来:GOOS=$OS GOARCH=$ARCH go build -trimpath -o /tmp/mpx ./cmd/mpx"
+			fi
+		fi
+		echo "==> 用本机的 Go 编译(这要一会儿)"
+		build_binary "$root" "$TMP/mpx-built" \
+			|| die "编译失败。装一个 Go,或者把编好的二进制传到这台机器上再跑一次。"
+		BIN="$TMP/mpx-built"
+	fi
+fi
+
 # 先落到 .new 并试跑一次:更新时如果换上一个跑不起来的二进制(多半是交叉编译时
 # GOOS/GOARCH 填错了),这台机器就没有控制面了,而数据库和节点都还在等它。
 # 直接改名覆盖正在运行的文件也是可以的:老的 inode 会活到进程退出。
+echo "==> 装到 /usr/local/bin/mpx"
 install -m 0755 "$BIN" /usr/local/bin/mpx.new
 if ! /usr/local/bin/mpx.new --help >/dev/null 2>&1; then
 	rm -f /usr/local/bin/mpx.new
@@ -100,7 +230,13 @@ fi
 
 echo "==> systemd 单元"
 SRC="$SCRIPT_DIR/mpx.service"
-[[ -f "$SRC" ]] || die "找不到单元文件 $SRC(它和这个脚本放在一起)"
+if [[ ! -f "$SRC" ]]; then
+	# `curl | sudo bash` 跑起来的时候脚本旁边什么都没有,去仓库里取一份。
+	[[ -n "$FETCH" ]] || die "找不到单元文件 $SRC(它和这个脚本放在一起)"
+	$FETCH "$RAW_BASE/deploy/mpx.service" > "$TMP/mpx.service" 2>/dev/null \
+		|| die "取不到 systemd 单元文件。把 deploy/ 整个目录传上来再跑。"
+	SRC="$TMP/mpx.service"
+fi
 UNIT=/etc/systemd/system/mpx.service
 if [[ -f "$UNIT" ]] && ! cmp -s "$SRC" "$UNIT"; then
 	# 单元文件跟着程序走,所以每次都以手上这份为准。但你改过的内容不能就这么没了。
@@ -129,7 +265,8 @@ cat <<EOF
 
   ssh -N -L 8080:127.0.0.1:8080 root@<这台机器的地址>
 
-然后在操作者机器上接上它:
+然后在操作者机器上装好命令行(deploy/install-cli.sh,Windows 用
+deploy/install-cli.ps1),再接上它:
 
   mpx login --server http://127.0.0.1:8080 --token '<管理 token>'
 

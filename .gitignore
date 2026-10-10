@@ -3,6 +3,11 @@
 /dist/
 *.exe
 
+# 文档站依赖与构建产物(vitepress 的输出)
+/node_modules/
+/docs/.vitepress/dist/
+/docs/.vitepress/cache/
+
 # 本地数据库与配置(控制面默认就写在用户配置目录,这里是防手滑在仓库里跑)
 *.db
 *.db-journal

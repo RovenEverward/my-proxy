@@ -1,0 +1,67 @@
+name: release
+
+# 推一个 v 开头的 tag 就出一批发布件,deploy/install.sh 和 deploy/install-cli.sh
+# 下载的正是这些文件名 —— 改这里的命名要同步改那两个脚本里的 ARCHIVE。
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, ext: tar.gz }
+          - { goos: linux, goarch: arm64, ext: tar.gz }
+          - { goos: darwin, goarch: amd64, ext: tar.gz }
+          - { goos: darwin, goarch: arm64, ext: tar.gz }
+          - { goos: windows, goarch: amd64, ext: zip }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 构建
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags '-s -w' -o mpx${{ matrix.goos == 'windows' && '.exe' || '' }} ./cmd/mpx
+
+      - name: 打包
+        run: |
+          set -eu
+          if [ "${{ matrix.ext }}" = "zip" ]; then
+            zip -q "mpx_${{ matrix.goos }}_${{ matrix.goarch }}.zip" mpx.exe
+          else
+            tar -czf "mpx_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" mpx
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mpx_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: mpx_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
