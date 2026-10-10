@@ -286,6 +286,9 @@ func (s *Store) migrate() error {
 	if err := s.addMissingColumns(); err != nil {
 		return err
 	}
+	if err := s.migrateCapabilities(); err != nil {
+		return err
+	}
 	return s.migratePurposes()
 }
 

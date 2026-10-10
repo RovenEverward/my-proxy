@@ -516,7 +516,8 @@ type CertificateInfo struct {
 // 失败是一次有结果的观察,Reachable=false 会写在 Status 里。
 type NodeView struct {
 	Node
-	Status *NodeStatus `json:"status"`
+	Status       *NodeStatus        `json:"status"`
+	Capabilities []CapabilityResult `json:"capabilities"`
 }
 
 // 证书临期的两个阈值。doctor 与巡检告警共用,免得两处各写一个数字。
