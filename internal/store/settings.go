@@ -25,7 +25,9 @@ func DefaultSettings() *model.Settings {
 		NotifyDaysLeft:     model.DefaultNotifyDaysLeft,     // 到期前 3 天
 		NotifyUsagePercent: model.DefaultNotifyUsagePercent, // 用量 80%
 
-		Rules:     nil,
+		// 规则表种子化内置默认:订阅链接只有一条,客户端各有各的格式,没有
+		// 规则就没人把请求认到对应的模板上(见 model.BuiltinRules)。
+		Rules:     model.BuiltinRules(),
 		Templates: nil,
 	}
 }
@@ -57,6 +59,12 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 	}
 	if st.Templates, decodeErr = decodeTemplates(templates); decodeErr != nil {
 		return nil, fmt.Errorf("解析设置里的模板: %w", decodeErr)
+	}
+	// 存的是 "[]" 说明这份设置从没配过规则 —— 可能是老库升级上来的,也可能是
+	// 有人整份 PUT 覆盖时把它清了。这里回落到内置默认,让「空」在新库老库上
+	// 是同一个行为。真要关掉分流得显式写一条规则(见 model.RuleList)。
+	if len(st.Rules) == 0 {
+		st.Rules = model.BuiltinRules()
 	}
 	return &st, nil
 }

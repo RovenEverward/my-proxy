@@ -102,8 +102,9 @@ func TestRestoreFlowOfflineSwap(t *testing.T) {
 	hs := httptest.NewServer(srv.Handler())
 	defer hs.Close()
 
-	req, _ := http.NewRequest("GET", hs.URL+"/sub/"+u.SubToken, nil)
-	req.Header.Set("User-Agent", "v2rayng/1.8")
+	// 路径里点名 links:这里验的是"数据回来了、能出订阅",不是 UA 分流,别让
+	// 内置规则把 v2rayng 认成 base64 之后连正文都找不到。
+	req, _ := http.NewRequest("GET", hs.URL+"/sub/"+u.SubToken+"/links", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("订阅请求: %v", err)

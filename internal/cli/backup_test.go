@@ -20,9 +20,37 @@ func runRoot(t *testing.T, args ...string) {
 		rootCmd.SetArgs(nil)
 		backupOut = ""
 		restoreForce = false
+		resetRulesFlags()
 	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("mpx %v: %v", strings.Join(args, " "), err)
+	}
+}
+
+// runRootErr 同 runRoot,但预期失败并把错误交回给调用方。
+//
+// 命令对象是包级共享的,pflag 的 Changed 位在 Execute 之后不会自己清掉 ——
+// 一个用例给了 --index,下一个用例即便不给也会被当成"给过了"。这里的清理由
+// runRoot/resetRulesFlags 统一负责。
+func runRootErr(t *testing.T, args ...string) error {
+	t.Helper()
+	rootCmd.SetArgs(args)
+	t.Cleanup(func() {
+		rootCmd.SetArgs(nil)
+		resetRulesFlags()
+	})
+	return rootCmd.Execute()
+}
+
+// resetRulesFlags 把 rules 子命令的 flag 值与 Changed 位都归零。pflag 只暴露
+// Changed 字段本身,没有"取消设置"的 API,所以直接改字段。
+func resetRulesFlags() {
+	settingsRulesResult, settingsRulesIndex = "", ""
+	for _, name := range []string{"result", "index"} {
+		if f := settingsRulesAddCmd.Flags().Lookup(name); f != nil {
+			f.Changed = false
+			_ = f.Value.Set(f.DefValue)
+		}
 	}
 }
 

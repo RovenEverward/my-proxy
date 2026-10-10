@@ -395,6 +395,50 @@ func (s *Settings) TemplateFor(format ClientFormat) string {
 	return s.Templates[string(format)]
 }
 
+// BuiltinRules 是开箱即用的 UA 识别规则,按顺序匹配。
+//
+// 它的存在是「订阅链接只有一条、客户端各有各的格式」这件事的另一半:光有
+// 三大格式的模板,没有规则把请求认到对应模板上,Clash 客户端拿到的还是纯
+// 分享链接。所以规则表不是可选配置,而是默认体验的一部分 —— 用户把订阅
+// 地址填进客户端就该拿到对的配置,不该先来读文档写正则。
+//
+// 顺序即优先级,短的/具体的放前面:clash 系要先认 mihomo 再认 clash,否则
+// 「clash-verge/v1.7.0 mihomo/v1.18.0」这种同时报多个名字的 UA 会被宽的那条
+// 先接住,拿到原版 Clash 的最小集合而不是完整的 meta 底稿。
+//
+// 返回新的切片,调用方改动不会波及其他调用者。
+func BuiltinRules() []SubscriptionRule {
+	return []SubscriptionRule{
+		// Karing 会同时声称自己是好几种客户端,排在最前,免得更宽的那条抢走它。
+		{Pattern: `(?i)karing`, Result: FormatClashMeta},
+		// mihomo 系(Clash Verge Rev / Mihomo Party / Stash / FlClash)。
+		{Pattern: `(?i)mihomo|clash-verge|clash\.meta|clashmeta|flclash|stash`, Result: FormatClashMeta},
+		// 原版 Clash 家族排在 meta 之后:它们的 UA 里通常只有 "clash"。
+		{Pattern: `(?i)clash`, Result: FormatClash},
+		{Pattern: `(?i)sing-box|sfi/|sfa/|sfm/|hiddify|nekobox`, Result: FormatSingBox},
+		{Pattern: `(?i)xray`, Result: FormatXray},
+		// 这几个都只认 base64 链接列表,给不了 YAML/JSON。
+		{Pattern: `(?i)v2rayn|v2rayng`, Result: FormatBase64},
+		{Pattern: `(?i)shadowrocket`, Result: FormatBase64},
+		{Pattern: `(?i)quantumult`, Result: FormatBase64},
+		{Pattern: `(?i)surge|loon`, Result: FormatBase64},
+	}
+}
+
+// RuleList 返回生效的规则表。没配过规则(空表)时回落内置默认。
+//
+// 空表算「没配过」而不是「用户特意关掉了分流」:后者可以自己写一条
+// `(?i).*` → links 的规则来表达,而前者是绝大多数人的真实状态 —— 他们
+// 装完控制面就直接把订阅填进客户端了。老库升级上来时 rules 列是 "[]",
+// 走的也是这条路,不然修好的默认规则对新装的库生效、对已有的库不生效,
+// 同一版本两种行为。
+func (s *Settings) RuleList() []SubscriptionRule {
+	if s == nil || len(s.Rules) == 0 {
+		return BuiltinRules()
+	}
+	return s.Rules
+}
+
 // MatchFormat 返回第一条匹配该 User-Agent 的规则结果与是否命中;没有命中时
 // 返回 FormatLinks 与 false。
 //
@@ -406,7 +450,7 @@ func (s *Settings) TemplateFor(format ClientFormat) string {
 // 写入口负责拒绝编译不过的正则;这里遇到坏正则跳过而不是报错,免得一条坏
 // 规则让整个订阅不可用。
 func (s *Settings) MatchFormat(userAgent string) (ClientFormat, bool) {
-	for _, r := range s.Rules {
+	for _, r := range s.RuleList() {
 		re, err := regexp.Compile(r.Pattern)
 		if err != nil {
 			continue

@@ -306,7 +306,9 @@ func TestSubscriptionRoundTrip(t *testing.T) {
 	path := "/sub/" + user.SubToken
 
 	t.Run("默认给分享链接", func(t *testing.T) {
-		code, hdr, body := e.sub(path, "v2rayng/1.8")
+		// 路径点名 links:这里验的是订阅本体的头与正文,不是 UA 分流 —— 内置规则
+		// 会把 v2rayng 认成 base64,那样就看不到明文链接了(分流本身另有测试)。
+		code, hdr, body := e.sub(path+"/links", "v2rayng/1.8")
 		if code != http.StatusOK {
 			t.Fatalf("订阅: got %d %s", code, body)
 		}
@@ -422,7 +424,9 @@ func TestDisabledUserGetsPlaceholder(t *testing.T) {
 
 	e.updateUser("alice", func(u *model.User) { u.Enabled = false })
 
-	code, _, body := e.sub("/sub/"+user.SubToken, "v2rayng")
+	// 路径点名 links:占位节点也走明文链接才看得出 0.0.0.0:1(内置规则会把
+	// v2rayng 认成 base64)。
+	code, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
 	if code != http.StatusOK {
 		t.Fatalf("停用用户的订阅仍应可下载: got %d %s", code, body)
 	}
@@ -447,7 +451,8 @@ func TestLimitedUserGetsPlaceholder(t *testing.T) {
 		u.UsedTraffic = 100
 	})
 
-	code, _, body := e.sub("/sub/"+user.SubToken, "v2rayng")
+	// 同 TestDisabledUserGetsPlaceholder:点名 links 才看得见占位节点。
+	code, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
 	if code != http.StatusOK {
 		t.Fatalf("超限用户的订阅仍应可下载: got %d %s", code, body)
 	}
@@ -575,6 +580,64 @@ func TestSubscriptionRulePicksFormatByUserAgent(t *testing.T) {
 			t.Fatalf("路径里的格式应当压过 UA 规则,Content-Type: %q", ct)
 		}
 	})
+}
+
+// 出厂状态(没配过规则)就该把主流客户端认出来 —— 这是"开箱即用"最要紧的一条:
+// 用户装了控制面、把订阅地址填进客户端,不该先来读文档写正则。
+func TestSubscriptionRoutesByBuiltinRulesOutOfTheBox(t *testing.T) {
+	e := newEnv(t)
+	_, path := e.createSubReadyUser("alice")
+
+	cases := []struct {
+		name       string
+		userAgent  string
+		wantPrefix string
+	}{
+		{"clash-verge 的名字里带 mihomo,要拿 Meta 配置", "clash-verge/v1.7.7", "text/yaml"},
+		{"mihomo 本体", "mihomo/1.18.0", "text/yaml"},
+		{"原版 clash", "clash", "text/yaml"},
+		{"sing-box", "sing-box 1.10", "application/json"},
+		{"xray", "xray 26.3", "application/json"},
+		{"v2rayng 只认 base64", "v2rayng/1.8", "text/plain"},
+		{"shadowrocket", "Shadowrocket/2.2", "text/plain"},
+		{"没见过的客户端回落 links", "SomeVpn/1.0", "text/plain"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, hdr, body := e.sub(path, tc.userAgent)
+			if code != http.StatusOK {
+				t.Fatalf("got %d %s", code, body)
+			}
+			if ct := hdr.Get("Content-Type"); !strings.HasPrefix(ct, tc.wantPrefix) {
+				t.Fatalf("UA %q 的 Content-Type: got %q want 前缀 %q", tc.userAgent, ct, tc.wantPrefix)
+			}
+		})
+	}
+}
+
+// 老库升级上来:settings 行已经存在但 rules 列是空的,这时也必须认得出客户端,
+// 否则新装的有、升级上来的没有 —— 老用户正是最需要它的人。
+func TestSubscriptionRoutesByBuiltinRulesOnUpgradedDB(t *testing.T) {
+	e := newEnv(t)
+	user := e.createUser("alice")
+
+	// 存一份规则为空的设置:落库就是 "[]",读回来时会回落到内置默认 —— 这正是
+	// 老库升级上来的样子(rules 列存在但是空的)。
+	if code, data := e.api("PUT", "/api/settings", model.Settings{
+		SubURLPrefix: "https://sub.example.com",
+		Rules:        nil,
+	}); code != http.StatusOK {
+		t.Fatalf("存空规则设置: got %d %s", code, data)
+	}
+
+	code, hdr, body := e.sub("/sub/"+user.SubToken, "clash-verge/1.7.7")
+	if code != http.StatusOK {
+		t.Fatalf("got %d %s", code, body)
+	}
+	if ct := hdr.Get("Content-Type"); !strings.HasPrefix(ct, "text/yaml") {
+		t.Fatalf("老库(空 rules 列)也该把 clash-verge 认成 Meta,Content-Type: %q", ct)
+	}
 }
 
 func TestSaveSettingsRejectsBadRule(t *testing.T) {
@@ -1143,7 +1206,8 @@ func TestSubscriptionAggregatesAllNodesAndHosts(t *testing.T) {
 	e.createHost(usIn.ID, "美国", "us.example.com")
 	user := e.createUser("alice")
 
-	_, _, body := e.sub("/sub/"+user.SubToken, "v2rayng")
+	// 数 vless:// 明文出现次数,所以点名 links(内置规则会把 v2rayng 认成 base64)。
+	_, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
 	text := string(body)
 	for _, want := range []string{"hk1.example.com", "hk2.example.com", "us.example.com"} {
 		if !strings.Contains(text, want) {
@@ -1162,7 +1226,8 @@ func TestInboundWithoutHostUsesItself(t *testing.T) {
 	e.createInbound(n.ID, "vless-ws", 8443)
 	user := e.createUser("alice")
 
-	_, _, body := e.sub("/sub/"+user.SubToken, "v2rayng")
+	// 看点名 links:验的是"没有 Host 时回落到入站自身",与 UA 分流无关。
+	_, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
 	text := string(body)
 	if !strings.Contains(text, "@node.example.com:8443") {
 		t.Fatalf("没有 Host 时应当用入站自身的地址与端口:\n%s", text)
@@ -1180,7 +1245,8 @@ func TestInboundRestrictionFiltersSubscription(t *testing.T) {
 	user := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{hkIn.ID} })
 
-	_, _, body := e.sub("/sub/"+user.SubToken, "v2rayng")
+	// 找地址字符串,同样点名 links 免得被内置规则换成 base64。
+	_, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
 	text := string(body)
 	if !strings.Contains(text, "hk.example.com") {
 		t.Fatalf("被授权的入站不见了:\n%s", text)

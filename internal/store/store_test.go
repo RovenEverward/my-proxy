@@ -685,8 +685,10 @@ func TestSettingsDefaultOnEmptyDB(t *testing.T) {
 	if got.UpdateInterval != 24 {
 		t.Errorf("UpdateInterval 默认值应为 24,实际 %d", got.UpdateInterval)
 	}
-	if got.Rules != nil {
-		t.Errorf("Rules 默认值应为 nil,实际 %#v", got.Rules)
+	// 规则现在有内置默认:空库不该是一张空规则表,否则装在客户端那边的订阅
+	// 只会拿到分享链接(见 model.BuiltinRules)。
+	if !reflect.DeepEqual(got.Rules, model.BuiltinRules()) {
+		t.Errorf("Rules 默认值应为内置规则,实际 %#v", got.Rules)
 	}
 	if got.SubURLPrefix != "" {
 		t.Errorf("SubURLPrefix 默认值应为空,实际 %q", got.SubURLPrefix)
@@ -731,8 +733,13 @@ func TestSaveSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSettings: %v", err)
 	}
-	if got.ProfileTitle != "改过的标题" || got.Rules != nil {
+	// 存 nil 规则落库是 "[]",读回来照例回落到内置默认 —— 与 profile_title
+	// 一样被这次保存覆盖了,只是覆盖的结果又变回默认那套规则。
+	if got.ProfileTitle != "改过的标题" {
 		t.Fatalf("第二次保存没覆盖: %+v", got)
+	}
+	if !reflect.DeepEqual(got.Rules, model.BuiltinRules()) {
+		t.Fatalf("清空规则后应回落到内置默认,实际 %#v", got.Rules)
 	}
 	var rows int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM settings`).Scan(&rows); err != nil {
@@ -744,6 +751,48 @@ func TestSaveSettingsRoundTrip(t *testing.T) {
 
 	if err := s.SaveSettings(nil); err == nil {
 		t.Fatal("保存 nil 设置应当报错")
+	}
+}
+
+// 老库升级上来的样子:settings 行已经存在,rules 列是 '[]'。这时必须也拿到内置
+// 规则,否则「新装的库有规则、升级上来的库没有」—— 同一个版本两种行为,而且
+// 老用户正是最需要它的人(他们的客户端本来就没被认出来)。
+func TestGetSettingsFallsBackToBuiltinRulesOnEmptyColumn(t *testing.T) {
+	s := newTestStore(t)
+
+	// 直接写一行 rules='[]' 的设置,绕开 SaveSettings(它会带上当次传入的规则)。
+	if _, err := s.db.Exec(
+		`INSERT INTO settings (id, sub_url_prefix, profile_title, support_link,
+		                       update_interval, webhook_url, notify_days_left,
+		                       notify_usage_percent, rules, templates)
+		 VALUES (1, 'https://old.example.com', '老的订阅', '', 24, '', 3, 80, '[]', '{}')`); err != nil {
+		t.Fatalf("造老库设置行: %v", err)
+	}
+
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if !reflect.DeepEqual(got.Rules, model.BuiltinRules()) {
+		t.Fatalf("rules 列为空时应回落到内置默认,实际 %#v", got.Rules)
+	}
+	// 其余字段要照旧读出来,回落不该影响它们。
+	if got.SubURLPrefix != "https://old.example.com" || got.ProfileTitle != "老的订阅" {
+		t.Errorf("回落规则时改动了别的字段: %+v", got)
+	}
+
+	// 配过的规则不能被默认值顶掉。
+	custom := []model.SubscriptionRule{{Pattern: `(?i)我的客户端`, Result: model.FormatSingBox}}
+	got.Rules = custom
+	if err := s.SaveSettings(got); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	again, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if !reflect.DeepEqual(again.Rules, custom) {
+		t.Fatalf("配过的规则被默认值顶掉了: %#v", again.Rules)
 	}
 }
 

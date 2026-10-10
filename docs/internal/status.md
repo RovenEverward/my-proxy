@@ -66,14 +66,14 @@
 | 渲染并托管 sing-box 订阅 | 已实现 | 内嵌模板:112 个远程规则集(sing-geosite/sing-geoip)+ 主题分组;规则集直连下载、域名本机解析,节点挂了也能启动(见 decisions.md #28) |
 | 渲染并托管 xray 订阅 | 已实现 | 见教训一:末段才补 |
 | 分享链接与 base64 | 已实现 | |
-| 按 User-Agent 返回对应客户端格式 | 已实现 | 另支持路径指定格式、`block` 返回 404 |
+| 按 User-Agent 返回对应客户端格式 | 已实现 | 另支持路径指定格式、`block` 返回 404;规则表出厂即带内置默认(开箱认 mihomo/clash/sing-box/xray/v2rayN/Shadowrocket/Quantumult/Surge 等),空表回落内置,见 decisions.md #36 |
 | 配额 | 已实现 | `data_limit` + 状态判定 |
 | 到期 | 已实现 | 解释成当地当天 23:59:59 |
 | 流量统计 | 已实现 | 节点 `statsquery` 读累计值 → 与上次采样算差后落库;读数落 `traffic_samples` |
 | 面向数百至上千用户 | 已实现 | 单库单进程;每轮开销与节点数成正比,与用户数无关 |
 | 本机操作的 CLI 客户端 | 已实现 | |
 | 不复用 Marzneshin 代码 | 已实现 | 全新 Go 实现,只在模型与字段命名上参考 |
-| **操作订阅的 Clash 与 sing-box 规则** | **已实现** | 整份模板取改传(`settings template`),粒度已定 |
+| **操作订阅的 Clash 与 sing-box 规则** | **已实现** | 整份模板取改传(`settings template`);识别规则逐条增删改序(`settings rules`,见 decisions.md #36),粒度已定 |
 
 ### 二、边界值没定义会变成不报错的空转
 

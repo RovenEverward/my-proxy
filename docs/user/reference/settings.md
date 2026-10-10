@@ -17,7 +17,7 @@
 | `webhook_url` | `string` | `""` | 事件通知回调地址。不为空时，控制面会在用户即将到期、超额或节点下线时向其发送 POST 请求。 |
 | `notify_days_left` | `int` | `3` | 用户到期预警阈值（天数）。距过期时间小于等于此天数时触发通知。 |
 | `notify_usage_percent` | `int` | `80` | 用户流量使用率预警阈值（百分比整数，如 `80`）。已用流量达到限额的该百分比时触发通知。 |
-| `rules` | `[]Rule` | 内置列表 | User-Agent 路由匹配规则列表。详见下文「UA 识别规则」。 |
+| `rules` | `[]Rule` | 内置列表 | User-Agent 路由匹配规则列表。留空即用内置默认。详见下文「UA 识别规则」。 |
 | `templates` | `map` | `{}` | 各格式的自定义客户端配置模板。键为格式名（`clash-meta`、`sing-box`、`xray`），值为空或缺省时使用内置模板。 |
 
 ---
@@ -28,19 +28,62 @@
 
 ### 内置匹配规则（按优先级顺序）
 
+`rules` 为空（出厂状态，或老库升级上来时该列是空的）就使用下面这份内置列表，因此新装的实例开箱就能把主流客户端认出来：
+
 | 优先级 | 正则模式 (`pattern`) | 映射格式 (`result`) | 匹配的目标客户端 |
 | :---: | :--- | :--- | :--- |
-| 1 | `(?i)clash\.meta\|mihomo` | `clash-meta` | Mihomo Party, Clash Verge (Meta 内核) |
-| 2 | `(?i)clash` | `clash` | 原版 Clash, Clash for Windows, ClashX |
-| 3 | `(?i)sing-box\|sfi\|sfa` | `sing-box` | sing-box 官方全平台客户端 |
-| 4 | `(?i)v2rayn\|v2rayng` | `base64-links` | v2rayN, v2rayNG |
-| 5 | `(?i)shadowrocket` | `base64-links` | Shadowrocket (小火箭) |
-| 6 | `(?i)quantumult%20x` | `base64-links` | Quantumult X |
-| 7 | `(?i)xray` | `xray` | xray 原生客户端 / CLI |
+| 1 | `(?i)karing` | `clash-meta` | Karing |
+| 2 | `(?i)mihomo\|clash-verge\|clash\.meta\|clashmeta\|flclash\|stash` | `clash-meta` | Mihomo Party, Clash Verge (Meta 内核), FlClash, Stash |
+| 3 | `(?i)clash` | `clash` | 原版 Clash, Clash for Windows, ClashX |
+| 4 | `(?i)sing-box\|sfi/\|sfa/\|sfm/\|hiddify\|nekobox` | `sing-box` | sing-box 官方全平台客户端, Hiddify, NekoBox |
+| 5 | `(?i)xray` | `xray` | xray 原生客户端 / CLI |
+| 6 | `(?i)v2rayn\|v2rayng` | `base64-links` | v2rayN, v2rayNG |
+| 7 | `(?i)shadowrocket` | `base64-links` | Shadowrocket (小火箭) |
+| 8 | `(?i)quantumult` | `base64-links` | Quantumult X |
+| 9 | `(?i)surge\|loon` | `base64-links` | Surge, Loon |
 | 默认兜底 | *(全部未命中)* | `links` | 纯文本每行一个分享链接 (`vless://...`) |
 
+> 顺序有讲究：Karing 与 `clash-verge` 这类客户端会在同一个 UA 里同时声称自己是好几种
+> 客户端，所以把窄的（`mihomo`、`clash-verge`）排在宽的（`clash`）前面，否则宽规则会先把
+> 它们接走、拿到不含 Meta 特性的配置。
+
+### 管理规则
+
+```bash
+# 看当前规则，以及它来自内置默认还是自己配过
+mpx settings rules list
+
+# 拿一个 User-Agent 试一下会被认成什么格式（不会真的发请求）
+mpx settings rules test "clash-verge/1.7.7"
+
+# 追加一条：命中这个正则的客户端拿 clash-meta
+mpx settings rules add '(?i)我的客户端' --result clash-meta
+
+# 插到第 1 位（优先级最高）；--index 省略则追加到最后
+mpx settings rules add '(?i)最优先' -r xray --index 1
+
+# 把第 3 条挪到第 1 位；删掉第 2 条
+mpx settings rules move 3 1
+mpx settings rules rm 2
+
+# 清掉自定义规则，回到内置默认
+mpx settings rules reset
+```
+
+`--result` 只认 `clash-meta`、`clash`、`sing-box`、`xray`、`links`、`base64-links`、`block`
+七种；`block` 会让命中的客户端收到 404。
+
+> **想让某个客户端拿到纯链接**：规则是"命中什么就给什么"，所以配一条
+> `(?i)那个客户端` → `links` 即可；把规则整表清空是回到内置默认，不是关掉分流。
+> 真要全站关掉分流，配一条 `(?i).*` → `links`。
+
+> **首次改动会落库**：内置规则是"空即默认"，因此第一次 `add` / `rm` / `move` 会把当前这份
+> 完整规则表写进库里 —— 写进去的就是内置默认那份，行为不变，只是从此以库里的为准。
+> 想退回去就 `mpx settings rules reset`。
+
 > **浏览器拦截例外**：
-> 如果请求未命中上述特定规则，且请求头 `Accept` 中包含 `text/html`（表明是网页浏览器访问），控制面会拦截并返回 **HTML 订阅仪表盘网页**，而不是纯文本链接。
+> 如果请求**没有命中任何规则**，且请求头 `Accept` 中包含 `text/html`（表明是网页浏览器访问），控制面会拦截并返回 **HTML 订阅仪表盘网页**，而不是纯文本链接。
+> 规则命中过（哪怕命中的就是 `links`）或路径里点名了格式，都按客户端请求处理，不给页面。
 
 ---
 

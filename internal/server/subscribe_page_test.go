@@ -60,8 +60,9 @@ func TestSubscriptionPageDoesNotStealClientRequests(t *testing.T) {
 	e := newEnv(t)
 	_, path := e.createSubReadyUser("alice")
 
-	t.Run("客户端不带 Accept 仍拿分享链接", func(t *testing.T) {
-		code, hdr, body := e.sub(path, "v2rayng/1.8")
+	t.Run("没被规则认出的客户端拿分享链接", func(t *testing.T) {
+		// 用一条内置规则都不认的 UA:验的是"没命中规则就回落 links",不是分流。
+		code, hdr, body := e.sub(path, "SomeVpn/1.0")
 		if code != http.StatusOK {
 			t.Fatalf("got %d %s", code, body)
 		}
@@ -73,7 +74,9 @@ func TestSubscriptionPageDoesNotStealClientRequests(t *testing.T) {
 		}
 	})
 
-	t.Run("Accept */* 也拿分享链接", func(t *testing.T) {
+	t.Run("Accept */* 不触发订阅页", func(t *testing.T) {
+		// clash-verge 会被内置规则认成 clash-meta,所以这里不该有明文链接;
+		// 这一条要的是"Accept 不带 text/html 就不给页面"。
 		code, body := e.request("GET", path, nil, map[string]string{
 			"User-Agent": "clash-verge/1.7.7",
 			"Accept":     "*/*",
@@ -81,8 +84,11 @@ func TestSubscriptionPageDoesNotStealClientRequests(t *testing.T) {
 		if code != http.StatusOK {
 			t.Fatalf("got %d %s", code, body)
 		}
-		if !strings.Contains(string(body), "vless://") {
-			t.Fatalf("正文里没有分享链接:\n%s", body)
+		if strings.Contains(string(body), "<html") {
+			t.Fatalf("Accept 没点名 text/html,不该给订阅页:\n%s", body)
+		}
+		if !strings.Contains(string(body), "proxies:") {
+			t.Fatalf("clash-verge 应当拿到 Clash 配置:\n%s", body)
 		}
 	})
 
