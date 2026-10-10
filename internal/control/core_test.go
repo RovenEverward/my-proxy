@@ -228,6 +228,55 @@ func TestSingBoxQuotaReconcileAndUnchangedConfig(t *testing.T) {
 	}
 }
 
+func TestSingBoxDeletedUserCountersDoNotBlockReconcile(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	now := time.Now().UTC()
+	addUser(t, st, activeUser("alice"))
+	addUser(t, st, activeUser("bob"))
+	r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 10, Downlink: 20}, "bob": {Uplink: 2, Downlink: 3}})
+	if err := c.SampleTraffic(context.Background(), n, now); err != nil {
+		t.Fatal(err)
+	}
+	coreUsage(t, st, "alice", 30)
+	coreUsage(t, st, "bob", 5)
+	if err := st.DeleteUser("alice"); err != nil {
+		t.Fatal(err)
+	}
+	// The old process keeps Alice's counters until the revocation deployment stops it.
+	r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 100, Downlink: 200}, "bob": {Uplink: 4, Downlink: 6}})
+	if err := c.ReconcileUsers(context.Background(), n, now); err != nil {
+		t.Fatalf("deleted user's retained counters blocked revocation: %v", err)
+	}
+	coreUsage(t, st, "bob", 10)
+	if _, err := st.GetUser("alice"); err == nil {
+		t.Fatal("deleted user was recreated")
+	}
+	raw := r.stdinFor("config.json.next")
+	var cfg struct {
+		Inbounds []struct {
+			Users []struct {
+				Name string `json:"name"`
+			} `json:"users"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Inbounds) != 1 || len(cfg.Inbounds[0].Users) != 1 || cfg.Inbounds[0].Users[0].Name != "bob" {
+		t.Fatalf("deleted user still in staged configuration: %s", raw)
+	}
+	if !r.ran("systemctl stop") || !r.ran("systemctl start") {
+		t.Fatalf("revocation deployment did not restart service: %v", r.callList())
+	}
+	d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.DeployedHash != hashOf([]byte(raw)) {
+		t.Fatal("successful revocation configuration not recorded")
+	}
+}
+
 func TestSingBoxFinalSampleQuotaRestagesConfig(t *testing.T) {
 	c, st, r, n := coreFixture(t)
 	now := time.Now().UTC()
