@@ -158,9 +158,13 @@ func runFusionStages(ctx context.Context, r fusionBoundedRunner, n model.Node, c
 		stages = append(stages, fusion.StageRecord{Name: "speed", Attempted: false, Status: "skipped", Error: speed.Error})
 		return fusion.MergeSpeed(base, raw, speed, nil, stages), phaseErr
 	}
-	engine := max(1, remaining-min(60, remaining/4))
-	speedCtx, speedCancel := context.WithTimeout(ctx, time.Duration(remaining)*time.Second)
-	speed, speedRaw, speedErr := fusionRunPhase(speedCtx, r, n, cfg, fusionSpeed, engine, remaining)
+	// Keep a hard reserve for independent samples even if the upstream process
+	// ignores its own soft timeout. The outer Fusion deadline never grows.
+	reserve := min(50, remaining/4)
+	speedWall := max(1, remaining-reserve)
+	engine := max(1, speedWall-min(10, speedWall/4))
+	speedCtx, speedCancel := context.WithTimeout(ctx, time.Duration(speedWall)*time.Second)
+	speed, speedRaw, speedErr := fusionRunPhase(speedCtx, r, n, cfg, fusionSpeed, engine, speedWall)
 	speedCancel()
 	stages = append(stages, fusion.RecordStage("speed", speed, speedRaw))
 	return fusion.MergeSpeed(base, raw, speed, speedRaw, stages), speedErr
@@ -281,7 +285,7 @@ func fusionPhaseArguments(cfg fusion.Config, phase fusionPhase, seconds int) str
 	hardware := cfg.Hardware && !speed
 	core := !speed
 	routes := cfg.Speed && !speed
-	return fmt.Sprintf("-menu=false -l=zh -json=- -privacy=true -upload=false -log=false -timeout=%ds -hardware-budget=%ds -cpu=%t -memory=%t -disk=%t -diskmc=false -speed=%t -spnum=2 -ut=%t -utregion=20 -utipver=auto -ut-concurrency=20 -basic=%t -security=%t -email=%t -backtrace=%t -nt3=%t -nt3loc=GZ -nt3t=ipv4 -ping=%t -ping-scope=auto -tgdc=false -web=false -tcp=false", seconds, max(1, min(seconds, 120)), hardware, hardware, hardware, speed, core, core, core, core, core, routes, core)
+	return fmt.Sprintf("-menu=false -l=zh -json=- -privacy=true -upload=false -log=false -timeout=%ds -hardware-budget=%ds -cpu=%t -memory=%t -disk=%t -diskmc=false -speed=%t -spnum=1 -ut=%t -utregion=20 -utipver=auto -ut-concurrency=20 -basic=%t -security=%t -email=%t -backtrace=%t -nt3=%t -nt3loc=GZ -nt3t=ipv4 -ping=%t -ping-scope=auto -tgdc=false -web=false -tcp=false", seconds, max(1, min(seconds, 120)), hardware, hardware, hardware, speed, core, core, core, core, core, routes, core)
 }
 
 // The session leader includes the binary and every descendant. Auxiliary
