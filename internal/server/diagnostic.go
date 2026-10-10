@@ -26,8 +26,10 @@ type CheckupOps interface {
 
 type diagnosticInput struct {
 	diagnostics.Config
-	NetworkOnly bool  `json:"network_only,omitempty"`
-	Speed       *bool `json:"speed,omitempty"`
+	NetworkOnly          bool  `json:"network_only,omitempty"`
+	Speed                *bool `json:"speed,omitempty"`
+	Hardware             *bool `json:"hardware,omitempty"`
+	FusionTimeoutSeconds *int  `json:"fusion_timeout_seconds,omitempty"`
 }
 
 func (s *Server) diagnosticRoutes(api *http.ServeMux) {
@@ -86,13 +88,41 @@ func (s *Server) handleDiagnoseNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "API 只支持 node/control 位置,不能指定 SOCKS 代理")
 		return
 	}
+	if input.NetworkOnly && (cfg.Engine == "fusion" || input.Hardware != nil || input.FusionTimeoutSeconds != nil) {
+		writeError(w, http.StatusBadRequest, "network_only 仅支持 light,不能指定 hardware 或 fusion_timeout_seconds")
+		return
+	}
+	if cfg.Engine == "" {
+		cfg.Engine = "fusion"
+		if input.NetworkOnly || cfg.Position == "control" {
+			cfg.Engine = "light"
+		}
+	}
+	if cfg.Engine == "light" && (input.Hardware != nil || input.FusionTimeoutSeconds != nil) {
+		writeError(w, http.StatusBadRequest, "hardware 和 fusion_timeout_seconds 仅支持 fusion 引擎")
+		return
+	}
+	if input.Hardware != nil {
+		cfg.Hardware = *input.Hardware
+	}
+	if input.FusionTimeoutSeconds != nil {
+		cfg.FusionTimeoutSeconds = *input.FusionTimeoutSeconds
+		if cfg.FusionTimeoutSeconds == 0 {
+			writeError(w, http.StatusBadRequest, "fusion_timeout_seconds 必须在 60..1800 秒之间")
+			return
+		}
+	}
+	if cfg.Engine == "fusion" && cfg.Position != "node" {
+		writeError(w, http.StatusBadRequest, "Fusion 体检只能在 node 位置执行;control 位置请使用 light")
+		return
+	}
 	cfg.NodeID = strconv.FormatInt(n.ID, 10)
 	if err := cfg.Validate(); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var run func(context.Context, model.Node, diagnostics.Config, time.Time) (model.DiagnosticRecord, error)
-	budget := 6*time.Minute + 30*time.Second
+	budget := cfg.CheckupTimeout() + 30*time.Second
 	if input.NetworkOnly {
 		ops, connected := s.nodeOps.(DiagnosticOps)
 		if connected {

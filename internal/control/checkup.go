@@ -11,7 +11,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/RovenEverward/my-proxy/internal/diagnostics"
+	"github.com/RovenEverward/my-proxy/internal/fusion"
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -33,6 +35,12 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 	}
 	if cfg.SocksURL != "" || cfg.AbuseIPDBKey != "" || cfg.AbuseIPDBKeyEnv != "" || cfg.IPAPIKey != "" || cfg.IPAPIKeyEnv != "" {
 		return record, fmt.Errorf("服务端检测不接受代理凭证或自选 API 密钥")
+	}
+	if cfg.Engine == "" {
+		cfg.Engine = "fusion"
+		if cfg.Position == "control" {
+			cfg.Engine = "light"
+		}
 	}
 	// Validate without applying defaults: runDiagnostic supplies the control-side
 	// node target and server-owned key environment names.
@@ -61,7 +69,7 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 	if previous != nil && now.Before(previous.CheckedAt.Add(time.Minute)) {
 		return record, ErrDiagnosticRateLimit
 	}
-	ctx, cancel := context.WithTimeout(ctx, checkupBudget)
+	ctx, cancel := context.WithTimeout(ctx, cfg.CheckupTimeout())
 	defer cancel()
 	report := model.NodeCheckupReport{Summary: []string{}, Drift: "unknown", Entrances: []model.EntranceDiagnostic{}}
 	inbounds, baselineErr := c.store.ListInbounds(n.ID)
@@ -77,10 +85,17 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 	}
 	report.Summary = append(report.Summary, checkupHealthSummary(report.Health, report.Drift)...)
 	runErr := errors.Join(err, baselineErr, deploymentErr)
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && cfg.Engine == "fusion" {
+		result, fusionErr := node.RunFusion(ctx, c.runner, n, fusion.Config{Speed: cfg.Speed, Hardware: cfg.Hardware, TimeoutSeconds: cfg.FusionTimeoutSeconds}, c.cacheDir)
+		report.Fusion, err = json.Marshal(result)
+		runErr = errors.Join(runErr, fusionErr, err)
+		report.Summary = append(report.Summary, "融合怪 "+result.Version+": "+result.Status)
+		if fusionErr != nil {
+			report.Summary = append(report.Summary, "融合怪测评未完成: "+fusionErr.Error())
+		}
+	} else if ctx.Err() == nil {
 		network, networkErr := c.runDiagnostic(ctx, n, cfg, now)
 		report.Network = network.Report
-		// runDiagnostic resolves storage again; preserve the address actually used.
 		if network.MeasuredAddress != "" {
 			if network.MeasuredAddress != n.Address {
 				report.Summary = append(report.Summary, "节点地址在体检期间变化: 健康检查地址 "+n.Address+"，网络检测地址 "+network.MeasuredAddress)
@@ -93,7 +108,7 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 		}
 		checkupNetworkSummary(&report)
 	} else {
-		report.Summary = append(report.Summary, "网络检测未运行: "+ctx.Err().Error())
+		report.Summary = append(report.Summary, "测评未运行: "+ctx.Err().Error())
 	}
 	entranceErr := c.checkupEntrances(ctx, n, now, &report)
 	runErr = errors.Join(runErr, entranceErr, ctx.Err())
@@ -292,6 +307,38 @@ func marshalCheckupReport(report model.NodeCheckupReport) ([]byte, error) {
 	if err != nil || len(raw) <= checkupReportLimit {
 		return raw, err
 	}
+	// Bound escaped Fusion evidence before trimming project health and entrances.
+	if len(report.Fusion) != 0 {
+		var evaluation fusion.Report
+		if err := json.Unmarshal(report.Fusion, &evaluation); err != nil {
+			return nil, err
+		}
+		evaluation.Truncated = true
+		if evaluation.Status == "done" {
+			evaluation.Status = "partial"
+		}
+		evaluation.Warnings = append(evaluation.Warnings, "组合报告超过 256 KiB，融合怪原始证据已缩减")
+		for len(raw) > checkupReportLimit && len(evaluation.Output) > 0 {
+			text := []rune(evaluation.Output)
+			evaluation.Output = string(text[(len(text)+1)/2:])
+			report.Fusion, err = json.Marshal(evaluation)
+			if err != nil {
+				return nil, err
+			}
+			raw, err = json.Marshal(report)
+			if err != nil {
+				return nil, err
+			}
+		}
+		report.Fusion, err = json.Marshal(evaluation)
+		if err != nil {
+			return nil, err
+		}
+		raw, err = json.Marshal(report)
+		if err != nil || len(raw) <= checkupReportLimit {
+			return raw, err
+		}
+	}
 	// Preserve full network evidence and the health verdict; cap free-form text
 	// before retaining the largest entrance prefix that fits the report budget.
 	if len(report.Summary) > 128 {
@@ -331,6 +378,19 @@ func marshalCheckupReport(report model.NodeCheckupReport) ([]byte, error) {
 	}
 	if len(raw) > checkupReportLimit-256 {
 		report.Network, err = json.Marshal(diagnostics.Report{Position: "", Warnings: []string{"网络详情超过合并报告预算，未保存完整网络证据"}})
+		if err != nil {
+			return nil, err
+		}
+	}
+	// Preserve structured Fusion measurements before retaining a large certificate
+	// inventory; the earlier summary already identifies omitted evidence.
+	raw, err = json.Marshal(report)
+	if err != nil {
+		return nil, err
+	}
+	for len(raw) > checkupReportLimit-256 && len(report.Health.Certificates) > 0 {
+		report.Health.Certificates = report.Health.Certificates[:len(report.Health.Certificates)/2]
+		raw, err = json.Marshal(report)
 		if err != nil {
 			return nil, err
 		}

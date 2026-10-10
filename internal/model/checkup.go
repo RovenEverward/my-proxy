@@ -9,6 +9,7 @@ type NodeCheckupReport struct {
 	Health    NodeStatus           `json:"health"`
 	Drift     string               `json:"drift"`
 	Network   json.RawMessage      `json:"network"`
+	Fusion    json.RawMessage      `json:"fusion,omitempty"` // Authentic upstream report and execution envelope
 	Entrances []EntranceDiagnostic `json:"entrances"`
 }
 

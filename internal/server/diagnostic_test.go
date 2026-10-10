@@ -164,7 +164,7 @@ func TestDiagnosticAPIDefaultCompleteCheckup(t *testing.T) {
 	n := e.createNode("checkup", "node.example.com")
 	path := fmt.Sprintf("/api/nodes/%d/diagnostics", n.ID)
 	code, raw := e.api("POST", path, map[string]any{})
-	if code != 200 || ops.checkups != 1 || !ops.cfg.Speed || ops.budget < 389*time.Second || ops.budget > 390*time.Second {
+	if code != 200 || ops.checkups != 1 || !ops.cfg.Speed || ops.cfg.Engine != "fusion" || ops.cfg.FusionTimeoutSeconds != 0 || ops.budget < 1109*time.Second || ops.budget > 1110*time.Second {
 		t.Fatalf("full %d %s ops=%+v", code, raw, ops)
 	}
 	code, raw = e.api("POST", path, map[string]any{"speed": false})
@@ -172,12 +172,53 @@ func TestDiagnosticAPIDefaultCompleteCheckup(t *testing.T) {
 		t.Fatalf("speed false %d %s cfg=%+v", code, raw, ops.cfg)
 	}
 	code, raw = e.api("POST", path, map[string]any{"network_only": true})
-	if code != 200 || ops.cfg.Speed || ops.checkups != 2 || ops.budget > 180*time.Second {
+	if code != 200 || ops.cfg.Engine != "light" || ops.cfg.Speed || ops.checkups != 2 || ops.budget > 180*time.Second {
 		t.Fatalf("network %d %s ops=%+v", code, raw, ops)
+	}
+	for _, tc := range []struct {
+		body   map[string]any
+		engine string
+		budget time.Duration
+	}{
+		{map[string]any{"position": "control"}, "light", 390 * time.Second},
+		{map[string]any{"engine": "light"}, "light", 390 * time.Second},
+		{map[string]any{"engine": "fusion", "hardware": true, "fusion_timeout_seconds": 1800}, "fusion", 2010 * time.Second},
+		{map[string]any{"engine": "fusion", "fusion_timeout_seconds": 60}, "fusion", 270 * time.Second},
+	} {
+		code, raw = e.api("POST", path, tc.body)
+		if code != 200 || ops.cfg.Engine != tc.engine || ops.budget <= tc.budget-time.Second || ops.budget > tc.budget {
+			t.Fatalf("body=%v code=%d raw=%s cfg=%+v budget=%s", tc.body, code, raw, ops.cfg, ops.budget)
+		}
+		if hardware, ok := tc.body["hardware"].(bool); ok && ops.cfg.Hardware != hardware {
+			t.Fatalf("hardware lost: %+v", ops.cfg)
+		}
 	}
 	legacy := newEnvWith(t, &fakeDiagnosticOps{})
 	legacyNode := legacy.createNode("legacy", "node.example.com")
 	if code, _ := legacy.api("POST", fmt.Sprintf("/api/nodes/%d/diagnostics", legacyNode.ID), map[string]any{}); code != 501 {
 		t.Fatalf("legacy default %d", code)
+	}
+}
+
+func TestDiagnosticAPIFusionOptionsRejectedBeforeExecution(t *testing.T) {
+	ops := &fakeCheckupOps{}
+	e := newEnvWith(t, ops)
+	n := e.createNode("checkup", "node.example.com")
+	path := fmt.Sprintf("/api/nodes/%d/diagnostics", n.ID)
+	for _, body := range []string{
+		`{"engine":"other"}`, `{"engine":"fusion","position":"control"}`,
+		`{"engine":"fusion","fusion_timeout_seconds":59}`, `{"fusion_timeout_seconds":1801}`, `{"fusion_timeout_seconds":0}`,
+		`{"engine":"light","hardware":true}`, `{"engine":"light","hardware":false}`, `{"position":"control","hardware":false}`,
+		`{"engine":"light","fusion_timeout_seconds":900}`, `{"engine":"light","fusion_timeout_seconds":0}`, `{"position":"control","fusion_timeout_seconds":0}`,
+		`{"network_only":true,"engine":"fusion"}`, `{"network_only":true,"hardware":false}`, `{"network_only":true,"fusion_timeout_seconds":0}`,
+		`{"engine":"fusion","max_bytes":1024}`, `{"engine":"fusion","samples":1}`, `{"engine":"fusion","total_timeout_seconds":60}`,
+		`{"engine":"fusion","targets":[{"name":"fixture","host":"example.com"}]}`,
+	} {
+		if code, raw := e.requestRaw("POST", path, []byte(body)); code != http.StatusBadRequest {
+			t.Errorf("%s => %d %s", body, code, raw)
+		}
+	}
+	if ops.calls != 0 || ops.checkups != 0 {
+		t.Fatalf("invalid requests executed: %+v", ops)
 	}
 }

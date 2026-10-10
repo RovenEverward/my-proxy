@@ -1,10 +1,43 @@
 # 一键体检验证记录
 
-验证目标是默认一条命令完成健康、全部代理入口和网络体检，同时证明流量、时间、输出、存储与取消边界。对应 issue #7。
+Issue #11 将 `mpx node diagnose ID` / `--all` 的 node 默认引擎改为官方 Go ECS 融合怪 v0.2.12，保留健康、漂移与全部获授权入口检查。本页区分已完成的官方程序样本与 issue #7 的轻量引擎证据。当前证据不证明默认 Fusion 全模块、SSH 全流程、远程清理或生产验收已全部通过。
 
-## 默认入口与保存
+## 官方 Fusion 已有证据
 
-`mpx node diagnose ID` 默认调用完整 CheckupNode，测速开启；`--all` 读取实际节点列表后顺序执行，一个失败保留部分报告并继续，取消停止后续节点。API `{}`、显式 `speed:false`、`network_only:true` 均有真实 HTTP handler 和 CLI 参数解析的 mock 回归。完整报告合并 summary、health、drift、network 与 entrances；GET 最新记录兼容旧网络报告。测量时节点地址保留，后续修改节点不会误写旧地址。
+官方 Linux arm64 ZIP 在 Docker 中完成两组基础模块测量，均返回退出码 0：
+
+| 模式 | 实际产物 | 结果与边界 |
+| --- | --- | --- |
+| 文件模式，仅基础信息 | JSON 3957 字节、文本 1973 字节，JSON `duration_ms:8086` | `goecs.report/v1`、`ecs_version:v0.2.12`、`status:ok`；sections 只有 basics 启用。JSON 是旧文本包装，没有类型化 components |
+| `-json=- -privacy=true`，基础信息与 NAT | stdout 9191 字节，JSON `duration_ms:15820` | stdout 是终端文本前缀加 JSON。`components` 含 basics 的 `goecs.system/v1` 与 gostun.nat 的 `goecs.stun/v1`，两者均 ok；JSON `text` 为空 |
+
+结构化模式仍会执行旧基础信息采集，再执行类型化基础信息与 NAT，因而该样本约 15.82 秒。上游结构化配置会关闭旧硬件与网络执行，不能由此推断硬件测试重复执行。上述样本没有运行默认全部流媒体、安全、邮件、线路和测速模块。
+
+向官方程序发送 TERM 的样本返回退出码 0，但结构化 JSON 缺失或截断。因此 mpx 必须严格解析版本化 JSON，并以自身上下文区分取消与超时；不能只按进程退出码或部分文本判断完成。该上游取消样本不证明 mpx 的 SSH 清理已通过。
+
+上游源码在 `PrivacyMode` 为 true 时跳过统计信标，关闭上传是另一项独立设置。结构化隐私样本隐藏 JSON 主机标识并将 `text` 清空，终端前缀仍含真实 IP。外部 IP 服务查询仍会发生；没有将隐私模式写成完全离线或全部输出脱敏。
+
+### 完整模块组合，关闭测速
+
+官方 Linux arm64 程序在 Docker 中执行与节点适配器一致的模块组合，显式 `-speed=false -nt3=false`，硬件测试关闭，上游时限 120 秒。进程退出码 0，外层耗时 35.117 秒；stdout 为 285681 字节，其中 JSON 为 283673 字节，不含文件末尾换行。上游 `duration_ms:33189`、状态 partial，共七个真实类型化 components。
+
+- 流媒体共 360 条结果，IPv4、IPv6 各 180 条；部分失败与限流保留为 partial，不能推广成入口解锁结论。
+- 安全数据包含供应商不可用或降级结果，不用于证明 IP 信誉数据准确。
+- 邮件模块覆盖 205 项能力，153 项可用，其余保持失败或缺失状态。
+- `goecs.backtrace/v2` 返回真实结构，但线路分类置信度为 inconclusive。Docker 和操作机透明网络环境下的结果不能用于证明生产线路等级或回程。
+- ping 有三个结果，NAT 有 `goecs.stun/v1` 数据；测速与硬件 sections 明确 skipped。
+
+这份实际 stdout 超过原有 256 KiB 采集上限。适配器已将远程原始采集上限调整为 2 MiB，持久化仍分别限制 `output` 64 KiB、`data` 128 KiB，以及完整记录 256 KiB。超大 JSON 保留上游 section/component 身份与状态，缩短测量 payload，并通过 `adapter_truncated`、`payload_truncated` 和封装警告明确缺失，不再直接丢弃所有结构化数据。这是原始采集与保存上限的修正，不是流量预算放宽。
+
+该样本容器按所属标识清理，metadata 确认容器不存在且无残留容器进程。它证明官方模块组合与输出契约，不等同于 mpx SSH 适配器的清理验证。适配器最终实测结果仍待补入。
+
+尚需补齐默认测速开启的完整命令、全部实际入口、可选硬件，以及超时、取消、SSH 断开和输出超限时的完整适配器证据。当前未据此发布、部署或声明生产通过。
+
+## 轻量引擎入口与保存
+
+以下是 issue #7 已完成的原有流程证据。它现在由 `--engine light` 显式选择；`--network-only` 与 control 位置仍使用轻量网络执行器，不是新的 node 默认 Fusion 证据。
+
+原有完整 CheckupNode 测速开启；`--all` 读取实际节点列表后顺序执行，一个失败保留部分报告并继续，取消停止后续节点。旧默认 API `{}`、显式 `speed:false`、`network_only:true` 有 HTTP handler 和 CLI 参数解析的 mock 回归。完整报告合并 summary、health、drift、network 与 entrances；GET 最新记录兼容旧网络报告。测量时节点地址保留，后续修改节点不会误写旧地址。
 
 控制层验证全程单槽、同节点位置一分钟限制、网络运行时 SQLite 可用、取消保存部分证据、节点删除级联、合法长节点名、服务端重新读取节点身份。存储每节点每位置只留一条 JSON，node/control 共两条，单条最多 256 KiB。
 

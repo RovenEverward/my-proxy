@@ -24,7 +24,10 @@ const (
 // Position labels where commands execute; callers adapt their node.Runner.
 // Secrets are excluded from JSON and must never be persisted or logged.
 type Config struct {
-	Position              string      `json:"position"` // node, control, local
+	Engine                string      `json:"engine,omitempty"`                 // complete checkup: fusion (default), light
+	Hardware              bool        `json:"hardware,omitempty"`               // Fusion hardware benchmarks, opt-in
+	FusionTimeoutSeconds  int         `json:"fusion_timeout_seconds,omitempty"` // Fusion budget, separate from bounded network limits
+	Position              string      `json:"position"`                         // node, control, local
 	NodeID                string      `json:"node_id,omitempty"`
 	SocksURL              string      `json:"socks_url,omitempty"` // local only, socks5h; never direct fallback
 	Speed                 bool        `json:"speed"`
