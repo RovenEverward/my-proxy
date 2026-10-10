@@ -34,6 +34,7 @@ type CapabilityConfig struct {
 	Targets         []string `json:"targets"`
 	IntervalSeconds int      `json:"interval_seconds"`
 	TTLSeconds      int      `json:"ttl_seconds"`
+	Generation      int64    `json:"-"` // internal schedule snapshot; never trusted from an API request
 }
 
 func (c *CapabilityConfig) Validate() error {
@@ -59,8 +60,8 @@ func (c *CapabilityConfig) Validate() error {
 	if c.IntervalSeconds < 300 || c.IntervalSeconds > 86400 {
 		return fmt.Errorf("检测间隔必须在 300–86400 秒之间")
 	}
-	if c.TTLSeconds < c.IntervalSeconds || c.TTLSeconds > 604800 {
-		return fmt.Errorf("检测有效期必须不小于间隔且不超过 604800 秒")
+	if c.TTLSeconds < 2*c.IntervalSeconds || c.TTLSeconds > 604800 {
+		return fmt.Errorf("检测有效期必须不小于间隔的两倍且不超过 604800 秒")
 	}
 	return nil
 }

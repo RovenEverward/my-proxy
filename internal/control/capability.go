@@ -60,6 +60,22 @@ func (c *Control) ValidateCapabilityEndpoint(n model.Node, cfg model.CapabilityC
 }
 
 func (c *Control) ProbeCapabilities(ctx context.Context, n model.Node, cfg model.CapabilityConfig, now time.Time) ([]model.CapabilityResult, error) {
+	generation := cfg.Generation
+	var err error
+	if generation == 0 {
+		generation, err = c.store.CapabilityGeneration(cfg.InboundID, cfg.HostID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		current, e := c.store.CapabilityGeneration(cfg.InboundID, cfg.HostID)
+		if e != nil {
+			return nil, e
+		}
+		if current != generation {
+			return nil, fmt.Errorf("检测配置已变化,已跳过旧调度任务")
+		}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -97,11 +113,10 @@ func (c *Control) ProbeCapabilities(ctx context.Context, n model.Node, cfg model
 			return nil, fmt.Errorf("入站已有显式入口,请指定 --host (不能冒充默认入口)")
 		}
 	}
-	fingerprint := CapabilityFingerprint(n, *in, h)
-	generation, err := c.store.CapabilityGeneration(in.ID, h.ID)
-	if err != nil {
-		return nil, err
+	if !render.CapabilityExposureStable(n, *in, h) {
+		return nil, fmt.Errorf("用户专属动态域名无法共享检测结果,请使用固定地址、Host 与 SNI")
 	}
+	fingerprint := CapabilityFingerprint(n, *in, h)
 	previous, err := c.store.ListCapabilityResults(n.ID)
 	if err != nil {
 		return nil, err

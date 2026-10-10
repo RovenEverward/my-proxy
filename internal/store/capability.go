@@ -76,7 +76,7 @@ func (s *Store) SaveCapabilityConfig(c model.CapabilityConfig) error {
 }
 
 func (s *Store) ListCapabilityConfigs(nodeID int64) ([]model.CapabilityConfig, error) {
-	rows, err := s.db.Query(`SELECT c.body FROM capability_configs c JOIN inbounds i ON i.id=c.inbound_id WHERE (?=0 OR i.node_id=?) ORDER BY c.inbound_id,c.host_id`, nodeID, nodeID)
+	rows, err := s.db.Query(`SELECT c.body,COALESCE(g.generation,0) FROM capability_configs c JOIN inbounds i ON i.id=c.inbound_id LEFT JOIN capability_generations g ON g.inbound_id=c.inbound_id AND g.host_id=c.host_id WHERE (?=0 OR i.node_id=?) ORDER BY c.inbound_id,c.host_id`, nodeID, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +84,15 @@ func (s *Store) ListCapabilityConfigs(nodeID int64) ([]model.CapabilityConfig, e
 	out := []model.CapabilityConfig{}
 	for rows.Next() {
 		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var generation int64
+		if err := rows.Scan(&raw, &generation); err != nil {
 			return nil, err
 		}
 		var c model.CapabilityConfig
 		if err := json.Unmarshal([]byte(raw), &c); err != nil {
 			return nil, err
 		}
+		c.Generation = generation
 		out = append(out, c)
 	}
 	return out, rows.Err()

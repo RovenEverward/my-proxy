@@ -47,6 +47,49 @@ func TestCapabilityProbeAuthorizationAndIdentity(t *testing.T) {
 	}
 }
 
+func TestCapabilityScheduleSnapshotCannotReviveDisabledEvidence(t *testing.T) {
+	r := &fakeRunner{}
+	c, st := newTestControl(t, r)
+	n := addNode(t, st, "proxy", "127.0.0.1")
+	in := addInbound(t, st, n.ID, "vless", 12345)
+	cfg := model.CapabilityConfig{InboundID: in.ID, Enabled: true, Targets: []string{"egress"}}
+	if err := st.SaveCapabilityConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err := st.ListCapabilityConfigs(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Enabled = false
+	if err := st.SaveCapabilityConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ProbeCapabilities(context.Background(), n, scheduled[0], time.Now()); err == nil {
+		t.Fatal("stale scheduled config revived evidence")
+	}
+	results, err := st.ListCapabilityResults(n.ID)
+	if err != nil || len(results) != 0 || len(r.callList()) != 0 {
+		t.Fatalf("old schedule executed: %+v %v", results, err)
+	}
+}
+
+func TestCapabilityUserDependentExposureRejected(t *testing.T) {
+	r := &fakeRunner{}
+	c, st := newTestControl(t, r)
+	n := addNode(t, st, "proxy", "127.0.0.1")
+	in := addInbound(t, st, n.ID, "vless", 12345)
+	h := model.Host{InboundID: in.ID, Address: "*.example.com"}
+	if err := st.CreateHost(&h); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ProbeCapabilities(context.Background(), n, model.CapabilityConfig{InboundID: in.ID, HostID: h.ID}, time.Now()); err == nil {
+		t.Fatal("user-dependent route shared")
+	}
+	if len(r.callList()) != 0 {
+		t.Fatal("unsafe endpoint contacted")
+	}
+}
+
 func timePtr(v time.Time) *time.Time { return &v }
 
 type blockingCapabilityRunner struct {

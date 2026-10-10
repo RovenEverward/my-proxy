@@ -23,6 +23,8 @@ mpx node probe 1 --inbound 2 --host 3 --targets egress,youtube,netflix
 
 `--targets` 可选 `egress`、`youtube`、`netflix`，用逗号分隔，省略时检测全部三项。手动检测会保存结果。同一入口的两次检测至少间隔 30 秒。
 
+包含 `*` 或 `{USERNAME}` 的用户专属动态地址、HTTP Host 或 TLS SNI 无法共享检测证据，请先配置固定入口；此类入口不会进入自动能力候选。
+
 检测需要节点正常运行，并且至少有一个当前有效、获授权使用该入站的用户。节点处于 drain 状态或没有这样的用户时，结果为 `unknown`，原因会说明无法检测的条件。
 
 ## 查看结果
@@ -74,13 +76,13 @@ mpx node capability-set 1 --inbound 2 --host 3 --enabled=false
 | `--enabled` | `false` | 加上 `--enabled` 开启；`--enabled=false` 停止 |
 | `--targets` | `egress,youtube,netflix` | 三个支持目标的非重复组合 |
 | `--interval` | `1h` | `5m` 到 `24h` |
-| `--ttl` | `3h` | 不小于检测间隔，最多 `168h` |
+| `--ttl` | `3h` | 不小于检测间隔的两倍，最多 `168h` |
 
 时长可使用 `5m`、`1h` 等 Go duration 格式，必须为整秒。三个命令都支持 `--output json`，详细参数见 `mpx node probe --help`、`mpx node capabilities --help` 和 `mpx node capability-set --help`。
 
 ## 运行要求与结果展示
 
-节点需要已安装的 Xray 和 `curl`。控制面经 SSH 启动临时客户端，使用当前获授权用户的独立凭证连接指定入口，再通过本地 SOCKS5 发起所有检测请求；目标 DNS 也交给代理解析。客户端配置只写入权限为 `600` 的临时文件，结束、超时和断连时清理。检测失败不会改用机器的直连出口。
+节点需要已安装的 Xray 和 `curl`。控制面经 SSH 启动临时客户端，使用当前获授权用户的独立凭证连接指定入口，再通过本地 SOCKS5 发起所有检测请求；目标 DNS 也交给代理解析。客户端配置只写入权限为 `600` 的临时文件，结束、超时和断连时清理。检测失败不会改用机器的直连出口。检测流量使用该用户凭证，会计入该用户配额；每次响应有大小上限，建议保持低频检测。
 
 检测任务有独立调度，与流量采样和用户收敛分开；全控制面最多一个检测运行，每个远程任务最多约 65 秒，只保存每个入口、每个目标的最新结果。读取结果不发网络请求。公网目标为 `api.ip.sb/geoip`、YouTube `generate_204` 与 Netflix 两个固定片目页面；目标服务变更、限流、网络失败或解析失败都会显示未知并保留原因。
 

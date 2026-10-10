@@ -218,6 +218,8 @@ func (s *Server) capabilityResultsForNodes(nodes []model.Node, now time.Time) (m
 				state.reason = "入口不属于所选入站"
 			case result.HostID == 0 && explicit[in.ID]:
 				state.reason = "入站已有显式入口,请指定 --host"
+			case !render.CapabilityExposureStable(n, in, h):
+				state.reason = "用户专属动态域名无法共享检测结果,请使用固定入口"
 			default:
 				state.fingerprint = control.CapabilityFingerprint(n, in, h)
 				if n.Draining {

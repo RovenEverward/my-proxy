@@ -59,6 +59,7 @@ func TestCapabilityConfigBoundaries(t *testing.T) {
 	for _, cfg := range []CapabilityConfig{
 		{InboundID: 0}, {InboundID: 1, HostID: -1}, {InboundID: 1, Targets: []string{"speed"}},
 		{InboundID: 1, Targets: []string{"egress", "egress"}}, {InboundID: 1, IntervalSeconds: 299},
+		{InboundID: 1, IntervalSeconds: 300, TTLSeconds: 300}, {InboundID: 1, IntervalSeconds: 300, TTLSeconds: 599},
 		{InboundID: 1, IntervalSeconds: 86401}, {InboundID: 1, TTLSeconds: 300}, {InboundID: 1, TTLSeconds: 604801},
 	} {
 		if cfg.Validate() == nil {
