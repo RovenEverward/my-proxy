@@ -227,3 +227,4 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 | [status.md](status.md) | 做到哪、验到什么程度 |
 | [roadmap.md](roadmap.md) | 分批演进计划,从用量与计量做起 |
 | [open-questions.md](open-questions.md) | 还有哪些缺口、下一步做什么 |
+| [QUIC 运行验证](quic-validation.md) | 官方构建、真实 SSH 与分用户流量证据及限制 |

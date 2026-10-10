@@ -32,6 +32,16 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 `traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`(见 [decisions.md](decisions.md) 第 9 条)。
 
+## 多核心扩展
+
+`core_deployments` 按 `(node_id,core)` 保存 sing-box 的 API 端口、配置路径、systemd 服务与成功下发哈希。Xray 继续使用 `nodes` 原字段；两核心不可共用 API 端口、服务名或配置路径。`inbounds.congestion_control` 为 TUIC 设置拥塞控制，`hysteria2` / `tuic` 映射到 sing-box。
+
+`traffic_samples` 新增 `core`（旧行及新旧备份迁移默认 `xray`）与 `generation`。最新基准按 `(node_id,core,username)` 取，历史与用户用量在一个事务写入。sing-box 世代来自 systemd InvocationID，每次启动不同；世代变化或计数下降时计入新进程当前累计值，计划停止后持久化零基准。Xray 保留计数下降时零增量的旧策略。两核心用量合并进用户本期与 lifetime 账本。
+
+`node_status.cores` 保存每个第二核心的 active、version、observed_hash、stats_available 与 error；统计可用必须通过真实单用户 API 查询（空统计响应也有效）。QUIC-only 节点的旧摘要字段回落到 sing-box，混合节点分别观察两核心。
+
+上述扩展包含在 SQLite 完整快照中，无需改变备份归档格式。详细用户停用语义与尾部计量边界见 [Hysteria2/TUIC](../user/guides/quic-protocols.md)。
+
 ## 语义
 
 ### 用户状态

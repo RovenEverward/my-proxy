@@ -25,7 +25,7 @@ const (
 
 func (p Protocol) Valid() bool {
 	switch p {
-	case ProtocolVLESS, ProtocolVMess, ProtocolTrojan, ProtocolShadowsocks, ProtocolWireguard:
+	case ProtocolVLESS, ProtocolVMess, ProtocolTrojan, ProtocolShadowsocks, ProtocolWireguard, ProtocolHysteria2, ProtocolTUIC:
 		return true
 	}
 	return false
@@ -48,7 +48,7 @@ const (
 
 func (n Network) Valid() bool {
 	switch n {
-	case NetworkTCP, NetworkWS, NetworkGRPC, NetworkXHTTP, NetworkSplitHTTP, NetworkHTTPUpgrade:
+	case NetworkTCP, NetworkWS, NetworkGRPC, NetworkXHTTP, NetworkSplitHTTP, NetworkHTTPUpgrade, NetworkUDP:
 		return true
 	}
 	return false
@@ -171,6 +171,8 @@ type Inbound struct {
 	RealityPriv string   `json:"-"`                      // REALITY 私钥,不下发到客户端
 	RealityPub  string   `json:"reality_pub,omitempty"`
 	ShortIDs    []string `json:"short_ids,omitempty"`
+
+	CongestionControl string `json:"congestion_control,omitempty"` // TUIC: cubic/new_reno/bbr;空为 bbr
 
 	Flow string `json:"flow,omitempty"` // VLESS flow,如 xtls-rprx-vision
 
@@ -484,7 +486,8 @@ type NodeStatus struct {
 	Version string `json:"version"`
 	// ObservedHash 是节点上那份 config.json 的 sha256。拿它和 nodes 表里的
 	// DeployedHash 比,就能看出有人是否在机器上直接改过配置。
-	ObservedHash string `json:"observed_hash"`
+	ObservedHash string       `json:"observed_hash"`
+	Cores        []CoreStatus `json:"cores,omitempty"`
 	// Certificates 是这台节点上所有用证书的入站的证书到期情况,一个入站一条。
 	Certificates []CertificateInfo `json:"certificates"`
 	// Error 是观察失败的原因(ssh 连不上、超时)。为空表示这次问到了。

@@ -53,8 +53,7 @@ mpx node sync 1
 mpx node sync
 ```
 
-> **提示：增删用户不需要 sync**。
-> 控制面后台循环会自动通过 gRPC 动态下发和注销用户凭证，不会中断节点的现有网络连接。只有涉及端口、协议、传输层等底层配置修改时，才需要执行 `node sync`。
+> Xray 入站增删用户通过 gRPC 动态操作。Hysteria2/TUIC 的名单变更由控制面自动重新下发并重启 sing-box，会中断该节点全部 QUIC 连接；名单不变时不会重启。第二核心安装、计量与证书设置见 [Hysteria2 与 TUIC 节点](quic-protocols.md)。
 
 ---
 

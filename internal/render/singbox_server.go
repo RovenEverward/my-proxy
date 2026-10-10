@@ -98,7 +98,11 @@ func singboxServerInbound(in model.Inbound, users []model.User, now time.Time) (
 		}
 		accounts = append(accounts, account)
 	}
-	item := map[string]any{"type": string(in.Protocol), "tag": tag, "listen": "::", "listen_port": in.Port, "users": accounts, "tls": tls}
+	listen := in.Listen
+	if listen == "" {
+		listen = "::"
+	}
+	item := map[string]any{"type": string(in.Protocol), "tag": tag, "listen": listen, "listen_port": in.Port, "users": accounts, "tls": tls}
 	if in.Protocol == model.ProtocolTUIC {
 		cc, err := quicCongestion(in.CongestionControl)
 		if err != nil {

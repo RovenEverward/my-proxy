@@ -204,12 +204,45 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "核心服务没在跑",
 			Hint: "ssh 上去 systemctl status " + n.ServiceNameOrDefault() + " 看原因"})
 	}
-	if !n.Deployed() {
+	inbounds, listErr := s.store.ListInbounds(n.ID)
+	if listErr != nil {
+		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: listErr.Error()})
+	}
+	xrayRequired := len(model.InboundsForCore(inbounds, model.CoreXray)) > 0 || len(inbounds) == 0
+	if xrayRequired && !n.Deployed() {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "从没下发过配置",
 			Hint: "mpx node sync " + n.Name + " 推一次"})
-	} else if st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
+	} else if xrayRequired && st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "配置和下发的不一致(节点上被改过)",
 			Hint: "可能是你自己改的,也可能是别人改的;确认后 mpx node sync " + n.Name + " 覆盖回去"})
+	}
+
+	quicRequired := len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0
+	quicObserved := false
+	for _, core := range st.Cores {
+		if core.Core != model.CoreSingBox {
+			continue
+		}
+		quicObserved = true
+		if !core.Active {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 服务没在跑"})
+		}
+		if !core.StatsAvailable {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 单用户统计不可用: " + core.Error, Hint: "mpx node install " + n.Name + " --core sing-box; 需 with_v2ray_api 构建与 SSH 转发"})
+		}
+		d, err := s.store.GetCoreDeployment(n.ID, model.CoreSingBox)
+		if err != nil {
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: err.Error()})
+			continue
+		}
+		if d.DeployedHash == "" {
+			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 从没下发过配置"})
+		} else if core.ObservedHash == "" || core.ObservedHash != d.DeployedHash {
+			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 配置未读取或与下发内容不一致"})
+		}
+	}
+	if quicRequired && !quicObserved {
+		raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 状态未观察,无法证明认证和单用户计量可用"})
 	}
 
 	for _, c := range st.Certificates {

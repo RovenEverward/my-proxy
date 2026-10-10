@@ -4,15 +4,17 @@ import "time"
 
 // TrafficSample 是某个用户在某节点某一时刻的流量计数。
 //
-// Uplink / Downlink 是 xray 报的**累计值**,不是两次采样之间的增量。采样不再
+// Uplink / Downlink 是指定核心报的**累计值**,不是两次采样之间的增量。采样不再
 // 「读走即清零」之后,节点上的计数会一直涨,增量由相邻两次累计值相减得到。
 type TrafficSample struct {
-	ID        int64
-	Username  string
-	NodeID    int64
-	SampledAt time.Time
-	Uplink    int64
-	Downlink  int64
+	ID         int64
+	Username   string
+	Core       Core   `json:"core"`
+	Generation string `json:"generation,omitempty"`
+	NodeID     int64
+	SampledAt  time.Time
+	Uplink     int64
+	Downlink   int64
 }
 
 // TrafficDelta 是两次累计采样之间的增量。

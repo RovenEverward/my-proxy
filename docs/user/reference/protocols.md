@@ -15,6 +15,8 @@
 | **`vmess`** | `tcp` / `ws` / `grpc` | `none` / `tls` | 兼容传统老旧客户端。 |
 | **`trojan`** | `tcp` / `ws` / `grpc` | `tls` | 伪装为标准 HTTPS 流量，要求节点具备合规的 TLS 证书。 |
 | **`shadowsocks`** | `tcp` | `none` | 仅支持 **Shadowsocks-2022**（加密算法固定为 `2022-blake3-aes-128-gcm`），不提供过时的流加密。 |
+| **`hysteria2`** | `udp` | `tls` | sing-box 第二核心、多用户独立认证与计量；须准备证书。 |
+| **`tuic`** | `udp` | `tls` | sing-box 第二核心、每用户 UUID + 密码，拥塞控制默认 bbr。 |
 | **`wireguard`** | *(L3 独占)* | `none` | L3 级网络协议，自身完成端到端握手加密，不可在其外层套用 TLS 或 REALITY。 |
 
 > **关于 `xhttp` (SplitHTTP / HTTPUpgrade)**：
@@ -33,5 +35,7 @@
 | **`sing-box`** | JSON |  支持 |  支持 |  支持 | ⚠️ 部分版本 |
 | **`xray`** | JSON |  支持 |  支持 |  支持 |  支持 |
 | **`links` / `base64-links`** | URI / Base64 |  标准 `vless://` |  标准 `ss://` |  支持 |  支持 |
+
+Hysteria2/TUIC 支持 links、Base64、`clash-meta`（mihomo）及 `sing-box`。原版 `clash` 与 `xray` 格式明确拒绝。服务端安装和重启影响见 [Hysteria2 与 TUIC 节点](../guides/quic-protocols.md)。
 
 > **提示**：如果使用现代协议（如 VLESS REALITY 或 Shadowsocks-2022），客户端请优先选择 **Clash Verge Rev (Mihomo 内核)** 或 **sing-box**。原生 Clash 内核由于已停止更新，无法识别 REALITY 字段。

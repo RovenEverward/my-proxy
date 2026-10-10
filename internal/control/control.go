@@ -60,10 +60,11 @@ func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *
 	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir}
 }
 
-// DeployNode 渲染该节点的完整配置并下发,然后重启 xray。
-//
-// 用于「结构性」变更:新增入站、改端口、换证书。这类改动 xray 只能重启才生效。
+// DeployNode 下发节点所需的独立核心配置。QUIC 配置变化时采样并重启
+// sing-box；Xray 结构性变更仍使用原有配置验证与重启流程。
 func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) error {
+	unlock := c.lockNode(n.ID)
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, deployBudget)
 	defer cancel()
 
@@ -71,9 +72,16 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err != nil {
 		return err
 	}
+	if err := c.deploySingBox(ctx, n, now, false); err != nil {
+		return err
+	}
+	// Final QUIC accounting may change a shared user's quota status.
 	users, err := c.store.ListUsers()
 	if err != nil {
 		return err
+	}
+	if len(model.InboundsForCore(inbounds, model.CoreXray)) == 0 && len(inbounds) > 0 && n.DeployedHash == "" {
+		return nil
 	}
 	cfg, err := render.ServerConfig(n, inbounds, users, now)
 	if err != nil {
@@ -109,6 +117,13 @@ func hashOf(content []byte) string {
 func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
+	inbounds, err := c.store.ListInbounds(n.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(model.InboundsForCore(inbounds, model.CoreSingBox)) > 0 {
+		return nil, fmt.Errorf("sing-box 不提供单用户在线 IP API; 含 QUIC 的节点无法返回完整在线名单")
+	}
 	return node.OnlineIPs(ctx, c.runner, n)
 }
 
@@ -126,7 +141,12 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time) error {
 	ctx, cancel := context.WithTimeout(ctx, sampleBudget)
 	defer cancel()
+	unlock := c.lockNode(n.ID)
+	defer unlock()
+	return c.sampleCores(ctx, n, now)
+}
 
+func (c *Control) sampleXrayTraffic(ctx context.Context, n model.Node, now time.Time) error {
 	traffic, err := node.QueryUserTraffic(ctx, c.runner, n)
 	if err != nil {
 		// 节点不可达:这一轮什么都不做,不写历史也不动基准。漏掉的这段时间不会
@@ -156,7 +176,7 @@ func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time
 				"prev_uplink", prev.Uplink, "prev_downlink", prev.Downlink,
 				"uplink", t.Uplink, "downlink", t.Downlink)
 			// 新的累计值要存成基准:不存的话下一轮又拿旧基准算出同一个回退。
-			if err := c.store.RecordTrafficSample(sample); err != nil {
+			if err := c.store.ApplyCoreTrafficSample(sample, model.CoreXray); err != nil {
 				c.logger.Warn("写流量采样失败", "node", n.Name, "user", name, "error", err)
 			}
 			continue
@@ -165,15 +185,9 @@ func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time
 			continue
 		}
 
-		// 先落历史再累加:采样是下一次的基准,也是账本。反过来写的话,历史写失败
-		// 会让下一轮拿同一个基准再算一遍,把同一段流量加两次;而累加失败只是这一
-		// 笔晚到,历史里有,能看出来也能重算。
-		if err := c.store.RecordTrafficSample(sample); err != nil {
-			c.logger.Warn("写流量采样失败", "node", n.Name, "user", name, "error", err)
-			continue
-		}
-		if err := c.store.AddUserTraffic(name, delta.Uplink, delta.Downlink); err != nil {
-			c.logger.Warn("累加用户流量失败", "node", n.Name, "user", name, "error", err)
+		// 历史基准与配额账本同一事务:任一失败都可在下一轮按旧基准重试。
+		if err := c.store.ApplyCoreTrafficSample(sample, model.CoreXray); err != nil {
+			c.logger.Warn("写流量采样和用户账本失败", "node", n.Name, "user", name, "error", err)
 		}
 	}
 	return nil
@@ -181,9 +195,11 @@ func (c *Control) SampleTraffic(ctx context.Context, n model.Node, now time.Time
 
 // ReconcileUsers 让节点上的人员名单收敛到数据库里的期望状态。
 //
-// 只做增删用户,不重启 xray:配额恢复、到期续费都会走到这里,若每次都重启,
-// 节点上所有人的连接都会跟着断一次。
+// Xray 使用动态增删用户；sing-box 缺少动态修改接口，名单变化时先采样
+// 再重启第二核心。名单不变不会重启。两核心的服务与配置独立。
 func (c *Control) ReconcileUsers(ctx context.Context, n model.Node, now time.Time) error {
+	unlock := c.lockNode(n.ID)
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, reconcileBudget)
 	defer cancel()
 
@@ -191,13 +207,15 @@ func (c *Control) ReconcileUsers(ctx context.Context, n model.Node, now time.Tim
 	if err != nil {
 		return err
 	}
+	var firstErr error
+	if err := c.deploySingBox(ctx, n, now, false); err != nil {
+		firstErr = err
+	}
 	users, err := c.store.ListUsers()
 	if err != nil {
 		return err
 	}
-
-	var firstErr error
-	for _, in := range inbounds {
+	for _, in := range model.InboundsForCore(inbounds, model.CoreXray) {
 		if err := c.reconcileInbound(ctx, n, in, users, now); err != nil {
 			c.logger.Warn("同步入站人员失败", "node", n.Name, "inbound", in.TagOrDefault(), "error", err)
 			if firstErr == nil {

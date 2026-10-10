@@ -18,6 +18,7 @@
 
 ### 控制面管理员
 - [节点运维与生命周期管理](guides/node-operations.md)：节点安装、配置下发（Sync）、平滑维护排空（Drain）与实时在线活跃 IP 查询。
+- [Hysteria2 与 TUIC 节点](guides/quic-protocols.md)：第二核心安装、证书、订阅、独立计量与用户停用的重启边界。
 - [用户与配额管理](guides/user-management.md)：用户增删改查、配额限制、周期自动重置、到期顺延与 CSV 批量导入导出。
 - [告警与到期通知配置](guides/notifications.md)：Webhook 回调地址配置、签名验证、超额/到期/掉线事件推送说明。
 - [备份与灾备恢复实操](guides/backup-and-restore.md)：在线热备份、数据包校验、暂存换入与新服务器跨机迁移拉起。
