@@ -93,6 +93,9 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 		if fusionErr != nil {
 			report.Summary = append(report.Summary, "融合怪测评未完成: "+fusionErr.Error())
 		}
+		if cfg.Speed && ctx.Err() == nil {
+			runErr = errors.Join(runErr, c.checkupFusionSpeedFallback(ctx, n, result, &report))
+		}
 	} else if ctx.Err() == nil {
 		network, networkErr := c.runDiagnostic(ctx, n, cfg, now)
 		report.Network = network.Report
@@ -120,6 +123,94 @@ func (c *Control) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics
 		return record, errors.Join(runErr, err)
 	}
 	return record, errors.Join(runErr, c.store.SaveDiagnosticReport(record))
+}
+
+// checkupFusionSpeedFallback keeps independent measurements out of the official
+// Fusion report and uses the node identity already captured for this checkup.
+func (c *Control) checkupFusionSpeedFallback(ctx context.Context, n model.Node, result fusion.Report, report *model.NodeCheckupReport) error {
+	parsed, measured := checkupFusionSpeedMeasured(result.Data)
+	if !parsed || measured || ctx.Err() != nil {
+		return nil
+	}
+	report.Summary = append(report.Summary, "融合怪缺少可用测速结果；独立速度补测与融合怪报告分别保存")
+	seconds := result.TimeoutSeconds
+	if seconds == 0 {
+		seconds = fusion.DefaultTimeoutSeconds
+	}
+	deadline := result.StartedAt.Add(time.Duration(seconds) * time.Second)
+	if cap := time.Now().Add(50 * time.Second); cap.Before(deadline) {
+		deadline = cap
+	}
+	if outer, ok := ctx.Deadline(); ok && outer.Before(deadline) {
+		deadline = outer
+	}
+	if !deadline.After(time.Now()) {
+		report.Summary = append(report.Summary, "独立速度补测未运行: 融合怪原有时间预算已耗尽")
+		return nil
+	}
+	child, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	network, runErr := diagnostics.RunSpeedFallback(child, strconv.FormatInt(n.ID, 10), diagnosticSSHExecutor{runner: c.runner, node: n})
+	raw, marshalErr := json.Marshal(network)
+	if marshalErr == nil {
+		report.Network = raw
+	}
+	if runErr != nil {
+		report.Summary = append(report.Summary, "独立速度补测未完成: "+runErr.Error())
+	} else {
+		report.Summary = append(report.Summary, "独立速度补测已完成；融合怪原始状态与错误保持不变")
+	}
+	checkupNetworkSummary(report)
+	return errors.Join(runErr, marshalErr)
+}
+
+// Only throughput in the pinned speed schema counts. Candidate nodes, latency,
+// durations and errors do not prove a transfer occurred.
+func checkupFusionSpeedMeasured(data json.RawMessage) (parsed, measured bool) {
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil || root == nil {
+		return false, false
+	}
+	var schema string
+	if json.Unmarshal(root["schema_version"], &schema) != nil || schema != "goecs.report/v1" {
+		return false, false
+	}
+	var components []json.RawMessage
+	_ = json.Unmarshal(root["components"], &components)
+	for _, raw := range components {
+		var component struct {
+			Name    string          `json:"name"`
+			Schema  string          `json:"schema_version"`
+			Payload json.RawMessage `json:"payload"`
+		}
+		if json.Unmarshal(raw, &component) != nil || component.Name != "speed.registry" || component.Schema != "goecs.speed/v1" {
+			continue
+		}
+		var payload struct {
+			Schema            string            `json:"schema_version"`
+			Benchmarks        []json.RawMessage `json:"benchmarks"`
+			PrivateBenchmarks []json.RawMessage `json:"private_benchmarks"`
+		}
+		if json.Unmarshal(component.Payload, &payload) != nil || payload.Schema != "goecs.speed/v1" {
+			continue
+		}
+		for _, rows := range [][]json.RawMessage{payload.Benchmarks, payload.PrivateBenchmarks} {
+			for _, raw := range rows {
+				var row struct {
+					Status   string   `json:"status"`
+					Download *float64 `json:"download_mbps"`
+					Upload   *float64 `json:"upload_mbps"`
+				}
+				if json.Unmarshal(raw, &row) != nil || (row.Status != "available" && row.Status != "ok") {
+					continue
+				}
+				if (row.Download != nil && *row.Download > 0) || (row.Upload != nil && *row.Upload > 0) {
+					return true, true
+				}
+			}
+		}
+	}
+	return true, false
 }
 
 func checkupDrift(deployed string, health model.NodeStatus) string {

@@ -84,6 +84,9 @@ func TestFusionStagedDeadlineAndCancellation(t *testing.T) {
 		if r.calls != 2 || len(r.deadlines) != 2 || r.deadlines[0].After(time.Now().Add(181*time.Second)) || r.deadlines[1].After(outer) {
 			t.Fatalf("inflated budget: %+v", r.deadlines)
 		}
+		if outer.Sub(r.deadlines[1]) < 50*time.Second {
+			t.Fatalf("speed phase consumed independent fallback reserve: %v", outer.Sub(r.deadlines[1]))
+		}
 		if !strings.Contains(string(got.Data), "goecs.basics/system-v1") || !got.Speed || !strings.HasPrefix(got.Output, "official baseline text") {
 			t.Fatalf("baseline lost: %+v", got)
 		}
@@ -113,7 +116,7 @@ func TestFusionPhaseFlags(t *testing.T) {
 			t.Fatal(base)
 		}
 	}
-	for _, flag := range []string{"-speed=true", "-basic=false", "-security=false", "-email=false", "-backtrace=false", "-nt3=false", "-ping=false", "-cpu=false", "-privacy=true", "-upload=false"} {
+	for _, flag := range []string{"-speed=true", "-basic=false", "-security=false", "-email=false", "-backtrace=false", "-nt3=false", "-ping=false", "-cpu=false", "-spnum=1", "-privacy=true", "-upload=false"} {
 		if !strings.Contains(speed, flag) {
 			t.Fatal(speed)
 		}

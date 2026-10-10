@@ -564,6 +564,9 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 			}
 		}
 		network = checkup.Network
+		if hasFusion && len(network) != 0 && string(network) != "null" {
+			fmt.Fprintln(cmd.OutOrStdout(), "独立小样本测速补充: 下列网络结果来自有界两站检测,不属于融合怪三网测速;融合怪状态保持原值。")
+		}
 		if len(network) == 0 || string(network) == "null" {
 			if !hasFusion {
 				fmt.Fprintln(cmd.OutOrStdout(), "网络: 未返回测量结果")
