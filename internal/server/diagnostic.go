@@ -37,6 +37,18 @@ func (s *Server) diagnosticRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/nodes/{id}/diagnostics", s.handleGetDiagnostics)
 }
 
+// Diagnostic reports contain deeply nested raw JSON within a 256 KiB storage
+// budget. Keep the wire representation compact so indentation and HTML escaping
+// cannot push a valid report past the CLI's 260 KiB response limit. These are
+// application/json API responses, not JSON embedded in an HTML document.
+func writeDiagnosticJSON(w http.ResponseWriter, code int, value any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(value)
+}
+
 func diagnosticSource(source string) (string, bool) {
 	if source == "" {
 		source = "node"
@@ -59,7 +71,7 @@ func (s *Server) handleGetDiagnostics(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "诊断报告")
 		return
 	}
-	writeJSON(w, http.StatusOK, record)
+	writeDiagnosticJSON(w, http.StatusOK, record)
 }
 
 func (s *Server) handleDiagnoseNode(w http.ResponseWriter, r *http.Request) {
@@ -154,12 +166,12 @@ func (s *Server) handleDiagnoseNode(w http.ResponseWriter, r *http.Request) {
 		if json.Valid(record.Report) {
 			response["record"] = record
 		}
-		writeJSON(w, code, response)
+		writeDiagnosticJSON(w, code, response)
 		return
 	}
 	if !json.Valid(record.Report) {
 		writeError(w, http.StatusBadGateway, "诊断没有返回合法报告")
 		return
 	}
-	writeJSON(w, http.StatusOK, record)
+	writeDiagnosticJSON(w, http.StatusOK, record)
 }
