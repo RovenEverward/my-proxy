@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/diagnostics"
+	"github.com/RovenEverward/my-proxy/internal/fusion"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -26,11 +27,20 @@ func init() {
 }
 
 func diagnosticFlags(cmd *cobra.Command, local bool) {
-	cmd.Flags().Bool("speed", !local, "启用有界上传和下载测速;节点完整体检默认开启")
+	speedHelp := "启用测速;Fusion 默认开启,可用 --speed=false 关闭"
+	if local {
+		speedHelp = "启用有界上传和下载测速,默认关闭"
+	}
+	cmd.Flags().Bool("speed", !local, speedHelp)
+	if !local {
+		cmd.Flags().String("engine", "fusion", "完整体检引擎:fusion 或 light;--from control/--network-only 未指定引擎时使用 light")
+		cmd.Flags().Bool("hardware", false, "Fusion 可选硬件完整测试,默认关闭")
+		cmd.Flags().Duration("fusion-timeout", time.Duration(fusion.DefaultTimeoutSeconds)*time.Second, "Fusion 执行时间上限,1m..30m;完整体检另留 3m 用于健康和入口检查")
+	}
 	cmd.Flags().Int64("max-bytes", 0, "总 HTTP 流量上限(字节),默认 32 MiB")
 	cmd.Flags().Int64("speed-bytes", 0, "每站每方向测速字节数,默认 1 MiB")
 	cmd.Flags().Int("samples", 0, "延迟样本数,默认 3,最大 5")
-	cmd.Flags().Duration("timeout", 0, "总执行时间,默认 120s,最大 170s")
+	cmd.Flags().Duration("timeout", 0, "light 网络诊断总执行时间,默认 120s,最大 170s")
 	cmd.Flags().Duration("request-timeout", 0, "单次请求超时,默认 5s,最大 15s")
 	cmd.Flags().StringArray("target", nil, "目标主机/IP,可重复;省略时使用测量位置默认目标")
 	cmd.Flags().StringArray("target-http", nil, "目标 HTTP(S) URL,与 --target 按顺序对应;可单独指定")
@@ -58,6 +68,53 @@ func diagnosticFlags(cmd *cobra.Command, local bool) {
 	}
 }
 
+// Fusion has its own measurement modules. Reject explicit light options even
+// when their value is zero so the command never silently ignores user input.
+var lightDiagnosticFlags = []string{
+	"max-bytes", "speed-bytes", "samples", "timeout", "request-timeout",
+	"target", "target-http", "target-name", "target-region",
+	"speed-site-name", "speed-download", "speed-upload", "speed-source",
+	"speed-download-unit-bytes", "speed-upload-method",
+	"ip-info-url", "ipv4-url", "ipv6-url", "ip-reputation-key-env", "ip-quality-key-env",
+}
+
+func diagnosticEngineConfig(cmd *cobra.Command, cfg *diagnostics.Config) error {
+	cfg.Engine, _ = cmd.Flags().GetString("engine")
+	networkOnly, _ := cmd.Flags().GetBool("network-only")
+	if !cmd.Flags().Changed("engine") && (networkOnly || cfg.Position == "control") {
+		cfg.Engine = "light"
+	}
+	if cfg.Engine != "fusion" && cfg.Engine != "light" {
+		return fmt.Errorf("--engine 只能是 fusion 或 light")
+	}
+	if networkOnly && (cfg.Engine == "fusion" || cmd.Flags().Changed("hardware") || cmd.Flags().Changed("fusion-timeout")) {
+		return fmt.Errorf("--network-only 仅支持 light,不能指定 --hardware 或 --fusion-timeout")
+	}
+	if cfg.Engine == "light" {
+		if cmd.Flags().Changed("hardware") || cmd.Flags().Changed("fusion-timeout") {
+			return fmt.Errorf("--hardware 和 --fusion-timeout 仅支持 --engine fusion")
+		}
+		return nil
+	}
+	if cfg.Position != "node" {
+		return fmt.Errorf("Fusion 体检只能在 node 位置执行;--from control 请使用 --engine light")
+	}
+	for _, name := range lightDiagnosticFlags {
+		if cmd.Flags().Changed(name) {
+			return fmt.Errorf("--%s 仅支持 --engine light;Fusion 使用自身测量模块和流量设置", name)
+		}
+	}
+	cfg.Hardware, _ = cmd.Flags().GetBool("hardware")
+	if cmd.Flags().Changed("fusion-timeout") {
+		value, _ := cmd.Flags().GetDuration("fusion-timeout")
+		if value < time.Minute || value > time.Duration(fusion.MaxTimeoutSeconds)*time.Second || value%time.Second != 0 {
+			return fmt.Errorf("--fusion-timeout 必须是 1m..30m 之间的整秒时长")
+		}
+		cfg.FusionTimeoutSeconds = int(value / time.Second)
+	}
+	return nil
+}
+
 func diagnosticConfig(cmd *cobra.Command, local bool) (diagnostics.Config, error) {
 	cfg := diagnostics.Config{Position: "local"}
 	if local {
@@ -65,6 +122,9 @@ func diagnosticConfig(cmd *cobra.Command, local bool) (diagnostics.Config, error
 	} else {
 		cfg.Position, _ = cmd.Flags().GetString("from")
 		if err := validateDiagnosticSource(cfg.Position); err != nil {
+			return cfg, err
+		}
+		if err := diagnosticEngineConfig(cmd, &cfg); err != nil {
 			return cfg, err
 		}
 	}
@@ -216,13 +276,19 @@ func diagnosticExecutionOutput(cmd *cobra.Command, raw []byte, requestErr error)
 }
 
 func newNodeDiagnoseCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "diagnose [id]", Short: "一键执行节点健康、入口能力和网络完整体检", Args: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "diagnose [id]", Short: "一键执行节点健康、入口能力和 Fusion 完整体检", Args: func(cmd *cobra.Command, args []string) error {
 		all, _ := cmd.Flags().GetBool("all")
 		if (all && len(args) != 0) || (!all && len(args) != 1) {
 			return fmt.Errorf("请指定一个节点 id 或 --all,两者互斥")
 		}
 		return nil
-	}, Example: "  mpx node diagnose 1\n  mpx node diagnose --all\n  mpx node diagnose 1 --network-only --from control",
+	}, Long: "一键执行节点健康、入口能力和 Fusion 完整体检。\n\n" +
+		"节点默认使用 Fusion,测速默认开启,硬件测试默认关闭,报告上传关闭。\n" +
+		"--fusion-timeout 控制 Fusion 的执行时间;完整体检另留 3m 检查健康和入口。\n" +
+		"需要有界网络诊断或自定义目标时使用 --engine light。\n" +
+		"--timeout、--request-timeout、--max-bytes、--speed-bytes、--samples、目标、测速站和 IP API 选项仅支持 light。\n" +
+		"--from control 和 --network-only 未指定引擎时自动选择 light。",
+		Example: "  mpx node diagnose 1\n  mpx node diagnose --all\n  mpx node diagnose 1 --hardware --fusion-timeout 30m\n  mpx node diagnose 1 --engine light --max-bytes 1048576\n  mpx node diagnose 1 --network-only --from control",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := diagnosticConfig(cmd, false)
 			if err != nil {
@@ -395,7 +461,7 @@ func diagnosticRequest(cmd *cobra.Command, c *Client, path string, cfg diagnosti
 	if err != nil {
 		return nil, err
 	}
-	budget := 6*time.Minute + 45*time.Second
+	budget := cfg.Config.CheckupTimeout() + 45*time.Second
 	if cfg.NetworkOnly {
 		budget = 3*time.Minute + 15*time.Second
 	}
@@ -450,12 +516,13 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "测量时节点地址: %s\n", dash(record.MeasuredAddress))
 	var envelope struct {
 		Network json.RawMessage `json:"network"`
+		Fusion  json.RawMessage `json:"fusion"`
 	}
 	if err := json.Unmarshal(record.Report, &envelope); err != nil {
 		return err
 	}
 	network := record.Report
-	if envelope.Network != nil {
+	if envelope.Network != nil || envelope.Fusion != nil {
 		checkup, err := decode[model.NodeCheckupReport](record.Report)
 		if err != nil {
 			return err
@@ -490,9 +557,17 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 				fmt.Fprint(cmd.OutOrStdout(), tableText([]string{"目标", "本次观察", "稳定状态", "地区", "出口 IP", "原因"}, rows))
 			}
 		}
+		hasFusion := len(checkup.Fusion) != 0 && string(checkup.Fusion) != "null"
+		if hasFusion {
+			if err := printFusionReport(cmd, checkup.Fusion); err != nil {
+				return err
+			}
+		}
 		network = checkup.Network
 		if len(network) == 0 || string(network) == "null" {
-			fmt.Fprintln(cmd.OutOrStdout(), "网络: 未返回测量结果")
+			if !hasFusion {
+				fmt.Fprintln(cmd.OutOrStdout(), "网络: 未返回测量结果")
+			}
 			return nil
 		}
 	}
@@ -502,6 +577,60 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 	}
 	printDiagnosticReport(cmd, report, record.Source, record.CheckedAt)
 	return nil
+}
+
+// Upstream human text belongs to Output. Known structured components are
+// displayed as their original JSON payloads without inventing evaluations.
+func printFusionReport(cmd *cobra.Command, raw json.RawMessage) error {
+	var report fusion.Report
+	if err := json.Unmarshal(raw, &report); err != nil {
+		return fmt.Errorf("Fusion 报告不是合法对象: %w", err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "体检引擎: %s  版本: %s  状态: %s\n", dash(report.Engine), dash(report.Version), dash(report.Status))
+	fmt.Fprintf(cmd.OutOrStdout(), "来源: %s  开始: %s  完成: %s  耗时: %.0f ms  时间上限: %ds\n", dash(report.Source), capabilityTime(report.StartedAt), capabilityTime(report.FinishedAt), report.DurationMS, report.TimeoutSeconds)
+	fmt.Fprintf(cmd.OutOrStdout(), "测速: %s  硬件测试: %s  报告上传: %s\n", yesNo(report.Speed), yesNo(report.Hardware), yesNo(report.Upload))
+	if report.Output != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Fusion 原始报告:")
+		fmt.Fprint(cmd.OutOrStdout(), report.Output)
+		if !strings.HasSuffix(report.Output, "\n") {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
+	}
+	printFusionComponents(cmd, report.Data)
+	if report.Error != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Fusion 体检原因: %s\n", report.Error)
+	}
+	if report.Truncated {
+		fmt.Fprintln(cmd.OutOrStdout(), "提示: Fusion 报告已达到大小上限,输出已截断")
+	}
+	for _, warning := range report.Warnings {
+		fmt.Fprintf(cmd.OutOrStdout(), "提示: %s\n", warning)
+	}
+	return nil
+}
+
+func printFusionComponents(cmd *cobra.Command, raw json.RawMessage) {
+	var data struct {
+		Components []struct {
+			Name          string          `json:"name"`
+			SchemaVersion string          `json:"schema_version"`
+			Status        string          `json:"status"`
+			Payload       json.RawMessage `json:"payload"`
+		} `json:"components"`
+	}
+	if json.Unmarshal(raw, &data) != nil {
+		return
+	}
+	for _, component := range data.Components {
+		fmt.Fprintf(cmd.OutOrStdout(), "Fusion 模块: %s  状态: %s  格式: %s\n", dash(component.Name), dash(component.Status), dash(component.SchemaVersion))
+		if len(component.Payload) == 0 || string(component.Payload) == "null" {
+			continue
+		}
+		var formatted bytes.Buffer
+		if json.Indent(&formatted, component.Payload, "", "  ") == nil {
+			fmt.Fprintln(cmd.OutOrStdout(), formatted.String())
+		}
+	}
 }
 
 func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source string, checkedAt time.Time) {

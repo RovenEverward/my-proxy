@@ -24,7 +24,9 @@ backup   [-o 文件]                        下载一份备份归档(默认 mpx-
 restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
 node     list | show | status | add | edit | rm | config | sync | install
-         | diagnose (ID|--all) [--network-only] [--speed=false] | diagnostics ID [--from node|control]
+         | diagnose (ID|--all) [--engine fusion|light] [--hardware] [--speed=false]
+         |          [--fusion-timeout 15m] [--network-only] [--from node|control]
+         | diagnostics ID [--from node|control]
 diagnose [--socks5 socks5h://host:port] [--speed]  当前操作机本地诊断,不读取管理登录
 inbound  list | show | add | edit | rm
 host     list | add | edit | rm
@@ -54,9 +56,27 @@ bootstrap --address <节点对外地址> [--name default] [--username user1] [--
 
 ### 综合体检 API
 
-`POST /api/nodes/{id}/diagnostics` 接收 `diagnostics.Config` 加可选 `network_only`。默认是完整一键体检，网络测速默认开启；显式 `speed:false` 关闭测速。`network_only:true` 仅执行高级网络测量，测速默认关闭。执行位置只允许 node/control，不允许 SOCKS URL、API 密钥或自选密钥环境变量。`GET /api/nodes/{id}/diagnostics?from=node|control` 读取该位置最新报告。两者沿用管理鉴权；不存在的节点或报告 404，配置错误 400，全局正在运行 409，同节点同位置一分钟内再运行 429，部分执行取消等错误 502。
+`POST /api/nodes/{id}/diagnostics` 接收 `diagnostics.Config` 加可选 `network_only`。空配置默认在 node 位置执行完整 Fusion 体检，使用官方 Go ECS v0.2.12；完整体检保留 mpx 健康、配置漂移和全部实际获授权入口检查。`engine:light` 显式选择原有完整流程。control 位置未指定引擎时默认 light；Fusion 只允许 node。`network_only:true` 仅执行原有有界网络测量，默认 light。执行位置不允许 local、SOCKS URL、API 密钥或自选密钥环境变量。
 
-成功正文为 `{node_id, measured_address, source, checked_at, report}`；`measured_address` 保存开始测量时的节点地址，节点后续编辑不会把旧证据改写为新地址；失败时若已获得合法部分报告则为 `{error, record}`。CLI 输出部分证据后返回错误，429 不自动重试。完整 `report` 为 `{summary,health,drift,network,entrances}`，统一保存一次；CLI `--all` 顺序执行全部节点，失败保留报告后继续，取消则停止。网络执行器最长 170 秒；完整流程最长 6 分钟，API 外层 6 分 30 秒留出保存时间。仅网络模式 API 为 3 分钟。固定可选环境变量为执行机器的 `MPX_ABUSEIPDB_KEY` 与 `MPX_IPAPI_IS_KEY`，不会经远程 API 接收或落入报告。
+完整体检的 `speed` 默认 true，显式 false 关闭所选引擎测速。仅网络模式默认 false。Fusion 的 `hardware` 默认 false，显式 true 才开启 CPU、内存和磁盘测试；`fusion_timeout_seconds` 默认 900，允许 60..1800 秒。light 或仅网络模式不能配置 Fusion 专属参数；Fusion 不能配置原有的流量、样本、请求时限、目标或供应商参数，不静默忽略调用方输入。
+
+`GET /api/nodes/{id}/diagnostics?from=node|control` 读取该位置最新报告。两个 API 沿用管理鉴权；不存在的节点或报告 404，配置错误 400，全局正在运行 409，同节点同位置一分钟内再运行 429，部分执行取消等错误 502。成功正文为 `{node_id, measured_address, source, checked_at, report}`，失败时若已获得合法部分报告则为 `{error, record}`。CLI 输出部分证据后返回错误，429 不自动重试。`measured_address` 保留开始测量时的节点地址，后续编辑节点不改写旧证据。
+
+完整 `report` 保留 `{summary,health,drift,network,entrances}`，Fusion 路径增加 `fusion` 执行封装，`network` 不伪造为轻量测量结果。light 保留原有 `network` 报告。统一保存一次，每节点 node/control 各一份最新报告，单条最多 256 KiB。CLI `--all` 顺序执行，失败保留报告后继续，取消则停止；全程共用一个诊断槽。
+
+Fusion 总流程预算为上游执行时限加 3 分钟，API 再加 30 秒，CLI 再加 45 秒；默认分别为 18 分钟、18 分 30 秒、18 分 45 秒。light 完整流程仍为 6 分钟，API 为 6 分 30 秒，CLI 为 6 分 45 秒。仅网络模式默认 120 秒、最大 170 秒，API 为 3 分钟，CLI 为 3 分 15 秒。原有 32 MiB HTTP 应用数据预算只属于 light/仅网络执行器；Fusion 上游测速不提供总流量硬上限，以执行时限约束。入口探测仍有独立的正文与时间上限。
+
+#### Fusion 上游边界
+
+控制面缓存固定版本的官方 ZIP，并校验内置 SHA-256；仅接受匹配架构的单个 `goecs` ELF。节点目标为 `/usr/local/lib/mpx/goecs/v0.2.12/goecs`，校验后原子替换。独立可执行程序按需运行，无常驻 Agent，不重启 Xray，也不执行上游安装脚本或系统软件包更新。官方程序采用 GPL-3.0，源码与发布来源见 [oneclickvirt/ecs v0.2.12](https://github.com/oneclickvirt/ecs/releases/tag/v0.2.12)；mpx 本身仍按仓库许可证发布。
+
+调用固定包含 `-menu=false -l=zh -upload=false -privacy=true -json=-`。`speed:false` 禁用上游 nt3/speed。`-upload=false` 关闭报告上传；`-privacy=true` 另外关闭统计信标。隐私模式不阻止外部 IP 服务或其他测评查询，也不保证终端前缀隐藏实际 IP。
+
+`fusion` 封装保存固定版本与来源、执行状态、起止时间、耗时、配置、清理后的原始文本 `output`、真实上游 JSON `data`、截断标志、警告和错误。文本最多 64 KiB，上游 JSON 最多 128 KiB；完整保存记录仍受 256 KiB 限制。上游 `-json=-` 输出是终端文本前缀加 `goecs.report/v1` JSON，不能把整个 stdout 当作 JSON。隐私模式下上游 `text` 可为空，前缀仍须作为可能含 IP 的证据处理。
+
+解析要求 `schema_version:goecs.report/v1` 与 `ecs_version:v0.2.12`，保留上游 `sections` 和类型化 `components`，不凭文本拼造模块数据。状态区分 done、partial、failed、timeout 和 canceled。缺失、截断、版本不符或模块未完成的 JSON 保留部分文本与具体警告；上游取消且返回 0 也不能判为完成。完整运行与清理的证据范围见 [体检验证记录](diagnostic-validation.md)。
+
+light 可选的固定密钥环境变量仍为执行机器的 `MPX_ABUSEIPDB_KEY` 与 `MPX_IPAPI_IS_KEY`，不会经远程 API 接收或进入报告。
 
 ### 一键路径(`init` 与 `bootstrap`)
 

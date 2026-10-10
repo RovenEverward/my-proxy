@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var hostPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$`)
@@ -22,8 +23,55 @@ func DefaultTargets() []Target {
 
 func (c Config) Validate() error { _, err := c.Normalized(); return err }
 
+// CheckupTimeout is the full manual flow budget; Fusion has an independent
+// evaluation budget plus three minutes for health and authorized entrances.
+func (c Config) CheckupTimeout() time.Duration {
+	engine := c.Engine
+	if engine == "" {
+		engine = "fusion"
+		if c.Position == "control" {
+			engine = "light"
+		}
+	}
+	if engine == "light" {
+		return 6 * time.Minute
+	}
+	seconds := c.FusionTimeoutSeconds
+	if seconds == 0 {
+		seconds = 900
+	}
+	return time.Duration(seconds)*time.Second + 3*time.Minute
+}
+
 // Normalized returns a validated copy with safe defaults. Callers should not persist secrets.
 func (c Config) Normalized() (Config, error) {
+	if c.Engine != "" && c.Engine != "fusion" && c.Engine != "light" {
+		return c, fmt.Errorf("engine must be fusion or light")
+	}
+	if c.FusionTimeoutSeconds != 0 && (c.FusionTimeoutSeconds < 60 || c.FusionTimeoutSeconds > 1800) {
+		return c, fmt.Errorf("fusion timeout must be 60..1800 seconds")
+	}
+	if c.Engine == "light" && (c.Hardware || c.FusionTimeoutSeconds != 0) {
+		return c, fmt.Errorf("hardware and fusion timeout require the fusion engine")
+	}
+	if c.Engine == "fusion" {
+		if c.Position != "" && c.Position != "node" {
+			return c, fmt.Errorf("fusion requires node position")
+		}
+		if c.SocksURL != "" || c.Samples != 0 || c.RequestTimeoutSeconds != 0 || c.TotalTimeoutSeconds != 0 || c.MaxBytes != 0 || c.SpeedBytes != 0 || len(c.Targets) != 0 || len(c.SpeedSites) != 0 || c.IPInfoURL != "" || c.IPv4URL != "" || c.IPv6URL != "" || c.AbuseIPDBKey != "" || c.AbuseIPDBKeyEnv != "" || c.IPAPIKey != "" || c.IPAPIKeyEnv != "" {
+			return c, fmt.Errorf("bounded network options require light engine or network-only")
+		}
+		if c.Position == "" {
+			c.Position = "node"
+		}
+		if c.FusionTimeoutSeconds == 0 {
+			c.FusionTimeoutSeconds = 900
+		}
+		if len(c.NodeID) > 128 {
+			return c, fmt.Errorf("node_id too long")
+		}
+		return c, nil
+	}
 	if c.Position == "" {
 		c.Position = "local"
 	}

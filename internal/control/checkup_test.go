@@ -127,7 +127,7 @@ func TestCheckupNodeCombinesFreshIdentityHealthSpeedAndAllEntrances(t *testing.T
 	user := addUser(t, c.store, activeUser("checkup"))
 	n.Address = "stale.example"
 	n.DeployedHash = "observed" // must compare the stored baseline instead.
-	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Speed: true}, time.Now())
+	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light", Speed: true}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestCheckupNodeContinuesAfterInvalidEntrance(t *testing.T) {
 		}
 	}
 	addUser(t, c.store, activeUser("probe"))
-	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{}, time.Now())
+	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light"}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,16 +230,19 @@ func TestCheckupNodeCancellationOwnsFullSlotAndSavesPartial(t *testing.T) {
 			defer cancel()
 			now := time.Now().UTC().Truncate(time.Second)
 			done := make(chan error, 1)
-			go func() { _, err := c.CheckupNode(ctx, n, diagnostics.Config{Speed: true}, now); done <- err }()
+			go func() {
+				_, err := c.CheckupNode(ctx, n, diagnostics.Config{Engine: "light", Speed: true}, now)
+				done <- err
+			}()
 			select {
 			case <-r.started:
 			case <-time.After(time.Second):
 				t.Fatal("stage not started")
 			}
-			if _, err := c.CheckupNode(context.Background(), n, diagnostics.Config{}, now); !errors.Is(err, ErrDiagnosticBusy) {
+			if _, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light"}, now); !errors.Is(err, ErrDiagnosticBusy) {
 				t.Fatalf("full checkup busy=%v", err)
 			}
-			if _, err := c.DiagnoseNode(context.Background(), n, diagnostics.Config{}, now); !errors.Is(err, ErrDiagnosticBusy) {
+			if _, err := c.DiagnoseNode(context.Background(), n, diagnostics.Config{Engine: "light"}, now); !errors.Is(err, ErrDiagnosticBusy) {
 				t.Fatalf("network bypassed checkup slot=%v", err)
 			}
 			current, err := c.store.GetDiagnosticReport(n.ID, "node")
@@ -273,7 +276,7 @@ func TestCheckupNodeCancellationOwnsFullSlotAndSavesPartial(t *testing.T) {
 				t.Fatal("partial network evidence missing")
 			}
 			before := len(r.stages)
-			if _, err := c.CheckupNode(context.Background(), n, diagnostics.Config{}, now.Add(59*time.Second)); !errors.Is(err, ErrDiagnosticRateLimit) {
+			if _, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light"}, now.Add(59*time.Second)); !errors.Is(err, ErrDiagnosticRateLimit) {
 				t.Fatalf("partial report bypassed rate=%v", err)
 			}
 			if len(r.stages) != before {
@@ -293,7 +296,7 @@ func TestCheckupNodeBusyCapabilityAndUnreachableAreExplicit(t *testing.T) {
 		addInbound(t, c.store, n.ID, "first", 443)
 		addInbound(t, c.store, n.ID, "second", 8443)
 		c.capabilitySlot <- struct{}{}
-		record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{}, time.Now())
+		record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light"}, time.Now())
 		<-c.capabilitySlot
 		if err != nil {
 			t.Fatal(err)
@@ -322,7 +325,7 @@ func TestCheckupNodeRejectsConfigAndHonorsSpeedFalse(t *testing.T) {
 	if len(r.stages) != 0 {
 		t.Fatal("invalid config started health check")
 	}
-	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Speed: false}, time.Now())
+	record, err := c.CheckupNode(context.Background(), n, diagnostics.Config{Engine: "light", Speed: false}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

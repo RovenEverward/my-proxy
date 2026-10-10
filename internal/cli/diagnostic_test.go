@@ -133,13 +133,13 @@ func TestDiagnosticCLIValidationBeforeAnyNetwork(t *testing.T) {
 		{[]string{"node", "diagnose", "1", "--from", "local"}, "--from"},
 		{[]string{"node", "diagnostics", "1", "--from", "unknown"}, "--from"},
 		{[]string{"node", "diagnose", "0"}, "正整数"},
-		{[]string{"node", "diagnose", "1", "--samples", "6"}, "samples"},
-		{[]string{"node", "diagnose", "1", "--max-bytes", "0"}, "正数"},
-		{[]string{"node", "diagnose", "1", "--timeout", "1.5s"}, "整秒"},
-		{[]string{"node", "diagnose", "1", "--timeout", "3m"}, "total timeout"},
-		{[]string{"node", "diagnose", "1", "--target", "example.com", "--target-http", "https://a.example/", "--target-http", "https://b.example/"}, "数量"},
-		{[]string{"node", "diagnose", "1", "--ip-reputation-key-env", "MY_KEY"}, "仅用于本地"},
-		{[]string{"node", "diagnose", "1", "--ip-quality-key-env", "MY_KEY"}, "仅用于本地"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--samples", "6"}, "samples"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--max-bytes", "0"}, "正数"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--timeout", "1.5s"}, "整秒"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--timeout", "3m"}, "total timeout"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--target", "example.com", "--target-http", "https://a.example/", "--target-http", "https://b.example/"}, "数量"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--ip-reputation-key-env", "MY_KEY"}, "仅用于本地"},
+		{[]string{"node", "diagnose", "1", "--engine", "light", "--ip-quality-key-env", "MY_KEY"}, "仅用于本地"},
 		{[]string{"diagnose", "--ip-quality-key-env", "BAD-NAME"}, "environment"},
 		{[]string{"diagnose", "--ip-reputation-key-env", "BAD-NAME"}, "environment"},
 		{[]string{"diagnose", "--socks5", "socks5h://user:password@localhost:1080"}, "without credentials"},
@@ -304,7 +304,7 @@ func TestDiagnosticCLIBinaryAllUsesStdout(t *testing.T) {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
 	network, _ := json.Marshal(diagnosticFixture())
-	checkup, _ := json.Marshal(model.NodeCheckupReport{Summary: []string{"stdout-fixture"}, Health: model.NodeStatus{Reachable: true, Active: true}, Drift: "match", Network: network})
+	checkup, _ := json.Marshal(model.NodeCheckupReport{Summary: []string{"stdout-fixture"}, Health: model.NodeStatus{Reachable: true, Active: true}, Drift: "match", Network: network, Fusion: fusionDiagnosticFixture()})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_ = json.NewEncoder(w).Encode([]model.NodeView{{Node: model.Node{ID: 1, Name: "mock-node"}}})
@@ -330,9 +330,154 @@ func TestDiagnosticCLIBinaryAllUsesStdout(t *testing.T) {
 				if err := json.Unmarshal(stdout.Bytes(), &records); err != nil || len(records) != 1 || records[0].Record == nil {
 					t.Fatalf("JSON stdout=%s err=%v", stdout.String(), err)
 				}
-			} else if !strings.Contains(stdout.String(), "stdout-fixture") || !strings.Contains(stdout.String(), "mock-node") || !strings.Contains(stdout.String(), "实测流量") {
+			} else if !strings.Contains(stdout.String(), "stdout-fixture") || !strings.Contains(stdout.String(), "mock-node") || !strings.Contains(stdout.String(), "实测流量") || !strings.Contains(stdout.String(), "Actual upstream report") {
 				t.Fatalf("table stdout=%s", stdout.String())
 			}
 		})
+	}
+}
+
+func TestDiagnosticCLIEngineSelectionAndTimeouts(t *testing.T) {
+	for _, tc := range []struct {
+		args     []string
+		engine   string
+		speed    bool
+		hardware bool
+		timeout  int
+	}{
+		{nil, "fusion", true, false, 0},
+		{[]string{"--speed=false"}, "fusion", false, false, 0},
+		{[]string{"--hardware", "--fusion-timeout", "30m"}, "fusion", true, true, 1800},
+		{[]string{"--fusion-timeout", "1m"}, "fusion", true, false, 60},
+		{[]string{"--from", "control"}, "light", true, false, 0},
+		{[]string{"--engine", "light"}, "light", true, false, 0},
+		{[]string{"--network-only"}, "light", false, false, 0},
+		{[]string{"--network-only", "--engine", "light", "--speed"}, "light", true, false, 0},
+	} {
+		cmd := newNodeDiagnoseCmd()
+		if err := cmd.ParseFlags(tc.args); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := diagnosticConfig(cmd, false)
+		if err != nil || cfg.Engine != tc.engine || cfg.Speed != tc.speed || cfg.Hardware != tc.hardware || cfg.FusionTimeoutSeconds != tc.timeout {
+			t.Errorf("%v => %+v err=%v", tc.args, cfg, err)
+		}
+	}
+	for _, args := range [][]string{
+		{"--engine", "other"}, {"--engine", "fusion", "--from", "control"},
+		{"--network-only", "--engine", "fusion"}, {"--network-only", "--hardware=false"}, {"--network-only", "--fusion-timeout", "15m"},
+		{"--engine", "light", "--hardware=false"}, {"--engine", "light", "--fusion-timeout", "15m"},
+		{"--fusion-timeout", "0"}, {"--fusion-timeout", "59s"}, {"--fusion-timeout", "30m1s"}, {"--fusion-timeout", "60.5s"},
+	} {
+		cmd := newNodeDiagnoseCmd()
+		if err := cmd.ParseFlags(args); err != nil {
+			t.Fatal(err)
+		}
+		if cfg, err := diagnosticConfig(cmd, false); err == nil {
+			t.Errorf("accepted %v: %+v", args, cfg)
+		}
+	}
+	// Every advanced flag must reject an explicit zero/empty/default value too.
+	for _, name := range lightDiagnosticFlags {
+		cmd := newNodeDiagnoseCmd()
+		value := cmd.Flags().Lookup(name).DefValue
+		if value == "[]" {
+			value = "fixture"
+		}
+		if err := cmd.Flags().Set(name, value); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := diagnosticConfig(cmd, false); err == nil || !strings.Contains(err.Error(), "--"+name) || !strings.Contains(err.Error(), "light") {
+			t.Errorf("explicit --%s=%s err=%v", name, value, err)
+		}
+	}
+	local := newLocalDiagnoseCmd()
+	if local.Flags().Lookup("engine") != nil || local.Flags().Lookup("hardware") != nil || local.Flags().Lookup("fusion-timeout") != nil {
+		t.Fatal("local network diagnostic exposes Fusion options")
+	}
+}
+
+func TestDiagnosticCLIRequestBudget(t *testing.T) {
+	for _, tc := range []struct {
+		payload diagnosticPayload
+		budget  time.Duration
+	}{
+		{diagnosticPayload{Config: diagnostics.Config{Engine: "fusion"}}, 18*time.Minute + 45*time.Second},
+		{diagnosticPayload{Config: diagnostics.Config{Engine: "fusion", FusionTimeoutSeconds: 1800}}, 33*time.Minute + 45*time.Second},
+		{diagnosticPayload{Config: diagnostics.Config{Engine: "light"}}, 6*time.Minute + 45*time.Second},
+		{diagnosticPayload{NetworkOnly: true}, 3*time.Minute + 15*time.Second},
+	} {
+		cmd := newNodeDiagnoseCmd()
+		cmd.SetContext(context.Background())
+		c := &Client{server: "http://fixture", http: &http.Client{Transport: diagnosticRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			deadline, ok := r.Context().Deadline()
+			remaining := time.Until(deadline)
+			if !ok || remaining <= tc.budget-time.Second || remaining > tc.budget {
+				t.Errorf("payload=%+v deadline=%v budget=%s", tc.payload, ok, remaining)
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{}}, nil
+		})}}
+		if _, err := diagnosticRequest(cmd, c, "/api/nodes/1/diagnostics", tc.payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func fusionDiagnosticFixture() json.RawMessage {
+	return json.RawMessage(`{"engine":"fusion","version":"v0.1.29","source":"https://github.com/oneclickvirt/fusion","status":"partial","started_at":"2026-01-01T00:00:00Z","finished_at":"2026-01-01T00:00:01Z","duration_ms":1000,"timeout_seconds":900,"hardware":false,"speed":true,"upload":false,"output":"Actual upstream report\nNetwork: fixture ISP\n","data":{"unrecognized_future_schema":"preserved","components":[{"name":"system","schema_version":"goecs.system/v1","status":"ok","payload":{"network":{"congestion_control":"cubic"}}},{"name":"future-module","schema_version":"future/v2","status":"partial","payload":{"measured_fact":42}}]},"error":"one module failed","truncated":true,"warnings":["upstream warning"]}`)
+}
+
+func TestDiagnosticCLIFusionTableAndJSONPreserveEvidence(t *testing.T) {
+	previous := opts.output
+	t.Cleanup(func() { opts.output = previous })
+	for _, combined := range []bool{false, true} {
+		checkup := model.NodeCheckupReport{Summary: []string{"Fusion partial fixture"}, Health: model.NodeStatus{Reachable: true, Active: true}, Drift: "match", Fusion: fusionDiagnosticFixture()}
+		if combined {
+			checkup.Network, _ = json.Marshal(diagnosticFixture())
+		}
+		report, _ := json.Marshal(checkup)
+		raw, _ := json.Marshal(model.DiagnosticRecord{NodeID: 1, Source: "node", MeasuredAddress: "fixture-node", Report: report})
+		cmd := newNodeDiagnoseCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		opts.output = outputTable
+		if err := diagnosticRemoteOutput(cmd, raw); err != nil {
+			t.Fatal(err)
+		}
+		for _, text := range []string{"健康: 可达 是", "Fusion partial fixture", "体检引擎: fusion", "v0.1.29", "状态: partial", "2026-01-01", "1000 ms", "900s", "测速: 是", "硬件测试: 否", "报告上传: 否", "Actual upstream report\nNetwork: fixture ISP\n", "one module failed", "已截断", "upstream warning", "Fusion 模块: system", "goecs.system/v1", "congestion_control", "cubic", "future-module", "measured_fact", "42"} {
+			if !strings.Contains(out.String(), text) {
+				t.Errorf("combined=%v missing %q: %s", combined, text, out.String())
+			}
+		}
+		if strings.Contains(out.String(), "unrecognized_future_schema") || strings.Contains(out.String(), "网络: 未返回测量结果") {
+			t.Fatalf("invented table evidence: %s", out.String())
+		}
+		if combined && !strings.Contains(out.String(), "ICMP RTT") {
+			t.Fatalf("combined light report lost: %s", out.String())
+		}
+		out.Reset()
+		opts.output = outputJSON
+		if err := diagnosticRemoteOutput(cmd, raw); err != nil {
+			t.Fatal(err)
+		}
+		var got model.DiagnosticRecord
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		var gotReport model.NodeCheckupReport
+		if err := json.Unmarshal(got.Report, &gotReport); err != nil {
+			t.Fatal(err)
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, gotReport.Fusion); err != nil || !bytes.Equal(compact.Bytes(), checkup.Fusion) {
+			t.Fatalf("Fusion JSON changed: %s err=%v", out.String(), err)
+		}
+	}
+	// Data is preserved for JSON, but never substituted for absent Output.
+	cmd := newNodeDiagnoseCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := printFusionReport(cmd, json.RawMessage(`{"engine":"fusion","data":{"output":"invented output"}}`)); err != nil || strings.Contains(out.String(), "invented output") || strings.Contains(out.String(), "Fusion 原始报告") {
+		t.Fatalf("data rendered as text: %s err=%v", out.String(), err)
 	}
 }
