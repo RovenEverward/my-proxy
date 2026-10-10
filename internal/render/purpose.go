@@ -71,9 +71,21 @@ func addClashPurpose(body []byte, all, candidates []Endpoint, p model.Purpose) (
 	rules, _ := cfg["rules"].([]any)
 	if p.Kind == "daily" {
 		// Keep template's direct/reject decisions and send its proxy decisions to the daily group.
+		preserved := clashPreservedTargets(groups)
 		for i, r := range rules {
 			if v, ok := r.(string); ok {
-				rules[i] = clashPurposeRule(v, tag)
+				rules[i] = clashPurposeRule(v, tag, preserved)
+			}
+		}
+		if subs, ok := cfg["sub-rules"].(map[string]any); ok {
+			for name, raw := range subs {
+				entries := toAnySlice(raw)
+				for i, r := range entries {
+					if v, ok := r.(string); ok {
+						entries[i] = clashPurposeRule(v, tag, preserved)
+					}
+				}
+				subs[name] = entries
 			}
 		}
 	} else {
@@ -86,14 +98,91 @@ func addClashPurpose(body []byte, all, candidates []Endpoint, p model.Purpose) (
 	cfg["rules"] = rules
 	return yaml.Marshal(cfg)
 }
-func clashPurposeRule(rule, tag string) string {
+
+// preserveDefaultTargets follows only a group's initial selection. Keep cycles intact
+// rather than changing the semantics of an invalid or dynamically-selected template.
+func preserveDefaultTargets(next map[string]string, terminal map[string]bool) map[string]bool {
+	result := map[string]bool{}
+	var keep func(string, map[string]bool) bool
+	keep = func(tag string, seen map[string]bool) bool {
+		if terminal[tag] {
+			return true
+		}
+		if seen[tag] {
+			return true
+		}
+		n, ok := next[tag]
+		if !ok {
+			return false
+		}
+		seen[tag] = true
+		return keep(n, seen)
+	}
+	for tag := range terminal {
+		result[tag] = true
+	}
+	for tag := range next {
+		if keep(tag, map[string]bool{}) {
+			result[tag] = true
+		}
+	}
+	return result
+}
+func clashPreservedTargets(groups []any) map[string]bool {
+	next := map[string]string{}
+	for _, g := range groups {
+		m, ok := g.(map[string]any)
+		if !ok || m["type"] != "select" {
+			continue
+		}
+		ps := toAnySlice(m["proxies"])
+		if len(ps) > 0 {
+			n, _ := m["name"].(string)
+			target, _ := ps[0].(string)
+			next[n] = target
+		}
+	}
+	return preserveDefaultTargets(next, map[string]bool{"DIRECT": true, "REJECT": true, "REJECT-DROP": true, "PASS": true})
+}
+func singboxPreservedTargets(outs []any) map[string]bool {
+	next := map[string]string{}
+	terminal := map[string]bool{"direct": true, "block": true}
+	for _, o := range outs {
+		m, ok := o.(map[string]any)
+		if !ok {
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		switch m["type"] {
+		case "direct", "block":
+			terminal[tag] = true
+		case "selector":
+			target, _ := m["default"].(string)
+			if target == "" {
+				ps := toAnySlice(m["outbounds"])
+				if len(ps) > 0 {
+					target, _ = ps[0].(string)
+				}
+			}
+			if target != "" {
+				next[tag] = target
+			}
+		}
+	}
+	return preserveDefaultTargets(next, terminal)
+}
+func clashPurposeRule(rule, tag string, preserved map[string]bool) string {
+	// SUB-RULE destinations name a sub-rule table, never a proxy group.
+	if strings.HasPrefix(strings.TrimSpace(rule), "SUB-RULE,") {
+		return rule
+	}
 	// The destination is the last field, except the optional no-resolve suffix.
 	parts := strings.Split(rule, ",")
 	i := len(parts) - 1
 	if i > 0 && parts[i] == "no-resolve" {
 		i--
 	}
-	if i > 0 && parts[i] != "DIRECT" && parts[i] != "REJECT" && parts[i] != "REJECT-DROP" {
+	if i > 0 && !preserved[parts[i]] {
 		parts[i] = tag
 	}
 	return strings.Join(parts, ",")
@@ -165,26 +254,44 @@ func addSingboxPurpose(body []byte, all, candidates []Endpoint, p model.Purpose)
 	}
 	rules := toAnySlice(route["rules"])
 	if p.Kind == "daily" {
-		route["final"] = groupTag
-		replacePurposeOutbound(rules, groupTag)
+		preserved := singboxPreservedTargets(outs)
+		final, _ := route["final"].(string)
+		if !preserved[final] {
+			route["final"] = groupTag
+		}
+		replacePurposeOutbound(rules, groupTag, preserved)
 	} else {
-		rules = append([]any{map[string]any{"domain_suffix": p.Domains, "action": "route", "outbound": groupTag}}, rules...)
+		// Sniff/DNS preprocessing must run before matching the supplied domain.
+		at := 0
+		for i, r := range rules {
+			m, ok := r.(map[string]any)
+			if !ok {
+				continue
+			}
+			action, _ := m["action"].(string)
+			if action == "sniff" || action == "hijack-dns" || action == "resolve" {
+				at = i + 1
+			}
+		}
+		prefixed := append([]any{}, rules[:at]...)
+		prefixed = append(prefixed, map[string]any{"domain_suffix": p.Domains, "action": "route", "outbound": groupTag})
+		rules = append(prefixed, rules[at:]...)
 	}
 	route["rules"] = rules
 	return json.MarshalIndent(cfg, "", "  ")
 }
-func replacePurposeOutbound(v any, tag string) {
+func replacePurposeOutbound(v any, tag string, preserved map[string]bool) {
 	switch x := v.(type) {
 	case []any:
 		for _, item := range x {
-			replacePurposeOutbound(item, tag)
+			replacePurposeOutbound(item, tag, preserved)
 		}
 	case map[string]any:
-		if o, ok := x["outbound"].(string); ok && o != "direct" && o != "block" {
+		if o, ok := x["outbound"].(string); ok && !preserved[o] {
 			x["outbound"] = tag
 		}
 		if r, ok := x["rules"]; ok {
-			replacePurposeOutbound(r, tag)
+			replacePurposeOutbound(r, tag, preserved)
 		}
 	}
 }

@@ -135,7 +135,7 @@ mpx purpose del media
 }
 ```
 
-`slug` 是稳定的 URL 标识：1–48 位小写字母、数字或连字符，以字母开头。`kind` 支持 daily / media / download / game。regions 和 lines 同时约束，tags 与元数据 purposes 有任一交集即可；空条件不限制。host 非空字段覆盖 node 对应字段。daily 将模板的代理路由目标改写为候选组，保留直连/拒绝决定；其他用途为 domains 增加优先域名后缀规则。候选组支持 select / url-test。media 未给 domains 时有常见流媒体默认域名；download / game 必须显式配置域名。
+`slug` 是稳定的 URL 标识：1–48 位小写字母、数字或连字符，以字母开头。`kind` 支持 daily / media / download / game。regions 和 lines 同时约束，tags 与元数据 purposes 有任一交集即可；空条件不限制。host 非空字段覆盖 node 对应字段。daily 将模板的代理路由目标改写为候选组，保留直连/拒绝决定（包括默认选择直连/拒绝的嵌套 selector 包装组）；其他用途为 domains 增加优先域名后缀规则。候选组支持 select / url-test。media 未给 domains 时有常见流媒体默认域名；download / game 必须显式配置域名。
 
 `required_capabilities` 可选 `egress`、`youtube`、`netflix`（全部满足，最多 3 项，不允许重复），`capability_region` 可选两位大写地区代码，必须同时要求 `egress` 或 `netflix`；youtube 不提供地区观测。留空表示手动标签阶段；要求能力但检测未接入时会报错。`templates` 可按 `clash-meta` / `sing-box` 覆盖本用途底稿。`daily_purpose` 只能指向 daily 用途；目标不存在、被删除、无候选或能力要求不满足时明确报错。
 
