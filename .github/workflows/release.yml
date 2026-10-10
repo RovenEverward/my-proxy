@@ -68,7 +68,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 要读注解式 tag 的消息,浅克隆里没有它。
+          # tag 消息现在走 GitHub API 取(见下面那步的注释),不再需要完整历史。
+          # 保留 0 只是让 checkout 仍落在一个确定的 ref 上。
           fetch-depth: 0
 
       - uses: actions/download-artifact@v4
@@ -78,11 +79,25 @@ jobs:
 
       - name: 取出 tag 消息当发布说明
         id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           # 注解式 tag(-a)的消息就是这次发布要讲的话。轻量 tag 没有消息,这里会
           # 得到空串,后面退回让 GitHub 按提交标题生成。
-          git tag -l --format='%(contents)' "${{ github.ref_name }}" > NOTES.md
+          #
+          # **必须问 GitHub,不能在本地读**:actions/checkout 会把 refs/tags/<tag>
+          # 重写成指向 commit 的**轻量 tag**(日志里能看到它跑的是
+          # `fetch ... +<commit-sha>:refs/tags/<tag>`),于是本地那个注解 tag 对象
+          # 被顶掉了,`git tag -l --format='%(contents)'` 只剩 commit 消息。
+          # v0.3.0 与 v0.3.1 两次发布都是这么丢掉 tag 消息的。
+          tag_sha=$(gh api "repos/${{ github.repository }}/git/ref/tags/${{ github.ref_name }}" --jq .object.sha)
+          obj_type=$(gh api "repos/${{ github.repository }}/git/ref/tags/${{ github.ref_name }}" --jq .object.type)
+          if [ "$obj_type" = "tag" ]; then
+            gh api "repos/${{ github.repository }}/git/tags/$tag_sha" --jq .message > NOTES.md
+          else
+            : > NOTES.md   # 轻量 tag:没有消息,走自动生成那条路
+          fi
           if [ -n "$(tr -d '[:space:]' < NOTES.md)" ]; then
             echo "有 tag 消息,用它当发布说明:"
             cat NOTES.md
