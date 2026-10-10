@@ -228,6 +228,75 @@ func TestSingBoxQuotaReconcileAndUnchangedConfig(t *testing.T) {
 	}
 }
 
+func TestSingBoxFinalSampleQuotaRestagesConfig(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	now := time.Now().UTC()
+	alice := activeUser("alice")
+	alice.DataLimit = 100
+	addUser(t, st, alice)
+	addUser(t, st, activeUser("bob"))
+	r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 20, Downlink: 30}})
+	if err := c.SampleTraffic(context.Background(), n, now); err != nil {
+		t.Fatal(err)
+	}
+	coreUsage(t, st, "alice", 50)
+	// Alice is active when the first file is staged, but limited by the final sample.
+	r.setTraffic(map[string]node.UserTraffic{"alice": {Uplink: 40, Downlink: 60}})
+	if err := c.ReconcileUsers(context.Background(), n, now); err != nil {
+		t.Fatal(err)
+	}
+	coreUsage(t, st, "alice", 100)
+	r.mu.Lock()
+	var stages []string
+	checks, lastCheck, stop := 0, -1, -1
+	for i, call := range r.calls {
+		if strings.Contains(call, "umask 077") && strings.Contains(call, "config.json.next") {
+			stages = append(stages, r.stdin[i])
+		}
+		if strings.Contains(call, "check -c") {
+			checks++
+			lastCheck = i
+		}
+		if strings.Contains(call, "systemctl stop") && stop < 0 {
+			stop = i
+		}
+	}
+	r.mu.Unlock()
+	if len(stages) != 2 || checks != 2 || stop <= lastCheck {
+		t.Fatalf("fresh config must be staged and checked before stop: %v", r.callList())
+	}
+	userNames := func(raw string) []string {
+		var cfg struct {
+			Inbounds []struct {
+				Users []struct {
+					Name string `json:"name"`
+				} `json:"users"`
+			} `json:"inbounds"`
+		}
+		if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.Inbounds) != 1 {
+			t.Fatalf("unexpected inbound count: %s", raw)
+		}
+		var names []string
+		for _, user := range cfg.Inbounds[0].Users {
+			names = append(names, user.Name)
+		}
+		return names
+	}
+	if !reflect.DeepEqual(userNames(stages[0]), []string{"alice", "bob"}) || !reflect.DeepEqual(userNames(stages[1]), []string{"bob"}) {
+		t.Fatalf("final quota not reflected in restaged users: %v", stages)
+	}
+	d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.DeployedHash != hashOf([]byte(stages[1])) || d.DeployedHash == hashOf([]byte(stages[0])) {
+		t.Fatal("deployment hash does not reflect final configuration")
+	}
+}
+
 func TestSingBoxAndXrayTrafficBaselinesIndependent(t *testing.T) {
 	c, st, r, n := coreFixture(t)
 	now := time.Now().UTC()
