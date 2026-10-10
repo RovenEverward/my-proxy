@@ -37,6 +37,12 @@ func LinksBase64(eps []Endpoint) string {
 
 // shareLink 渲染单条分享链接;协议不受支持时返回 false。
 func shareLink(ep Endpoint) (string, bool) {
+	if ep.Protocol.QUIC() {
+		if quicEndpoint(ep) != nil {
+			return "", false
+		}
+		return quicLink(ep), true
+	}
 	switch ep.Protocol {
 	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan:
 	default:
@@ -56,6 +62,9 @@ func shareLink(ep Endpoint) (string, bool) {
 // 出带 type 的链接,而不是吐出一个缺参数的分享链接。
 func effectiveNetwork(ep Endpoint) model.Network {
 	if ep.Network == "" {
+		if ep.Protocol.QUIC() {
+			return model.NetworkUDP
+		}
 		return model.NetworkTCP
 	}
 	return ep.Network
@@ -64,6 +73,9 @@ func effectiveNetwork(ep Endpoint) model.Network {
 // effectiveSecurity 把留空的安全层当作 none,理由同 effectiveNetwork。
 func effectiveSecurity(ep Endpoint) model.Security {
 	if ep.Security == "" {
+		if ep.Protocol.QUIC() {
+			return model.SecurityTLS
+		}
 		return model.SecurityNone
 	}
 	return ep.Security

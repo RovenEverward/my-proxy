@@ -161,6 +161,9 @@ func singboxNodes(eps []Endpoint) ([]any, []string, error) {
 
 // singboxNode 把一个端点渲染成 outbound。
 func singboxNode(ep Endpoint, tag string) (map[string]any, error) {
+	if ep.Protocol.QUIC() {
+		return singboxQUICNode(ep, tag)
+	}
 	// wireguard 不走 outbound(1.13 起是顶层 endpoints),这里只拦漏网的。
 	if ep.Protocol == model.ProtocolWireguard {
 		return nil, fmt.Errorf("sing-box: 端点 %q 的 wireguard 协议应走 endpoint 而非 outbound", tag)
