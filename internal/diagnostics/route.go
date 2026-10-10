@@ -19,7 +19,9 @@ func (e *engine) route(ctx context.Context, t Target) Route {
 	}
 	if e.tools["mtr"] {
 		r.Tool = "mtr"
-		out, err := e.command(ctx, fmt.Sprintf("exec mtr --json --report --no-dns --report-cycles 1 --max-ttl 12 %s", shellQuote(t.Host)), nil)
+		// --json implies report mode. A following --report overrides JSON in
+		// mtr 0.95, yielding plain text despite a successful exit.
+		out, err := e.command(ctx, fmt.Sprintf("exec mtr --json --no-dns --report-cycles 1 --max-ttl 12 %s", shellQuote(t.Host)), nil)
 		r.Evidence = limitEvidence(out)
 		r.Hops = parseMTR(out)
 		if len(r.Hops) > 0 {
