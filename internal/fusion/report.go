@@ -127,7 +127,7 @@ func (r *Report) Capture(out string) {
 	bounded, dataTruncated := boundedData([]byte(data))
 	if dataTruncated {
 		r.Truncated = true
-		r.Warnings = append(r.Warnings, "official JSON exceeds 128 KiB; retained component statuses and bounded payload prefixes; payload_truncated identifies omissions")
+		r.Warnings = append(r.Warnings, "official JSON exceeds 128 KiB; retained compact known payloads and component statuses; adapter_omissions and payload_omissions identify omitted evidence")
 	}
 	r.Data = bounded
 
@@ -204,40 +204,36 @@ func boundedData(data []byte) (json.RawMessage, bool) {
 	if len(body) <= MaxDataBytes {
 		return body, false
 	}
-	delete(root, "text") // already retained independently as bounded Output
+	// Text already has an independently bounded Output representation.
+	if _, exists := root["text"]; exists {
+		delete(root, "text")
+		root["adapter_omissions"] = []string{"text: retained separately as bounded output"}
+	}
+	root["adapter_truncated"] = true
 	body, _ = json.Marshal(root)
 	if len(body) <= MaxDataBytes {
 		return body, true
 	}
 	components, _ := root["components"].([]any)
-	budget := (96 << 10) / max(1, len(components))
-	for _, entry := range components {
-		item, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		if payload, exists := item["payload"]; exists {
-			shortened, cut := shrinkJSON(payload, budget)
-			item["payload"] = shortened
-			if cut {
-				item["payload_truncated"] = true
+	if root["schema_version"] == "goecs.report/v1" && root["ecs_version"] == Version {
+		for _, entry := range components {
+			if item, ok := entry.(map[string]any); ok && compactPayload(item) {
+				root["adapter_compacted"] = true
 			}
 		}
 	}
-	root["adapter_truncated"] = true
 	body, _ = json.Marshal(root)
+	if len(body) <= MaxDataBytes {
+		return body, true
+	}
+	body = fitPayloads(root, components)
 	if len(body) > MaxDataBytes {
-		// Root ancillary fields can also be huge. The official section/component
-		// identity and status still fit, while measurements remain explicit omissions.
+		// Ancillary root fields are not measurements inside a component.
 		for _, key := range []string{"tcp", "dns"} {
-			if _, ok := root[key]; ok {
+			if _, exists := root[key]; exists {
 				delete(root, key)
-			}
-		}
-		for _, entry := range components {
-			if item, ok := entry.(map[string]any); ok {
-				delete(item, "payload")
-				item["payload_truncated"] = true
+				omissions, _ := root["adapter_omissions"].([]string)
+				root["adapter_omissions"] = append(omissions, key)
 			}
 		}
 		body, _ = json.Marshal(root)
@@ -246,41 +242,4 @@ func boundedData(data []byte) (json.RawMessage, bool) {
 		return json.RawMessage(`{"adapter_truncated":true,"error":"official report envelopes exceed limit"}`), true
 	}
 	return body, true
-}
-
-func shrinkJSON(value any, budget int) (any, bool) {
-	body, _ := json.Marshal(value)
-	if len(body) <= budget {
-		return value, false
-	}
-	switch value := value.(type) {
-	case []any:
-		result := make([]any, 0)
-		for _, item := range value {
-			trial := append(result, item)
-			encoded, _ := json.Marshal(trial)
-			if len(encoded) > budget {
-				break
-			}
-			result = trial
-		}
-		if len(result) == 0 && len(value) > 0 {
-			first, _ := shrinkJSON(value[0], max(64, budget-2))
-			result = append(result, first)
-		}
-		return result, true
-	case map[string]any:
-		result := make(map[string]any, len(value))
-		for key, item := range value {
-			result[key], _ = shrinkJSON(item, max(32, (budget-512)/max(1, len(value))))
-		}
-		return result, true
-	case string:
-		// JSON escaping can expand each retained byte to six bytes.
-		n := max(0, min(len(value), (budget-2)/6))
-		value = value[:n]
-		return strings.ToValidUTF8(value, ""), true
-	default:
-		return nil, true
-	}
 }

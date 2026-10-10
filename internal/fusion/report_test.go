@@ -52,8 +52,11 @@ func TestOutputAndPayloadBounds(t *testing.T) {
 		t.Fatalf("lost bounded component evidence %d: %s", len(data), data)
 	}
 	for _, part := range got.Components {
-		if part["status"] != "partial" || part["payload_truncated"] != true {
-			t.Fatal(part)
+		if part["status"] != "partial" {
+			t.Fatal("changed component status")
+		}
+		if _, exists := part["payload"]; !exists && (part["payload_truncated"] != true || part["payload_omissions"] == nil) {
+			t.Fatal("unmarked payload omission")
 		}
 	}
 }
