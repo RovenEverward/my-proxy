@@ -286,7 +286,10 @@ func (s *Store) migrate() error {
 	if err := s.addMissingColumns(); err != nil {
 		return err
 	}
-	return s.migrateCapabilities()
+	if err := s.migrateCapabilities(); err != nil {
+		return err
+	}
+	return s.migratePurposes()
 }
 
 // addedColumns 是建表语句之后补加的列。CREATE TABLE IF NOT EXISTS 对已存在的表

@@ -45,6 +45,13 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if slug := r.URL.Query().Get("purpose"); slug != "" {
+		if _, err := s.store.GetPurpose(slug); err != nil {
+			writeError(w, http.StatusNotFound, "用途不存在或已删除；默认订阅: "+subBaseURL(settings, r)+"/sub/"+subToken)
+			return
+		}
+	}
+
 	// 订阅页只在"这次本来要回没人认领的默认 links"、且对方报明是浏览器时才顶
 	// 上来。路径点名了格式、或规则真的命中过(哪怕命中的就是 links),都说明
 	// 对方要的不是页面(见 decisions 26)。
@@ -67,8 +74,11 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 	user *model.User, settings *model.Settings,
 	format model.ClientFormat, pathFormat, subToken string) {
 
-	key := subCacheKey{subToken: subToken, format: format, pathFormat: pathFormat}
-	if e := s.subCache.get(key); e != nil {
+	slug := r.URL.Query().Get("purpose")
+	key := subCacheKey{subToken: subToken, format: format, pathFormat: pathFormat, purpose: slug, gzip: acceptsGzip(r)}
+	// Purpose eligibility and capability TTLs are dynamic: evaluate every request.
+	cacheable := slug == ""
+	if e := s.subCache.get(key); cacheable && e != nil && e.user.Status(time.Now()) == user.Status(time.Now()) && e.user.UsedTraffic == user.UsedTraffic && e.user.Enabled == user.Enabled && user.Status(time.Now()) == model.StatusActive {
 		if r.Header.Get("If-None-Match") == e.etag {
 			w.WriteHeader(http.StatusNotModified)
 			return
@@ -77,7 +87,22 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	body, err := s.renderSubscription(user, format)
+	var body []byte
+	var err error
+	if slug != "" {
+		p, e := s.store.GetPurpose(slug)
+		if e != nil {
+			writeError(w, 404, "用途不存在或已删除")
+			return
+		}
+		body, err = s.renderPurposeSubscription(user, *p, format)
+		if err != nil {
+			writeError(w, 422, err.Error()+"；默认订阅: "+subBaseURL(settings, r)+"/sub/"+subToken)
+			return
+		}
+	} else {
+		body, err = s.renderSubscription(user, format)
+	}
 	if err != nil {
 		s.logger.Error("渲染订阅失败", "username", user.Username, "format", format, "error", err)
 		writeError(w, http.StatusInternalServerError, "渲染订阅失败")
@@ -101,7 +126,9 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 	} else {
 		entry.body = body
 	}
-	s.subCache.put(key, entry)
+	if cacheable {
+		s.subCache.put(key, entry)
+	}
 
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)

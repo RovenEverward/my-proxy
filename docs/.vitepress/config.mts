@@ -41,6 +41,7 @@ export default defineConfig({
           text: '操作指南',
           items: [
             { text: '客户端订阅导入与使用', link: '/user/guides/client-setup' },
+            { text: '用途订阅与日常/流媒体分流', link: '/user/guides/purpose-subscriptions' },
             { text: '节点运维与生命周期管理', link: '/user/guides/node-operations' },
             { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
             { text: '用户与配额管理', link: '/user/guides/user-management' },
