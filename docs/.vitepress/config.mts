@@ -66,7 +66,8 @@ export default defineConfig({
           text: '设计与契约',
           items: [
             { text: '对外契约', link: '/internal/contracts' },
-            { text: '数据模型与语义', link: '/internal/model' }
+            { text: '数据模型与语义', link: '/internal/model' },
+            { text: '用途订阅验证记录', link: '/internal/purpose-validation' }
           ]
         },
         {
