@@ -393,6 +393,57 @@ exec sleep 20
 	}
 }
 
+func TestMTRJSONOutputModeAndDeadline(t *testing.T) {
+	// An executable fixture mirrors mtr 0.95's last-output-option-wins rule;
+	// run the full shell/executor/route path, not just a parser fixture.
+	tmp := t.TempDir()
+	script := `#!/bin/sh
+mode=text
+cycles=''; ttl=''; numeric=no
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+  --json) mode=json;;
+  --report) mode=text;;
+  --report-cycles) shift; cycles="$1";;
+  --max-ttl) shift; ttl="$1";;
+  --no-dns) numeric=yes;;
+ esac
+ shift
+done
+[ "$cycles" = 1 ] && [ "$ttl" = 12 ] && [ "$numeric" = yes ] || exit 2
+if [ "$mode" = json ]; then
+ printf '{"report":{"hubs":[{"count":1,"host":"127.0.0.1","Loss%%":0.0,"Avg":0.1}]}}\n'
+else
+ printf 'Start: fixture\nHOST: fixture Loss%% Snt Avg\n'
+fi
+`
+	if err := os.WriteFile(tmp+"/mtr", []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tmp+":"+os.Getenv("PATH"))
+	e := testEngine(t)
+	e.tools["mtr"] = true
+	r := e.route(context.Background(), Target{Host: "127.0.0.1"})
+	if r.Status.Status != "ok" || r.Tool != "mtr" || len(r.Hops) != 1 || r.Hops[0].Address != "127.0.0.1" {
+		t.Fatalf("JSON output mode lost: %+v", r)
+	}
+	// Reverse-check: the former invocation must produce no parseable JSON.
+	out, err := e.command(context.Background(), "exec mtr --json --report --no-dns --report-cycles 1 --max-ttl 12 127.0.0.1", nil)
+	if err != nil || len(parseMTR(out)) != 0 || !strings.Contains(out, "HOST:") {
+		t.Fatalf("fixture does not expose old bug: %q %v", out, err)
+	}
+	if err := os.WriteFile(tmp+"/mtr", []byte("#!/bin/sh\nexec sleep 20\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	r = e.route(ctx, Target{Host: "127.0.0.1"})
+	if time.Since(started) > time.Second || r.Status.Status != "failed" || len(r.Hops) != 0 {
+		t.Fatalf("route deadline not honored: %+v", r)
+	}
+}
+
 func TestActualRouteAndPingParsers(t *testing.T) {
 	mtr := `{"report":{"hubs":[{"count":1,"host":"192.0.2.1","Loss%":0.0,"Avg":1.4},{"count":2,"host":"???","Loss%":100.0,"Avg":0}]}}`
 	if h := parseMTR(mtr); len(h) != 2 || h[0].RTTMS == nil || !h[1].Unanswered {

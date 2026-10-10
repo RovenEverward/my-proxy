@@ -162,8 +162,8 @@ func capabilityJSON(cmd *cobra.Command, raw []byte) error {
 	if err := json.Indent(&formatted, bytes.TrimSpace(raw), "", "  "); err != nil {
 		return err
 	}
-	cmd.Println(formatted.String())
-	return nil
+	_, err := fmt.Fprintln(cmd.OutOrStdout(), formatted.String())
+	return err
 }
 
 func printCapabilityResults(cmd *cobra.Command, results []model.CapabilityResult) {

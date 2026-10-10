@@ -14,6 +14,8 @@
 
 本地 fixture 包括未知长度超大 chunked 响应、畸形 Content-Length、重定向、超时、取消、临时目录清理和即时输出超限取消。旧 curl shim 去掉 --max-filesize 后，文件大小硬限制仍生效；不会依赖新 curl 的未知长度处理。真实 loopback ping/traceroute 解析以及中断 ping 保留部分 RTT、丢包未知均检查。供应商 schema fixture 验证字段缺失不填 false、缺密钥环境显示 skipped、Bogon-only 质量结果 partial，以及默认 GeoIP 所选地址一致。
 
+mtr 0.95 的 `--report` 会覆盖前面的 `--json` 输出模式。调用使用 `--json --no-dns --report-cycles 1 --max-ttl 12`，JSON 本身已包含报告模式。可执行 fixture 复现旧参数返回文本但退出成功，验证修复后完整 shell/Executor/route 调用解析出 hop；取消时限仍生效。本地未安装 mtr，实际节点工具的验证由父代理执行；单次请求及全局时限保持原值。
+
 独立审阅实际执行 remote-style watchdog：exec sleep 20 在一秒看门狗后结束，exec true 提前正常返回，HTTP curl 看门狗后退出。返回后同进程组中未残留 curl、sleep 或 watchdog。没有把无发送计数的计划样本当成丢包。
 
 ## 公开端点小样本

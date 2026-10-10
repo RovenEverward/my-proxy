@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -290,5 +292,47 @@ func TestDiagnosticCLISpeedFalseAndNetworkModePayload(t *testing.T) {
 	}
 	if got.Speed == nil || *got.Speed || !got.NetworkOnly {
 		t.Fatalf("network mode lost %+v", got)
+	}
+}
+
+// Run the actual binary because SetOut in in-process command tests hides Cobra's
+// default stream choice. No external diagnostic tools or public URLs are used.
+func TestDiagnosticCLIBinaryAllUsesStdout(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "mpx")
+	build := exec.Command("go", "build", "-o", binary, "../../cmd/mpx")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build CLI: %v\n%s", err, output)
+	}
+	network, _ := json.Marshal(diagnosticFixture())
+	checkup, _ := json.Marshal(model.NodeCheckupReport{Summary: []string{"stdout-fixture"}, Health: model.NodeStatus{Reachable: true, Active: true}, Drift: "match", Network: network})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode([]model.NodeView{{Node: model.Node{ID: 1, Name: "mock-node"}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(model.DiagnosticRecord{NodeID: 1, Source: "node", MeasuredAddress: "mock.example", CheckedAt: time.Now(), Report: checkup})
+	}))
+	defer srv.Close()
+	for _, format := range []string{"json", "table"} {
+		t.Run(format, func(t *testing.T) {
+			command := exec.Command(binary, "--server", srv.URL, "--token", "fixture-token", "node", "diagnose", "--all", "--output", format)
+			var stdout, stderr bytes.Buffer
+			command.Stdout = &stdout
+			command.Stderr = &stderr
+			if err := command.Run(); err != nil {
+				t.Fatalf("CLI %v stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("successful report leaked to stderr: %s", stderr.String())
+			}
+			if format == "json" {
+				var records []diagnosticAllResult
+				if err := json.Unmarshal(stdout.Bytes(), &records); err != nil || len(records) != 1 || records[0].Record == nil {
+					t.Fatalf("JSON stdout=%s err=%v", stdout.String(), err)
+				}
+			} else if !strings.Contains(stdout.String(), "stdout-fixture") || !strings.Contains(stdout.String(), "mock-node") || !strings.Contains(stdout.String(), "实测流量") {
+				t.Fatalf("table stdout=%s", stdout.String())
+			}
+		})
 	}
 }

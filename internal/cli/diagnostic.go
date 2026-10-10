@@ -304,7 +304,7 @@ func diagnoseAllNodes(cmd *cobra.Command, c *Client, cfg diagnostics.Config, net
 		}
 		results = append(results, item)
 		if opts.output != outputJSON {
-			cmd.Printf("节点: %s (ID %d)\n", node.Name, node.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "节点: %s (ID %d)\n", node.Name, node.ID)
 			if item.Record != nil {
 				recordRaw, _ := json.Marshal(item.Record)
 				if err := diagnosticRemoteOutput(cmd, recordRaw); err != nil {
@@ -315,9 +315,9 @@ func diagnoseAllNodes(cmd *cobra.Command, c *Client, cfg diagnostics.Config, net
 				}
 			}
 			if item.Error != "" {
-				cmd.Printf("体检失败: %s\n", item.Error)
+				fmt.Fprintf(cmd.OutOrStdout(), "体检失败: %s\n", item.Error)
 			}
-			cmd.Println()
+			fmt.Fprintln(cmd.OutOrStdout())
 		}
 		if err := cmd.Context().Err(); err != nil {
 			stopped = err
@@ -447,7 +447,7 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	cmd.Printf("测量时节点地址: %s\n", dash(record.MeasuredAddress))
+	fmt.Fprintf(cmd.OutOrStdout(), "测量时节点地址: %s\n", dash(record.MeasuredAddress))
 	var envelope struct {
 		Network json.RawMessage `json:"network"`
 	}
@@ -461,38 +461,38 @@ func diagnosticRemoteOutput(cmd *cobra.Command, raw []byte) error {
 			return err
 		}
 		for _, summary := range checkup.Summary {
-			cmd.Printf("摘要: %s\n", summary)
+			fmt.Fprintf(cmd.OutOrStdout(), "摘要: %s\n", summary)
 		}
 		health := checkup.Health
-		cmd.Printf("健康: 可达 %s  服务运行 %s  配置漂移 %s  版本 %s  检查时间 %s\n", yesNo(health.Reachable), yesNo(health.Active), dash(checkup.Drift), dash(health.Version), capabilityTime(health.CheckedAt))
+		fmt.Fprintf(cmd.OutOrStdout(), "健康: 可达 %s  服务运行 %s  配置漂移 %s  版本 %s  检查时间 %s\n", yesNo(health.Reachable), yesNo(health.Active), dash(checkup.Drift), dash(health.Version), capabilityTime(health.CheckedAt))
 		if health.Error != "" {
-			cmd.Printf("健康检查原因: %s\n", health.Error)
+			fmt.Fprintf(cmd.OutOrStdout(), "健康检查原因: %s\n", health.Error)
 		}
 		if health.ObservedHash != "" {
-			cmd.Printf("观察配置哈希: %s\n", health.ObservedHash)
+			fmt.Fprintf(cmd.OutOrStdout(), "观察配置哈希: %s\n", health.ObservedHash)
 		}
 		for _, cert := range health.Certificates {
-			cmd.Printf("证书: %s  剩余 %d 天  原因 %s\n", cert.InboundName, cert.DaysLeft, dash(cert.Error))
+			fmt.Fprintf(cmd.OutOrStdout(), "证书: %s  剩余 %d 天  原因 %s\n", cert.InboundName, cert.DaysLeft, dash(cert.Error))
 		}
 		if len(checkup.Entrances) == 0 {
-			cmd.Println("入口能力: 无入口测量结果")
+			fmt.Fprintln(cmd.OutOrStdout(), "入口能力: 无入口测量结果")
 		}
 		for _, entrance := range checkup.Entrances {
-			cmd.Printf("入口: %s  入站 ID %d  主机 ID %d\n", entrance.Name, entrance.InboundID, entrance.HostID)
+			fmt.Fprintf(cmd.OutOrStdout(), "入口: %s  入站 ID %d  主机 ID %d\n", entrance.Name, entrance.InboundID, entrance.HostID)
 			if entrance.Error != "" {
-				cmd.Printf("入口检查原因: %s\n", entrance.Error)
+				fmt.Fprintf(cmd.OutOrStdout(), "入口检查原因: %s\n", entrance.Error)
 			}
 			rows := [][]string{}
 			for _, result := range entrance.Results {
 				rows = append(rows, []string{result.Target, string(result.ObservedStatus), string(result.Status), dash(result.Region), dash(result.ExitIP), dash(result.Reason)})
 			}
 			if len(rows) > 0 {
-				cmd.Print(tableText([]string{"目标", "本次观察", "稳定状态", "地区", "出口 IP", "原因"}, rows))
+				fmt.Fprint(cmd.OutOrStdout(), tableText([]string{"目标", "本次观察", "稳定状态", "地区", "出口 IP", "原因"}, rows))
 			}
 		}
 		network = checkup.Network
 		if len(network) == 0 || string(network) == "null" {
-			cmd.Println("网络: 未返回测量结果")
+			fmt.Fprintln(cmd.OutOrStdout(), "网络: 未返回测量结果")
 			return nil
 		}
 	}
@@ -509,16 +509,16 @@ func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source
 	if !checkedAt.IsZero() {
 		age = time.Since(checkedAt).Round(time.Second).String()
 	}
-	cmd.Printf("测量位置: %s  SOCKS: %s  检查时间: %s  距今: %s\n", source, yesNo(report.ThroughSOCKS), capabilityTime(checkedAt), age)
-	cmd.Printf("耗时: %.0f ms  实测流量: %d 字节  预留流量: %d/%d 字节  时间上限: %ds\n", report.DurationMS, report.Budget.TransferredBytes, report.Budget.ReservedBytes, report.Budget.MaxBytes, report.Budget.TotalTimeoutSeconds)
+	fmt.Fprintf(cmd.OutOrStdout(), "测量位置: %s  SOCKS: %s  检查时间: %s  距今: %s\n", source, yesNo(report.ThroughSOCKS), capabilityTime(checkedAt), age)
+	fmt.Fprintf(cmd.OutOrStdout(), "耗时: %.0f ms  实测流量: %d 字节  预留流量: %d/%d 字节  时间上限: %ds\n", report.DurationMS, report.Budget.TransferredBytes, report.Budget.ReservedBytes, report.Budget.MaxBytes, report.Budget.TotalTimeoutSeconds)
 	for _, tool := range report.Tools {
 		if !tool.Available {
-			cmd.Printf("工具 %s: 不可用 %s\n", tool.Name, tool.Detail)
+			fmt.Fprintf(cmd.OutOrStdout(), "工具 %s: 不可用 %s\n", tool.Name, tool.Detail)
 		}
 	}
 	for _, target := range report.Targets {
-		cmd.Printf("目标: %s (%s)  地区: %s  HTTP: %s\n", target.Target.Name, target.Target.Host, dash(target.Target.Region), dash(target.Target.HTTPURL))
-		cmd.Printf("DNS: %s %s\n", target.DNS.Status, target.DNS.Reason)
+		fmt.Fprintf(cmd.OutOrStdout(), "目标: %s (%s)  地区: %s  HTTP: %s\n", target.Target.Name, target.Target.Host, dash(target.Target.Region), dash(target.Target.HTTPURL))
+		fmt.Fprintf(cmd.OutOrStdout(), "DNS: %s %s\n", target.DNS.Status, target.DNS.Reason)
 		rows := [][]string{}
 		for _, latency := range []diagnostics.Latency{target.ICMP, target.HTTP} {
 			mean, jitter := "-", "-"
@@ -530,8 +530,8 @@ func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source
 			}
 			rows = append(rows, []string{latency.Protocol, latency.Timing, latency.Status.Status, fmt.Sprintf("%d/%d", latency.ValidSamples, latency.Attempted), mean, jitter, diagnosticPercent(latency.LossPercent), diagnosticPercent(latency.HTTPFailureRatePercent), dash(latency.Reason)})
 		}
-		cmd.Print(tableText([]string{"协议", "计时含义", "状态", "有效/尝试", "均值 ms", "抖动 ms", "ICMP 丢包", "HTTP 失败率", "原因"}, rows))
-		cmd.Printf("线路: %s  工具: %s  方向: %s  原因: %s\n", target.Route.Status.Status, dash(target.Route.Tool), target.Route.Direction, dash(target.Route.Reason))
+		fmt.Fprint(cmd.OutOrStdout(), tableText([]string{"协议", "计时含义", "状态", "有效/尝试", "均值 ms", "抖动 ms", "ICMP 丢包", "HTTP 失败率", "原因"}, rows))
+		fmt.Fprintf(cmd.OutOrStdout(), "线路: %s  工具: %s  方向: %s  原因: %s\n", target.Route.Status.Status, dash(target.Route.Tool), target.Route.Direction, dash(target.Route.Reason))
 		rows = nil
 		for _, hop := range target.Route.Hops {
 			rtt := "-"
@@ -541,10 +541,10 @@ func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source
 			rows = append(rows, []string{strconv.Itoa(hop.TTL), dash(hop.Address), dash(hop.ASN), rtt, diagnosticPercent(hop.LossPercent), yesNo(hop.Unanswered)})
 		}
 		if len(rows) > 0 {
-			cmd.Print(tableText([]string{"跳", "IP", "ASN", "RTT ms", "丢包", "无应答"}, rows))
+			fmt.Fprint(cmd.OutOrStdout(), tableText([]string{"跳", "IP", "ASN", "RTT ms", "丢包", "无应答"}, rows))
 		}
 		if target.Route.Evidence != "" {
-			cmd.Printf("线路证据: %s\n", target.Route.Evidence)
+			fmt.Fprintf(cmd.OutOrStdout(), "线路证据: %s\n", target.Route.Evidence)
 		}
 	}
 	rows := [][]string{}
@@ -552,7 +552,7 @@ func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source
 		rows = append(rows, []string{speed.Site, speed.Direction, speed.Status.Status, fmt.Sprintf("%.2f", speed.Mbps), strconv.FormatInt(speed.Bytes, 10), fmt.Sprintf("%.0f", speed.DurationMS), dash(speed.SourceURL), dash(speed.Reason)})
 	}
 	if len(rows) > 0 {
-		cmd.Print(tableText([]string{"测速站", "方向", "状态", "Mbps", "实测字节", "耗时 ms", "来源", "原因"}, rows))
+		fmt.Fprint(cmd.OutOrStdout(), tableText([]string{"测速站", "方向", "状态", "Mbps", "实测字节", "耗时 ms", "来源", "原因"}, rows))
 	}
 	for _, ip := range report.IP {
 		flags := []string{}
@@ -560,17 +560,17 @@ func printDiagnosticReport(cmd *cobra.Command, report diagnostics.Report, source
 			flags = append(flags, fmt.Sprintf("%s=%t", key, value))
 		}
 		sort.Strings(flags)
-		cmd.Printf("IP %s: %s  地址: %s  ASN: %s  组织: %s  地区: %s/%s/%s\n", ip.Family, ip.Status.Status, dash(ip.Address), dash(ip.ASN), dash(ip.Organization), dash(ip.Country), dash(ip.Region), dash(ip.City))
-		cmd.Printf("来源: %s  时间: %s  提供商标记: %s  原因: %s\n", ip.Source, capabilityTime(ip.CheckedAt), dash(strings.Join(flags, ", ")), dash(ip.Reason))
+		fmt.Fprintf(cmd.OutOrStdout(), "IP %s: %s  地址: %s  ASN: %s  组织: %s  地区: %s/%s/%s\n", ip.Family, ip.Status.Status, dash(ip.Address), dash(ip.ASN), dash(ip.Organization), dash(ip.Country), dash(ip.Region), dash(ip.City))
+		fmt.Fprintf(cmd.OutOrStdout(), "来源: %s  时间: %s  提供商标记: %s  原因: %s\n", ip.Source, capabilityTime(ip.CheckedAt), dash(strings.Join(flags, ", ")), dash(ip.Reason))
 		if ip.AbuseConfidenceScore != nil {
-			cmd.Printf("AbuseIPDB 报告置信度: %d\n", *ip.AbuseConfidenceScore)
+			fmt.Fprintf(cmd.OutOrStdout(), "AbuseIPDB 报告置信度: %d\n", *ip.AbuseConfidenceScore)
 		}
 		if ip.TotalReports != nil {
-			cmd.Printf("AbuseIPDB 举报数: %d\n", *ip.TotalReports)
+			fmt.Fprintf(cmd.OutOrStdout(), "AbuseIPDB 举报数: %d\n", *ip.TotalReports)
 		}
 	}
 	for _, warning := range report.Warnings {
-		cmd.Printf("提示: %s\n", warning)
+		fmt.Fprintf(cmd.OutOrStdout(), "提示: %s\n", warning)
 	}
 }
 
