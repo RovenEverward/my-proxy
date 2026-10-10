@@ -9,7 +9,28 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// mtr emits its report after probing all hops and waiting for final replies.
+// Share one budget with traceroute fallback, bounded by Run's overall context.
+const routeTimeout = 20 * time.Second
+
+func (e *engine) routeCommand(ctx context.Context, command string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	deadline, _ := ctx.Deadline()
+	seconds := max(1, int(math.Ceil(time.Until(deadline).Seconds())))
+	out, err := e.exec.Exec(ctx, boundedScript(command, seconds), nil)
+	if len(out) > MaxOutputBytes {
+		return "", ErrOutputLimit
+	}
+	if ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	return out, err
+}
 
 func (e *engine) route(ctx context.Context, t Target) Route {
 	r := Route{Direction: e.cfg.Position + " -> " + t.Host}
@@ -17,11 +38,14 @@ func (e *engine) route(ctx context.Context, t Target) Route {
 		r.Status = Status{"skipped", "ICMP/UDP route tracing cannot traverse SOCKS"}
 		return r
 	}
+	ctx, cancel := context.WithTimeout(ctx, routeTimeout)
+	defer cancel()
+	mtrFailure := ""
 	if e.tools["mtr"] {
 		r.Tool = "mtr"
 		// --json implies report mode. A following --report overrides JSON in
 		// mtr 0.95, yielding plain text despite a successful exit.
-		out, err := e.command(ctx, fmt.Sprintf("exec mtr --json --no-dns --report-cycles 1 --max-ttl 12 %s", shellQuote(t.Host)), nil)
+		out, err := e.routeCommand(ctx, fmt.Sprintf("exec mtr --json --no-dns --report-cycles 1 --max-ttl 12 %s", shellQuote(t.Host)))
 		r.Evidence = limitEvidence(out)
 		r.Hops = parseMTR(out)
 		if len(r.Hops) > 0 {
@@ -31,11 +55,19 @@ func (e *engine) route(ctx context.Context, t Target) Route {
 			}
 			return r
 		}
-		r.Reason = "mtr JSON unavailable or invalid; trying traceroute"
+		mtrFailure = "mtr returned no valid JSON hops"
+		if err != nil {
+			mtrFailure = "mtr returned no JSON hops: " + safeError(err)
+		}
+		r.Reason = mtrFailure
+		if ctx.Err() != nil {
+			r.Status = Status{"failed", mtrFailure}
+			return r
+		}
 	}
 	if e.tools["traceroute"] {
 		r.Tool = "traceroute"
-		out, err := e.command(ctx, "exec traceroute -n -m 12 -q 1 -w 1 "+shellQuote(t.Host), nil)
+		out, err := e.routeCommand(ctx, "exec traceroute -n -m 12 -q 1 -w 1 "+shellQuote(t.Host))
 		r.Evidence = limitEvidence(out)
 		r.Hops = parseTraceroute(out)
 		if len(r.Hops) > 0 {
@@ -46,10 +78,16 @@ func (e *engine) route(ctx context.Context, t Target) Route {
 		} else {
 			r.Status = Status{"failed", "traceroute returned no parseable hops: " + safeError(err)}
 		}
+		if mtrFailure != "" {
+			if r.Reason != "" {
+				r.Reason += "; "
+			}
+			r.Reason += "fallback after " + mtrFailure
+		}
 		return r
 	}
 	if e.tools["mtr"] {
-		r.Status = Status{"failed", "mtr JSON invalid and traceroute not installed"}
+		r.Status = Status{"failed", mtrFailure + "; traceroute not installed"}
 	} else {
 		r.Status = Status{"skipped", "mtr and traceroute not installed"}
 	}

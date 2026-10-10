@@ -393,6 +393,58 @@ exec sleep 20
 	}
 }
 
+type routeFixtureExecutor func(context.Context, string, []byte) (string, error)
+
+func (f routeFixtureExecutor) Exec(ctx context.Context, script string, stdin []byte) (string, error) {
+	return f(ctx, script, stdin)
+}
+
+func TestRouteBudgetIndependentAndShared(t *testing.T) {
+	tmp := t.TempDir()
+	script := `#!/bin/sh
+sleep 1.2
+printf '{"report":{"hubs":[{"count":1,"host":"127.0.0.1","Loss%%":0,"Avg":0.1}]}}\n'
+`
+	if err := os.WriteFile(tmp+"/mtr", []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", tmp+":"+os.Getenv("PATH"))
+	e := testEngine(t)
+	e.cfg.RequestTimeoutSeconds = 1
+	e.tools["mtr"] = true
+	r := e.route(context.Background(), Target{Host: "127.0.0.1"})
+	if r.Status.Status != "ok" || len(r.Hops) != 1 {
+		t.Fatalf("route inherited HTTP timeout: %+v", r)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	r = e.route(ctx, Target{Host: "127.0.0.1"})
+	if time.Since(started) > time.Second || r.Status.Status != "failed" || !strings.Contains(r.Reason, "deadline exceeded") {
+		t.Fatalf("route canceled without timeout evidence: %+v", r)
+	}
+	var deadlines []time.Time
+	e.tools["traceroute"] = true
+	e.exec = routeFixtureExecutor(func(ctx context.Context, command string, _ []byte) (string, error) {
+		d, ok := ctx.Deadline()
+		if !ok || time.Until(d) > routeTimeout {
+			t.Fatal("route lacks bounded deadline")
+		}
+		deadlines = append(deadlines, d)
+		if !strings.Contains(command, "sleep 20 &") {
+			t.Fatal("remote route watchdog is not 20s")
+		}
+		if len(deadlines) == 1 {
+			return "invalid JSON", nil
+		}
+		return " 1  127.0.0.1  0.1 ms\n", nil
+	})
+	r = e.route(context.Background(), Target{Host: "127.0.0.1"})
+	if len(deadlines) != 2 || !deadlines[0].Equal(deadlines[1]) || r.Tool != "traceroute" || r.Status.Status != "ok" || !strings.Contains(r.Reason, "fallback after") {
+		t.Fatalf("fallback renewed route budget: %+v %v", r, deadlines)
+	}
+}
+
 func TestMTRJSONOutputModeAndDeadline(t *testing.T) {
 	// An executable fixture mirrors mtr 0.95's last-output-option-wins rule;
 	// run the full shell/executor/route path, not just a parser fixture.
