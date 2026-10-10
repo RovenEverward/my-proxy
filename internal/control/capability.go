@@ -39,6 +39,7 @@ func (c *Control) ValidateCapabilityEndpoint(n model.Node, cfg model.CapabilityC
 	if in.NodeID != n.ID {
 		return fmt.Errorf("入站不属于所选节点")
 	}
+	exposureHost := model.Host{}
 	if cfg.HostID > 0 {
 		h, err := c.store.GetHost(cfg.HostID)
 		if err != nil {
@@ -47,6 +48,7 @@ func (c *Control) ValidateCapabilityEndpoint(n model.Node, cfg model.CapabilityC
 		if h.InboundID != in.ID {
 			return fmt.Errorf("入口不属于所选入站")
 		}
+		exposureHost = *h
 	} else {
 		hosts, err := c.store.ListHosts(in.ID)
 		if err != nil {
@@ -55,6 +57,9 @@ func (c *Control) ValidateCapabilityEndpoint(n model.Node, cfg model.CapabilityC
 		if len(hosts) > 0 {
 			return fmt.Errorf("入站已有显式入口,请指定 --host")
 		}
+	}
+	if !render.CapabilityExposureStable(n, *in, exposureHost) {
+		return fmt.Errorf("用户专属动态域名无法共享检测结果,请使用固定入口")
 	}
 	return nil
 }

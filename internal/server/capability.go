@@ -64,6 +64,9 @@ func (s *Server) capabilityEndpoint(n model.Node, cfg model.CapabilityConfig) (*
 			return nil, h, fmt.Errorf("入站已有显式入口,请指定 --host (不能冒充默认入口)")
 		}
 	}
+	if !render.CapabilityExposureStable(n, *in, h) {
+		return nil, h, fmt.Errorf("用户专属动态域名无法共享检测结果,请使用固定入口")
+	}
 	return in, h, nil
 }
 
