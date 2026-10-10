@@ -13,7 +13,7 @@ mpx node diagnose --all
 mpx node diagnostics 1
 
 # 结构化输出
-mpx node diagnose --all --json
+mpx node diagnose --all -o json
 ```
 
 不需要分别执行状态、能力和测速命令。完整体检先查看 SSH、核心服务、配置漂移与证书状态，再测节点网络，然后逐个通过已配置的真实代理入口检测出口 IP、YouTube 连通性与 Netflix 页面证据。入口检测使用已有的活跃且获授权的用户；无可用用户、动态专属域名、排空或入口异常都会写入报告。
