@@ -33,7 +33,7 @@ var nodeCmd = &cobra.Command{
 
 func init() {
 	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
-		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd)
+		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
@@ -46,6 +46,8 @@ func init() {
 	nodeAddCmd.Flags().BoolVar(&nodeAddFlags.sshPassword, "ssh-password", false,
 		"提示输一次 SSH 密码,用它把控制面的公钥装上节点(之后全程用密钥)")
 
+	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.core, "core", "xray", "核心:xray / sing-box")
+	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.version, "version", "", "核心版本,空表示最新版")
 	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
 
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.name, "name", "", "新的节点名")
@@ -735,31 +737,31 @@ var nodeSyncCmd = &cobra.Command{
 }
 
 var nodeInstallFlags struct {
+	core        string
+	version     string
 	xrayVersion string
 }
 
 var nodeInstallCmd = &cobra.Command{
 	Use:   "install <id>",
-	Short: "在节点上装好 xray 并启动它",
-	Long: `在节点上装好 xray 并启动它。
+	Short: "在节点上装好指定核心并启动它",
+	Long: `在节点上装好指定核心并启动它。
 
-发布包由控制面下载一次并缓存在它自己那边,再由它把核心和 geodata 推过 ssh 送到
-节点上 —— 所以节点不必能连 GitHub,也不需要 curl、unzip。核心落在一个独占的位
-置 /usr/local/lib/mpx/xray,配套的 systemd 单元叫 mpx-xray.service,两处都不占用
-机器上可能已经有的别人的 xray。
+--core 默认 xray;hysteria2 / tuic 使用 sing-box。发布包由控制面下载和缓存,
+再通过 SSH 送到节点。--version 指定版本,留空使用最新版。
 
-全新机器跑这一条就够:装核心、写单元、下发配置、启动,一步到 "能用了"。换核心
-走同一条命令,默认取最新版,--xray-version 可以指定或退回某个版本;替换之前会先
-拿节点上现有的配置试跑新核心,通不过就不换。
+两个核心各自使用独立的配置文件、API 端口和 systemd 服务。需要定制 sing-box
+部署信息时,先运行 mpx node core edit,再首次安装;部署后不能直接修改这些位置。
 
-核心已装好、配置也通过了校验,但服务没起来时,会回滚到上一份配置并把节点日志的
-末尾带回来。下载和推送加起来几十兆,慢链路下要几分钟,所以这条命令的上限比其它
-命令长得多。`,
+安装会下发当前配置并启动所选核心。下载和推送在慢链路下需要几分钟。`,
 	Example: `  # 全新节点,装最新版
   mpx node install 1
 
   # 装指定的核心版本(也可以用来退回旧版)
-  mpx node install 1 --xray-version v25.1.1`,
+  mpx node install 1 --version v25.1.1
+
+  # 安装 hysteria2 / tuic 使用的 sing-box
+  mpx node install 1 --core sing-box --version 1.12.0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id, err := idArg(args[0])
@@ -770,9 +772,20 @@ var nodeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		path := nodePath(id) + "/install"
-		if nodeInstallFlags.xrayVersion != "" {
-			path += "?version=" + url.QueryEscape(nodeInstallFlags.xrayVersion)
+		core := model.Core(nodeInstallFlags.core)
+		if !core.Valid() {
+			return errors.New("--core 只能是 xray / sing-box")
+		}
+		version := nodeInstallFlags.version
+		if cmd.Flags().Changed("xray-version") {
+			if core != model.CoreXray || version != "" {
+				return errors.New("--xray-version 只支持 Xray,且不能与 --version 同用")
+			}
+			version = nodeInstallFlags.xrayVersion
+		}
+		path := nodePath(id) + "/install?core=" + url.QueryEscape(string(core))
+		if version != "" {
+			path += "&version=" + url.QueryEscape(version)
 		}
 		raw, err := c.doWithin(installTimeout, "POST", path, nil)
 		if err != nil {
@@ -782,7 +795,7 @@ var nodeInstallCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return report(raw, "已在节点 %d 上装好并启动 xray %s", id, res["version"])
+		return report(raw, "已在节点 %d 上装好并启动 %s %s", id, core, res["version"])
 	},
 }
 
