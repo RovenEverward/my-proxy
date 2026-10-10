@@ -266,11 +266,13 @@ func addSingboxPurpose(body []byte, all, candidates []Endpoint, p model.Purpose)
 		for i, r := range rules {
 			m, ok := r.(map[string]any)
 			if !ok {
-				continue
+				break
 			}
 			action, _ := m["action"].(string)
 			if action == "sniff" || action == "hijack-dns" || action == "resolve" {
 				at = i + 1
+			} else {
+				break
 			}
 		}
 		prefixed := append([]any{}, rules[:at]...)
