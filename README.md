@@ -36,19 +36,66 @@
 
 ### 懒人路径：一条命令
 
-只有**一台** VPS，想同时当控制面和节点？在你自己日常用的机器上跑：
+只有**一台** VPS，想同时当控制面和节点？先在你的笔记本上装好命令行，然后一条命令搞定：
 
 ```bash
-mpx init --host <VPS IP> --ssh-password
+# 1. 装命令行（macOS / Linux，装到 ~/.local/bin/mpx）
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
+
+# 2. 一条命令装完控制面 + 节点 + 订阅
+mpx init --host <VPS 公网 IP> --ssh-password
 ```
 
-它会提示输入一次 VPS 的 SSH 密码，然后替你把下面所有事做完：装控制面（监听 `0.0.0.0:8080`）→ 装控制面公钥进本机 sshd → 建节点、入站（VLESS + TCP + REALITY）、对外入口、订阅前缀、用户 → 装 xray 核心并下发配置 → 打印订阅链接。跑完把屏幕上那条订阅地址填进客户端就能用。
+第 2 步会提示你输一次 VPS 的 SSH 密码，然后替你把所有事做完：
+
+| 步 | 动作 |
+| :--- | :--- |
+| 1 | 把你的公钥装到 VPS（只用密码这一次，之后全程密钥） |
+| 2 | 在 VPS 上装控制面（systemd 服务，监听 `0.0.0.0:8080`） |
+| 3 | 把控制面自己的公钥写进它的 `authorized_keys` |
+| 4 | 建节点 `default`、入站 `vless-443`（VLESS + TCP + REALITY）、对外入口 |
+| 5 | 把订阅前缀指向 `http://<IP>:8080` |
+| 6 | 建用户 `user1`，装 xray 核心并下发配置 |
+| 7 | 打印订阅链接和一条 `mpx login` |
+
+跑完屏幕上就有一条订阅地址，填进客户端即可（Clash / sing-box / v2rayN / Shadowrocket 都认，选 `auto` 那条会按 User-Agent 自动选格式）：
+
+```
+  http://203.0.113.10:8080/sub/xxxxxxxx
+```
 
 重复跑是安全的：已有的节点、入站、入口、用户和订阅前缀都会被复用，不会建出第二份。
 
-> **只支持单机全包**（控制面与节点同一台机器）。要分开部署或多节点，走下面的完整步骤。
+常用参数：
+
+| 参数 | 默认 | 说明 |
+| :--- | :--- | :--- |
+| `--host` | *(必填)* | VPS 的地址 |
+| `--ssh-user` | `root` | SSH 登录用户，必须是 root（装 systemd 服务、写 `/etc/mpx` 都要 root） |
+| `--ssh-password` | — | 带它才提示输密码；不带则用密钥（`--identity` 指定私钥） |
+| `--ssh-port` | `22` | SSH 端口 |
+| `--binary` | — | 指定本机编好的 Linux `mpx` 传上去，适合 VPS 连不上 GitHub 的情况 |
+| `--addr` | `0.0.0.0:8080` | 控制面监听地址 |
+| `--username` / `--name` | `user1` / `default` | 默认用户与节点名 |
+| `--sni` / `--reality-dest` | `www.cloudflare.com` | REALITY 借用的目标站点 |
+| `--sub-prefix` | `http://<host>:8080` | 订阅地址前缀，换了域名要改它 |
+
+装完之后日常管理用普通命令（`mpx login` 那行的 token 就是凭据）：
+
+```bash
+mpx login --server http://<VPS IP>:8080 --token '<跑完打印的 token>'
+
+mpx node list      # 看节点状态
+mpx user add bob   # 加人
+mpx user links bob # 拿他的订阅
+mpx status         # 总览
+```
+
+> **只支持单机全包**（控制面与节点同一台机器）。要分开部署、或多节点，走下面的完整步骤。
 >
-> `--addr` 默认 `0.0.0.0:8080`，意味着管理接口和订阅都在公网明文 HTTP 上，token 是唯一凭据；长期使用请在前面放 TLS 反向代理。常用参数见 [新手教程](docs/user/tutorial/getting-started.md)。
+> **明文 HTTP 的警告**：`--addr` 默认 `0.0.0.0:8080` 意味着管理接口和订阅都暴露在公网明文 HTTP 上，token 是唯一凭据。长期使用请在前面放一个 TLS 反向代理，再用 `--sub-prefix https://你的域名` 把订阅前缀换成 https（**前缀里不要带 `/sub`**，它是自动接上的）。
+>
+> `mpx init` 做的就是下面的第 1~5 步，只是替你在 VPS 上跑完了。想看清每一步、或要配 TLS 反代，[新手教程](docs/user/tutorial/getting-started.md) 仍是完整且推荐的路子。
 
 ### 装控制面
 
@@ -70,7 +117,7 @@ sudo ./deploy/install.sh /tmp/mpx
 
 ### 装命令行
 
-在你自己日常用的机器上（macOS / Linux）：
+在你自己日常用的机器上（macOS / Linux），上面懒人路径第 1 步用的就是这条：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
