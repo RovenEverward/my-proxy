@@ -12,9 +12,14 @@
 # 用法:
 #   sudo ./deploy/install.sh [mpx 二进制的路径]
 #   sudo ./deploy/install.sh --version v0.2.0
+#   sudo ./deploy/install.sh --addr 0.0.0.0:8080
 #
 # 也可以不下载仓库、直接一行装(脚本会自己去取二进制和 systemd 单元):
 #   curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
+#
+# 默认只监听 127.0.0.1:8080(订阅和管理接口都不出这台机器)。要让客户端直接从公网
+# 取订阅就传 --addr 0.0.0.0:8080 —— 那等于把带 token 的接口摆到公网上,生产环境
+# 前面必须有个 TLS 反向代理。`mpx init` 就是按这个口径装的。
 #
 # 二进制按顺序找:参数给的那个 → 脚本旁边的 mpx → 当前目录的 mpx → /tmp/mpx
 #               → GitHub Releases 的 linux 发布件 → 用本机 Go 从源码编。
@@ -46,6 +51,10 @@ usage() {
 用法:
   sudo ./deploy/install.sh [mpx 二进制的路径]
   sudo ./deploy/install.sh --version v0.2.0
+  sudo ./deploy/install.sh --addr 0.0.0.0:8080
+
+默认监听 127.0.0.1:8080。--addr 换成别的地址就写进 systemd 单元;0.0.0.0:8080
+会让订阅从公网可达,那种情况下前面必须有个 TLS 反向代理。
 
 二进制按顺序找:参数 → 脚本旁边 → ./mpx → /tmp/mpx → GitHub Releases → 本机 Go 编译。
 EOF
@@ -56,10 +65,12 @@ EOF
 
 BIN_ARG=
 VERSION=latest
+ADDR=
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		--version) VERSION="${2:-}"; shift 2 ;;
+		--addr) ADDR="${2:-}"; shift 2 ;;
 		-h|--help) usage ;;
 		-*) die "不认识的参数:$1(试试 --help)" ;;
 		*) BIN_ARG="$1"; shift ;;
@@ -238,6 +249,16 @@ if [[ ! -f "$SRC" ]]; then
 	SRC="$TMP/mpx.service"
 fi
 UNIT=/etc/systemd/system/mpx.service
+# --addr 只在换了监听地址时才动单元:默认那份是仓库里的原文,直接装。
+#
+# 替换后的单元写到 $TMP,不改仓库里那份 —— 从源码目录跑这个脚本是常规用法,
+# 就地 sed 会把工作区改脏,下次 git status 里多出一处莫名其妙的改动。
+if [[ -n "$ADDR" ]]; then
+	[[ "$ADDR" == *:* ]] || die "--addr 要写成 地址:端口(比如 0.0.0.0:8080)"
+	grep -q -- '--addr ' "$SRC" || die "$SRC 里没有 --addr,没法替换监听地址"
+	sed "s|--addr [^ ]*|--addr $ADDR|" "$SRC" > "$TMP/mpx.service.final"
+	SRC="$TMP/mpx.service.final"
+fi
 if [[ -f "$UNIT" ]] && ! cmp -s "$SRC" "$UNIT"; then
 	# 单元文件跟着程序走,所以每次都以手上这份为准。但你改过的内容不能就这么没了。
 	cp -f "$UNIT" "$UNIT.bak"
@@ -258,14 +279,35 @@ if ! systemctl is-active --quiet mpx; then
 	die "mpx 没起来,上面是它的状态和最近的日志"
 fi
 
+if [[ -n "$ADDR" ]]; then
+	BOUND="$ADDR"
+else
+	BOUND=127.0.0.1:8080
+fi
+
 cat <<EOF
 
-装好了。控制面在 127.0.0.1:8080,只监听回环 —— 公网要用它,前面得有个 TLS
-反向代理,或者从本机拉一条隧道:
+装好了。控制面在 $BOUND。
+
+EOF
+
+if [[ -z "$ADDR" ]]; then
+	cat <<EOF
+它只监听回环 —— 公网要用它,前面得有个 TLS 反向代理,或者从本机拉一条隧道:
 
   ssh -N -L 8080:127.0.0.1:8080 root@<这台机器的地址>
 
-然后在操作者机器上装好命令行(deploy/install-cli.sh,Windows 用
+EOF
+else
+	cat <<EOF
+它监听的是回环以外的地址,订阅和管理接口从公网可达。管理接口认 token,但流量
+是明文的:生产环境前面必须有个 TLS 反向代理,别把 8080 直接暴露在公网上。
+
+EOF
+fi
+
+cat <<EOF
+在操作者机器上装好命令行(deploy/install-cli.sh,Windows 用
 deploy/install-cli.ps1),再接上它:
 
   mpx login --server http://127.0.0.1:8080 --token '<管理 token>'

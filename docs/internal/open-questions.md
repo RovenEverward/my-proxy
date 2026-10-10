@@ -50,6 +50,7 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 | 用户自助改期 | 没有 | 续费是否只走 CLI |
 | 入站 tag 冲突 | 未强制唯一 | 同一节点上两个入站撞 tag 会怎样 |
 | `settings.rules` 顺序 | 按数组顺序匹配,顺序即优先级 | 要不要独立的优先级字段 |
+| `mpx init` 只在容器里验过 | 真容器端到端跑通(见 [status.md](status.md)),但**没有在真正的公网 VPS 上跑过**;且只支持**单机全包**(控制面与节点同一台机器),分开部署与多节点仍走手工步骤 | 上真机时要补三件实测:跨公网 SSH 的时延与掉线、国内机器连不上 `raw.githubusercontent.com` 时走 `--binary` 那条路、sshd 只允许密钥登录时走 `--identity` 那条路。要不要支持「装控制面 + 纳管已有节点」的形态,取决于真的有人这么用 |
 
 > 注：原待定项中「HTML 订阅页」「Webhook 告警通知」「CSV 数据导出」「SSH ControlMaster 连接复用」已分别在批 4 与批 6 中实现并验证落地，移出待定列表。
 
@@ -64,5 +65,5 @@ shadowsocks-2022、wireguard、xhttp / splithttp / httpupgrade、mux、fragment�
 
 1. [首页「不做什么」](index.md#不做什么)表里,哪几条不该是不做,而是还没排在前面?
 2. [model.md](model.md) 的数据模型有没有缺的对象或字段?
-3. [decisions.md](decisions.md) 的三十条决策,有没有哪条的理由不成立、该换方案?
+3. [decisions.md](decisions.md) 的三十五条决策,有没有哪条的理由不成立、该换方案?
 4. 第 4 节那张表里,哪些是现在就要定的?

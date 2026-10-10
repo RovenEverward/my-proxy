@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -73,6 +74,17 @@ const (
 	// backupTimeout 是下载备份的上限。备份里主要是库快照,可能随流量采样增长;
 	// 给得比普通接口宽,但不必像装核心那么长。
 	backupTimeout = 5 * time.Minute
+
+	// apiRetries 与 apiRetryWait 是撞上 429 时的重试策略。
+	//
+	// 控制面的 /api 令牌桶是 apiRate=5/秒、apiBurst=10:正常人工操作碰不到,
+	// 但 bootstrap 那一条命令要在几十毫秒里建节点、入站、入口、用户再下发配置,
+	// 十来次请求会直接打空桶。那不是有人在猛刷,是这一件事本来就要这么多步,
+	// 所以客户端该自己等一下而不是把 429 摊到使用者面前。
+	//
+	// 重试是安全的:限流罩在业务之前,被拒的请求一个字节都没落库。
+	apiRetries   = 4
+	apiRetryWait = 2 * time.Second
 )
 
 // rawBody 是跳过 JSON 序列化、原样发出的请求体。模板正文就是模板本身
@@ -89,26 +101,73 @@ func (c *Client) do(method, path string, body any) ([]byte, error) {
 // 原始字节要一路留到输出层:json 模式直接重排它,表格模式才按需解出字段。
 // 这样客户端不必复刻一套服务端的结构体,也就不会有字段漂移。
 func (c *Client) doWithin(timeout time.Duration, method, path string, body any) ([]byte, error) {
-	var reader io.Reader
+	var payload []byte
 	if body != nil {
 		switch b := body.(type) {
 		case rawBody:
-			reader = bytes.NewReader(b)
+			payload = b
 		default:
-			payload, err := json.Marshal(body)
+			p, err := json.Marshal(body)
 			if err != nil {
 				return nil, fmt.Errorf("序列化请求体: %w", err)
 			}
-			reader = bytes.NewReader(payload)
+			payload = p
 		}
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+
+	// 控制面的 /api 是按 IP 令牌桶限流的(apiRate/apiBurst)。一次 bootstrap 要
+	// 连着建节点、入站、入口、用户、下发配置,十来次请求会在几十毫秒内打完,
+	// 正好撞在桶上 —— 那不是使用者在猛刷,而是这一件事本来就要这么多步。
+	//
+	// 限流在业务处理之前,所以 429 意味着请求根本没执行过,重试不会重复建对象。
+	// 服务端给了 Retry-After 就照它等。
+	var lastErr error
+	for attempt := 0; attempt < apiRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, lastErr
+			case <-time.After(apiRetryWait):
+			}
+		}
+
+		data, retryAfter, err := c.doOnce(ctx, method, path, payload, body != nil)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
+			return nil, err
+		}
+		// 服务端说「等 N 秒」时它的账算得比我们准(它知道桶里还剩几毫秒的
+		// 令牌),但它按整秒向上取整,所以只信比默认等待更长的那些。
+		if retryAfter > apiRetryWait {
+			select {
+			case <-ctx.Done():
+				return nil, lastErr
+			case <-time.After(retryAfter - apiRetryWait):
+			}
+		}
+	}
+	return nil, lastErr
+}
+
+// doOnce 发一次请求。返回的 retryAfter 只在 429 时有意义。
+func (c *Client) doOnce(ctx context.Context, method, path string, payload []byte, hasBody bool) ([]byte, time.Duration, error) {
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, c.server+path, reader)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	if body != nil {
+	if hasBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.token != "" {
@@ -116,17 +175,23 @@ func (c *Client) doWithin(timeout time.Duration, method, path string, body any) 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("连接控制面 %s 失败: %w", c.server, err)
+		return nil, 0, fmt.Errorf("连接控制面 %s 失败: %w", c.server, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("读取响应: %w", err)
+		return nil, 0, fmt.Errorf("读取响应: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data)}
+		wait := time.Duration(0)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+				wait = time.Duration(s) * time.Second
+			}
+		}
+		return nil, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data)}
 	}
-	return data, nil
+	return data, 0, nil
 }
 
 // download 以 GET 发一次请求,把响应正文流式写进 w。

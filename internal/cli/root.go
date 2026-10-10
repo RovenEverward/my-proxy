@@ -53,7 +53,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个配置档,覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd)
+	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。

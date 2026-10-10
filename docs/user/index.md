@@ -6,7 +6,7 @@
 
 ## 1. 新手教程 (Tutorial)
 面向新手，按线性步骤完成一个成功的端到端目标。
-- [从零搭建多节点代理管理服务](tutorial/getting-started.md)：从一台裸机控制面和一台节点开始，跑通 VLESS REALITY 协议并分发首个用户订阅。
+- [从零搭建多节点代理管理服务](tutorial/getting-started.md)：从一台裸机控制面和一台节点开始，跑通 VLESS REALITY 协议并分发首个用户订阅。**只有一台 VPS 的话，开头的「懒人路径」一条 `mpx init` 命令就能跑完全部步骤。**
 
 ---
 

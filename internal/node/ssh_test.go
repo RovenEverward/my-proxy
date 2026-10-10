@@ -18,7 +18,7 @@ func TestSSHArgsDefaults(t *testing.T) {
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "ControlMaster=auto",
-		"-o", "ControlPath=" + os.TempDir() + "/mpx-ssh-%C",
+		"-o", "ControlPath=" + sshControlPath(),
 		"-o", "ControlPersist=60s",
 		"root@203.0.113.10",
 	}
@@ -36,6 +36,20 @@ func TestSSHArgsDefaults(t *testing.T) {
 		if !strings.Contains(strings.Join(got, " "), opt) {
 			t.Fatalf("少了连接复用参数 %q: %q", opt, got)
 		}
+	}
+	// ControlPath 必须短到能当 unix socket 用。macOS 的 TMPDIR 本身就四五十个
+	// 字符,直接拼 os.TempDir() 会超上限,ssh 报的是 "path too long for Unix
+	// domain socket" —— 看着像网络问题,其实是本地路径问题,而 mpx init 恰恰
+	// 跑在 macOS 上。
+	//
+	// 上限按最严的 Linux 104 字节算(BSD/macOS 也是 104);%C 会被替换成 40 个
+	// 字符的散列键,所以按展开后的长度验。
+	const unixSocketLimit = 104
+	expanded := strings.ReplaceAll(sshControlPath(), "%C",
+		strings.Repeat("a", 40))
+	if len(expanded) >= unixSocketLimit {
+		t.Fatalf("ControlPath 展开后 %d 字节,超过 unix socket 上限 %d: %q",
+			len(expanded), unixSocketLimit, expanded)
 	}
 }
 

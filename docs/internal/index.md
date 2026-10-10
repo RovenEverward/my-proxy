@@ -34,6 +34,25 @@ Marzban 和 Marzneshin 解决同一类问题,但它们在每台节点上跑一�
 | **控制面** | 持有唯一一份真相;渲染节点配置与订阅;决定谁该在哪个节点上 | **不进数据通路**,用户流量直接打到节点上 |
 | **节点** | 跑控制面推过去的 xray;按用户计量流量 | 不装任何 mpx 组件,不主动联系控制面,也不需要能连外网 |
 
+上表里 CLI 那一行有一个例外:`mpx init` 会 SSH。它是**在控制面存在之前**运行的那条命令 —— 装控制面的那一刻 `/api` 还不存在,没有一个人可以给它调用。所以它只做 SSH 编排,建对象的活交给 VPS 上跑的 `mpx bootstrap`,而后者仍然是不折不扣的 `/api` 客户端。理由见 [decisions.md](decisions.md) 第 32 条。
+
+一条命令走完整条路(单机全包,即控制面与节点同一台机器),在操作机上跑:
+
+```console
+$ mpx init --host 203.0.113.10 --ssh-password
+==> 看清这台机器
+==> 在这台机器上装控制面(监听 0.0.0.0:8080)
+...
+==> 建节点
+    节点 default 建好了(id=1)
+...
+搞定。把下面这条填进客户端(clash / sing-box / v2rayN 都认它):
+
+  http://203.0.113.10:8080/sub/xxxxxxxx
+```
+
+它替用户跑完了下面这一整节的手工步骤。重复跑是安全的:已有的对象会被复用,不会出现第二份。
+
 ## 一次改动,从头到尾
 
 真机上跑一遍(两台服务器,三个入站):
@@ -46,7 +65,7 @@ $ mpx node install 1
 已在节点 1 上装好并启动 xray 26.3.27
 
 $ mpx inbound add --node 1 --protocol vless --port 443 --security reality \
-    --sni www.microsoft.com --reality-dest www.microsoft.com:443 \
+    --sni www.cloudflare.com --reality-dest www.cloudflare.com:443 \
     --short-ids d4834461 --flow xtls-rprx-vision
 已创建入站 1(vless-443)
 
@@ -76,8 +95,8 @@ $ mpx user add alice --limit 100GB --reset-strategy monthly --note "老朋友"
                       "email": "alice", "flow": "xtls-rprx-vision" }] },
       "streamSettings": {
         "network": "tcp", "security": "reality",
-        "realitySettings": { "dest": "www.microsoft.com:443",
-          "serverNames": ["www.microsoft.com"],
+        "realitySettings": { "dest": "www.cloudflare.com:443",
+          "serverNames": ["www.cloudflare.com"],
           "privateKey": "ErYtiruvvq_nEkIZ1GUdYKfChwhzOI_ffeD126QYn80",
           "shortIds": ["d4834461"] } },
       "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"],

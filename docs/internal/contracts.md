@@ -11,9 +11,12 @@
 
 CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
 
+**一处例外**:`init` 会 SSH 到一台机器上(它是**在控制面存在之前**运行的那条命令),但建对象的活它不干 —— 那部分交给在 VPS 上跑的 `bootstrap`,后者仍然是个不折不扣的 `/api` 客户端。理由见 [decisions.md](decisions.md) 第 32 条。
+
 ```
 login   [--profile 档名] [--server 地址] [--token token]
                                          存控制面地址与 token;不带参数时显示当前生效的值
+init    --host <地址> [--ssh-password]   一条命令在单台 VPS 上装完控制面 + 节点 + 订阅(见下)
 serve                                    起控制面:--addr --db --interval(默认 30s)
 status                                   控制面心跳、对象数量、退避中的节点(读缓存,不碰节点)
 doctor                                   自检:控制面、每台节点、六种订阅格式、采样表(有 fail 时退出码 3)
@@ -27,6 +30,40 @@ user     list | show | add | edit | rm | enable | disable | renew | export | imp
          | links | reset-traffic | revoke-sub
 settings show | set | test | template get|set|del
 ```
+
+`bootstrap` 是 **Hidden 子命令**(不在 `--help` 里),它是 `init` 在 VPS 上的另一半,由 `init` 调用而不是给人直接敲:
+
+```
+bootstrap --address <节点对外地址> [--name default] [--username user1] [--inbound-port 443]
+          [--api-port 8080] [--sni www.cloudflare.com] [--reality-dest www.cloudflare.com:443]
+          [--sub-prefix <订阅前缀>] [--remark <备注>] [--env-file /etc/mpx/env]
+          [--key-file /var/lib/mpx/.ssh/id_ed25519.pub]
+```
+
+它假定控制面跑在本机(`127.0.0.1:8080`),token 从 `--env-file` 里读(不经过命令行,所以不进 `ps` 与 shell 历史),公钥从 `--key-file` 读并追加进 `~/.ssh/authorized_keys`。每一步都是**幂等**的:节点按名字复用、入站按「同协议+同安全层+同端口」复用、入口已有就不再加、订阅前缀非空就不动、用户存在就跳过,重复跑不会建出第二份。
+
+### 一键路径(`init` 与 `bootstrap`)
+
+`init` 在**操作机上**跑,只做 SSH 编排,顺序是:探测对面是什么(一次 ssh 问完 `os`/`arch`/`uid`/有没有 `curl`/有没有 `mpx`)→ 校验是 Linux 且 uid 是 0 → 上传 `deploy/install.sh`(优先用本机仓库里的那份,找不到才让 VPS 自己去 GitHub 取)→ 可选上传 `--binary` → 跑 `install.sh --addr 0.0.0.0:8080` → 确认装上的 `mpx` 认 `bootstrap` 子命令 → 远端跑 `bootstrap` → 从 `/etc/mpx/env` 读回 token → 打印订阅链接与 `mpx login` 命令。
+
+带 `--ssh-password` 时,密码只用于**第一次**把操作机的公钥装进 VPS 的 `authorized_keys`(密码认证下 askpass 占着 stdin,没法同时给远端喂标准输入),之后全程走密钥。不带则直接用 `--identity` 指定的私钥。
+
+| 参数 | 默认 | 说明 |
+| :--- | :--- | :--- |
+| `--host` | *(必填)* | VPS 地址 |
+| `--ssh-user` / `--ssh-port` | `root` / `22` | 必须是 root(装 systemd 服务、写 `/etc/mpx` 都要) |
+| `--ssh-password` | — | 带它才提示输密码 |
+| `--identity` | — | 私钥路径,密码路径下装公钥后也用它 |
+| `--binary` | — | 本机编好的 Linux `mpx`,传上去用(控制面连不上 GitHub 时) |
+| `--install-script` | 自动查找 | 指定 `install.sh` 的路径 |
+| `--addr` | `0.0.0.0:8080` | 控制面监听地址 |
+| `--api-port` | 从 `--addr` 取 | 覆盖从 `--addr` 里解析出的端口;也是订阅前缀里的端口 |
+| `--name` / `--username` | `default` / `user1` | 节点名与默认用户名 |
+| `--sni` / `--reality-dest` | `www.cloudflare.com` / `www.cloudflare.com:443` | REALITY 借用的目标站点 |
+| `--sub-prefix` | `http://<host>:<api-port>` | 订阅地址前缀,换了域名要改 |
+| `--remark` | 用节点名 | 入站入口的备注 |
+
+`--addr` 默认 `0.0.0.0:8080`,意味着管理接口与订阅都在公网明文 HTTP 上,token 是唯一凭据。长期使用要把 TLS 反向代理放在前面,并把 `--sub-prefix` 换成 `https://` 的域名。
 
 ### 连哪一台控制面(`login` 与配置档)
 

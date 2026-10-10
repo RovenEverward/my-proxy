@@ -12,6 +12,54 @@
 
 ---
 
+## 懒人路径：一条命令全搞定
+
+如果你只有**一台** VPS，想同时当控制面和节点，那下面是全部要做的事 —— 在你的笔记本电脑上跑：
+
+```bash
+mpx init --host <VPS 的 IP> --ssh-password
+```
+
+它会提示你输入一次 VPS 的 SSH 密码，然后自动完成：装控制面（监听 `0.0.0.0:8080`）→ 把控制面公钥装进本机 sshd → 建节点、入站（VLESS + TCP + REALITY）、对外入口、订阅前缀、用户 → 装 xray 核心并下发配置 → 打印订阅链接。
+
+跑完屏幕上会给你一条订阅地址，直接填进客户端就能用：
+
+```
+搞定。把下面这条填进客户端(clash / sing-box / v2rayN 都认它):
+
+  http://203.0.113.10:8080/sub/xxxxxxxx
+
+格式            订阅地址                                             说明
+auto          http://203.0.113.10:8080/sub/xxxxxxxx                按 User-Agent 自动选,推荐填这个
+clash-meta    http://203.0.113.10:8080/sub/xxxxxxxx/clash-meta     Clash / mihomo
+...
+```
+
+重复跑是安全的：已经存在的节点、入站、入口、用户和订阅前缀都会被复用，不会建出第二份。
+
+> **`mpx init` 只支持单机全包**（控制面与节点同一台机器）。要分开部署、或多节点，就走下面的手工步骤。
+>
+> **它做的事就是下面的第 1~5 步**，只是替你在 VPS 上跑完了。想看它到底做了什么、想改成 TLS 反代，手工步骤仍然是完整且推荐的路子。
+
+常用参数：
+
+| 参数 | 默认 | 说明 |
+| :--- | :--- | :--- |
+| `--host` | *(必填)* | VPS 的地址 |
+| `--ssh-user` | `root` | SSH 登录用户，必须是 root |
+| `--ssh-password` | — | 带它才提示输密码；不带则用密钥（`--identity` 指定私钥） |
+| `--binary` | — | 指定一个本机编好的 Linux `mpx` 传上去，适合控制面连不上 GitHub 的情况 |
+| `--addr` | `0.0.0.0:8080` | 控制面监听地址 |
+| `--username` | `user1` | 默认用户 |
+| `--sni` / `--reality-dest` | `www.cloudflare.com` | REALITY 借用的目标站点 |
+| `--sub-prefix` | `http://<host>:8080` | 订阅地址前缀，换了域名要改它 |
+
+> **明文 HTTP 的警告**：`--addr 0.0.0.0:8080` 意味着管理接口和订阅都暴露在公网明文 HTTP 上，token 是唯一凭据。长期用请在前面放一个 TLS 反向代理，再把 `--sub-prefix` 换成 `https://` 的域名。
+
+---
+
+## 手工路径
+
 ## 第 1 步：部署控制面
 
 在控制面机器上执行一行安装命令：
@@ -132,7 +180,7 @@ mpx node install 1
 # 1. 创建入站规则（REALITY 密钥对如不指定，系统会自动随机生成）
 mpx inbound add --node 1 --protocol vless --port 443 \
   --network tcp --security reality \
-  --sni www.microsoft.com --reality-dest www.microsoft.com:443
+  --sni www.cloudflare.com --reality-dest www.cloudflare.com:443
 
 # 2. 为入站添加入口标识（用于订阅中显示的节点名称）
 mpx host add --inbound 1 --remark "香港 01 REALITY"

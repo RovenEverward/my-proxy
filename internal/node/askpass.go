@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,21 +25,6 @@ import (
 // pubkey 是控制面自己那对密钥的 .pub 内容(一行 ssh-ed25519 …),由调用方从
 // 磁盘读出来;这个函数不碰文件系统里属于控制面的东西,只负责把它送过去。
 func installKey(ctx context.Context, n model.Node, keyPath, pubkey, password string) error {
-	// askpass 脚本替 ssh 回答密码。SSH_ASKPASS_REQUIRE=force 让 ssh 连 TTY 都不看、
-	// 只走这个脚本;脚本里密码用环境变量带进去,不出现在 ps 里。
-	dir, err := os.MkdirTemp("", "mpx-askpass-*")
-	if err != nil {
-		return fmt.Errorf("准备 askpass 目录: %w", err)
-	}
-	defer os.RemoveAll(dir)
-
-	askpass := filepath.Join(dir, "askpass.sh")
-	// 引号处理:printf '%s' "$MPX_ASKPASS_PASSWORD" 原样吐密码,不换行不解释。
-	script := "#!/bin/sh\nprintf '%s' \"$MPX_ASKPASS_PASSWORD\"\n"
-	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
-		return fmt.Errorf("写 askpass 脚本: %w", err)
-	}
-
 	// 公钥直接拼进远端脚本 —— 不要用 ssh 的环境变量。
 	//
 	// 这里踩过一次:原先把公钥放在客户端的 PUBKEY 环境变量里,远端脚本 echo "$PUBKEY"。
@@ -59,47 +45,11 @@ PK='` + pubkey + `'
 grep -qxF "$PK" ~/.ssh/authorized_keys 2>/dev/null || echo "$PK" >> ~/.ssh/authorized_keys
 `
 
-	args := []string{
-		// 不用 BatchMode:那会让 ssh 在需要密码时直接失败,而这里我们就是要它
-		// 用密码。PasswordAuthentication 显式开,免得 ssh_config 里被关掉。
-		"-o", "PasswordAuthentication=yes",
-		"-o", "PubkeyAuthentication=no",
-		"-o", "ConnectTimeout=10",
-		"-o", "StrictHostKeyChecking=accept-new",
-		// 不复用 ControlMaster:这次的认证方式是密码,别污染以后会话密钥的
-		// 那条复用通道。
-		"-o", "ControlMaster=no",
-		"-o", "ControlPath=none",
-	}
-	if p := n.SSHPortOrDefault(); p != 22 {
-		args = append(args, "-p", strconv.Itoa(p))
-	}
-	args = append(args, n.SSHUserOrDefault()+"@"+n.Address, remote)
+	args := passwordSSHArgs(n)
+	args = append(args, remote)
 
-	cmd := exec.CommandContext(ctx, "ssh", args...)
-	cmd.Env = append(os.Environ(),
-		"SSH_ASKPASS="+askpass,
-		"SSH_ASKPASS_REQUIRE=force",
-		"MPX_ASKPASS_PASSWORD="+password,
-		"DISPLAY=:0", // 有些 OpenSSH 版本要求 DISPLAY 非空才走 askpass
-	)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			if errors.Is(ctxErr, context.DeadlineExceeded) {
-				return fmt.Errorf("节点 %s: 命令超时", n.Name)
-			}
-			return fmt.Errorf("节点 %s: 命令被取消", n.Name)
-		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		// 密码错误、密码认证没开、连不上,都该让使用者看到 ssh 的原话。
-		return fmt.Errorf("节点 %s: %s", n.Name, msg)
+	if _, err := runPasswordSSH(ctx, n, args, password); err != nil {
+		return err
 	}
 
 	// 装完当场用密钥再登一次,确认这把钥匙真的能用。
@@ -112,6 +62,93 @@ grep -qxF "$PK" ~/.ssh/authorized_keys 2>/dev/null || echo "$PK" >> ~/.ssh/autho
 		return fmt.Errorf("公钥已写入但密钥登录不通(检查节点 sshd 是否允许 PubkeyAuthentication): %w", err)
 	}
 	return nil
+}
+
+// passwordSSHArgs 是「用密码认证」这一路的 ssh 参数。
+//
+// 不用 BatchMode:那会让 ssh 在需要密码时直接失败,而这一路就是要它用密码。
+// PasswordAuthentication 显式开,免得 ssh_config 里被关掉;PubkeyAuthentication
+// 关掉,免得它先试密钥、多问一轮。
+func passwordSSHArgs(n model.Node) []string {
+	args := []string{
+		"-o", "PasswordAuthentication=yes",
+		"-o", "PubkeyAuthentication=no",
+		"-o", "ConnectTimeout=10",
+		"-o", "StrictHostKeyChecking=accept-new",
+		// 不复用 ControlMaster:这次的认证方式是密码,别污染以后会话密钥的
+		// 那条复用通道。
+		"-o", "ControlMaster=no",
+		"-o", "ControlPath=none",
+	}
+	if p := n.SSHPortOrDefault(); p != 22 {
+		args = append(args, "-p", strconv.Itoa(p))
+	}
+	return append(args, n.SSHUserOrDefault()+"@"+n.Address)
+}
+
+// runPasswordSSH 用密码认证跑一条 ssh 命令,返回它的 stdout。
+//
+// askpass 脚本替 ssh 回答密码:SSH_ASKPASS_REQUIRE=force 让 ssh 连 TTY 都不看、
+// 只走这个脚本;密码用环境变量带进去,不出现在 ps 里,也不进命令行。
+func runPasswordSSH(ctx context.Context, n model.Node, args []string, password string) (string, error) {
+	var stdout, stderr bytes.Buffer
+	if err := execPasswordSSH(ctx, n, args, password, nil, &stdout, &stderr); err != nil {
+		return stdout.String(), err
+	}
+	return stdout.String(), nil
+}
+
+// execPasswordSSH 是密码认证那条路的执行核心:建 askpass 脚本、带上它跑 ssh、
+// 把错误翻成人话。stdout/stderr 由调用方给 —— 要攒着解析就给 buffer,要边跑
+// 边看就给终端。
+func execPasswordSSH(ctx context.Context, n model.Node, args []string, password string,
+	stdin []byte, stdout, stderr io.Writer) error {
+	dir, err := os.MkdirTemp("", "mpx-askpass-*")
+	if err != nil {
+		return fmt.Errorf("准备 askpass 目录: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	askpass := filepath.Join(dir, "askpass.sh")
+	// 引号处理:printf '%s' "$MPX_ASKPASS_PASSWORD" 原样吐密码,不换行不解释。
+	script := "#!/bin/sh\nprintf '%s' \"$MPX_ASKPASS_PASSWORD\"\n"
+	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
+		return fmt.Errorf("写 askpass 脚本: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "ssh", args...)
+	cmd.Env = append(os.Environ(),
+		"SSH_ASKPASS="+askpass,
+		"SSH_ASKPASS_REQUIRE=force",
+		"MPX_ASKPASS_PASSWORD="+password,
+		"DISPLAY=:0", // 有些 OpenSSH 版本要求 DISPLAY 非空才走 askpass
+	)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+
+	if err := cmd.Run(); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return fmt.Errorf("节点 %s: 命令超时", n.Name)
+			}
+			return fmt.Errorf("节点 %s: 命令被取消", n.Name)
+		}
+		return fmt.Errorf("节点 %s: %s", n.Name, sshErrText(err, stderr))
+	}
+	return nil
+}
+
+// sshErrText 从 ssh 的 stderr 里取一句话;拿不到就用 err 本身。
+func sshErrText(err error, stderr io.Writer) string {
+	if b, ok := stderr.(*bytes.Buffer); ok {
+		if msg := strings.TrimSpace(b.String()); msg != "" {
+			return msg
+		}
+	}
+	return err.Error()
 }
 
 // verifyKey 只用密钥连一次节点,确认控制面这把钥匙真的被节点接受。

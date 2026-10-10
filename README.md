@@ -34,6 +34,22 @@
 
 ## 快速上手 (Quick Start)
 
+### 懒人路径：一条命令
+
+只有**一台** VPS，想同时当控制面和节点？在你自己日常用的机器上跑：
+
+```bash
+mpx init --host <VPS IP> --ssh-password
+```
+
+它会提示输入一次 VPS 的 SSH 密码，然后替你把下面所有事做完：装控制面（监听 `0.0.0.0:8080`）→ 装控制面公钥进本机 sshd → 建节点、入站（VLESS + TCP + REALITY）、对外入口、订阅前缀、用户 → 装 xray 核心并下发配置 → 打印订阅链接。跑完把屏幕上那条订阅地址填进客户端就能用。
+
+重复跑是安全的：已有的节点、入站、入口、用户和订阅前缀都会被复用，不会建出第二份。
+
+> **只支持单机全包**（控制面与节点同一台机器）。要分开部署或多节点，走下面的完整步骤。
+>
+> `--addr` 默认 `0.0.0.0:8080`，意味着管理接口和订阅都在公网明文 HTTP 上，token 是唯一凭据；长期使用请在前面放 TLS 反向代理。常用参数见 [新手教程](docs/user/tutorial/getting-started.md)。
+
 ### 装控制面
 
 在要当控制面的那台 Linux 机器上跑一行（有 systemd 即可，不用先装 Go）：
@@ -121,7 +137,7 @@ markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user
 - **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
 - [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
 - [核心领域数据模型](docs/internal/model.md)
-- [架构决策记录 (30 条关键 ADR)](docs/internal/decisions.md)
+- [架构决策记录 (35 条关键 ADR)](docs/internal/decisions.md)
 - [版本批次与演进路线](docs/internal/roadmap.md)
 - [验证矩阵与测试记录](docs/internal/status.md)
 
