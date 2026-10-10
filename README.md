@@ -138,4 +138,4 @@ gofmt -l .
 
 ## 开源协议
 
-MIT
+[MIT](LICENSE)
