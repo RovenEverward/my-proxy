@@ -171,6 +171,25 @@ func TestPurposeDefaultDirectAndSniffOrdering(t *testing.T) {
 	}
 }
 
+func TestPurposePrecedesTerminalRuleWithLaterDNS(t *testing.T) {
+	all := purposeEndpoints()
+	p := model.Purpose{Slug: "media", Name: "Media", Kind: "media", Domains: []string{"media.test"}}
+	p.Normalize()
+	template := []byte(`{"outbounds":[],"route":{"rules":[{"action":"sniff"},{"domain":["media.test"],"outbound":"proxy"},{"protocol":"dns","action":"hijack-dns"}],"final":"proxy"}}`)
+	b, err := PurposeSubscription(all, all[1:], p, model.FormatSingBox, template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err = json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	rules := cfg["route"].(map[string]any)["rules"].([]any)
+	if rules[0].(map[string]any)["action"] != "sniff" || rules[1].(map[string]any)["outbound"] != "mpx-media" || rules[2].(map[string]any)["outbound"] != "proxy" || rules[3].(map[string]any)["action"] != "hijack-dns" {
+		t.Fatal(rules)
+	}
+}
+
 func TestPurposeOfficialPreservationParsers(t *testing.T) {
 	mihomo, singbox := os.Getenv("MPX_TEST_MIHOMO"), os.Getenv("MPX_TEST_SINGBOX")
 	if mihomo == "" || singbox == "" {
