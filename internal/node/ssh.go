@@ -171,6 +171,7 @@ func sshArgsWithIdentity(n model.Node, identity string) []string {
 	// BatchMode 让 ssh 在需要密码/口令时直接失败而不是挂住 —— 控制面是常驻进程,
 	// 不能停在一个永远等不到输入的提示上。
 	args := []string{
+		"-T", // machine protocols must never inherit RequestTTY=force
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=10",
 		"-o", "StrictHostKeyChecking=accept-new",

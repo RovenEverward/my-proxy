@@ -45,6 +45,7 @@ type Control struct {
 	logger         *slog.Logger
 	cacheDir       string
 	capabilitySlot chan struct{}
+	diagnosticSlot chan struct{}
 	// Internal overrides keep deadline-exhaustion regression tests fast.
 	sampleTimeout    time.Duration
 	reconcileTimeout time.Duration
@@ -58,7 +59,7 @@ func New(st *store.Store, r node.Runner, logger *slog.Logger, cacheDir string) *
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir, capabilitySlot: make(chan struct{}, 1)}
+	return &Control{store: st, runner: r, logger: logger, cacheDir: cacheDir, capabilitySlot: make(chan struct{}, 1), diagnosticSlot: make(chan struct{}, 1)}
 }
 
 // DeployNode 下发节点所需的独立核心配置。QUIC 配置变化时采样并重启

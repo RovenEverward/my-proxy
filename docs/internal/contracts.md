@@ -11,7 +11,7 @@
 
 CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
 
-**一处例外**:`init` 会 SSH 到一台机器上(它是**在控制面存在之前**运行的那条命令),但建对象的活它不干 —— 那部分交给在 VPS 上跑的 `bootstrap`,后者仍然是个不折不扣的 `/api` 客户端。理由见 [decisions.md](decisions.md) 第 32 条。
+`init` 会 SSH 到一台机器上(它是在控制面存在之前运行的命令),但建对象的活交给 VPS 上的 `bootstrap`,后者仍是 `/api` 客户端。理由见 [decisions.md](decisions.md) 第 32 条。`diagnose` 是本地诊断入口，不连接管理 API；`node diagnose` 和 `node diagnostics` 则是纯 API 客户端。
 
 ```
 login   [--profile 档名] [--server 地址] [--token token]
@@ -24,6 +24,8 @@ backup   [-o 文件]                        下载一份备份归档(默认 mpx-
 restore  <归档> [--force]                 把一份备份暂存到控制面,重启后生效
 
 node     list | show | status | add | edit | rm | config | sync | install
+         | diagnose (ID|--all) [--network-only] [--speed=false] | diagnostics ID [--from node|control]
+diagnose [--socks5 socks5h://host:port] [--speed]  当前操作机本地诊断,不读取管理登录
 inbound  list | show | add | edit | rm
 host     list | add | edit | rm
 user     list | show | add | edit | rm | enable | disable | renew | export | import
@@ -49,6 +51,12 @@ bootstrap --address <节点对外地址> [--name default] [--username user1] [--
 管理接口：`GET/POST /api/purposes`、`GET/PUT/DELETE /api/purposes/{slug}`、`GET /api/purposes/{slug}/preview/{username}/{format}`、`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。创建 201、重复 409、更新 200、删除 204、未知对象 404、无效字段或模板 400、预览不可用 422。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。预览只支持 clash-meta / sing-box 且正文含凭证。
 
 `/sub/{token}[/{format}]?purpose={slug}` 保持 token 授权。未知/已删除用途 404，无可用候选、状态不可用、依赖 daily 不可用、要求能力但 hook 未接入、格式不支持均 422，并附默认订阅 URL，不静默回落。浏览器页面增加用途选择、描述、错误与复制链接。配置 `daily_purpose` 显式决定其他流量使用哪个日常候选组；留空沿用模板原有路由。全部用途重算候选，默认缓存键加入 purpose 与 gzip 协商，避免压缩变体混用。
+
+### 综合体检 API
+
+`POST /api/nodes/{id}/diagnostics` 接收 `diagnostics.Config` 加可选 `network_only`。默认是完整一键体检，网络测速默认开启；显式 `speed:false` 关闭测速。`network_only:true` 仅执行高级网络测量，测速默认关闭。执行位置只允许 node/control，不允许 SOCKS URL、API 密钥或自选密钥环境变量。`GET /api/nodes/{id}/diagnostics?from=node|control` 读取该位置最新报告。两者沿用管理鉴权；不存在的节点或报告 404，配置错误 400，全局正在运行 409，同节点同位置一分钟内再运行 429，部分执行取消等错误 502。
+
+成功正文为 `{node_id, measured_address, source, checked_at, report}`；`measured_address` 保存开始测量时的节点地址，节点后续编辑不会把旧证据改写为新地址；失败时若已获得合法部分报告则为 `{error, record}`。CLI 输出部分证据后返回错误，429 不自动重试。完整 `report` 为 `{summary,health,drift,network,entrances}`，统一保存一次；CLI `--all` 顺序执行全部节点，失败保留报告后继续，取消则停止。网络执行器最长 170 秒；完整流程最长 6 分钟，API 外层 6 分 30 秒留出保存时间。仅网络模式 API 为 3 分钟。固定可选环境变量为执行机器的 `MPX_ABUSEIPDB_KEY` 与 `MPX_IPAPI_IS_KEY`，不会经远程 API 接收或落入报告。
 
 ### 一键路径(`init` 与 `bootstrap`)
 

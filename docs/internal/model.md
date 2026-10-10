@@ -32,6 +32,8 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 用途要求 `required_capabilities` 时仅接受 egress / youtube / netflix；`capability_region` 可指定两位大写国家代码。能力 hook 未接入时明确拒绝。hook 结果与输入 identity 取交集且保留输入凭证，不能扩大授权。用途请求每次重算，避免能力 TTL、用户到期或实时配额产生过时结果。
 
+`diagnostic_reports(node_id REFERENCES nodes ON DELETE CASCADE, source, checked_at, report)` 主键为 `(node_id,source)`，source 仅 node/control。每节点最多两份最新报告，JSON 最多 256 KiB；删除节点级联清理。不积累诊断历史，不改变能力检测和用户配额。部分失败或取消保存已获得的证据，密钥不序列化。本地 `diagnose` 不落此表。
+
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
 
 `traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`(见 [decisions.md](decisions.md) 第 9 条)。

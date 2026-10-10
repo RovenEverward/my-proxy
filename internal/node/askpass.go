@@ -143,7 +143,7 @@ func execPasswordSSH(ctx context.Context, n model.Node, args []string, password 
 
 // sshErrText 从 ssh 的 stderr 里取一句话;拿不到就用 err 本身。
 func sshErrText(err error, stderr io.Writer) string {
-	if b, ok := stderr.(*bytes.Buffer); ok {
+	if b, ok := stderr.(interface{ String() string }); ok {
 		if msg := strings.TrimSpace(b.String()); msg != "" {
 			return msg
 		}
