@@ -2,6 +2,7 @@
 package fusion
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -197,7 +198,12 @@ func (r *Report) Finish(err error) {
 func boundedData(data []byte) (json.RawMessage, bool) {
 	// Marshal removes indentation and avoids unnecessarily dropping payloads.
 	var root map[string]any
-	if json.Unmarshal(data, &root) != nil {
+	if !json.Valid(data) {
+		return nil, true
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if decoder.Decode(&root) != nil {
 		return nil, true
 	}
 	body, _ := json.Marshal(root)

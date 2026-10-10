@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -88,21 +89,104 @@ func RunFusion(ctx context.Context, r Runner, n model.Node, cfg fusion.Config, c
 			return
 		}
 	}
+	started := report.StartedAt
+	report, err = runFusionStages(ctx, bounded, n, cfg)
+	report.StartedAt = started
+	return
+}
+
+type fusionPhase string
+
+const (
+	fusionBaseline fusionPhase = "baseline"
+	fusionSpeed    fusionPhase = "speed"
+)
+
+func fusionRemaining(ctx context.Context) int {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return 0
+	}
+	return max(0, int(time.Until(deadline).Seconds()))
+}
+
+func runFusionStages(ctx context.Context, r fusionBoundedRunner, n model.Node, cfg fusion.Config) (fusion.Report, error) {
+	wall := fusionRemaining(ctx)
+	if wall < 1 {
+		report := fusion.NewReport(cfg)
+		report.Status = "timeout"
+		return report, context.DeadlineExceeded
+	}
+	baseWall := wall
+	if cfg.Speed {
+		capSeconds := 180
+		if cfg.Hardware {
+			capSeconds = 240
+		}
+		baseWall = min(capSeconds, wall)
+	}
+	baseEngine := baseWall
+	if cfg.Speed {
+		baseEngine = max(1, baseWall-min(30, baseWall/4))
+	}
+	baseCtx, baseCancel := context.WithTimeout(ctx, time.Duration(baseWall)*time.Second)
+	base, raw, baseErr := fusionRunPhase(baseCtx, r, n, cfg, fusionBaseline, baseEngine, baseWall)
+	baseCancel()
+	base.Speed = cfg.Speed
+	if !cfg.Speed {
+		return base, baseErr
+	}
+	if len(raw) == 0 || baseErr != nil || !fusionHasComponents(raw) {
+		return base, baseErr
+	}
+	stages := []fusion.StageRecord{fusion.RecordStage("baseline", base, raw)}
+	remaining := fusionRemaining(ctx)
+	if remaining < 10 || ctx.Err() != nil {
+		speed := fusion.NewReport(cfg)
+		speed.Status = "partial"
+		speed.Error = "speed stage skipped: insufficient remaining overall budget"
+		phaseErr := error(nil)
+		if ctx.Err() != nil {
+			phaseErr = ctx.Err()
+			speed.Error = phaseErr.Error()
+			speed.Status = "canceled"
+			if errors.Is(phaseErr, context.DeadlineExceeded) {
+				speed.Status = "timeout"
+			}
+		}
+		speed.Finish(phaseErr)
+		stages = append(stages, fusion.StageRecord{Name: "speed", Attempted: false, Status: "skipped", Error: speed.Error})
+		return fusion.MergeSpeed(base, raw, speed, nil, stages), phaseErr
+	}
+	engine := max(1, remaining-min(60, remaining/4))
+	speedCtx, speedCancel := context.WithTimeout(ctx, time.Duration(remaining)*time.Second)
+	speed, speedRaw, speedErr := fusionRunPhase(speedCtx, r, n, cfg, fusionSpeed, engine, remaining)
+	speedCancel()
+	stages = append(stages, fusion.RecordStage("speed", speed, speedRaw))
+	return fusion.MergeSpeed(base, raw, speed, speedRaw, stages), speedErr
+}
+
+func fusionHasComponents(data []byte) bool {
+	var report struct {
+		Components []json.RawMessage `json:"components"`
+	}
+	return json.Unmarshal(data, &report) == nil && len(report.Components) > 0
+}
+
+func fusionRunPhase(ctx context.Context, r fusionBoundedRunner, n model.Node, cfg fusion.Config, phase fusionPhase, engineSeconds, wallSeconds int) (report fusion.Report, raw json.RawMessage, err error) {
+	report = fusion.NewReport(cfg)
+	defer func() { report.Finish(err) }()
 	token := make([]byte, 16)
 	if _, err = rand.Read(token); err != nil {
 		return
 	}
 	runDir := "/tmp/mpx-fusion-" + hex.EncodeToString(token)
-	seconds := cfg.TimeoutSeconds
-	if deadline, ok := ctx.Deadline(); ok {
-		seconds = max(1, int((time.Until(deadline)+time.Second-1)/time.Second))
-	}
-	out, runErr := bounded.RunBounded(ctx, n, fusionRunScript(cfg, runDir, seconds), nil, fusionCaptureLimit)
+	out, runErr := r.RunBounded(ctx, n, fusionPhaseScript(cfg, phase, runDir, engineSeconds, wallSeconds), nil, fusionCaptureLimit)
 	// Recover from transport cancellation with a separate, tightly bounded SSH
 	// cleanup. If the connection is gone, the remote trap/watchdog still owns it.
 	if ctx.Err() != nil || errors.Is(runErr, ErrOutputLimit) {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		recovered, cleanupErr := bounded.RunBounded(cleanupCtx, n, fusionRecoverScript(runDir), nil, fusionCaptureLimit)
+		recovered, cleanupErr := r.RunBounded(cleanupCtx, n, fusionRecoverScript(runDir), nil, fusionCaptureLimit)
 		cleanupCancel()
 		if len(recovered) > len(out) {
 			out = recovered
@@ -115,6 +199,7 @@ func RunFusion(ctx context.Context, r Runner, n model.Node, cfg fusion.Config, c
 	out = strings.TrimPrefix(out, "MPX_FUSION_TIMEOUT\n")
 	overflow := strings.HasPrefix(out, "MPX_FUSION_OVERFLOW\n")
 	out = strings.TrimPrefix(out, "MPX_FUSION_OVERFLOW\n")
+	raw = fusion.OfficialData(out)
 	report.Capture(out)
 	if overflow {
 		report.Truncated = true
@@ -188,7 +273,15 @@ printf '%s' `+shellQuote(fusion.Notice)+` > "$dir/NOTICE.goecs"
 }
 
 func fusionArguments(cfg fusion.Config, seconds int) string {
-	return fmt.Sprintf("-menu=false -l=zh -json=- -privacy=true -upload=false -log=false -timeout=%ds -hardware-budget=%ds -cpu=%t -memory=%t -disk=%t -diskmc=false -speed=%t -spnum=2 -ut=true -utregion=20 -utipver=auto -ut-concurrency=20 -basic=true -security=true -email=true -backtrace=true -nt3=%t -nt3loc=GZ -nt3t=ipv4 -ping=true -ping-scope=auto -tgdc=false -web=false -tcp=false", seconds, max(1, min(seconds, 120)), cfg.Hardware, cfg.Hardware, cfg.Hardware, cfg.Speed, cfg.Speed)
+	return fusionPhaseArguments(cfg, fusionBaseline, seconds)
+}
+
+func fusionPhaseArguments(cfg fusion.Config, phase fusionPhase, seconds int) string {
+	speed := phase == fusionSpeed
+	hardware := cfg.Hardware && !speed
+	core := !speed
+	routes := cfg.Speed && !speed
+	return fmt.Sprintf("-menu=false -l=zh -json=- -privacy=true -upload=false -log=false -timeout=%ds -hardware-budget=%ds -cpu=%t -memory=%t -disk=%t -diskmc=false -speed=%t -spnum=2 -ut=%t -utregion=20 -utipver=auto -ut-concurrency=20 -basic=%t -security=%t -email=%t -backtrace=%t -nt3=%t -nt3loc=GZ -nt3t=ipv4 -ping=%t -ping-scope=auto -tgdc=false -web=false -tcp=false", seconds, max(1, min(seconds, 120)), hardware, hardware, hardware, speed, core, core, core, core, core, routes, core)
 }
 
 // The session leader includes the binary and every descendant. Auxiliary
@@ -219,6 +312,10 @@ stop_owned() {
 `
 
 func fusionRunScript(cfg fusion.Config, runDir string, seconds int) string {
+	return fusionPhaseScript(cfg, fusionBaseline, runDir, seconds, seconds)
+}
+
+func fusionPhaseScript(cfg fusion.Config, phase fusionPhase, runDir string, engineSeconds, wallSeconds int) string {
 	payload := `set -eu
 ` + fusionTreeCleanup + `
 cd ` + shellQuote(runDir) + `
@@ -233,7 +330,7 @@ clean_engine() {
 }
 trap clean_engine EXIT
 trap 'exit 143' INT TERM HUP
-` + shellQuote(FusionBinPath) + ` ` + fusionArguments(cfg, seconds) + ` > stream 2>&1 &
+` + shellQuote(FusionBinPath) + ` ` + fusionPhaseArguments(cfg, phase, engineSeconds) + ` > stream 2>&1 &
 engine=$!
 printf '%s\n' "$engine" > engine
 set +e
@@ -269,7 +366,7 @@ trap 'exit 143' TERM HUP
 setsid bash -c ` + shellQuote(payload) + ` < /dev/null &
 group=$!
 printf '%s\n' "$group" > "$d/pgid"
-setsid bash -c 'sleep "$1"; touch "$3/timeout"; kill -TERM "$2"' _ ` + strconv.Itoa(seconds) + ` "$$" "$d" < /dev/null > /dev/null 2>&1 &
+setsid bash -c 'sleep "$1"; touch "$3/timeout"; kill -TERM "$2"' _ ` + strconv.Itoa(wallSeconds) + ` "$$" "$d" < /dev/null > /dev/null 2>&1 &
 timer=$!
 setsid bash -c 'while kill -0 "$1" 2>/dev/null; do sleep 1; done; kill -TERM "$2"' _ "$PPID" "$$" < /dev/null > /dev/null 2>&1 &
 monitor=$!

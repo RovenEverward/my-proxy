@@ -444,7 +444,7 @@ func TestDiagnosticCLIFusionTableAndJSONPreserveEvidence(t *testing.T) {
 		if err := diagnosticRemoteOutput(cmd, raw); err != nil {
 			t.Fatal(err)
 		}
-		for _, text := range []string{"健康: 可达 是", "Fusion partial fixture", "体检引擎: fusion", "v0.1.29", "状态: partial", "2026-01-01", "1000 ms", "900s", "测速: 是", "硬件测试: 否", "报告上传: 否", "Actual upstream report\nNetwork: fixture ISP\n", "one module failed", "已截断", "upstream warning", "Fusion 模块: system", "goecs.system/v1", "congestion_control", "cubic", "future-module", "measured_fact", "42"} {
+		for _, text := range []string{"健康: 可达 是", "Fusion partial fixture", "体检引擎: fusion", "v0.1.29", "状态: partial", "2026-01-01", "1000 ms", "900s", "测速: 是", "硬件测试: 否", "报告上传: 否", "Actual upstream report\nNetwork: fixture ISP\n", "one module failed", "已压缩或截断", "upstream warning", "Fusion 模块: system", "goecs.system/v1", "congestion_control", "cubic", "future-module", "measured_fact", "42"} {
 			if !strings.Contains(out.String(), text) {
 				t.Errorf("combined=%v missing %q: %s", combined, text, out.String())
 			}
