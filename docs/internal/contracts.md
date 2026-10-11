@@ -239,7 +239,7 @@ CSV 的七列是 `用户名,流量上限,到期时间,可用性,重置策略,入
 - `--limit` 走 **1024 进制**(`1GB` = 2³⁰ 字节)。直接往 `/api` 塞十进制数会得到另一个数。
 - `--expire` 收 `YYYY-MM-DD`,解释成**当地时区当天 23:59:59**。`--expire 2030-01-01` 存成 `2030-01-01T15:59:59Z`(Asia/Shanghai)。
 
-第二核心命令：`node install <id> --core sing-box [--version vX.Y.Z]`、`node config <id> --core sing-box`，默认仍为 Xray。`node core show/edit <id> <xray|sing-box>` 对应 `GET/PUT /api/nodes/{id}/cores/{core}`，只能修改 API 端口、配置路径与服务名，下发哈希/时间由控制面维护。已部署 sing-box 的位置元数据变更返回 409，合法 no-op 允许；碰撞、非绝对配置路径和不安全服务名返回 400。`POST /api/nodes/{id}/install?core=sing-box&version=vX.Y.Z` 使用官方源码 stats 构建。QUIC 参数、客户端兼容与重启边界见 [Hysteria2/TUIC](../user/guides/quic-protocols.md)。
+第二核心命令：`node install <id> --core sing-box [--version vX.Y.Z]`、`node config <id> --core sing-box`，默认仍为 Xray。`node core show/edit <id> <xray|sing-box>` 对应 `GET/PUT /api/nodes/{id}/cores/{core}`，只能修改 API 端口、配置路径与服务名，下发哈希/时间由控制面维护。已部署 sing-box 的位置元数据变更返回 409，合法 no-op 允许；碰撞、非绝对配置路径和不安全服务名返回 400。`POST /api/nodes/{id}/install?core=sing-box&version=vX.Y.Z` 使用官方源码 stats 构建。QUIC 参数、客户端兼容与重启边界见 Hysteria2/TUIC（用户指南待迁移）。
 
 `node config` 与 `node sync` 是两回事:**前者只打印,后者真下发并重启**。改结构前先 `config` 看一眼。
 

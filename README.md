@@ -26,10 +26,10 @@
 
 - **免证书防探测**：原生支持 VLESS REALITY，零配置借用主流域名 TLS 指纹。
 - **用户与统一配额**：Xray 用户通过 gRPC 热更新；Hysteria2 / TUIC 使用独立凭据和逐用户计量，名单变化会重启该节点全部 QUIC 连接。
-- **用途订阅**：按日常、流媒体、下载和游戏用途选择候选与路由策略，保留原有直连、拦截规则。见 [用途订阅指南](docs/user/guides/purpose-subscriptions.md)。
-- **真实入口能力**：通过指定代理入口检测出口 IP、地区、YouTube 连通性和 Netflix 页面证据，按有效结果筛选用途候选。见 [能力检测指南](docs/user/guides/node-capabilities.md)。
-- **一键体检**：`mpx node diagnose ID` 或 `--all` 默认运行官方 Go ECS 融合怪 v0.2.12，汇总节点健康、配置漂移、全部获授权的真实代理入口与上游测评。测速默认开启，CPU、内存与磁盘压测需显式启用；有流量上限的原有体检可用 `--engine light`。见 [一键体检指南](docs/user/guides/node-diagnostics.md)。
-- **多协议与客户端**：按 `User-Agent` 下发 Clash Meta、sing-box 或 Base64 订阅；浏览器呈现用量与能力结果。Hysteria2 / TUIC 支持现代客户端及分享链接，见 [QUIC 节点指南](docs/user/guides/quic-protocols.md)。
+- **用途订阅**：按日常、流媒体、下载和游戏用途选择候选与路由策略，保留原有直连、拦截规则。
+- **真实入口能力**：通过指定代理入口检测出口 IP、地区、YouTube 连通性和 Netflix 页面证据，按有效结果筛选用途候选。
+- **一键体检**：`mpx node diagnose ID` 或 `--all` 默认运行官方 Go ECS 融合怪 v0.2.12，汇总节点健康、配置漂移、全部获授权的真实代理入口与上游测评。测速默认开启，CPU、内存与磁盘压测需显式启用；有流量上限的原有体检可用 `--engine light`。
+- **多协议与客户端**：按 `User-Agent` 下发 Clash Meta、sing-box 或 Base64 订阅；浏览器呈现用量与能力结果。Hysteria2 / TUIC 支持现代客户端及分享链接。
 - **节点平滑维护**：支持 `drain` 优雅排空模式，维护时不强踢活跃连接，新订阅平滑切走。
 - **高韧性运维**：下发前自动运行 `xray -test`，失败秒级回滚；节点掉线指数退避重试；内置 SQLite 在线热备与暂存换入。
 
@@ -98,7 +98,7 @@ mpx status         # 总览
 >
 > **明文 HTTP 的警告**：`--addr` 默认 `0.0.0.0:8080` 意味着管理接口和订阅都暴露在公网明文 HTTP 上，token 是唯一凭据。长期使用请在前面放一个 TLS 反向代理，再用 `--sub-prefix https://你的域名` 把订阅前缀换成 https（**前缀里不要带 `/sub`**，它是自动接上的）。
 >
-> `mpx init` 做的就是下面的第 1~5 步，只是替你在 VPS 上跑完了。想看清每一步、或要配 TLS 反代，[新手教程](docs/user/tutorial/getting-started.md) 仍是完整且推荐的路子。
+> `mpx init` 做的就是下面的第 1~5 步，只是替你在 VPS 上跑完了。想看清每一步、或要配 TLS 反代，各命令组的 `--help`（`mpx node add`、`mpx inbound add`、`mpx host add`）带可运行的例子。
 
 ### 装控制面
 
@@ -166,7 +166,7 @@ ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
 > ./mpx serve --db ~/mpx.db
 > ```
 
-> **生产环境部署？** 请阅读 [新手教程：从零搭建多节点代理服务](docs/user/tutorial/getting-started.md)。
+> **生产环境部署？** 见文档站的[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)，长期使用前在控制面前放 TLS 反向代理。
 
 ---
 
@@ -174,7 +174,7 @@ ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
 
 在线文档：**https://RovenEverward.github.io/my-proxy/**
 
-`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，分「使用指南」「参考手册」「内部工程」三个页签。推 `main` 后由 [.github/workflows/docs.yml](.github/workflows/docs.yml) 自动发布到 GitHub Pages；本地这样跑：
+`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，按教程、指南、参考、原理四类组织。推 `main` 后由 [.github/workflows/docs.yml](.github/workflows/docs.yml) 自动发布到 GitHub Pages；本地这样跑：
 
 ```bash
 npm install        # 装一次即可
@@ -182,18 +182,13 @@ npm run docs:dev   # 本地预览，改文件自动刷新，终端会打印访�
 npm run docs:build # 构建静态站到 docs/.vitepress/dist/
 ```
 
-markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user/)，内部工程文档在 [docs/internal/](docs/internal/)。
+markdown 原文在 `docs/` 下：`tutorial/`、`guides/`、`reference/`、`concepts/` 是用户文档；[docs/internal/](docs/internal/) 是内部工程文档，只留在仓库里，不进站点。
 
-### 📖 用户与运维指南
-- **索引**：[用户文档导航](docs/user/index.md)
-- **入门教程**：[从零搭建多节点代理管理服务](docs/user/tutorial/getting-started.md)
-- **终端用户**：[客户端订阅导入与 Web 仪表盘使用](docs/user/guides/client-setup.md)
-- **节点运维**：[节点安装、配置同步、平滑排空 (Drain) 与在线活跃查询](docs/user/guides/node-operations.md)
-- **用户管理**：[配额管理、周期重置、到期顺延与 CSV 批量导入导出](docs/user/guides/user-management.md)
-- **告警通知**：[Webhook 事件推送与到期/超限阈值配置](docs/user/guides/notifications.md)
-- **灾备迁移**：[在线热备、包校验与跨机器恢复实操](docs/user/guides/backup-and-restore.md)
-- **故障排查**：[Doctor 诊断指南与常见问题速查](docs/user/guides/troubleshooting.md)
-- **配置字典**：[Settings 全局配置与 UA 规则](docs/user/reference/settings.md) ｜ [协议组合矩阵](docs/user/reference/protocols.md) ｜ [CSV 格式规格](docs/user/reference/csv-format.md)
+### 📖 用户文档
+- **教程**：[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart) ｜ [在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)
+- **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [用 mpx doctor 排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
+- **参考**：[命令行](https://RovenEverward.github.io/my-proxy/reference/cli) ｜ [订阅设置](https://RovenEverward.github.io/my-proxy/reference/settings) ｜ [订阅接口](https://RovenEverward.github.io/my-proxy/reference/subscription)
+- **原理**：[控制面与节点](https://RovenEverward.github.io/my-proxy/concepts/architecture)
 
 ### 🛠 架构设计与内部决策
 - **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)

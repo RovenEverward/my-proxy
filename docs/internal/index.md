@@ -1,6 +1,6 @@
 # mpx 是怎么搭起来的
 
-本机一个入口,管若干台服务器上的 xray,并对外托管订阅。这一份自足:看完它,整体架构就清楚了。其余几份各回答一个问题,见[文末](#其他文档)。安装与日常操作看[使用指南](../user/index.md)。
+本机一个入口,管若干台服务器上的 xray,并对外托管订阅。这一份自足:看完它,整体架构就清楚了。其余几份各回答一个问题,见[文末](#其他文档)。安装与日常操作看[用户文档站](https://RovenEverward.github.io/my-proxy/)。
 
 ## 先说要解决什么
 
@@ -216,7 +216,7 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 ## 其他文档
 
 ### 用户帮助与运维指南
-- [用户手册导航](../user/index.md)：包含新手教程（Tutorial）、各场景运维指南（How-to Guides）与参考手册（Reference）。
+- [用户文档站](https://RovenEverward.github.io/my-proxy/)：教程、指南、参考与原理。
 
 ### 内部工程与决策文档
 | 文档 | 回答什么 |
