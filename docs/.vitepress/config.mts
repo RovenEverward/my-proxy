@@ -5,93 +5,64 @@ export default defineConfig({
   // 找得到;本地 `npm run docs:dev` 同样落在 /my-proxy/ 下,和线上一致。
   base: '/my-proxy/',
 
+  // docs/internal 是给维护者看的工程文档,保留在仓库里但不进公开站点。
+  srcExclude: ['internal/**'],
+
   lang: 'zh-CN',
-  title: 'mpx',
+  title: 'MPX',
   description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，本地命令行是全部入口。',
-  head: [['link', { rel: 'icon', href: '/logo.svg' }]],
+  head: [
+    ['link', { rel: 'icon', href: '/my-proxy/logo.svg' }],
+    ['meta', { name: 'color-scheme', content: 'light dark' }],
+    ['script', {}, '(() => {\n  let mode = "system"; try { mode = localStorage.getItem("theme") || "system"; } catch {}\n  const q = matchMedia("(prefers-color-scheme: dark)");\n  const apply = () => { document.documentElement.dataset.theme = mode === "system" ? (q.matches ? "dark" : "light") : mode; };\n  q.addEventListener("change", () => mode === "system" && apply());\n  window.cycleTheme = () => { mode = { system: "light", light: "dark", dark: "system" }[mode];\n    try { mode === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", mode); } catch {} apply(); };\n  apply();\n})();']
+  ],
+  appearance: false,
 
   themeConfig: {
     logo: '/logo.svg',
-    siteTitle: 'mpx',
+    siteTitle: 'MPX',
 
     nav: [
-      { text: '使用指南', link: '/user/' },
-      {
-        text: '参考手册',
-        items: [
-          { text: '全局配置字典', link: '/user/reference/settings' },
-          { text: '协议与传输层支持矩阵', link: '/user/reference/protocols' },
-          { text: '用户 CSV 导入导出规格', link: '/user/reference/csv-format' },
-          { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
-          { text: '节点综合体检', link: '/user/guides/node-diagnostics' }
-        ]
-      },
-      { text: '内部工程', link: '/internal/' }
+      { text: '教程', link: '/tutorial/quickstart' },
+      { text: '指南', link: '/guides/add-users' },
+      { text: '参考', link: '/reference/cli' },
+      { text: '原理', link: '/concepts/architecture' }
     ],
 
-    sidebar: {
-      '/user/': [
-        {
-          text: '开始',
-          items: [
-            { text: '文档导航', link: '/user/' },
-            { text: '从零搭建多节点代理管理服务', link: '/user/tutorial/getting-started' }
-          ]
-        },
-        {
-          text: '操作指南',
-          items: [
-            { text: '客户端订阅导入与使用', link: '/user/guides/client-setup' },
-            { text: '用途订阅与日常/流媒体分流', link: '/user/guides/purpose-subscriptions' },
-            { text: '节点运维与生命周期管理', link: '/user/guides/node-operations' },
-            { text: 'Hysteria2 与 TUIC 节点', link: '/user/guides/quic-protocols' },
-            { text: '节点出口与流媒体能力检测', link: '/user/guides/node-capabilities' },
-            { text: '节点综合体检', link: '/user/guides/node-diagnostics' },
-            { text: '用户与配额管理', link: '/user/guides/user-management' },
-            { text: '告警与到期通知配置', link: '/user/guides/notifications' },
-            { text: '备份与灾备恢复实操', link: '/user/guides/backup-and-restore' },
-            { text: '故障排查手册', link: '/user/guides/troubleshooting' }
-          ]
-        },
-        {
-          text: '参考速查',
-          items: [
-            { text: '全局配置字典', link: '/user/reference/settings' },
-            { text: '协议与传输层支持矩阵', link: '/user/reference/protocols' },
-            { text: '用户 CSV 导入导出规格', link: '/user/reference/csv-format' }
-          ]
-        }
-      ],
-      '/internal/': [
-        {
-          text: '概览',
-          items: [{ text: 'mpx 是怎么搭起来的', link: '/internal/' }]
-        },
-        {
-          text: '设计与契约',
-          items: [
-            { text: '对外契约', link: '/internal/contracts' },
-            { text: '数据模型与语义', link: '/internal/model' },
-            { text: '用途订阅验证记录', link: '/internal/purpose-validation' }
-          ]
-        },
-        {
-          text: '决策与现状',
-          items: [
-            { text: '关键决策与理由', link: '/internal/decisions' },
-            { text: '现状', link: '/internal/status' },
-            { text: '路线图', link: '/internal/roadmap' },
-            { text: '缺口与待定项', link: '/internal/open-questions' },
-            { text: 'QUIC 运行验证记录', link: '/internal/quic-validation' },
-            { text: '节点能力检测验证记录', link: '/internal/capability-validation' },
-            { text: '一键体检验证记录', link: '/internal/diagnostic-validation' }
-          ]
-        }
-      ]
-    },
+    socialLinks: [{ icon: 'github', link: 'https://github.com/RovenEverward/my-proxy' }],
+
+    sidebar: [
+      {
+        text: '教程',
+        items: [
+          { text: '快速开始', link: '/tutorial/quickstart' },
+          { text: '在本机试用', link: '/tutorial/local-trial' }
+        ]
+      },
+      {
+        text: '指南',
+        items: [
+          { text: '添加用户并分发订阅', link: '/guides/add-users' },
+          { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
+          { text: '用 mpx doctor 排查', link: '/guides/troubleshoot' }
+        ]
+      },
+      {
+        text: '参考',
+        items: [
+          { text: '命令行', link: '/reference/cli' },
+          { text: '订阅设置', link: '/reference/settings' },
+          { text: '订阅接口', link: '/reference/subscription' }
+        ]
+      },
+      {
+        text: '原理',
+        items: [{ text: '控制面与节点', link: '/concepts/architecture' }]
+      }
+    ],
 
     outline: { label: '本页目录', level: [2, 3] },
-    docFooter: { prev: '上一篇', next: '下一篇' },
+    docFooter: { prev: false, next: false },
     darkModeSwitchLabel: '外观',
     lightModeSwitchTitle: '切换到浅色',
     darkModeSwitchTitle: '切换到深色',
@@ -99,32 +70,8 @@ export default defineConfig({
     returnToTopLabel: '回到顶部',
     langMenuLabel: '切换语言',
 
-    search: {
-      provider: 'local',
-      options: {
-        translations: {
-          button: { buttonText: '搜索文档', buttonAriaLabel: '搜索文档' },
-          modal: {
-            displayDetails: '显示详情',
-            resetButtonTitle: '清除查询',
-            backButtonTitle: '返回',
-            noResultsText: '没有找到相关内容',
-            footer: {
-              selectText: '选择',
-              selectKeyAriaLabel: '回车',
-              navigateText: '切换',
-              navigateUpKeyAriaLabel: '上箭头',
-              navigateDownKeyAriaLabel: '下箭头',
-              closeText: '关闭',
-              closeKeyAriaLabel: 'Esc'
-            }
-          }
-        }
-      }
-    },
-
     footer: {
-      message: 'mpx — 自建 xray 多节点代理的控制面',
+      message: 'MPX — 自建多节点代理的控制面',
       copyright: '文档与代码同仓库维护'
     }
   }
