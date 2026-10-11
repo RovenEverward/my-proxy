@@ -58,7 +58,7 @@ ssh 要连跳板机,而订阅要发节点自己那个客户端能到达的地址
 
 批 5 确认 Xray 26.3.27 不接受这两个协议。issue #3 已通过独立 sing-box 服务实现 Hysteria2 与 TUIC，并将两核心用量计入同一用户配额。服务端采用官方源码带统计构建标签，不修改上游实现。
 
-操作步骤见 [Hysteria2 与 TUIC 节点](../user/guides/quic-protocols.md)，真实认证、计量、撤销及混合节点结果见 [QUIC 验证记录](quic-validation.md)。名单变化会重启该节点全部 QUIC 连接；Xray 已建立的 TCP 连接可能在用户摘除后继续传输。这些限制保留在指南中。
+操作步骤见 Hysteria2 与 TUIC 节点（用户指南待迁移），真实认证、计量、撤销及混合节点结果见 [QUIC 验证记录](quic-validation.md)。名单变化会重启该节点全部 QUIC 连接；Xray 已建立的 TCP 连接可能在用户摘除后继续传输。这些限制保留在指南中。
 
 ## 待确认项
 

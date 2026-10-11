@@ -46,7 +46,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 `node_status.cores` 保存每个第二核心的 active、version、observed_hash、stats_available 与 error；统计可用必须通过真实单用户 API 查询（空统计响应也有效）。QUIC-only 节点的旧摘要字段回落到 sing-box，混合节点分别观察两核心。
 
-上述扩展包含在 SQLite 完整快照中，无需改变备份归档格式。详细用户停用语义与尾部计量边界见 [Hysteria2/TUIC](../user/guides/quic-protocols.md)。
+上述扩展包含在 SQLite 完整快照中，无需改变备份归档格式。详细用户停用语义与尾部计量边界见 Hysteria2/TUIC（用户指南待迁移）。
 
 ## 语义
 
