@@ -1,5 +1,37 @@
 import { defineConfig } from 'vitepress'
 
+// 工程侧的侧栏由「设计」与「内部工程」两处共用:设计文档是入口,读完它再往下钻
+// 到契约、模型、决策。分成两套的话,从设计页点进契约页会换掉整条导航。
+const engineeringSidebar = [
+  {
+    text: '概览',
+    items: [
+      { text: 'mpx 设计', link: '/design' },
+      { text: 'mpx 是怎么搭起来的', link: '/internal/' }
+    ]
+  },
+  {
+    text: '设计与契约',
+    items: [
+      { text: '对外契约', link: '/internal/contracts' },
+      { text: '数据模型与语义', link: '/internal/model' },
+      { text: '用途订阅验证记录', link: '/internal/purpose-validation' }
+    ]
+  },
+  {
+    text: '决策与现状',
+    items: [
+      { text: '关键决策与理由', link: '/internal/decisions' },
+      { text: '现状', link: '/internal/status' },
+      { text: '路线图', link: '/internal/roadmap' },
+      { text: '缺口与待定项', link: '/internal/open-questions' },
+      { text: 'QUIC 运行验证记录', link: '/internal/quic-validation' },
+      { text: '节点能力检测验证记录', link: '/internal/capability-validation' },
+      { text: '一键体检验证记录', link: '/internal/diagnostic-validation' }
+    ]
+  }
+]
+
 export default defineConfig({
   // 项目页站点的地址是 https://<用户名>.github.io/<仓库名>/,资源必须带这个前缀才
   // 找得到;本地 `npm run docs:dev` 同样落在 /my-proxy/ 下,和线上一致。
@@ -15,6 +47,7 @@ export default defineConfig({
     siteTitle: 'mpx',
 
     nav: [
+      { text: '设计', link: '/design' },
       { text: '使用指南', link: '/user/' },
       {
         text: '参考手册',
@@ -62,32 +95,8 @@ export default defineConfig({
           ]
         }
       ],
-      '/internal/': [
-        {
-          text: '概览',
-          items: [{ text: 'mpx 是怎么搭起来的', link: '/internal/' }]
-        },
-        {
-          text: '设计与契约',
-          items: [
-            { text: '对外契约', link: '/internal/contracts' },
-            { text: '数据模型与语义', link: '/internal/model' },
-            { text: '用途订阅验证记录', link: '/internal/purpose-validation' }
-          ]
-        },
-        {
-          text: '决策与现状',
-          items: [
-            { text: '关键决策与理由', link: '/internal/decisions' },
-            { text: '现状', link: '/internal/status' },
-            { text: '路线图', link: '/internal/roadmap' },
-            { text: '缺口与待定项', link: '/internal/open-questions' },
-            { text: 'QUIC 运行验证记录', link: '/internal/quic-validation' },
-            { text: '节点能力检测验证记录', link: '/internal/capability-validation' },
-            { text: '一键体检验证记录', link: '/internal/diagnostic-validation' }
-          ]
-        }
-      ]
+      '/design': engineeringSidebar,
+      '/internal/': engineeringSidebar
     },
 
     outline: { label: '本页目录', level: [2, 3] },

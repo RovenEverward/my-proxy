@@ -208,7 +208,76 @@
   border-radius: 6px;
 }
 
-/* ── 5. 响应式 ───────────────────────────────────────────── */
+/* ── 5. 文档里的结构图 ───────────────────────────────────── */
+
+/* 图内颜色全走主题变量，深色模式不用另画一套 */
+.mpx-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.mpx-figure .mp-bx {
+  fill: var(--vp-c-bg-soft);
+  stroke: var(--vp-c-divider);
+  stroke-width: 1.5;
+}
+
+.mpx-figure .mp-bd {
+  fill: var(--vp-c-bg);
+  stroke: var(--vp-c-divider);
+  stroke-width: 1;
+}
+
+.mpx-figure .mp-ti {
+  fill: var(--vp-c-text-1);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.mpx-figure .mp-t {
+  fill: var(--vp-c-text-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mpx-figure .mp-s {
+  fill: var(--vp-c-text-3);
+  font-size: 12px;
+}
+
+.mpx-figure .mp-k {
+  fill: var(--vp-c-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mpx-figure .mp-ac {
+  fill: none;
+  stroke: var(--vp-c-brand-1);
+  stroke-width: 1.6;
+  opacity: 0.75;
+}
+
+.mpx-figure .mp-acd {
+  fill: none;
+  stroke: var(--vp-c-text-3);
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
+.mpx-figure .mp-ah {
+  fill: var(--vp-c-brand-1);
+  stroke: none;
+}
+
+.mpx-figure .mp-ahd {
+  fill: var(--vp-c-text-3);
+  stroke: none;
+}
+
+/* ── 6. 响应式 ───────────────────────────────────────────── */
 
 @media (max-width: 767px) {
   .mpx-row {

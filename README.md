@@ -182,7 +182,7 @@ npm run docs:dev   # 本地预览，改文件自动刷新，终端会打印访�
 npm run docs:build # 构建静态站到 docs/.vitepress/dist/
 ```
 
-markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user/)，内部工程文档在 [docs/internal/](docs/internal/)。
+markdown 原文仍在 `docs/` 目录下：[设计文档](docs/design.md) 在 `docs/` 根，用户文档在 [docs/user/](docs/user/)，内部工程文档在 [docs/internal/](docs/internal/)。
 
 ### 📖 用户与运维指南
 - **索引**：[用户文档导航](docs/user/index.md)
@@ -196,6 +196,7 @@ markdown 原文仍在 `docs/` 目录下，用户文档在 [docs/user/](docs/user
 - **配置字典**：[Settings 全局配置与 UA 规则](docs/user/reference/settings.md) ｜ [协议组合矩阵](docs/user/reference/protocols.md) ｜ [CSV 格式规格](docs/user/reference/csv-format.md)
 
 ### 🛠 架构设计与内部决策
+- **设计**：[它为什么要有、基本形态是什么、哪些事不做](docs/design.md)
 - **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
 - [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
 - [核心领域数据模型](docs/internal/model.md)
