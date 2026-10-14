@@ -18,8 +18,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 #
 # 默认只监听 127.0.0.1:8080(订阅和管理接口都不出这台机器)。要让客户端直接从公网
-# 取订阅就传 --addr 0.0.0.0:8080 —— 那等于把带 token 的接口摆到公网上,生产环境
-# 前面必须有个 TLS 反向代理。`mpx init` 就是按这个口径装的。
+# 取订阅就传 --addr 0.0.0.0:8080。同一个端口上订阅走 HTTP、管理接口走 HTTPS
+# (控制面首次启动时自己生成自签证书,CLI 按证书指纹认它),不需要域名和反向
+# 代理。`mpx init` 就是按这个口径装的。
 #
 # 二进制按顺序找:参数给的那个 → 脚本旁边的 mpx → 当前目录的 mpx → /tmp/mpx
 #               → GitHub Releases 的 linux 发布件 → 用本机 Go 从源码编。
@@ -79,7 +80,7 @@ usage() {
   sudo ./deploy/install.sh --addr 0.0.0.0:8080
 
 默认监听 127.0.0.1:8080。--addr 换成别的地址就写进 systemd 单元;0.0.0.0:8080
-会让订阅从公网可达,那种情况下前面必须有个 TLS 反向代理。
+会让订阅从公网可达;管理接口在同一端口上走 HTTPS(自签证书,按指纹认)。
 
 二进制按顺序找:参数 → 脚本旁边 → ./mpx → /tmp/mpx → GitHub Releases → 本机 Go 编译。
 EOF
@@ -316,26 +317,25 @@ cat <<EOF
 
 EOF
 
+FP="$(cat /var/lib/mpx/tls-fingerprint 2>/dev/null || true)"
+SHOWN=127.0.0.1:8080
+[[ -n "$ADDR" ]] && SHOWN="<这台机器的地址>:${BOUND##*:}"
+
 if [[ -z "$ADDR" ]]; then
 	cat <<EOF
-它只监听回环 —— 公网要用它,前面得有个 TLS 反向代理,或者从本机拉一条隧道:
+它只监听回环 —— 要从别的机器管它,拉一条隧道:
 
   ssh -N -L 8080:127.0.0.1:8080 root@<这台机器的地址>
-
-EOF
-else
-	cat <<EOF
-它监听的是回环以外的地址,订阅和管理接口从公网可达。管理接口认 token,但流量
-是明文的:生产环境前面必须有个 TLS 反向代理,别把 8080 直接暴露在公网上。
 
 EOF
 fi
 
 cat <<EOF
-在操作者机器上装好命令行(deploy/install-cli.sh,Windows 用
-deploy/install-cli.ps1),再接上它:
+同一个端口上:订阅走 HTTP,管理接口走 HTTPS(控制面的自签证书,指纹
+${FP:-<稍后 mpx status 里看>})。在操作者机器上装好命令行(deploy/install-cli.sh,
+Windows 用 deploy/install-cli.ps1),再接上它:
 
-  mpx login --server http://127.0.0.1:8080 --token '<管理 token>'
+  mpx login --server https://$SHOWN --token '<管理 token>' --fp '${FP:-<证书指纹>}'
 
 EOF
 

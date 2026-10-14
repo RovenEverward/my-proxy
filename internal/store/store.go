@@ -305,6 +305,9 @@ func (s *Store) migrate() error {
 	if err := s.migratePurposes(); err != nil {
 		return err
 	}
+	if err := s.migrateIdentity(); err != nil {
+		return err
+	}
 	return s.migrateDiagnostics()
 }
 

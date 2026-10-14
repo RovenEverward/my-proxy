@@ -91,7 +91,12 @@ var uiCmd = &cobra.Command{
 				profile = cfg.Current
 			}
 		}
-		s, err := ui.New(ln.Addr().String(), ui.Options{Upstream: up, Token: token, Allow: uiAllow, Profile: profile})
+		tr, err := transportFor(server)
+		if err != nil {
+			ln.Close()
+			return err
+		}
+		s, err := ui.New(ln.Addr().String(), ui.Options{Upstream: up, Token: token, Allow: uiAllow, Profile: profile, Transport: tr})
 		if err != nil {
 			ln.Close()
 			return err

@@ -1054,5 +1054,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Hosts:    len(hosts),
 		Users:    len(users),
 	}
+	out.TLSFingerprint = s.tlsFingerprint
 	writeJSON(w, http.StatusOK, out)
 }

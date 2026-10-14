@@ -632,6 +632,8 @@ type ControlStatus struct {
 	Version string `json:"version,omitempty"`
 	// Update 是更新检查的结论。没查过、或者查不成时字段基本是空的。
 	Update UpdateInfo `json:"update"`
+	// TLSFingerprint 是控制面自签证书的公钥指纹(SHA256:...),CLI 按它认人。
+	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
 
 	Counts   Counts        `json:"counts"`
 	Backoffs []NodeBackoff `json:"backoffs"`

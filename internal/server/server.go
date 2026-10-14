@@ -46,13 +46,15 @@ type StatusSource interface {
 
 // Server 持有控制面运行期需要的东西。
 type Server struct {
-	store   *store.Store
-	token   string
-	logger  *slog.Logger
-	mux     *http.ServeMux
-	nodeOps NodeOps
-	status  StatusSource
-	dbPath  string
+	store *store.Store
+	token string
+	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
+	tlsFingerprint string
+	logger         *slog.Logger
+	mux            *http.ServeMux
+	nodeOps        NodeOps
+	status         StatusSource
+	dbPath         string
 
 	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
 	// 由 serve.go 定在数据目录下(与 systemd StateDirectory 对齐);测试里没设的

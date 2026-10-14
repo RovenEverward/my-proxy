@@ -79,6 +79,7 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"用户", strconv.Itoa(st.Counts.Users)},
 		{"退避中的节点", backoff},
 		{"更新", updateText(st.Update)},
+		{"证书指纹", dash(st.TLSFingerprint)},
 	}
 }
 

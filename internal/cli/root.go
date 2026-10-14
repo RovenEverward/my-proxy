@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
+	"github.com/RovenEverward/my-proxy/internal/pin"
 )
 
 // 输出格式的取值。
@@ -20,10 +21,11 @@ const (
 
 // opts 是全局 flag 的落点。
 var opts struct {
-	server  string
-	token   string
-	profile string
-	output  string
+	server      string
+	token       string
+	fingerprint string
+	profile     string
+	output      string
 }
 
 // rootCmd 定义在包级:另一个文件里的 serveCmd 要挂到它上面。
@@ -59,6 +61,7 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&opts.fingerprint, "fp", "", "控制面证书指纹(SHA256:...),覆盖 MPX_FINGERPRINT 与配置文件")
 	rootCmd.PersistentFlags().StringVar(&opts.server, "server", "", "控制面地址,覆盖 MPX_SERVER 与配置文件")
 	rootCmd.PersistentFlags().StringVar(&opts.token, "token", "", "管理 token,覆盖 MPX_TOKEN 与配置文件")
 	// --profile 只注册这一次,而且必须是 persistent 的:login 也要用它,而根命令上
@@ -109,6 +112,7 @@ var loginCmd = &cobra.Command{
 		}
 		changedServer := cmd.Flags().Changed("server")
 		changedToken := cmd.Flags().Changed("token")
+		changedFP := cmd.InheritedFlags().Changed("fp")
 		// 三个 flag 都是根命令上的 persistent flag,所以要用 InheritedFlags 查 ——
 		// cmd.Flags() 只包含本命令自己注册的,查不到继承来的(恒为 false)。
 		changedProfile := cmd.InheritedFlags().Changed("profile")
@@ -116,7 +120,7 @@ var loginCmd = &cobra.Command{
 		// 什么都没给 = 看。给了 --profile 而没给地址/token 是"切换",不是"看":
 		// 切档本来就该只需要一个档名(令牌只在服务器上,切回来不该逼人去把它
 		// 翻出来),所以它不能落进"查看"这一支。
-		if !changedServer && !changedToken && !changedProfile {
+		if !changedServer && !changedToken && !changedProfile && !changedFP {
 			return showLogin(cfg)
 		}
 
@@ -140,6 +144,20 @@ var loginCmd = &cobra.Command{
 		if changedToken {
 			p.Token = opts.token
 		}
+		// 换了地址却没给指纹:旧指纹属于旧地址,留着只会在下次连接时报"不符"。
+		if changedServer && old.Server != p.Server {
+			p.Fingerprint = ""
+		}
+		if changedFP {
+			fp, err := pin.Normalize(opts.fingerprint)
+			if err != nil {
+				return err
+			}
+			p.Fingerprint = fp
+		}
+		if strings.HasPrefix(strings.ToLower(p.Server), "https://") && p.Fingerprint == "" {
+			return errors.New("https 地址必须带 --fp <证书指纹>;推荐直接用 mpx connect,它会显示指纹让你确认")
+		}
 		if cfg.Profiles == nil {
 			cfg.Profiles = map[string]Profile{}
 		}
@@ -157,6 +175,9 @@ var loginCmd = &cobra.Command{
 		// 只是让覆盖旧地址这件事在屏幕上留一行,出事时一眼看得见。
 		if hadOld && old.Server != p.Server {
 			fmt.Printf("配置档 %s 的地址:%s → %s\n", name, dash(old.Server), dash(p.Server))
+		}
+		if hadOld && old.Fingerprint != p.Fingerprint {
+			fmt.Printf("配置档 %s 的证书指纹:%s → %s\n", name, dash(old.Fingerprint), dash(p.Fingerprint))
 		}
 		if hadOld && old.Token != p.Token {
 			fmt.Printf("配置档 %s 的 token:%s → %s\n", name, maskToken(old.Token), maskToken(p.Token))
@@ -190,6 +211,9 @@ func showLogin(cfg Config) error {
 	}
 	fmt.Printf("server: %s\n", dash(server))
 	fmt.Printf("token:  %s\n", maskToken(token))
+	if fp, err := resolveFingerprint(server); err == nil && fp != "" {
+		fmt.Printf("指纹:   %s\n", fp)
+	}
 
 	names := cfg.names()
 	if len(names) == 0 {
