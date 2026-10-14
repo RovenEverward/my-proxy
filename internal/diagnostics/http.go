@@ -85,7 +85,6 @@ func (e *engine) request(ctx context.Context, url, method string, upload []byte,
 		args = append(args, "--config", `"$d/key"`)
 	}
 	args = append(args, "--url", shellQuote(url))
-	// Both 512-byte and 1024-byte shell ulimit units stay <= capBytes.
 	// curl --max-filesize rejects advertised large bodies; RLIMIT_FSIZE bounds
 	// old curl's unknown/chunked bodies as well, with no response body in stdout.
 	prep := `d=$(mktemp -d) || exit 1
@@ -132,7 +131,12 @@ printf 'header = "Key: %%s"\n' "$k" > "$d/key"
 `, e.cfg.AbuseIPDBKeyEnv)
 		}
 	}
-	command := prep + fmt.Sprintf("case $(uname -s) in Darwin|*BSD) ulimit -f %d ;; *) ulimit -f %d ;; esac\n", max(int64(1), capBytes/512), max(int64(1), capBytes/1024)) + strings.Join(args, " ") + ` <&3 2> "$d/error" &
+	// The script always runs under sh -c. POSIX sh counts ulimit -f in 512-byte
+	// blocks, and dash and bash in posix mode (bash run as sh) both do; only bash
+	// outside posix mode uses 1024. Dividing by 1024 on Linux halved the limit
+	// wherever /bin/sh is dash (Debian/Ubuntu), so curl was killed by SIGXFSZ
+	// (exit 153) halfway through a legitimate body.
+	command := prep + fmt.Sprintf("ulimit -f %d\n", max(int64(1), capBytes/512)) + strings.Join(args, " ") + ` <&3 2> "$d/error" &
 c=$!
 wait "$c"
 s=$?
