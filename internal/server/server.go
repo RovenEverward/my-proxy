@@ -6,13 +6,11 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -50,11 +48,13 @@ type Server struct {
 	token string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
-	logger         *slog.Logger
-	mux            *http.ServeMux
-	nodeOps        NodeOps
-	status         StatusSource
-	dbPath         string
+	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
+	deviceTouched map[int64]time.Time
+	logger        *slog.Logger
+	mux           *http.ServeMux
+	nodeOps       NodeOps
+	status        StatusSource
+	dbPath        string
 
 	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
 	// 由 serve.go 定在数据目录下(与 systemd StateDirectory 对齐);测试里没设的
@@ -178,24 +178,12 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/backup", s.handleBackup)
 	api.HandleFunc("POST /api/restore", s.handleRestore)
 
-	s.mux.Handle("/api/", s.requireAuth(s.rateLimit(s.apiLimiter, api)))
-}
+	api.HandleFunc("GET /api/devices", s.handleListDevices)
+	api.HandleFunc("DELETE /api/devices/{id}", s.handleDeleteDevice)
 
-// requireAuth 校验管理接口的 Bearer token。
-//
-// 只比对一个固定的管理 token,没有管理员表和权限矩阵:本工具的使用者就是
-// 运维本人,区分角色在这里没有意义。
-func (s *Server) requireAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.token != "" {
-			got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
-				writeError(w, http.StatusUnauthorized, "管理 token 不正确")
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
+	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
+	// 撞 token 等于不受限流。
+	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(api)))
 }
 
 // ---- 请求/响应工具 ----
