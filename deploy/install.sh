@@ -44,6 +44,31 @@ note() {
 	printf '    %s\n' "$1"
 }
 
+# >>> verify_release(install.sh 与 install-cli.sh 里逐字相同,internal/release 的测试会比对)
+sha256_of() {
+	if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+	elif command -v shasum >/dev/null; then shasum -a 256 "$1" | cut -d' ' -f1
+	else return 1; fi
+}
+# verify_release FILE NAME:按同一发布里的 SHA256SUMS 核对已下载的发布件 FILE。
+# 不做签名(决定见 docs/internal/update-rfc.md):防的是下载损坏、截断和错包,来源靠 HTTPS + GitHub。
+# 早于 SHA256SUMS 的旧版本没有清单:提示后照常安装。
+# 有清单却对不上,一律 die,不退回别的安装途径。
+verify_release() {
+	local file="$1" name="$2" base sums="$TMP/SHA256SUMS" want got
+	if [[ "$VERSION" == latest ]]; then base="$DOWNLOAD_BASE/latest/download"; else base="$DOWNLOAD_BASE/download/$VERSION"; fi
+	if ! $FETCH "$base/SHA256SUMS" > "$sums" 2>/dev/null; then
+		note "这个版本发布时还没有 SHA256SUMS,没法校验,照常安装"
+		return 0
+	fi
+	want="$(awk -v n="$name" '$2==n || $2=="*"n {print $1; exit}' "$sums")"
+	[[ -n "$want" ]] || die "SHA256SUMS 里没有 $name,拒绝安装"
+	got="$(sha256_of "$file")" || die "本机没有 sha256sum 或 shasum,没法校验发布件"
+	[[ "$got" == "$want" ]] || die "$name 的 sha256 与 SHA256SUMS 不符,拒绝安装(下载损坏或被替换)"
+	echo "==> sha256 ✓"
+}
+# <<< verify_release
+
 usage() {
 	cat <<'EOF'
 在控制面这台机器上安装或更新 mpx。
@@ -154,7 +179,7 @@ else
 			URL="$DOWNLOAD_BASE/download/$VERSION/$ARCHIVE"
 		fi
 		echo "==> 下载 $URL"
-		if $FETCH "$URL" > "$TMP/$ARCHIVE" 2>/dev/null && tar -xzf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null; then
+		if $FETCH "$URL" > "$TMP/$ARCHIVE" 2>/dev/null && verify_release "$TMP/$ARCHIVE" "$ARCHIVE" && tar -xzf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null; then
 			BIN="$(find "$TMP" -maxdepth 2 -type f -name mpx -print -quit)"
 			[[ -n "$BIN" ]] || note "发布件里没有 mpx"
 		else

@@ -115,6 +115,21 @@ try {
 		$zip = Join-Path $Tmp $Archive
 		try {
 			Invoke-WebRequest -Uri $Url -OutFile $zip -UseBasicParsing
+			# 核对同一发布里的 SHA256SUMS(不做签名,见 docs/internal/update-rfc.md)。
+			# 早于 SHA256SUMS 的旧版本没有清单,提示后照常安装。
+			$sums = $null
+			try { $sums = (Invoke-WebRequest -Uri ($Url.Substring(0, $Url.LastIndexOf('/')) + '/SHA256SUMS') -UseBasicParsing).Content } catch { }
+			if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
+			if (-not $sums) {
+				Write-Note '这个版本发布时还没有 SHA256SUMS,没法校验,照常安装'
+			} else {
+				$line = ($sums -split "`n") | Where-Object { ($_ -split '\s+')[1] -in @($Archive, "*$Archive") } | Select-Object -First 1
+				if (-not $line) { Die "SHA256SUMS 里没有 $Archive,拒绝安装" }
+				$want = ($line -split '\s+')[0].ToLower()
+				$got = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+				if ($got -ne $want) { Die "$Archive 的 sha256 与 SHA256SUMS 不符,拒绝安装(下载损坏或被替换)" }
+				Write-Host '==> sha256 ✓'
+			}
 			Expand-Archive -Path $zip -DestinationPath (Join-Path $Tmp 'extract') -Force
 			$found = Get-ChildItem -Path (Join-Path $Tmp 'extract') -Filter 'mpx.exe' -Recurse |
 				Select-Object -First 1

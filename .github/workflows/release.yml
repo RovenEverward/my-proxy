@@ -77,6 +77,15 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # SHA256SUMS 覆盖全部发布件,安装脚本按它核对下载的文件。不做签名:决定与理由见
+      # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
+      - name: SHA256SUMS
+        run: |
+          set -eu
+          cd dist
+          sha256sum mpx_* > SHA256SUMS
+          cat SHA256SUMS
+
       - name: 取出 tag 消息当发布说明
         id: notes
         env:
