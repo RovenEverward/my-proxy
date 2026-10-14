@@ -52,7 +52,6 @@ function asModelUser(v) {
   return o;
 }
 const userPath = n => "/api/users/" + encodeURIComponent(n);
-const shq = s => /^[A-Za-z0-9_.,:/@%+=-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`;
 async function readModify(name, change) {
   const u = asModelUser(await api(userPath(name)));
   change(u);
@@ -66,7 +65,7 @@ const STATUS_TABS = [["", "全部"], ["active", "正常"], ["limited", "已超�
 
 PAGES.users = {
   title: "用户", nav: ["管理", "users", 10], closeTo: "users",
-  count: () => USERS_TOTAL ?? "",
+  count: () => USERS_TOTAL ?? STATUS?.counts?.users ?? "",
   crumb: r => r[1] ? H`<a href="#users">用户</a><i>/</i><b>${r[1]}</b>` : H`<b>用户</b>`,
   async load(r) {
     const q = new URLSearchParams({ limit: PAGE_SIZE, offset: US.offset });

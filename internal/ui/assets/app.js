@@ -76,9 +76,11 @@ function expireCell(u) {
   const d = daysLeft(u.expire_at), cls = d < 0 ? "c-bad" : d <= EXPIRE_SOON_DAYS ? "c-warn" : "";
   return H`${ymd(new Date(u.expire_at))}<div class="sub ${cls}">${d < 0 ? `已过 ${-d} 天` : d === 0 ? "今天到期" : `剩 ${d} 天`}</div>`;
 }
+// shq:拼等价命令时按 shell 规则给参数加引号。
+const shq = s => /^[A-Za-z0-9_.,:/@%+=-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`;
 const avatar = n => H`<span class="av">${[...String(n)][0]?.toUpperCase() || "?"}</span>`;
 function nodeSt(n) {
-  if (!n.status) return stBadge("", "未巡检");
+  if (!n.status) return n.draining ? stBadge("info", "排水中") : stBadge("", "未巡检");
   if (!n.status.reachable) return stBadge("bad", "连不上");
   if (n.draining) return stBadge("info", "排水中");
   if (!n.status.active) return stBadge("warn", "核心未运行");
@@ -197,14 +199,16 @@ async function write(method, path, body, okText) {
   return res;
 }
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
-function confirmBox({ title, text, cmd, ok, danger, typed, run }) {
+// extra 是插在说明下面的表单;cmdOf(modal) 给了就随输入重算等价命令。
+function confirmBox({ title, text, cmd, ok, danger, typed, run, extra, cmdOf }) {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mb"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
-  ${cmd ? H`<div class="cmd mb">${cmd}</div>` : ""}<div class="err" id="modal-err" role="alert"></div></div>
+  ${extra || ""}${cmd || cmdOf ? H`<div class="cmd mb" id="modal-cmd">${cmd || ""}</div>` : ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const okb = $("#okb"), t = $("#typed");
+  if (cmdOf) { const upd = () => { $("#modal-cmd").textContent = cmdOf(m); }; m.oninput = m.onchange = upd; upd(); } else m.oninput = m.onchange = null;
   if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
   okb.addEventListener("click", async () => {
     okb.disabled = true; okb.classList.add("busy");

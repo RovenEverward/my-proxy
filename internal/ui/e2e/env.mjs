@@ -36,6 +36,7 @@ export async function startEnv() {
 
   // 记录转发:只记写请求(GET 是读,两边各自读多少次无所谓)。
   const log = [];
+  let last = null;
   const rec = http.createServer((req, res) => {
     const chunks = [];
     req.on("data", c => chunks.push(c));
@@ -43,7 +44,11 @@ export async function startEnv() {
       const body = Buffer.concat(chunks);
       const up = http.request(cpURL + req.url, { method: req.method, headers: req.headers }, r => {
         // 被限流(429)的那次会被重发,两边重发次数不定,不算进对照。
-        if (req.method !== "GET" && r.statusCode !== 429) log.push({ method: req.method, path: req.url, body: body.length ? body.toString() : "" });
+        if (req.method !== "GET" && r.statusCode !== 429) {
+          const e = { method: req.method, path: req.url, body: body.length ? body.toString() : "", status: r.statusCode, response: "" };
+          log.push(e); last = e;
+          r.on("data", c => { e.response += c; });
+        }
         res.writeHead(r.statusCode, r.headers); r.pipe(res);
       });
       up.on("error", e => { res.writeHead(502); res.end(String(e)); });
@@ -73,13 +78,19 @@ export async function startEnv() {
   return {
     link, origin: new URL(link).origin, cli, seed, token: TOKEN, cpURL,
     takeLog: () => log.splice(0, log.length),
+    // 最近一条写请求的控制面响应(状态码与原文),用来核对页面报的是不是原话。
+    lastResponse: () => last && { status: last.status, body: last.response },
     async stop() { for (const p of procs) p.kill(); rec.close(); await sleep(200); rmSync(dir, { recursive: true, force: true }); },
   };
 }
 
-// 把一条写请求摆成可比的样子:twin 用户名换成 <u>;各人各异的 id、订阅 token、
+// 把一条写请求摆成可比的样子:twin 的名字换成 <u>;各人各异的 id、订阅 token、
 // 创建时间去掉;时间统一成毫秒数(CLI 带本地时区偏移,浏览器给 Z,是同一刻)。
-export function normalize(reqs, names) {
+// opt.ids:twin 的数字 id(路径段与 id / node_id / inbound_id 字段)换成同一个占位;
+// opt.drop:PUT 里两边各自生成、本就不同的字段(如 REALITY 公钥)。
+export function normalize(reqs, names, opt = {}) {
+  const ids = opt.ids || [];
+  const idOf = v => ids.includes(String(v)) ? "<id>" : v;
   const isoRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
   const fixTimes = v => {
     if (typeof v === "string" && isoRe.test(v)) return Date.parse(v);
@@ -90,10 +101,13 @@ export function normalize(reqs, names) {
   return reqs.map(r => {
     let p = r.path;
     for (const n of names) p = p.split(encodeURIComponent(n)).join("<u>");
+    p = p.split("?")[0].split("/").map(idOf).join("/") + (p.includes("?") ? "?" + p.split("?")[1] : "");
     let body = r.body ? JSON.parse(r.body) : null;
     if (body && typeof body === "object") {
-      if (names.includes(body.username)) body.username = "<u>";
-      if (r.method === "PUT") { delete body.id; delete body.sub_token; delete body.created_at; }
+      for (const k of ["username", "name", "tag", "remark"]) if (names.includes(body[k])) body[k] = "<u>";
+      for (const k of ["id", "node_id", "inbound_id"]) if (k in body) body[k] = idOf(body[k]);
+      if (r.method === "PUT") for (const k of opt.drop || []) delete body[k];
+      if (r.method === "PUT" && "username" in body) { delete body.id; delete body.sub_token; delete body.created_at; }
       body = fixTimes(body);
     }
     return { method: r.method, path: p, body };

@@ -160,3 +160,13 @@ tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .search svg{width:14px;height:14px;flex:none}
 .links{grid-template-columns:minmax(0,1fr)}
 @media (max-width:860px){.use span.keep{display:inline}}
+/* M2:节点、入站 */
+.hrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.mt2{margin-top:2px}.mb14{margin-bottom:14px}.b6{font-weight:600}.fw4{font-weight:400}
+.ch.wrap{flex-wrap:wrap;row-gap:6px}
+.summary{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2)}.summary li{margin:2px 0}
+pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:12px/1.55 var(--mono);color:var(--ink2);overflow:auto;max-height:calc(100vh - 160px);white-space:pre}
+details.adv{margin:0 0 14px}details.adv>summary{cursor:pointer;font-size:12.5px;font-weight:530;color:var(--muted);margin-bottom:12px;list-style-position:inside}
+select.in{appearance:auto;padding-right:6px}
+.field[hidden],.chk[hidden]{display:none}
+.stat .v.f18{font-size:18px}.stat .v.f16{font-size:16px}
+.drawer>form{display:flex;flex-direction:column;flex:1;min-height:0}
