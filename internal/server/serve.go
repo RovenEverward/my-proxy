@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -70,9 +71,19 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)
 
+	// 自签证书:库里有就用,没有就生成。指纹另外落一份纯文本在库旁边,给
+	// mpx init 经 SSH 读回去打印接入命令用 —— 那一侧不该为了一个字符串去开库。
+	cert, fp, err := loadOrCreateIdentity(st)
+	if err != nil {
+		return err
+	}
+	srv.tlsFingerprint = fp
+	if err := writeFingerprintFile(FingerprintPath(opt.DBPath), fp); err != nil {
+		logger.Warn("写证书指纹文件失败(不影响服务)", "err", err)
+	}
+
 	httpSrv := &http.Server{
-		Addr:              opt.Addr,
-		Handler:           srv.Handler(),
+		Handler:           srv.plaintextAPIWarning(srv.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
 		// 不设 WriteTimeout:订阅响应要渲染几百个节点,给一个够用的上限比让它
 		// 在中途被切断好。读写超时留给反向代理那一层去定。
@@ -92,9 +103,16 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 
 	errCh := make(chan error, 1)
 	go func() {
+		ln, err := net.Listen("tcp", opt.Addr)
+		if err != nil {
+			errCh <- fmt.Errorf("监听 %s: %w", opt.Addr, err)
+			return
+		}
 		logger.Info("控制面已启动", "addr", opt.Addr, "db", opt.DBPath,
-			"auth", opt.Token != "")
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			"auth", opt.Token != "", "fingerprint", fp)
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"},
+			MinVersion: tls.VersionTLS12}
+		if err := httpSrv.Serve(newSniffListener(ln, tlsCfg)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("监听 %s: %w", opt.Addr, err)
 			return
 		}

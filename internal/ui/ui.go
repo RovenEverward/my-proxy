@@ -38,6 +38,9 @@ type Options struct {
 	Allow []string
 	// Profile 只用于页面上显示"连的是哪个控制面"。
 	Profile string
+	// Transport 是转发到控制面用的传输;https 控制面要用只认证书指纹的那种
+	// (见 internal/pin)。为空时用默认传输。
+	Transport http.RoundTripper
 }
 
 // Server 是一个已经绑定好端口的页面服务。
@@ -87,6 +90,7 @@ func New(addr string, opts Options) (*Server, error) {
 	}
 	up := opts.Upstream
 	s.proxy = &httputil.ReverseProxy{
+		Transport: opts.Transport,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(up)
 			r.Out.Host = up.Host

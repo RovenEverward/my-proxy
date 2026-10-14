@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 )
@@ -46,12 +47,16 @@ func newClient() (*Client, error) {
 	if server == "" {
 		return nil, errors.New("没配置控制面地址:先跑 mpx login --server URL --token TOKEN,或设置 MPX_SERVER")
 	}
+	tr, err := transportFor(server)
+	if err != nil {
+		return nil, err
+	}
 	return &Client{
 		server: strings.TrimSuffix(server, "/"),
 		token:  token,
 		// 超时按次给(见 doWithin),不在这里定一个套在所有接口上的值:读一条记录
 		// 和往节点上装核心的合理上限差三个数量级。
-		http: &http.Client{},
+		http: &http.Client{Transport: tr},
 	}, nil
 }
 
@@ -178,6 +183,7 @@ func (c *Client) doOnce(ctx context.Context, method, path string, payload []byte
 		return nil, 0, fmt.Errorf("连接控制面 %s 失败: %w", c.server, err)
 	}
 	defer resp.Body.Close()
+	warnPlaintext(resp)
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, 0, fmt.Errorf("读取响应: %w", err)
@@ -328,4 +334,15 @@ func dash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// plaintextWarned 保证明文弃用提示每个进程只打一次。
+var plaintextWarned sync.Once
+
+// warnPlaintext 把控制面挂在响应上的弃用提示(明文管理将被关闭)转给人看。
+// 打到 stderr:不能混进 --json 的输出里。
+func warnPlaintext(resp *http.Response) {
+	if msg := resp.Header.Get("X-Mpx-Warning"); msg != "" {
+		plaintextWarned.Do(func() { fmt.Fprintln(os.Stderr, "注意:"+msg) })
+	}
 }

@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"net/http"
+	"strings"
+
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/RovenEverward/my-proxy/internal/pin"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +17,9 @@ import (
 type Profile struct {
 	Server string `json:"server"`
 	Token  string `json:"token"`
+	// Fingerprint 是控制面自签证书的公钥指纹(SHA256:...)。https 地址必须有它:
+	// 控制面没有 CA 签的证书,CLI 只认这个指纹,做法同 SSH 的 known_hosts。
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // Config 是客户端自己记住的东西。
@@ -161,6 +168,46 @@ func resolve() (server, token string, err error) {
 	return firstNonEmpty(opts.server, os.Getenv("MPX_SERVER"), p.Server),
 		firstNonEmpty(opts.token, os.Getenv("MPX_TOKEN"), p.Token),
 		nil
+}
+
+// resolveFingerprint 找出连 server 时该认的证书指纹:--fp > MPX_FINGERPRINT >
+// 生效配置档里记的那个。配置档里的指纹只在地址也来自(或等于)这个配置档时才
+// 用 —— --server 临时指到别处时沿用旧指纹,只会得到一个莫名其妙的"指纹不符"。
+func resolveFingerprint(server string) (string, error) {
+	fp := firstNonEmpty(opts.fingerprint, os.Getenv("MPX_FINGERPRINT"))
+	if fp == "" {
+		cfg, err := loadConfig()
+		if err != nil {
+			return "", err
+		}
+		p, err := cfg.pick(firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE")))
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSuffix(p.Server, "/") == strings.TrimSuffix(server, "/") {
+			fp = p.Fingerprint
+		}
+	}
+	if fp == "" {
+		return "", nil
+	}
+	return pin.Normalize(fp)
+}
+
+// transportFor 造一个连 server 用的 HTTP 传输:https 地址必须带指纹并只认它,
+// http 地址用默认传输。
+func transportFor(server string) (*http.Transport, error) {
+	fp, err := resolveFingerprint(server)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(strings.ToLower(server), "https://") && fp == "" {
+		return nil, errors.New("控制面是 https 地址,但没有证书指纹:用 mpx connect 接入(会记下指纹),或加 --fp")
+	}
+	if !strings.HasPrefix(strings.ToLower(server), "https://") {
+		fp = ""
+	}
+	return pin.Transport(fp), nil
 }
 
 // pick 挑出生效的 profile。name 为空表示"用 current"。

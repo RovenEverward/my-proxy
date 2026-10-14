@@ -8,6 +8,7 @@
 | :--- | :--- | :--- | :--- |
 | `--server` | string | — | 控制面地址 |
 | `--token` | string | — | 管理 token |
+| `--fp` | string | — | 控制面证书指纹（`SHA256:...`），`https://` 地址必须有 |
 | `--profile` | string | 配置文件里的 `current` | 使用哪个配置档 |
 | `-o, --output` | string | `table` | `table` 或 `json` |
 | `-v, --version` | — | — | 打印版本 |
@@ -19,6 +20,8 @@
 1. 命令行参数 `--server` / `--token`
 2. 环境变量 `MPX_SERVER` / `MPX_TOKEN`
 3. 配置文件中所选配置档的 `server` / `token`
+
+证书指纹按 `--fp`、`MPX_FINGERPRINT`、配置档的 `fingerprint` 依次取；配置档里的指纹只在地址也是这个配置档的地址时才用。`https://` 地址没有指纹时命令直接报错，指纹不符时拒绝连接。
 
 配置档按 `--profile`、`MPX_PROFILE`、配置文件的 `current` 依次选择。
 
@@ -33,6 +36,11 @@
     "default": {
       "server": "http://127.0.0.1:8080",
       "token": "demo-token"
+    },
+    "vps": {
+      "server": "https://203.0.113.10:8080",
+      "token": "…",
+      "fingerprint": "SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg"
     }
   }
 }

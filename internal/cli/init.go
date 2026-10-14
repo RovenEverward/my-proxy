@@ -254,23 +254,24 @@ func runInit() error {
 
 	// ---- 收尾:告诉本机怎么管它 ----------------------------------------------
 
-	token := ""
+	token, fp := "", ""
 	tokenCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
 	if out, err := node.RunAs(tokenCtx, n, auth, "sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env"); err == nil {
 		token = strings.TrimSpace(out)
 	}
+	// 指纹由控制面首次启动时写在库旁边;读不到就让人去 mpx status 里看。
+	if out, err := node.RunAs(tokenCtx, n, auth, "cat /var/lib/mpx/tls-fingerprint"); err == nil {
+		fp = strings.TrimSpace(out)
+	}
 
+	server := "https://" + net.JoinHostPort(host, strconv.Itoa(apiPort))
 	fmt.Println()
 	fmt.Println("本机想管这台控制面就跑:")
-	if token != "" {
-		fmt.Printf("  mpx login --server http://%s:%d --token %s\n", host, apiPort, token)
-	} else {
-		fmt.Printf("  mpx login --server http://%s:%d --token <去 /etc/mpx/env 里拿>\n", host, apiPort)
-	}
+	fmt.Printf("  mpx login --server %s --token %s --fp %s\n", server,
+		firstNonEmpty(token, "<去 /etc/mpx/env 里拿>"), firstNonEmpty(fp, "<控制面证书指纹>"))
 	fmt.Println()
-	fmt.Println("注意:控制面监听着公网地址,走的是明文 HTTP,token 就是唯一的凭据。")
-	fmt.Println("自己长期用的话,前面该放一个 TLS 反向代理,再把订阅前缀换成 https 的域名。")
+	fmt.Println("管理接口走 HTTPS(控制面自签证书,CLI 按上面的指纹认它);订阅仍是同一个端口上的 HTTP。")
 	return nil
 }
 
