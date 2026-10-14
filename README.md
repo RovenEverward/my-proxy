@@ -182,7 +182,7 @@ npm run docs:dev   # 本地预览，改文件自动刷新，终端会打印访�
 npm run docs:build # 构建静态站到 docs/.vitepress/dist/
 ```
 
-markdown 原文在 `docs/` 下：`tutorial/`、`guides/`、`reference/`、`concepts/` 是用户文档；[docs/internal/](docs/internal/) 是内部工程文档，只留在仓库里，不进站点。
+markdown 原文在 `docs/` 下：`tutorial/`、`guides/`、`reference/`、`concepts/` 是用户文档；[设计文档](docs/design.md) 和 [docs/internal/](docs/internal/) 是工程文档，只留在仓库里，不进站点。
 
 ### 📖 用户文档
 - **教程**：[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart) ｜ [在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)
@@ -191,6 +191,7 @@ markdown 原文在 `docs/` 下：`tutorial/`、`guides/`、`reference/`、`conce
 - **原理**：[控制面与节点](https://RovenEverward.github.io/my-proxy/concepts/architecture)
 
 ### 🛠 架构设计与内部决策
+- **设计**：[它为什么要有、基本形态是什么、哪些事不做](docs/design.md)
 - **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
 - [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
 - [核心领域数据模型](docs/internal/model.md)

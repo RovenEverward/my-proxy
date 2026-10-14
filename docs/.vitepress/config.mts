@@ -5,8 +5,8 @@ export default defineConfig({
   // 找得到;本地 `npm run docs:dev` 同样落在 /my-proxy/ 下,和线上一致。
   base: '/my-proxy/',
 
-  // docs/internal 是给维护者看的工程文档,保留在仓库里但不进公开站点。
-  srcExclude: ['internal/**'],
+  // design.md 与 docs/internal 是给维护者看的工程文档,保留在仓库里但不进公开站点。
+  srcExclude: ['design.md', 'internal/**'],
 
   lang: 'zh-CN',
   title: 'MPX',
