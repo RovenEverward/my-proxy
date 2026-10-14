@@ -58,8 +58,10 @@
 .showcase-text code { white-space:nowrap; }
 /* mpx 的表格按字符数补空格，中文在终端里会错位；这里按列宽排版，单元格内容与实测输出一致 */
 .cli-table .c { display:inline-block; white-space:pre; }
-.shot { max-width:380px; justify-self:end; width:100%; }
-[data-theme=dark] .shot img { filter:brightness(.88); }
+.shot { max-width:440px; justify-self:end; width:100%; }
+.shot .only-dark { display:none; }
+[data-theme=dark] .shot .only-light { display:none; }
+[data-theme=dark] .shot .only-dark { display:block; }
 .showcase h2 { margin:0 0 8px; }
 .showcase pre { font-size:12px; color:var(--ink); }
 .start { padding-block:56px 72px; max-width:1120px; }
