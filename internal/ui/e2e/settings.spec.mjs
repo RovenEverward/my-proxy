@@ -104,23 +104,49 @@ test("识别规则:add / move / rm / reset 与 CLI 一致,删除和恢复默认�
 
 test("模板:set / del 与 CLI 一致(正文原样发出)", async ({ page }) => {
   await login(page, env);
-  const body = tpl.replace(/\s+$/, "") + "\n";
+  const builtin = await (await cp("/api/settings/templates/sing-box")).text();
+  const body = builtin.replace(/\s+$/, "") + "\n\n"; // 有改动才能保存
   env.takeLog();
-  await env.cli("settings", "template", "set", "sing-box", "-f", file("sb.json", (await (await cp("/api/settings/templates/sing-box")).text())));
+  await env.cli("settings", "template", "set", "sing-box", "-f", file("sb.json", body));
   const setCLI = normalize(env.takeLog(), []);
   await env.cli("settings", "template", "del", "sing-box");
   const delCLI = normalize(env.takeLog(), []);
   await page.goto(env.origin + "/#settings/templates");
-  await page.click("[data-act=tpl-open][data-f='sing-box']");
-  await expect(page.locator("#tpl-text")).not.toHaveValue("");
+  await expect(page.locator("tr[data-f='sing-box']")).toContainText("内置默认");
+  await page.click("button[data-act=tpl-open][data-f='sing-box']");
+  const ta = page.locator("#tpl-ed textarea");
+  await expect(ta).toHaveValue(builtin); // 原文,不经 JSON 重排
+  await expect(page.locator("#tpl-save")).toBeDisabled();
+  await ta.fill(body);
+  await expect(page.locator("#tpl-save")).toBeEnabled();
   await page.click("#tpl-save");
   await expect(page.locator(".toast")).toContainText("已保存 sing-box 模板");
   expect(normalize(env.takeLog(), [])).toEqual(setCLI);
-  await page.click("[data-act=tpl-del][data-f='sing-box']");
+  await expect(page.locator("tr[data-f='sing-box']")).toContainText("自定义");
+  await page.click("button[data-act=tpl-del][data-f='sing-box']");
+  await expect(page.locator("#okb")).toBeDisabled(); // 危险操作:要输入格式名
+  await page.fill("#typed", "sing-box");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已删除 sing-box 模板");
+  await expect(page.locator(".toast")).toContainText("已恢复 sing-box 为内置模板");
   expect(normalize(env.takeLog(), [])).toEqual(delCLI);
-  expect(body).toBeTruthy();
+});
+
+test("模板:保存前校验并定位到出错行,坏模板不发请求", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#settings/templates");
+  await page.click("button[data-act=tpl-open][data-f='sing-box']");
+  const ta = page.locator("#tpl-ed textarea");
+  await expect(ta).not.toHaveValue("");
+  env.takeLog();
+  await ta.fill('{\n  "log": {},\n  "outbounds": [\n}\n');
+  await expect(page.locator("#tpl-ok")).toContainText("有错误");
+  await expect(page.locator("#tpl-save")).toBeDisabled();
+  await page.locator("#tpl-form").evaluate(f => f.requestSubmit());
+  await expect(page.locator("#tpl-err")).toContainText("第 4 行");
+  await expect(page.locator(".ed-g span.bad")).toHaveText("4");
+  await page.click("#tpl-revert");
+  await expect(page.locator("#tpl-ok")).toContainText("语法正确");
+  expect(normalize(env.takeLog(), [])).toEqual([]);
 });
 
 test("备份:点一下就下载归档,内容是 gzip", async ({ page }) => {

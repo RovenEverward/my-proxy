@@ -21,6 +21,8 @@ async function api(path, init = {}) {
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
     if (res.status === 429 && attempt < 3) { await sleep(1000 * (+res.headers.get("Retry-After") || 2)); continue; }
     const text = await res.text();
+    // asText:要原文(模板),不要把看着像 JSON 的正文解析掉。
+    if (init.asText && res.ok) return text;
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     if (!res.ok) throw new APIError(res.status, (body && body.error) || text || res.statusText);
@@ -37,7 +39,7 @@ const ICONS = {
   set: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>', check: '<path d="m5 12 5 5 9-10"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
   warn: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
   copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
@@ -183,7 +185,7 @@ PAGES.overview = {
 };
 
 /* ---------- 抽屉、确认框、提示 ---------- */
-function openDrawer(html) { const d = $("#drawer"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
+function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
   $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
