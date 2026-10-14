@@ -50,6 +50,10 @@ func TestSubscriptionPageServedToBrowsers(t *testing.T) {
 			t.Errorf("页面里缺 %q:\n%s", want, html)
 		}
 	}
+	// 页面自包含:二维码在服务端画成内联 SVG,不加载外部脚本。
+	if strings.Contains(html, "<script src=") || !strings.Contains(html, "<svg") {
+		t.Errorf("订阅页应内联二维码 SVG 且不引外部脚本:\n%s", html)
+	}
 	// 页面是给人看的,不能把 vless:// 明文撒在 HTML 里。
 	if strings.Contains(html, "vless://") {
 		t.Fatalf("页面里不该有分享链接明文:\n%s", html)
