@@ -46,10 +46,22 @@
 .band { padding-block:8px 24px; }
 .band .cards-4 { grid-template-columns:repeat(4,1fr); gap:24px 40px; padding-top:32px; border-top:1px solid var(--line); }
 .band h3 { font-size:15px; margin:0 0 6px; color:var(--ink); }
-.showcase { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:64px; align-items:start; padding-block:72px 24px; }
+.showcase { padding-block:72px 24px; display:flex; flex-direction:column; gap:72px; }
+.showcase-row { display:grid; gap:64px; align-items:center; }
+.showcase-admin { grid-template-columns:minmax(0,4fr) minmax(0,7fr); }
+.showcase-user { grid-template-columns:minmax(0,6fr) minmax(0,5fr); }
+.showcase-admin .code { margin:0; }
+.showcase-list { margin:16px 0 0; padding:0; list-style:none; }
+.showcase-list li { padding:10px 0; border-top:1px solid var(--line); font-size:14px; color:var(--muted); }
+.showcase-list li:last-child { border-bottom:1px solid var(--line); }
+.showcase-row > * { min-width:0; }
+.showcase-text code { white-space:nowrap; }
+/* mpx 的表格按字符数补空格，中文在终端里会错位；这里按列宽排版，单元格内容与实测输出一致 */
+.cli-table .c { display:inline-block; white-space:pre; }
+.shot { max-width:380px; justify-self:end; width:100%; }
+[data-theme=dark] .shot img { filter:brightness(.88); }
 .showcase h2 { margin:0 0 8px; }
 .showcase pre { font-size:12px; color:var(--ink); }
-.shot { position:sticky; top:84px; }
 .start { padding-block:56px 72px; max-width:1120px; }
 .start h2 { margin:0 0 20px; }
 .start td a { color:var(--ink); text-decoration:none; border-bottom:1px solid var(--line); }
@@ -57,10 +69,12 @@
 .start td:last-child { font:11.5px var(--mono); color:var(--faint); }
 
 @media (max-width:900px) {
-  .hero, .showcase { grid-template-columns:1fr; gap:40px; padding-block:40px 32px; }
+  .hero, .showcase-row { grid-template-columns:1fr; gap:28px; }
+  .hero, .showcase { padding-block:40px 32px; }
+  .showcase { gap:56px; }
+  .shot { justify-self:start; }
   .hero-fig { justify-self:start; max-width:420px; }
   .band .cards-4 { grid-template-columns:1fr 1fr; }
-  .shot { position:static; }
 }
 @media (max-width:600px) {
   .band .cards-4 { grid-template-columns:1fr; }
@@ -70,9 +84,15 @@
 }
 /* 迭代 2 */
 .hero-text, .showcase-text { min-width:0; }
-.showcase pre { font-size:11.5px; overflow-x:auto; }
-.shot img { aspect-ratio:4/3.4; object-fit:cover; object-position:top; }
+.showcase pre { font-size:12px; overflow-x:auto; }
 .md .fig-one { max-width:340px; }
 .hero h1 em { font-weight:300; }
 @media (max-width:600px) { .hero h1 { font-size:36px; } .hero { padding-top:28px; } }
 @media (max-width:600px){ .start th:last-child,.start td:last-child{display:none} }
+
+/* 代码块滚动条：细、低调 */
+pre, .md div[class*="language-"] pre, .md div[class*="language-"] { scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+pre::-webkit-scrollbar, .md div[class*="language-"]::-webkit-scrollbar, .md div[class*="language-"] pre::-webkit-scrollbar { height:6px; width:6px; }
+pre::-webkit-scrollbar-track, .md div[class*="language-"] pre::-webkit-scrollbar-track { background:transparent; }
+pre::-webkit-scrollbar-thumb, .md div[class*="language-"] pre::-webkit-scrollbar-thumb { background:var(--line); border-radius:3px; }
+pre:hover::-webkit-scrollbar-thumb, .md div[class*="language-"] pre:hover::-webkit-scrollbar-thumb { background:var(--faint); }
