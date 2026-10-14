@@ -44,13 +44,13 @@ title: MPX
 <h2>浏览器打开订阅地址，就是自助页</h2>
 <p>客户端拉同一条地址，拿到的是配置；浏览器打开，看到的是这一页：</p>
 <ul class="showcase-list">
-<li>状态、已用流量和上限、到期日与剩余天数</li>
-<li>各格式的订阅地址，每条带复制按钮</li>
-<li>订阅地址的二维码，手机扫码导入</li>
-<li>自己换一个订阅地址，旧地址立刻失效</li>
+<li>状态徽章、已用流量和上限、到期日与剩余天数</li>
+<li>各格式的订阅地址，每条带复制按钮，复制后有提示</li>
+<li>第一条地址的二维码，由控制面直接生成，不依赖外部脚本</li>
+<li>页面底部可以自己换订阅地址，换之前会先确认；换完旧地址立刻失效</li>
 </ul>
 </div>
-<figure class="tile shot"><img src="/subscription-dashboard.png" width="1200" height="1746" alt="浏览器中的订阅页"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/subscription-dashboard.png" width="1360" height="1882" alt="浏览器中的订阅页"><img class="only-dark" src="/subscription-dashboard-dark.png" width="1360" height="1882" alt="浏览器中的订阅页（深色）"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
 </div>
 </section>
 
