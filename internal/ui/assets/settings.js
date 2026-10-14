@@ -20,7 +20,13 @@ const SET_TABS = [["general", "通用"], ["rules", "识别规则"], ["templates"
 PAGES.settings = {
   title: "设置", nav: ["配置", "set", 50],
   crumb: r => H`<a href="#settings">设置</a><i>/</i><b>${(SET_TABS.find(t => t[0] === r[1]) || SET_TABS[0])[1]}</b>`,
-  async load() { return { settings: await api("/api/settings") }; },
+  async load(r) {
+    const settings = await api("/api/settings");
+    if (r[1] !== "templates") return { settings };
+    // 列表要显示大小与行数,所以把三份生效正文都取回来(GET 没自定义时返回内置默认)。
+    const tpl = Object.fromEntries(await Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])));
+    return { settings, tpl };
+  },
   render(d, r) {
     const t = SET_TABS.some(x => x[0] === r[1]) ? r[1] : "general";
     const head = H`<div class="ph"><div><h1>设置</h1><p>订阅、通知、识别规则与模板 · 对应 <code>mpx settings</code></p></div></div><div class="tabs">${SET_TABS.map(([k, l]) => H`<a class="${t === k ? "on" : ""}" href="#settings/${k}">${l}</a>`)}</div>`;
@@ -43,9 +49,7 @@ PAGES.settings = {
           ${W ? H`<button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">↑</button><button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">↓</button><button class="ib sm c-bad" data-act="rule-rm" data-i="${i}" aria-label="删除">${ic("x", "sm")}</button>` : ""}</div>`)}
         <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。想看某个 UA 会拿到什么:<code>mpx settings rules test '&lt;UA&gt;'</code></div></div>`;
     }
-    if (t === "templates") return H`${head}<div class="grid g3">${TPL_FORMATS.map(f => { const custom = !!(s.templates && s.templates[f]); return H`<div class="card stat"><div class="l">${ic("tpl")}<b class="c-ink b56">${f}</b><span class="ml-auto">${custom ? H`<span class="tag">自定义</span>` : H`<span class="sub">内置</span>`}</span></div>
-      <div class="s flex6 mt12"><button class="btn sm" data-act="tpl-open" data-f="${f}">${W ? (custom ? "查看 / 替换" : "查看 / 自定义") : "查看"}</button>${custom && can("DELETE", "/api/settings/templates/x") ? H`<button class="btn ghost sm c-bad" data-act="tpl-del" data-f="${f}">删除</button>` : ""}</div></div>`; })}</div>
-      <p class="sub mt">clash、links、base64-links 没有可定制的模板。</p>`;
+    if (t === "templates") return templatesTab(head, s, d.tpl || {});
     return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。等价于 <code>mpx backup</code>。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
       <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">恢复会整库替换、要重启控制面,只在终端里做,界面里不提供。</p><div class="cmd">mpx restore mpx-backup.tar.gz</div></div></div>`;
   },
@@ -71,26 +75,110 @@ PAGES.settings = {
   },
 };
 
-/* ---- 模板编辑 ---- */
+/* ---- 模板 ---- */
+// 每种格式的真实含义,出自 internal/render 与 internal/server/templates.go。
+const TPL_META = {
+  "clash-meta": { lang: "yaml", L: "YAML", ext: ".yaml", inject: "proxies", how: "注入 proxies,rule-providers / proxy-groups / rules / dns 原样带出;必须有顶层 rule-providers 段" },
+  "sing-box": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "注入节点 outbounds,并把 proxy / auto / direct / block 四个占位 tag 换成本次节点的版本" },
+  "xray": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "每个入口生成一份完整配置:节点作为第一条 outbound 插进模板的 outbounds,其余原样" },
+};
+const tplBytes = t => new TextEncoder().encode(t).length;
+const tplLines = t => t ? t.split("\n").length - (t.endsWith("\n") ? 1 : 0) : 0;
+const tplSize = n => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
+
+function templatesTab(head, s, bodies) {
+  const W = can("PUT", "/api/settings/templates/x"), D = can("DELETE", "/api/settings/templates/x");
+  const custom = f => !!(s.templates && s.templates[f]);
+  const n = TPL_FORMATS.filter(custom).length;
+  const rows = TPL_FORMATS.map(f => { const m = TPL_META[f], b = bodies[f] || "", c = custom(f); return H`<tr data-act="tpl-open" data-f="${f}" tabindex="0">
+    <td><div class="u"><span class="fi">${ic("tpl")}</span><div><b class="bold mono">${f}</b><div class="sub tpl-how">${m.how}</div></div></div></td>
+    <td class="hide-m"><span class="tag">${m.L}</span></td>
+    <td>${c ? H`<span class="pill on">自定义</span>` : H`<span class="pill">内置默认</span>`}</td>
+    <td class="num hide-m">${b ? tplSize(tplBytes(b)) : "—"}</td><td class="num hide-m">${b ? tplLines(b) : "—"}</td>
+    <td class="num"><div class="flex6 end"><button class="btn sm" data-act="tpl-open" data-f="${f}">${W ? (c ? "编辑" : "查看 / 自定义") : "查看"}</button>${c && D ? H`<button class="btn ghost sm c-bad" data-act="tpl-del" data-f="${f}">恢复内置</button>` : ""}</div></td></tr>`; });
+  return H`${head}
+  <div class="card pad16 mb tpl-intro"><div class="u"><span class="fi lg">${ic("tpl")}</span><div class="grow">
+    <b class="b6">模板是订阅的底稿</b><p class="sub mt4">用户拉 clash-meta / sing-box / xray 订阅时,控制面把这个人能用的节点注入模板,模板里的其余部分(分流规则、策略组、DNS…)原样下发给所有人。没存自定义模板的格式用内置默认。</p></div></div>
+    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS:点「查看 / 自定义」在内置模板上改,或先导出到本地改完再传:<div class="cmd mt8">mpx settings template get sing-box > sing-box.json</div><div class="cmd">mpx settings template set sing-box -f sing-box.json</div></div></div>` : ""}</div>
+  <div class="card"><div class="ch">模板<small>· ${n} 个自定义 / ${TPL_FORMATS.length} 种格式</small></div>
+    <div class="tw"><table class="tpl-t"><thead><tr><th>格式</th><th class="hide-m">语言</th><th>状态</th><th class="num hide-m">大小</th><th class="num hide-m">行数</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="row sub">clash(原版)、links、base64-links 不用模板:前者固定输出最小集合,后两者是纯分享链接。控制面不记录模板的修改时间。</div></div>`;
+}
+
+// jsonErrAt 找出 JSON 第一处语法错误的字符偏移(新版浏览器的 JSON.parse 报错不带位置)。
+function jsonErrAt(t) {
+  let i = 0;
+  const ws = () => { while (/[ \t\n\r]/.test(t[i] || "")) i++; };
+  const fail = () => { throw i; };
+  const str = () => { i++; while (i < t.length && t[i] !== '"') { if (t[i] === "\n") fail(); i += t[i] === "\\" ? 2 : 1; } if (t[i] !== '"') fail(); i++; };
+  const v = () => {
+    ws(); const c = t[i];
+    if (c === "{") { i++; ws(); if (t[i] === "}") { i++; return; } for (;;) { ws(); if (t[i] !== '"') fail(); str(); ws(); if (t[i] !== ":") fail(); i++; v(); ws(); if (t[i] === ",") { i++; continue; } if (t[i] === "}") { i++; return; } fail(); } }
+    if (c === "[") { i++; ws(); if (t[i] === "]") { i++; return; } for (;;) { v(); ws(); if (t[i] === ",") { i++; continue; } if (t[i] === "]") { i++; return; } fail(); } }
+    if (c === '"') return str();
+    const m = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(t.slice(i, i + 64)); if (!m) fail(); i += m[0].length;
+  };
+  try { v(); ws(); return i < t.length ? i : null; } catch (at) { return at; }
+}
+
+// validateTpl 在浏览器里先做一遍与服务端 validateTemplate 相同的检查,出错时尽量给出行号。
+// 服务端仍是最终裁决:YAML 这里只查得出常见错误,完整解析在服务端。
+function validateTpl(f, text) {
+  if (!text.trim()) return { msg: "模板不能是空的" };
+  if (TPL_META[f].lang === "json") {
+    try { JSON.parse(text); return null; } catch (e) {
+      let line, col; const lc = /line (\d+) column (\d+)/.exec(e.message), pos = /position (\d+)/.exec(e.message);
+      const at = lc ? null : pos ? +pos[1] : jsonErrAt(text);
+      if (lc) { line = +lc[1]; col = +lc[2]; } else if (at != null) { const pre = text.slice(0, at).split("\n"); line = pre.length; col = pre[pre.length - 1].length + 1; }
+      return { line, msg: `不是合法的 JSON${line ? `:第 ${line} 行第 ${col} 列附近` : ""}(${e.message.replace(/^JSON\.parse: /, "")})` };
+    }
+  }
+  const L = text.split("\n");
+  const tab = L.findIndex(l => /^\s*\t/.test(l)); if (tab >= 0) return { line: tab + 1, msg: `第 ${tab + 1} 行用 Tab 缩进了,YAML 只能用空格` };
+  const first = L.findIndex(l => l.trim() && !/^\s*#/.test(l) && l.trim() !== "---");
+  if (first >= 0 && !/^[^\s#-][^:]*:(\s|$)/.test(L[first])) return { line: first + 1, msg: "顶层必须是映射(key: value),不能是列表或纯文本" };
+  if (!L.some(l => /^(rule-providers|"rule-providers"|'rule-providers')\s*:/.test(l))) return { msg: "缺顶层 rule-providers 段(proxies 的插入点),服务端会拒收" };
+  return null;
+}
+
 async function templateDrawer(f) {
   let text = "";
-  try { text = await api("/api/settings/templates/" + f, { headers: { Accept: "text/plain" } }); } catch (e) { toast(e.message, true); return; }
-  if (typeof text !== "string") text = JSON.stringify(text, null, 2);
-  const W = can("PUT", "/api/settings/templates/x");
-  openDrawer(H`<form id="tpl-form"><div class="dh"><div style="min-width:0"><h2>${f} 模板</h2><div class="sub">当前生效的正文;没自定义时是内置默认的副本 · <code>mpx settings template get ${f}</code></div></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
-  <div class="db"><textarea class="in tpl" id="tpl-text" spellcheck="false" ${W ? "" : raw("readonly")}>${text}</textarea>
-    ${W ? H`<div class="flex8 mt"><label class="btn sm">从文件读…<input type="file" id="tpl-file" hidden></label><span class="sub">服务端先校验语法,不合法不存。等价于 <code>mpx settings template set ${f} -f FILE</code></span></div>` : ""}
-    <div class="err mt" id="tpl-err" role="alert"></div></div>
-  <div class="df"><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save">保存为自定义模板</button>` : ""}</div></form>`);
-  $("#tpl-file")?.addEventListener("change", async e => { const file = e.target.files[0]; if (file) $("#tpl-text").value = await file.text(); });
+  try { text = await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } }); } catch (e) { toast(e.message, true); return; }
+  const m = TPL_META[f], W = can("PUT", "/api/settings/templates/x"), c = !!(current.data?.settings?.templates || {})[f], orig = text;
+  openDrawer(H`<form id="tpl-form" novalidate><div class="dh"><span class="fi">${ic("tpl")}</span><div style="min-width:0"><h2><span class="mono">${f}</span> 模板 <span class="pill ${c ? "on" : ""}">${c ? "自定义" : "内置默认"}</span></h2><div class="sub ell">${m.how}</div></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  <div class="db tpl-db">
+    ${c ? "" : H`<div class="callout stone mb8 tpl-note"><div>这是内置默认的副本。${W ? "改动后保存,就成为 " : ""}${W ? H`<b>${f}</b> 的自定义模板,对所有用户生效。` : ""}</div></div>`}
+    <div id="tpl-ed"></div>
+    <div class="ed-s"><span class="tag">${m.L}</span><span id="tpl-pos">行 1,列 1</span><span id="tpl-size"></span><span id="tpl-dirty" class="c-warn"></span><span class="sp"></span><span id="tpl-ok"></span></div>
+    <div class="callout bad mt8 hidden" id="tpl-err" role="alert"></div>
+    <div class="field mt12"><label>等价命令</label><div class="cmd">mpx settings template get ${f} > ${f}${m.ext}</div>${W ? H`<div class="cmd">mpx settings template set ${f} -f ${f}${m.ext}</div>` : ""}</div></div>
+  <div class="df">${W ? H`<label class="btn sm ghost">${ic("up")}从文件读…<input type="file" id="tpl-file" accept="${m.ext},.txt,.yml" hidden></label>${m.lang === "json" ? H`<button type="button" class="btn sm ghost" id="tpl-fmt">格式化</button>` : ""}<button type="button" class="btn sm ghost" id="tpl-revert" disabled>撤销改动</button>` : ""}<span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save" disabled>保存</button>` : ""}</div></form>`, "wide");
+  const err = $("#tpl-err"), save = $("#tpl-save");
+  const showErr = (r, server, jump = true) => { err.classList.toggle("hidden", !r); err.innerHTML = r ? val(H`${ic("warn")}<div>${server ? H`<b>服务端拒收:</b>` : ""}${r.msg}${r.line ? H` <button type="button" class="lnk" id="tpl-goto">跳到第 ${r.line} 行</button>` : ""}</div>`) : ""; if (r?.line) { ed.mark(r.line, jump); $("#tpl-goto").onclick = () => { ed.mark(r.line); ed.focus(); }; } };
+  let t = 0;
+  const status = kind => {
+    const [ln, col] = ed.cursor(); $("#tpl-pos").textContent = `行 ${ln},列 ${col}`;
+    if (kind === "cursor") return;
+    const v = ed.value, dirty = v !== orig;
+    $("#tpl-size").textContent = `${tplLines(v)} 行 · ${tplSize(tplBytes(v))}`;
+    $("#tpl-dirty").textContent = dirty ? "● 未保存" : "";
+    if ($("#tpl-revert")) $("#tpl-revert").disabled = !dirty;
+    clearTimeout(t); t = setTimeout(() => { const r = validateTpl(f, ed.value); $("#tpl-ok").innerHTML = val(r ? H`<span class="c-bad">${ic("warn", "sm")}有错误</span>` : H`<span class="c-ok">${ic("check", "sm")}语法正确</span>`); if (save) save.disabled = !dirty || !!r; showErr(r, false, false); }, 400);
+  };
+  const ed = codeEditor($("#tpl-ed"), { text, lang: m.lang, readOnly: !W, onChange: status });
+  status();
+  $("#tpl-file")?.addEventListener("change", async e => { const file = e.target.files[0]; if (file) { ed.value = await file.text(); showErr(validateTpl(f, ed.value)); } e.target.value = ""; });
+  $("#tpl-fmt")?.addEventListener("click", () => { try { ed.value = JSON.stringify(JSON.parse(ed.value), null, 2) + "\n"; } catch { showErr(validateTpl(f, ed.value)); } });
+  $("#tpl-revert")?.addEventListener("click", () => { ed.value = orig; showErr(null); });
   $("#tpl-form").addEventListener("submit", async e => {
     e.preventDefault();
-    const btn = $("#tpl-save"); btn.disabled = true; btn.classList.add("busy");
+    const r = validateTpl(f, ed.value); if (r) { showErr(r); return; }
+    save.disabled = true; save.classList.add("busy");
     try {
       // 与 CLI 一样原样发正文,不做 JSON 序列化。
-      await api("/api/settings/templates/" + f, { method: "PUT", body: $("#tpl-text").value, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      await api("/api/settings/templates/" + f, { method: "PUT", body: ed.value, headers: { "Content-Type": "text/plain; charset=utf-8" } });
       toast(`已保存 ${f} 模板`); closeOverlays(); load(true, true);
-    } catch (e2) { $("#tpl-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
+    } catch (e2) { const l = /line (\d+)/.exec(e2.message); showErr({ msg: e2.message, line: l ? +l[1] : 0 }, true); save.disabled = false; save.classList.remove("busy"); }
   });
 }
 
@@ -135,6 +223,7 @@ Object.assign(ACTS, {
     toast("已开始下载 " + name);
   }),
   "tpl-open": d => templateDrawer(d.f),
-  "tpl-del": d => confirmBox({ title: `删除 ${d.f} 自定义模板?`, text: "之后这个格式回到内置模板。", cmd: `mpx settings template del ${d.f}`, ok: "删除模板", danger: true,
-    run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已删除 ${d.f} 模板`); await load(true, true); } }),
+  "tpl-del": d => confirmBox({ title: `恢复 ${d.f} 为内置模板?`, text: `会删除你存的 ${d.f} 自定义模板(不可撤销,控制面不留历史);之后所有用户的 ${d.f} 订阅改用内置默认。想留底,先用 mpx settings template get ${d.f} 导出一份。`,
+    cmd: `mpx settings template del ${d.f}`, ok: "删除自定义模板", danger: true, typed: d.f,
+    run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已恢复 ${d.f} 为内置模板`); closeOverlays(); await load(true, true); } }),
 });
