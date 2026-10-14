@@ -28,6 +28,16 @@ var uiAllow = []string{
 	"POST /api/users",
 	"PUT /api/users",
 	"DELETE /api/users",
+	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose
+	"POST /api/nodes",
+	"PUT /api/nodes",
+	"DELETE /api/nodes",
+	// 入站与入口:inbound add / edit / rm,host add(POST /api/inbounds/{id}/hosts)/ edit / rm
+	"POST /api/inbounds",
+	"PUT /api/inbounds",
+	"DELETE /api/inbounds",
+	"PUT /api/hosts",
+	"DELETE /api/hosts",
 }
 
 var uiFlags struct {

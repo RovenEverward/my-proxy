@@ -1,0 +1,227 @@
+// 节点、入站、入口页的写操作:每一条都和对应的 mpx node / inbound / host 命令对照。
+// 节点地址是 127.0.0.1:1,SSH 立刻被拒,于是下发、安装、体检都会失败 —— 正好检查页面
+// 把控制面的原话报出来。
+import { test, expect } from "@playwright/test";
+import { startEnv, normalize, login } from "./env.mjs";
+
+let env;
+const cliTry = async (...a) => { try { await env.cli(...a); } catch { /* 失败也要比请求 */ } };
+test.beforeAll(async () => {
+  env = await startEnv();
+  // 节点 1/2、3/4 两两是 twin;入站 1/2、3/4 分别挂在节点 1/2 上;入口 1/2 挂在入站 1/2 上。
+  for (const n of ["cli-n", "ui-n", "cli-rm", "ui-rm"]) await env.seed("node", "add", n, "--address", "127.0.0.1", "--ssh-port", "1");
+  for (const port of ["443", "2000"]) for (const node of ["1", "2"]) await env.seed("inbound", "add", "--node", node, "--protocol", "vless", "--port", port, "--security", "reality", "--sni", "www.cloudflare.com", "--reality-dest", "www.cloudflare.com:443", "--tag", `t-${node}-${port}`);
+  for (const inb of ["1", "2"]) await env.seed("host", "add", "--inbound", inb, "--remark", "入口", "--address", "a.example.com");
+});
+test.afterAll(async () => { await env?.stop(); });
+
+const take = (names, opt) => normalize(env.takeLog(), names, opt);
+async function openNode(page, id) {
+  await page.goto(env.origin + "/#nodes/" + id);
+  await expect(page.locator("h1")).toContainText(id === 2 ? "ui-n" : "ui-rm");
+}
+
+test("添加节点:与 mpx node add 一致", async ({ page }) => {
+  await login(page, env);
+  const names = ["cli-new", "ui-new"];
+  env.takeLog();
+  await env.cli("node", "add", "cli-new", "--address", "198.51.100.7", "--ssh-port", "2222", "--ssh-user", "ubuntu");
+  const fromCLI = take(names);
+  await page.goto(env.origin + "/#nodes");
+  await page.click("[data-act=node-new]");
+  await page.fill("#n-name", "ui-new");
+  await page.fill("#n-address", "198.51.100.7");
+  await page.fill("#n-ssh-port", "2222");
+  await page.fill("#n-ssh-user", "ubuntu");
+  await expect(page.locator("#n-cmd")).toHaveText("mpx node add ui-new --address 198.51.100.7 --ssh-port 2222 --ssh-user ubuntu");
+  await page.click("#n-save");
+  await expect(page.locator("h1")).toContainText("ui-new");
+  expect(take(names)).toEqual(fromCLI);
+});
+
+test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
+  await login(page, env);
+  const names = ["cli-n", "ui-n"], opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("node", "edit", "1", "--address", "127.0.0.9", "--ssh-user", "deploy");
+  const fromCLI = take(names, opt);
+  await openNode(page, 2);
+  await page.click("[data-act=node-edit]");
+  await page.fill("#n-address", "127.0.0.9");
+  await page.fill("#n-ssh-user", "deploy");
+  await expect(page.locator("#n-cmd")).toHaveText("mpx node edit 2 --address 127.0.0.9 --ssh-user deploy");
+  await page.click("#n-save");
+  await expect(page.locator(".toast")).toContainText("已更新节点 2");
+  expect(take(names, opt)).toEqual(fromCLI);
+});
+
+test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致", async ({ page }) => {
+  await login(page, env);
+  const opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("node", "drain", "1");
+  const drainCLI = take([], opt);
+  await env.cli("node", "undrain", "1");
+  const undrainCLI = take([], opt);
+  await openNode(page, 2);
+  await page.click("[data-act=node-drain]");
+  await page.click("[data-act=modal-cancel]");
+  expect(env.takeLog()).toEqual([]);
+  await page.click("[data-act=node-drain]");
+  await page.click("#okb");
+  await expect(page.locator("h1")).toContainText("排水中");
+  expect(take([], opt)).toEqual(drainCLI);
+  await page.click("[data-act=node-drain]"); // 结束排水不用确认
+  await expect(page.locator("[data-act=node-drain]")).toHaveText("排水");
+  expect(take([], opt)).toEqual(undrainCLI);
+});
+
+// 下发、安装、体检会 SSH 到节点:这里连不上,页面要把控制面给的原话留在确认框里。
+for (const [title, args, act, fill] of [
+  ["下发", ["node", "sync"], "node-sync", null],
+  ["安装(指定 sing-box 与版本)", ["node", "install", "--core", "sing-box", "--version", "1.12.0"], "node-install", async page => { await page.selectOption("#i-core", "sing-box"); await page.fill("#i-ver", "1.12.0"); await expect(page.locator("#modal-cmd")).toHaveText("mpx node install 2 --core sing-box --version 1.12.0"); }],
+  ["体检(默认参数)", ["node", "diagnose"], "node-diagnose", null],
+]) {
+  test(`${title}:与 CLI 请求一致,失败时显示控制面原话`, async ({ page }) => {
+    await login(page, env);
+    const opt = { ids: ["1", "2"] };
+    env.takeLog();
+    const [verb, sub, ...rest] = args;
+    await cliTry(verb, sub, "1", ...rest);
+    const fromCLI = take([], opt);
+    expect(fromCLI.length).toBe(1);
+    await openNode(page, 2);
+    await page.click(`[data-act=${act}]`);
+    if (fill) await fill(page);
+    await page.click("#okb");
+    const err = page.locator("#modal-err");
+    await expect(err).not.toBeEmpty({ timeout: 60_000 });
+    const res = env.lastResponse();
+    expect(take([], opt)).toEqual(fromCLI);
+    // 原话:页面显示的就是控制面这次响应里的 error。
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    await expect(err).toHaveText(JSON.parse(res.body).error);
+  });
+}
+
+test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async ({ page }) => {
+  await login(page, env);
+  const opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("inbound", "add", "--node", "1", "--protocol", "vless", "--port", "8080", "--network", "ws", "--ws-path", "/ws", "--max-users", "50");
+  await env.cli("inbound", "add", "--node", "1", "--protocol", "hysteria2", "--port", "8443", "--sni", "hy.example.com", "--cert-file", "/etc/c.pem", "--key-file", "/etc/k.pem");
+  const fromCLI = take([], opt);
+  await page.goto(env.origin + "/#nodes/2");
+  await page.click("[data-act=inb-new]");
+  await page.fill("#i-port", "8080");
+  await page.selectOption("#i-network", "ws");
+  await page.fill("#i-ws_path", "/ws");
+  await page.click("details.adv summary");
+  await page.fill("#i-max_users", "50");
+  await expect(page.locator("#i-cmd")).toHaveText("mpx inbound add --node 2 --protocol vless --port 8080 --network ws --ws-path /ws --max-users 50");
+  await page.click("#i-save");
+  await expect(page.locator(".toast")).toContainText("已创建入站");
+  await page.click("[data-act=inb-new]");
+  await expect(page.locator("#drawer.open #i-port")).toHaveValue(""); // 旧抽屉关上后还在 DOM 里,等新表单
+  await page.selectOption("#i-protocol", "hysteria2");
+  await expect(page.locator("#i-network")).toHaveValue("udp");
+  await expect(page.locator("#i-security")).toHaveValue("tls");
+  await page.fill("#i-port", "8443");
+  await page.fill("#i-sni", "hy.example.com");
+  await page.fill("#i-cert_file", "/etc/c.pem");
+  await page.fill("#i-key_file", "/etc/k.pem");
+  await expect(page.locator("#i-cmd")).toHaveText("mpx inbound add --node 2 --protocol hysteria2 --port 8443 --sni hy.example.com --cert-file /etc/c.pem --key-file /etc/k.pem");
+  await page.click("#i-save");
+  await expect(page.locator(".toast")).toContainText("已创建入站");
+  expect(take([], opt)).toEqual(fromCLI);
+});
+
+test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
+  await login(page, env);
+  const names = ["t-1-443", "t-2-443"], opt = { ids: ["1", "2"], drop: ["reality_pub", "short_ids"] };
+  env.takeLog();
+  await env.cli("inbound", "edit", "1", "--port", "9443", "--sni", "www.example.com", "--max-users", "10", "--mux");
+  const fromCLI = take(names, opt);
+  await page.goto(env.origin + "/#inbounds");
+  await page.click("[data-act=inb-edit][data-id='2']");
+  await page.fill("#i-port", "9443");
+  await page.fill("#i-sni", "www.example.com");
+  await page.click("details.adv summary");
+  await page.fill("#i-max_users", "10");
+  await page.check("input[name=mux]");
+  await expect(page.locator("#i-cmd")).toHaveText("mpx inbound edit 2 --port 9443 --sni www.example.com --max-users 10 --mux");
+  await page.click("#i-save");
+  await expect(page.locator(".toast")).toContainText("要下发节点 2 才生效");
+  expect(take(names, opt)).toEqual(fromCLI);
+});
+
+test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page }) => {
+  await login(page, env);
+  const opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("host", "add", "--inbound", "1", "--remark", "直连", "--port", "8443", "--alpn", "h2,http/1.1");
+  const addCLI = take([], opt);
+  await env.cli("host", "edit", "1", "--inbound", "1", "--address", "", "--remark", "备用");
+  const editCLI = take([], opt);
+  await env.cli("host", "rm", "1");
+  const rmCLI = take([], opt);
+
+  await page.goto(env.origin + "/#inbounds");
+  await page.click("[data-act=host-new][data-inb='2']");
+  await page.fill("#h-remark", "直连");
+  await page.fill("#h-port", "8443");
+  await page.fill("#h-alpn", "h2,http/1.1");
+  await expect(page.locator("#h-cmd")).toHaveText("mpx host add --inbound 2 --remark \"直连\" --port 8443 --alpn h2,http/1.1");
+  await page.click("#h-save");
+  await expect(page.locator(".toast")).toContainText("已创建对外入口");
+  expect(take([], opt)).toEqual(addCLI);
+
+  await page.click("[data-act=host-edit][data-id='2']");
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口 #2");
+  await page.fill("#h-address", "");
+  await page.fill("#h-remark", "备用");
+  await expect(page.locator("#h-cmd")).toHaveText('mpx host edit 2 --inbound 2 --remark \"备用\" --address ""');
+  await page.click("#h-save");
+  await expect(page.locator(".toast")).toContainText("已更新对外入口 2");
+  expect(take([], opt)).toEqual(editCLI);
+
+  await page.click("[data-act=host-edit][data-id='2']");
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口 #2");
+  await page.click("[data-act=host-rm]");
+  await page.click("[data-act=modal-cancel]");
+  expect(env.takeLog()).toEqual([]);
+  await page.click("[data-act=host-rm]");
+  await page.click("#okb");
+  await expect(page.locator(".toast")).toContainText("已删除对外入口 2");
+  expect(take([], opt)).toEqual(rmCLI);
+});
+
+test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", async ({ page }) => {
+  await login(page, env);
+  let opt = { ids: ["3", "4"] };
+  env.takeLog();
+  await env.cli("inbound", "rm", "3");
+  const inbCLI = take([], opt);
+  await page.goto(env.origin + "/#inbounds");
+  await page.click("[data-act=inb-edit][data-id='4']");
+  await page.click("[data-act=inb-rm]");
+  await expect(page.locator("#okb")).toBeDisabled();
+  await page.fill("#typed", "t-2-2000");
+  await page.click("#okb");
+  await expect(page.locator(".toast")).toContainText("已删除入站 4");
+  expect(take([], opt)).toEqual(inbCLI);
+
+  env.takeLog();
+  await env.cli("node", "rm", "3");
+  const nodeCLI = take([], opt);
+  await openNode(page, 4);
+  await page.click("[data-act=node-rm]");
+  await page.fill("#typed", "ui-r");
+  await expect(page.locator("#okb")).toBeDisabled();
+  await page.fill("#typed", "ui-rm");
+  await page.click("#okb");
+  await expect(page).toHaveURL(/#nodes$/);
+  expect(take([], opt)).toEqual(nodeCLI);
+  const r = await fetch(env.cpURL + "/api/nodes/4", { headers: { Authorization: "Bearer " + env.token } });
+  expect(r.status).toBe(404);
+});
