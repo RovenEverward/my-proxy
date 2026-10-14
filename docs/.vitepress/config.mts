@@ -44,7 +44,8 @@ export default defineConfig({
         items: [
           { text: '添加用户并分发订阅', link: '/guides/add-users' },
           { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
-          { text: '用 mpx doctor 排查', link: '/guides/troubleshoot' }
+          { text: '用 mpx doctor 排查', link: '/guides/troubleshoot' },
+          { text: '用 mpx ui 在浏览器里管理', link: '/guides/web-ui' }
         ]
       },
       {

@@ -170,3 +170,9 @@ select.in{appearance:auto;padding-right:6px}
 .field[hidden],.chk[hidden]{display:none}
 .stat .v.f18{font-size:18px}.stat .v.f16{font-size:16px}
 .drawer>form{display:flex;flex-direction:column;flex:1;min-height:0}
+/* M3:用途、设置 */
+.pad18{padding:18px}.pad16{padding:16px}.self-start{align-self:start}.flex8{display:flex;gap:8px;align-items:center}.flex6{display:flex;gap:6px}.end{justify-content:flex-end;margin-top:6px}
+.wrap8{flex-wrap:wrap;gap:8px}.grow{flex:1;min-width:0}.w18{width:18px}.w120{width:120px}.w160{width:160px}.ml-auto{margin-left:auto}.mt6{margin-top:6px}.mt12{margin-top:12px}.mb14{margin-bottom:14px}.b56{font-weight:560}.c-ink{color:var(--ink)}
+.callout.stone{background:var(--stone)}.hidden{display:none}
+textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textarea.tpl.short{min-height:300px}
+.ib.sm:disabled{opacity:.35;cursor:default}
