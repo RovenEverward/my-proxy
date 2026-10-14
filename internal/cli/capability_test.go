@@ -59,13 +59,24 @@ func runCapabilityRoot(t *testing.T, args ...string) (string, error) {
 	for _, cmd := range append([]*cobra.Command{rootCmd}, nodeCmd.Commands()...) {
 		for _, flags := range []*pflag.FlagSet{cmd.Flags(), cmd.PersistentFlags()} {
 			flags.VisitAll(func(f *pflag.Flag) {
-				if slice, ok := f.Value.(pflag.SliceValue); ok {
-					values := strings.Trim(f.DefValue, "[]")
-					if values == "" {
-						_ = slice.Replace(nil)
-					} else {
-						_ = slice.Replace(strings.Split(values, ","))
+				if _, ok := f.Value.(pflag.SliceValue); ok {
+					// pflag 的切片值内部另记一个「已设置」标记,Replace 与 f.Changed
+					// 都清不掉它;不换掉 Value,-count>1 时第二次 --targets 会追加到
+					// 上一次的结果后面。按类型换一个全新的值。
+					var defaults []string
+					if values := strings.Trim(f.DefValue, "[]"); values != "" {
+						defaults = strings.Split(values, ",")
 					}
+					fresh := pflag.NewFlagSet("reset", pflag.ContinueOnError)
+					switch f.Value.Type() {
+					case "stringSlice":
+						fresh.StringSlice(f.Name, defaults, "")
+					case "stringArray":
+						fresh.StringArray(f.Name, defaults, "")
+					default:
+						t.Fatalf("cannot reset %s flag --%s", f.Value.Type(), f.Name)
+					}
+					f.Value = fresh.Lookup(f.Name).Value
 				} else {
 					_ = f.Value.Set(f.DefValue)
 				}

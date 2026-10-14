@@ -68,13 +68,26 @@ func (LocalExecutor) Exec(ctx context.Context, script string, stdin []byte) (str
 // boundedScript protects remote execution too: each tool gets a wall-clock
 // watchdog and traps clean its child and watchdog on exit/disconnection.
 // Scripts use no persistent files outside a trap-cleaned private mktemp directory.
+//
+// The top-level shell owns that directory: it points TMPDIR at it and removes
+// it after waiting for the child. Leaving removal to the child's own EXIT trap
+// lost the directory whenever a signal hit the child before or during that
+// trap (it then exited 124 without removing it). Cleanup ignores further
+// signals so a second HUP/INT/TERM cannot cut it short. The watchdog is
+// stopped with SIGKILL: a TERM landing after it forks its sleep but before it
+// enters wait is only acted on when the sleep ends, which held fast commands
+// for the whole watchdog period. Its orphaned sleep has no output and exits on
+// its own (locally the process-group kill reaps it at once).
 func boundedScript(command string, seconds int) string {
 	return fmt.Sprintf(`set -f
 exec 3<&0
-p=''; w=''
-cleanup() { [ -z "$p" ] || { kill "$p" 2>/dev/null || :; wait "$p" 2>/dev/null || :; }; [ -z "$w" ] || { kill "$w" 2>/dev/null || :; wait "$w" 2>/dev/null || :; }; }
+p=''; w=''; t=''
+cleanup() { trap '' HUP INT TERM; [ -z "$p" ] || { kill "$p" 2>/dev/null || :; wait "$p" 2>/dev/null || :; }; [ -z "$w" ] || { kill -9 "$w" 2>/dev/null || :; wait "$w" 2>/dev/null || :; }; [ -z "$t" ] || rm -rf -- "$t"; }
 trap cleanup EXIT
 trap 'exit 124' HUP INT TERM
+t=$(mktemp -d) || exit 1
+TMPDIR=$t
+export TMPDIR
 run_command() {
 %s
 }

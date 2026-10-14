@@ -377,8 +377,12 @@ func TestSingBoxMixedCoreContextsIndependent(t *testing.T) {
 		if quicContext == xrayContext {
 			t.Fatalf("%s cores share the same budget context", phase)
 		}
-		if quicContext.Err() != context.DeadlineExceeded || xrayContext.Err() != context.Canceled {
-			t.Fatalf("QUIC deadline must expire without exhausting Xray: %v, %v", quicContext.Err(), xrayContext.Err())
+		// gRPC 按 ctx.Deadline() 自己计时,可能先于父 context 的计时器返回;随后
+		// defer cancel() 让 QUIC context 的 Err 变成 Canceled 而不是
+		// DeadlineExceeded。要验证的是 QUIC 预算确实到期,所以直接核对截止时间已过。
+		qd, ok := quicContext.Deadline()
+		if !ok || quicContext.Err() == nil || time.Now().Before(qd) || xrayContext.Err() != context.Canceled {
+			t.Fatalf("QUIC deadline must expire without exhausting Xray: %v (deadline %v, ok %v), %v", quicContext.Err(), qd, ok, xrayContext.Err())
 		}
 		if _, ok := xrayContext.Deadline(); !ok {
 			t.Fatalf("Xray %s has no deadline", phase)
