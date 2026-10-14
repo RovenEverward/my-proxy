@@ -27,19 +27,31 @@ title: MPX
 </section>
 
 <section class="wrap showcase">
+<div class="showcase-row showcase-admin">
 <div class="showcase-text">
 <p class="eyebrow">管理员看到的</p>
 <h2>用户、用量、到期，一张表</h2>
-<p>本机控制面上的真实输出。</p>
-<div class="code"><div class="code-bar">Shell</div><pre>$ mpx user list
-ID  用户名    可用  状态      已用  上限     到期          重置策略     入站  备注
-1   alice  启用  active  0B  100GB  2026-12-31  monthly  全部  演示
-共 1 个用户</pre></div>
-<p class="eyebrow" style="margin-top:36px">用户看到的</p>
-<h2>浏览器打开订阅地址，就是自助页</h2>
-<p>状态、用量、到期，以及各格式的订阅地址。客户端拉同一条地址，拿到的是配置。</p>
+<p>本机控制面上的真实输出。用户多了用 <code>--status</code>、<code>--search</code> 筛选，默认每页 50 个。</p>
 </div>
-<figure class="tile shot"><img src="/subscription-dashboard.png" alt="浏览器中的订阅页"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
+<div class="code"><div class="code-bar">Shell</div><pre class="cli-table">$ mpx user list
+<span class="c" style="width:4ch">ID</span><span class="c" style="width:8ch">用户名</span><span class="c" style="width:6ch">可用</span><span class="c" style="width:8ch">状态</span><span class="c" style="width:6ch">已用</span><span class="c" style="width:7ch">上限</span><span class="c" style="width:12ch">到期</span><span class="c" style="width:10ch">重置策略</span><span class="c" style="width:6ch">入站</span><span class="c" style="width:4ch">备注</span>
+<span class="c" style="width:4ch">1</span><span class="c" style="width:8ch">alice</span><span class="c" style="width:6ch">启用</span><span class="c" style="width:8ch">active</span><span class="c" style="width:6ch">0B</span><span class="c" style="width:7ch">100GB</span><span class="c" style="width:12ch">2026-12-31</span><span class="c" style="width:10ch">monthly</span><span class="c" style="width:6ch">全部</span><span class="c" style="width:4ch">演示</span>
+共 1 个用户</pre></div>
+</div>
+<div class="showcase-row showcase-user">
+<div class="showcase-text">
+<p class="eyebrow">用户看到的</p>
+<h2>浏览器打开订阅地址，就是自助页</h2>
+<p>客户端拉同一条地址，拿到的是配置；浏览器打开，看到的是这一页：</p>
+<ul class="showcase-list">
+<li>状态、已用流量和上限、到期日与剩余天数</li>
+<li>各格式的订阅地址，每条带复制按钮</li>
+<li>订阅地址的二维码，手机扫码导入</li>
+<li>自己换一个订阅地址，旧地址立刻失效</li>
+</ul>
+</div>
+<figure class="tile shot"><img src="/subscription-dashboard.png" width="1200" height="1746" alt="浏览器中的订阅页"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
+</div>
 </section>
 
 <section class="wrap start">
