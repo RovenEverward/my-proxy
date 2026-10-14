@@ -33,8 +33,9 @@ const csp = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-
 type Options struct {
 	Upstream *url.URL // 控制面地址,如 https://cp.example.net
 	Token    string   // 管理 token,只用在转发出去的 Authorization 上
-	// Methods 是转发层放行的 HTTP 方法。没列出的方法一律 405,不发到控制面。
-	Methods []string
+	// Allow 是转发层放行的请求,每条形如 "PUT /api/users":方法相同、路径等于
+	// 它或在它下面才放行。没列出的一律 405,不发到控制面。页面能做的事以此为界。
+	Allow []string
 	// Profile 只用于页面上显示"连的是哪个控制面"。
 	Profile string
 }
@@ -48,7 +49,18 @@ type Server struct {
 	mu      sync.Mutex
 	proxy   *httputil.ReverseProxy
 	static  http.Handler
-	methods map[string]bool
+	allow   []rule
+}
+
+type rule struct{ method, prefix string }
+
+func (s *Server) allowed(method, path string) bool {
+	for _, r := range s.allow {
+		if r.method == method && (path == r.prefix || strings.HasPrefix(path, strings.TrimSuffix(r.prefix, "/")+"/")) {
+			return true
+		}
+	}
+	return false
 }
 
 // New 为监听在 addr(已经解析出的 host:port)上的服务生成 key 与会话。
@@ -65,9 +77,13 @@ func New(addr string, opts Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{opts: opts, port: port, key: randomToken(), session: randomToken(),
-		static: http.FileServer(http.FS(sub)), methods: map[string]bool{}}
-	for _, m := range opts.Methods {
-		s.methods[m] = true
+		static: http.FileServer(http.FS(sub))}
+	for _, a := range opts.Allow {
+		m, p, ok := strings.Cut(a, " ")
+		if !ok || !strings.HasPrefix(p, "/api/") && p != "/api" {
+			return nil, errors.New("放行规则要写成 \"METHOD /api/...\": " + a)
+		}
+		s.allow = append(s.allow, rule{m, p})
 	}
 	up := opts.Upstream
 	s.proxy = &httputil.ReverseProxy{
@@ -137,16 +153,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		if !s.methods[r.Method] {
-			h.Set("Allow", strings.Join(s.opts.Methods, ", "))
-			writeError(w, http.StatusMethodNotAllowed, "mpx ui 不放行 "+r.Method+" 请求")
+		if !s.allowed(r.Method, r.URL.Path) {
+			writeError(w, http.StatusMethodNotAllowed, "mpx ui 不放行 "+r.Method+" "+r.URL.Path)
 			return
 		}
 		s.proxy.ServeHTTP(w, r)
 		return
 	}
 	if r.URL.Path == "/ui/meta" {
-		writeJSON(w, map[string]any{"server": s.opts.Upstream.Redacted(), "profile": s.opts.Profile, "methods": s.opts.Methods})
+		writeJSON(w, map[string]any{"server": s.opts.Upstream.Redacted(), "profile": s.opts.Profile, "allow": s.opts.Allow})
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

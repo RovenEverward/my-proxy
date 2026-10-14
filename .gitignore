@@ -18,3 +18,7 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Playwright 的输出
+/test-results/
+/playwright-report/
