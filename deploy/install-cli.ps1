@@ -115,6 +115,21 @@ try {
 		$zip = Join-Path $Tmp $Archive
 		try {
 			Invoke-WebRequest -Uri $Url -OutFile $zip -UseBasicParsing
+			# 核对 SHA256SUMS。PowerShell 没有现成的 ed25519,这里只验哈希;要验签名请在
+			# 有 OpenSSL 3 的机器上用 install-cli.sh。早于签名发布的版本没有 SHA256SUMS,提示后放行。
+			$sums = $null
+			try { $sums = (Invoke-WebRequest -Uri ($Url.Substring(0, $Url.LastIndexOf('/')) + '/SHA256SUMS') -UseBasicParsing).Content } catch { }
+			if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
+			if (-not $sums) {
+				Write-Note '这个版本发布时还没有 SHA256SUMS(早于签名发布),没法校验,只靠 HTTPS'
+			} else {
+				$line = ($sums -split "`n") | Where-Object { ($_ -split '\s+')[1] -in @($Archive, "*$Archive") } | Select-Object -First 1
+				if (-not $line) { Die "SHA256SUMS 里没有 $Archive,拒绝安装" }
+				$want = ($line -split '\s+')[0].ToLower()
+				$got = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+				if ($got -ne $want) { Die "$Archive 的 sha256 与 SHA256SUMS 不符,拒绝安装" }
+				Write-Host '==> sha256 ✓(PowerShell 不验签名)'
+			}
 			Expand-Archive -Path $zip -DestinationPath (Join-Path $Tmp 'extract') -Force
 			$found = Get-ChildItem -Path (Join-Path $Tmp 'extract') -Filter 'mpx.exe' -Recurse |
 				Select-Object -First 1
