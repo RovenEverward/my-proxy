@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"rsc.io/qr"
 	"strings"
 	"time"
 
@@ -38,6 +39,9 @@ type subPageData struct {
 	PurposeDescription string
 	DefaultURL         string
 	PurposeError       string
+	// QRSVG 是 Links 第一条地址的二维码,在服务端画成内联 SVG,页面不依赖外部脚本。
+	QRSVG  template.HTML
+	QRName string
 }
 
 var subPageTmpl = template.Must(template.New("subpage").Parse(subPageHTML))
@@ -102,6 +106,11 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 			{Name: "clash-meta", URL: sub + "/clash-meta?purpose=" + data.SelectedPurpose},
 			{Name: "sing-box", URL: sub + "/sing-box?purpose=" + data.SelectedPurpose},
 		}
+	}
+
+	if len(data.Links) > 0 {
+		data.QRName = data.Links[0].Name
+		data.QRSVG = qrSVG(data.Links[0].URL)
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -208,6 +217,28 @@ func formatBytes(n int64) string {
 	return fmt.Sprintf("%.0f %s", v, units[i])
 }
 
+// qrSVG 把一段文本画成二维码 SVG(每个模块一格,四周留 4 格静区)。编码失败
+// 时返回空,页面就不显示二维码卡片,和以前脚本加载失败时一样。
+func qrSVG(text string) template.HTML {
+	code, err := qr.Encode(text, qr.M)
+	if err != nil {
+		return ""
+	}
+	n := code.Size
+	const quiet = 4
+	var b strings.Builder
+	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" shape-rendering="crispEdges" role="img" aria-label="订阅地址二维码"><rect width="100%%" height="100%%" fill="#fff"/><path fill="#0a0a0a" d="`, n+2*quiet, n+2*quiet)
+	for y := 0; y < n; y++ {
+		for x := 0; x < n; x++ {
+			if code.Black(x, y) {
+				fmt.Fprintf(&b, "M%d %dh1v1h-1z", x+quiet, y+quiet)
+			}
+		}
+	}
+	b.WriteString(`"/></svg>`)
+	return template.HTML(b.String())
+}
+
 func clamp(v, lo, hi int64) int64 {
 	if v < lo {
 		return lo
@@ -218,96 +249,177 @@ func clamp(v, lo, hi int64) int64 {
 	return v
 }
 
+// 订阅页的样式与文档站一致:黑白无彩、细线卡片、8px 圆角;只有状态徽章和
+// 危险操作带颜色。全部内联,不引外部字体、脚本和样式。
 const subPageHTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>{{.Username}} 的订阅</title>
 <style>
-:root { color-scheme: light dark; }
-body { margin: 0 auto; padding: 24px 16px 48px; max-width: 720px;
-  font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
-h1 { font-size: 20px; margin: 0 0 6px; }
-h2 { font-size: 15px; margin: 28px 0 8px; }
-.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 13px;
-  border: 1px solid currentColor; }
-.badge.active { color: #1a7f37; }
-.badge.disabled { color: #6e7781; }
-.badge.expired { color: #9a6700; }
-.badge.limited { color: #cf222e; }
-.muted { color: #6e7781; font-size: 13px; }
-.bar { display: block; height: 6px; border-radius: 3px; background: #d0d7de;
-  overflow: hidden; margin: 6px 0 2px; }
-.bar > i { display: block; height: 100%; background: #1a7f37; }
-ul.links { list-style: none; margin: 0; padding: 0; }
-ul.links li { display: flex; align-items: center; gap: 8px; padding: 7px 0;
-  border-bottom: 1px solid #d8dee4; }
-ul.links .name { flex: 0 0 6.5em; font-size: 13px; color: #57606a; }
-ul.links code { flex: 1 1 auto; overflow-wrap: anywhere; font-size: 12px; }
-button { font: inherit; padding: 4px 10px; border-radius: 6px; cursor: pointer;
-  border: 1px solid #d0d7de; background: #f6f8fa; color: inherit; }
-#qr { margin-top: 16px; }
-#qr img, #qr canvas { width: 160px; height: 160px; }
-.notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px;
-  background: #ddf4ff; border: 1px solid #54aeff; }
-.notice code { overflow-wrap: anywhere; }
-.rotate { margin-top: 28px; }
+:root { color-scheme: light dark;
+  --canvas:#fff; --stone:#f4f4f4; --ink:#0a0a0a; --muted:#737373; --faint:#a3a3a3; --line:rgba(0,0,0,.07);
+  --card:0 0 0 1px #0000000f,0 1px 2px -1px #0000000f,0 2px 4px 0 #0000000a;
+  --ok:#1a7f37; --warn:#9a6700; --bad:#c4342d; --off:#737373; --ok-bg:#1a7f3714; --warn-bg:#9a670014; --bad-bg:#c4342d12; --off-bg:#7373731a;
+  --sans:"OPPO Sans 4.0","OPPO Sans","PingFang SC","Geist",-apple-system,BlinkMacSystemFont,system-ui,"Microsoft YaHei",sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
+@media (prefers-color-scheme: dark) { :root {
+  --canvas:#08090a; --stone:#16171a; --ink:#ededef; --muted:#9a9aa0; --faint:#5b5d64; --line:rgba(255,255,255,.08);
+  --card:0 0 0 1px #ffffff14,0 1px 2px -1px #0000004d,0 2px 4px #00000040;
+  --ok:#3fb950; --warn:#d29922; --bad:#f0625a; --off:#9a9aa0; --ok-bg:#3fb9501a; --warn-bg:#d299221a; --bad-bg:#f0625a1a; --off-bg:#9a9aa01a; } }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--stone); color: var(--ink); font: 14px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+main { max-width: 640px; margin: 0 auto; padding: 32px 16px 56px; display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { margin: 0 0 2px; font: 11px var(--mono); letter-spacing: .04em; color: var(--faint); text-transform: uppercase; }
+.card { background: var(--canvas); border-radius: 14px; box-shadow: var(--card); padding: 20px; }
+.card > h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.muted { color: var(--muted); font-size: 12.5px; margin: 8px 0 0; }
+a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--faint); }
+code { font-family: var(--mono); }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.badge { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.active { color: var(--ok); background: var(--ok-bg); }
+.badge.disabled { color: var(--off); background: var(--off-bg); }
+.badge.expired { color: var(--warn); background: var(--warn-bg); }
+.badge.limited { color: var(--bad); background: var(--bad-bg); }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.stat .k { display: block; font-size: 12px; color: var(--muted); }
+.stat .v { display: block; margin-top: 2px; font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bar { display: block; height: 6px; border-radius: 3px; background: var(--stone); overflow: hidden; margin-top: 8px; box-shadow: inset 0 0 0 1px var(--line); }
+.bar > i { display: block; height: 100%; background: var(--ink); border-radius: 3px; }
+.notice { margin: 0; padding: 14px 16px; border-radius: 12px; background: var(--canvas); box-shadow: inset 3px 0 0 var(--ink), var(--card); }
+.notice code { display: block; margin-top: 6px; font-size: 12px; overflow-wrap: anywhere; }
+.notice.alert { box-shadow: inset 3px 0 0 var(--bad), var(--card); }
+button { font: inherit; font-size: 13px; font-weight: 500; height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+  border: 0; background: var(--stone); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); transition: transform 160ms cubic-bezier(.23,1,.32,1), background 160ms; }
+button:hover { background: var(--line); }
+button:active { transform: scale(.97); }
+button.primary { background: var(--ink); color: var(--canvas); box-shadow: none; }
+form.purpose { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+form.purpose label { font-size: 12px; color: var(--muted); }
+select { font: inherit; font-size: 13px; height: 30px; padding: 0 8px; border-radius: 8px; border: 0; background: var(--stone); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+ul.links { list-style: none; margin: 0 -8px; padding: 0; }
+ul.links li { display: grid; grid-template-columns: 6.5rem minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; }
+ul.links li + li { box-shadow: 0 -1px 0 var(--line); }
+ul.links li:hover { background: var(--stone); }
+ul.links .name { font-size: 13px; font-weight: 500; }
+ul.links code { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.copy { min-width: 64px; }
+button.copy.done { background: var(--ink); color: var(--canvas); box-shadow: none; }
+.qr { display: flex; gap: 20px; align-items: center; }
+.qr svg { flex: 0 0 auto; width: 148px; height: 148px; border-radius: 8px; box-shadow: 0 0 0 1px var(--line); }
+.qr p { margin: 0; }
+.qr .for { font-size: 15px; font-weight: 500; }
+.qr code { display: block; margin-top: 6px; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+details { border-top: 1px solid var(--line); padding: 8px 0; }
+details:last-child { padding-bottom: 0; }
+summary { cursor: pointer; font-size: 13px; }
+details p { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.danger { box-shadow: 0 0 0 1px var(--bad-bg), var(--card); }
+.danger .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.danger h2 { color: var(--bad); margin: 0; font-size: 13px; }
+.danger p { margin: 0; }
+.danger form { margin: 0; flex: 0 0 auto; }
+button.warn { color: var(--bad); background: var(--bad-bg); box-shadow: inset 0 0 0 1px var(--bad-bg); }
+button.warn:hover { background: var(--bad); color: #fff; }
+@media (max-width: 520px) {
+  main { padding: 20px 12px 40px; gap: 12px; }
+  .card { padding: 16px; }
+  ul.links li { grid-template-columns: minmax(0,1fr) auto; gap: 2px 10px; }
+  ul.links .name { grid-column: 1; }
+  ul.links code { grid-column: 1; grid-row: 2; }
+  ul.links button { grid-column: 2; grid-row: 1 / span 2; }
+  .stats { grid-template-columns: 1fr; gap: 12px; }
+  .qr { flex-direction: column; align-items: flex-start; }
+  .danger .row { flex-direction: column; align-items: stretch; }
+  .danger button { width: 100%; }
+}
 </style>
 </head>
 <body>
-<h1>{{.Username}} 的订阅</h1>
-<p>状态:<span class="badge {{.Status}}">{{.StatusText}}</span></p>
-{{if .Rotated}}<p class="notice">订阅地址已更换,旧地址立刻失效。把新地址保存好:<br><code>{{.Rotated}}</code></p>
-{{end}}<p>流量:{{.Usage}}{{if .BarShow}}<span class="bar"><i style="width:{{.Percent}}%"></i></span>{{end}}</p>
-<p>到期:{{.ExpireText}}</p>
+<main>
+{{if .Rotated}}<p class="notice" role="status">订阅地址已更换,旧地址立刻失效。把新地址保存好:<code>{{.Rotated}}</code></p>
+{{end}}
+<section class="card">
+<p class="eyebrow">MPX 订阅</p>
+<div class="head"><h1>{{.Username}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
+<div class="stats">
+<div class="stat"><span class="k">流量</span><span class="v">{{.Usage}}</span>{{if .BarShow}}<span class="bar" title="{{.Percent}}%"><i style="width:{{.Percent}}%"></i></span>{{end}}</div>
+<div class="stat"><span class="k">到期</span><span class="v">{{.ExpireText}}</span></div>
+</div>
+</section>
 
-{{if .Purposes}}<h2>选择用途</h2>
-<form method="get" action="/sub/{{.Token}}">
+{{if .Purposes}}<section class="card">
+<h2>选择用途</h2>
+<form class="purpose" method="get" action="/sub/{{.Token}}">
 <label for="purpose">用途</label> <select id="purpose" name="purpose">
 <option value="">默认订阅</option>
 {{range .Purposes}}<option value="{{.Slug}}" {{if eq $.SelectedPurpose .Slug}}selected{{end}}>{{.Name}}</option>{{end}}
-</select> <button type="submit">查看订阅</button>
+</select> <button type="submit" class="primary">查看订阅</button>
 </form>
 {{if .PurposeDescription}}<p>{{.PurposeDescription}}</p>{{end}}
 <p class="muted">用途订阅支持 clash-meta 与 sing-box。流媒体、下载和游戏的指定域名走用途组，其余流量沿用日常路由。客户端 url-test 测量 HTTP 延迟；下载吞吐、游戏 RTT、抖动与丢包需在本地实际观察。</p>
-{{end}}
-{{if .PurposeError}}<p class="notice" role="alert">{{.PurposeError}}。<a href="{{.DefaultURL}}">使用默认订阅</a></p>{{end}}
-{{if .SelectedPurpose}}<p><a href="{{.DefaultURL}}">返回默认订阅</a></p>{{end}}
+{{if .SelectedPurpose}}<p class="muted"><a href="{{.DefaultURL}}">返回默认订阅</a></p>{{end}}
+</section>
+{{else if .SelectedPurpose}}<p><a href="{{.DefaultURL}}">返回默认订阅</a></p>{{end}}
+{{if .PurposeError}}<p class="notice alert" role="alert">{{.PurposeError}}。<a href="{{.DefaultURL}}">使用默认订阅</a></p>{{end}}
+
+<section class="card">
 <h2>分享链接</h2>
 <ul class="links">
-{{range .Links}}<li><span class="name">{{.Name}}</span><code>{{.URL}}</code><button type="button" data-url="{{.URL}}">复制</button></li>
+{{range .Links}}<li><span class="name">{{.Name}}</span><code title="{{.URL}}">{{.URL}}</code><button type="button" class="copy" data-url="{{.URL}}">复制</button></li>
 {{end}}</ul>
-<div id="qr"></div>
+</section>
 
-{{if .Capabilities}}<h2>节点能力</h2>
-<p class="muted">结果来自指定入口的代理出口。YouTube 表示连通；Netflix 表示目录检测，不能保证登录播放。过期或变化的结果显示未知。</p>
+{{if .QRSVG}}<section class="card qr">
+{{.QRSVG}}
+<div><p class="eyebrow">扫码导入</p><p class="for">「{{.QRName}}」链接</p><code>{{(index .Links 0).URL}}</code><p class="muted">用手机客户端扫描,导入的就是上面列表里的第一条。</p></div>
+</section>{{end}}
+
+{{if .Capabilities}}<section class="card">
+<h2>节点能力</h2>
+<p class="muted" style="margin:0 0 8px">结果来自指定入口的代理出口。YouTube 表示连通；Netflix 表示目录检测，不能保证登录播放。过期或变化的结果显示未知。</p>
 {{range .Capabilities}}<details><summary>{{.Entrance}} · {{.Target}} · {{.Status}}{{if .Region}} · {{.Region}}{{end}}</summary>
 <p>{{if .ExitIP}}出口 IP:{{.ExitIP}}<br>{{end}}检测时间:{{.Checked}}<br>有效至:{{.Expires}}<br>检测位置:{{.Location}}{{if .Reason}}<br>{{.Reason}}{{end}}</p></details>{{end}}
-{{end}}
+</section>{{end}}
 
-<form class="rotate" method="post" action="/sub/{{.Token}}/rotate">
-<button type="submit">换个订阅地址</button>
+<section class="card danger">
+<div class="row">
+<div><h2>危险操作</h2><p class="muted">换地址会让当前链接立刻失效;换完请把新地址保存好。</p></div>
+<form class="rotate" method="post" action="/sub/{{.Token}}/rotate" onsubmit="return confirm('换地址会让当前链接立刻失效,确定要换吗?')">
+<button type="submit" class="warn">换个订阅地址</button>
 </form>
-<p class="muted">换地址会让当前链接立刻失效;换完请把新地址保存好。</p>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</div>
+</section>
+</main>
 <script>
+function mpxCopy(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  return new Promise(function (ok, fail) {
+    var t = document.createElement('textarea');
+    t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy') ? ok() : fail(); } catch (e) { fail(e); }
+    t.remove();
+  });
+}
 document.querySelectorAll('.links button').forEach(function (b) {
   b.addEventListener('click', function () {
-    navigator.clipboard.writeText(b.dataset.url).then(function () {
-      b.textContent = '已复制';
-      setTimeout(function () { b.textContent = '复制'; }, 1500);
+    var reset = function () { b.textContent = '复制'; b.classList.remove('done'); };
+    mpxCopy(b.dataset.url).then(function () {
+      b.textContent = '已复制'; b.classList.add('done');
+      setTimeout(reset, 1500);
+    }, function () {
+      b.textContent = '复制失败';
+      setTimeout(reset, 1500);
     });
   });
 });
-var first = document.querySelector('.links button');
-var box = document.getElementById('qr');
-if (window.QRCode && first) {
-  new QRCode(box, { text: first.dataset.url, width: 160, height: 160 });
-} else {
-  box.remove();
-}
 </script>
 </body>
 </html>
