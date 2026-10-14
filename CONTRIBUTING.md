@@ -54,7 +54,7 @@ go test ./... -count=1
 
 ## 4. 文档站
 
-`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，分「使用指南」「参考手册」「内部工程」三个页签。设计文档是 `docs/design.md`（工程文档区的入口），用户文档放在 `docs/user/`，内部工程文档放在 `docs/internal/`，站点导航与侧栏在 `docs/.vitepress/config.mts`。
+`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，按 Diátaxis 分四类：`docs/tutorial/`、`docs/guides/`、`docs/reference/`、`docs/concepts/`。设计文档是 `docs/design.md`（工程文档的入口），内部工程文档放在 `docs/internal/`，两者都由 `srcExclude` 排除在站点之外。站点导航与侧栏在 `docs/.vitepress/config.mts`，主题在 `docs/.vitepress/theme/`。
 
 新增或改名文档时，**必须同步更新 `docs/.vitepress/config.mts` 的 `nav` 与 `sidebar`**，否则页面不在导航里。相对链接指向目录时，要用 `xxx/index.md`，不要用 `xxx/README.md`。
 

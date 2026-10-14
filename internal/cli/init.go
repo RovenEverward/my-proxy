@@ -84,8 +84,8 @@ var initCmd = &cobra.Command{
 装进这台机器自己的 sshd、注册节点、建一个 VLESS+TCP+REALITY 入站、建对外入口、
 把订阅前缀指到本机、建一个用户,最后在节点上装 xray 核心并下发配置,打印订阅链接。
 
-它假设控制面与节点在同一台机器上(单机全包)。要分开部署,还是按
-docs/user/tutorial/getting-started.md 一步步来。
+它假设控制面与节点在同一台机器上(单机全包)。要分开部署,按 mpx node add、
+mpx inbound add、mpx host add 的 --help 一步步来。
 
 重复跑不会炸:已有的节点、入站、入口、用户都会复用。但订阅前缀一旦设过就不再覆盖
 (除非显式给 --sub-prefix),免得把手工配好的域名冲掉。`,

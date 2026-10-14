@@ -1,4 +1,5 @@
-import DefaultTheme from 'vitepress/theme'
-import './custom.css'
+import Layout from './Layout.vue'
+import './skeleton.css'
+import './mpx.css'
 
-export default DefaultTheme
+export default { Layout }
