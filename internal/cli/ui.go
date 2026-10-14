@@ -38,6 +38,14 @@ var uiAllow = []string{
 	"DELETE /api/inbounds",
 	"PUT /api/hosts",
 	"DELETE /api/hosts",
+	// 设置:settings set / rules add|rm|move|reset(都是整体 PUT)、template set / del、test
+	"PUT /api/settings",
+	"DELETE /api/settings/templates",
+	"POST /api/settings/test-webhook",
+	// 用途:purpose create / set / del;metadata set 走上面的 PUT /api/nodes、/api/hosts
+	"POST /api/purposes",
+	"PUT /api/purposes",
+	"DELETE /api/purposes",
 }
 
 var uiFlags struct {

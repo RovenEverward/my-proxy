@@ -102,7 +102,8 @@ export function normalize(reqs, names, opt = {}) {
     let p = r.path;
     for (const n of names) p = p.split(encodeURIComponent(n)).join("<u>");
     p = p.split("?")[0].split("/").map(idOf).join("/") + (p.includes("?") ? "?" + p.split("?")[1] : "");
-    let body = r.body ? JSON.parse(r.body) : null;
+    let body = null;
+    if (r.body) { try { body = JSON.parse(r.body); } catch { body = r.body; } } // 模板正文不是 JSON
     if (body && typeof body === "object") {
       for (const k of ["username", "name", "tag", "remark"]) if (names.includes(body[k])) body[k] = "<u>";
       for (const k of ["id", "node_id", "inbound_id"]) if (k in body) body[k] = idOf(body[k]);
