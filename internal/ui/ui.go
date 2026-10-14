@@ -1,0 +1,230 @@
+// Package ui 是 mpx ui 的本地页面:操作机上一个只听回环地址的小服务,把内嵌的
+// 页面交给浏览器,把页面发来的 /api 请求带上 CLI 的 token 转给控制面。
+//
+// 它不另开一套能力:页面能做的,就是控制面 /api 本来能做的;token 只在这个进程的
+// 内存里,不下发到页面。设计与取舍见 docs/internal/ui.md。
+package ui
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"embed"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+	"sync"
+)
+
+//go:embed assets
+var assets embed.FS
+
+// CSP 只放行同源脚本与样式。行内 style 属性(进度条宽度这类)单独放行;
+// 行内脚本、eval、外部资源一律不行。
+const csp = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; " +
+	"img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+// Options 是一个页面服务的全部输入。
+type Options struct {
+	Upstream *url.URL // 控制面地址,如 https://cp.example.net
+	Token    string   // 管理 token,只用在转发出去的 Authorization 上
+	// Methods 是转发层放行的 HTTP 方法。没列出的方法一律 405,不发到控制面。
+	Methods []string
+	// Profile 只用于页面上显示"连的是哪个控制面"。
+	Profile string
+}
+
+// Server 是一个已经绑定好端口的页面服务。
+type Server struct {
+	opts    Options
+	port    string
+	key     string // 一次性登录 key,用掉即清空
+	session string // cookie 里的值
+	mu      sync.Mutex
+	proxy   *httputil.ReverseProxy
+	static  http.Handler
+	methods map[string]bool
+}
+
+// New 为监听在 addr(已经解析出的 host:port)上的服务生成 key 与会话。
+func New(addr string, opts Options) (*Server, error) {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Upstream == nil || opts.Upstream.Host == "" {
+		return nil, errors.New("没有控制面地址")
+	}
+	sub, err := fs.Sub(assets, "assets")
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{opts: opts, port: port, key: randomToken(), session: randomToken(),
+		static: http.FileServer(http.FS(sub)), methods: map[string]bool{}}
+	for _, m := range opts.Methods {
+		s.methods[m] = true
+	}
+	up := opts.Upstream
+	s.proxy = &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			r.SetURL(up)
+			r.Out.Host = up.Host
+			// 浏览器带来的凭据与来源头一概不往外送;控制面只认 Bearer。
+			for _, h := range []string{"Cookie", "Authorization", "Origin", "Referer"} {
+				r.Out.Header.Del(h)
+			}
+			if opts.Token != "" {
+				r.Out.Header.Set("Authorization", "Bearer "+opts.Token)
+			}
+		},
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Del("Set-Cookie")
+			resp.Header.Set("Cache-Control", "no-store")
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			writeError(w, http.StatusBadGateway, "连不上控制面 "+up.Redacted()+": "+err.Error())
+		},
+	}
+	return s, nil
+}
+
+// Key 是登录链接里那一次性的 key;用掉之后返回空串。
+func (s *Server) Key() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.key
+}
+
+func (s *Server) cookieName() string { return "mpx_ui_" + s.port }
+
+// ServeHTTP 依次做:Host 校验 → 登录 key 换 cookie → 会话校验 → 来源校验 → 分发。
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Content-Security-Policy", csp)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Cross-Origin-Opener-Policy", "same-origin")
+	h.Set("Cross-Origin-Resource-Policy", "same-origin")
+
+	// DNS rebinding:别的域名解析到 127.0.0.1 时,Host 头是那个域名。
+	if !s.hostOK(r.Host) {
+		writeError(w, http.StatusMisdirectedRequest, "只接受 127.0.0.1 / localhost 上的访问")
+		return
+	}
+	if k := r.URL.Query().Get("k"); k != "" && r.URL.Path == "/" {
+		s.login(w, r, k)
+		return
+	}
+	if !s.sessionOK(r) {
+		if r.URL.Path == "/" {
+			h.Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(loginPage))
+			return
+		}
+		writeError(w, http.StatusUnauthorized, "这个页面的会话无效:在终端重新运行 mpx ui,用它打印的链接打开")
+		return
+	}
+	if !originOK(r) {
+		writeError(w, http.StatusForbidden, "拒绝跨站请求")
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		if !s.methods[r.Method] {
+			h.Set("Allow", strings.Join(s.opts.Methods, ", "))
+			writeError(w, http.StatusMethodNotAllowed, "mpx ui 不放行 "+r.Method+" 请求")
+			return
+		}
+		s.proxy.ServeHTTP(w, r)
+		return
+	}
+	if r.URL.Path == "/ui/meta" {
+		writeJSON(w, map[string]any{"server": s.opts.Upstream.Redacted(), "profile": s.opts.Profile, "methods": s.opts.Methods})
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, http.StatusMethodNotAllowed, "静态资源只能 GET")
+		return
+	}
+	h.Set("Cache-Control", "no-cache")
+	s.static.ServeHTTP(w, r)
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request, k string) {
+	s.mu.Lock()
+	ok := s.key != "" && subtle.ConstantTimeCompare([]byte(k), []byte(s.key)) == 1
+	if ok {
+		s.key = "" // 一次性:链接被转发、进了历史记录也不能再用
+	}
+	s.mu.Unlock()
+	if !ok {
+		if s.sessionOK(r) { // 已登录的浏览器再点一次旧链接,别把人挡在外面
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		writeError(w, http.StatusUnauthorized, "登录链接无效或已经用过:重新运行 mpx ui 拿一条新的")
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: s.session, Path: "/",
+		HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) sessionOK(r *http.Request) bool {
+	c, err := r.Cookie(s.cookieName())
+	return err == nil && subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.session)) == 1
+}
+
+func (s *Server) hostOK(host string) bool {
+	h, p, err := net.SplitHostPort(host)
+	if err != nil || p != s.port {
+		return false
+	}
+	return h == "127.0.0.1" || h == "localhost" || h == "::1"
+}
+
+// originOK:写请求必须带同源的 Origin;读请求带了 Origin 也得是同源。
+// Sec-Fetch-Site 能给出时,只认 same-origin 和用户直接打开(none)。
+func originOK(r *http.Request) bool {
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" && sfs != "same-origin" && sfs != "none" {
+		return false
+	}
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return r.Method == http.MethodGet || r.Method == http.MethodHead
+	}
+	u, err := url.Parse(o)
+	return err == nil && u.Scheme == "http" && u.Host == r.Host
+}
+
+func randomToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+const loginPage = `<!doctype html><meta charset="utf-8"><title>mpx ui</title>
+<body style="font:14px/1.6 system-ui;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
+<h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
+<p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
