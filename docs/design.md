@@ -164,7 +164,7 @@ CLI 那一行有一个例外:`mpx init` 会 SSH。它是**在控制面存在之�
 | [路线图](internal/roadmap.md) | 分批演进计划,以及排队的依据 |
 | [缺口与待定项](internal/open-questions.md) | 还有哪些缺口、哪些需要拍板 |
 | [管理 UI 方案](internal/ui-rfc.md) | `mpx ui` 为什么是本机转发、页面以什么为界、怎么防跨站与 DNS rebinding |
-| [自动升级方案](internal/update-rfc.md) | 三部分的升级、校验、回退与 `mpx update`;发布件签名(M0)的上线步骤 |
+| [自动升级方案](internal/update-rfc.md) | 三部分的升级、校验、回退与 `mpx update`;发布件校验和(M0) |
 | [用途订阅验证](internal/purpose-validation.md)、[能力检测验证](internal/capability-validation.md)、[一键体检验证](internal/diagnostic-validation.md)、[QUIC 验证](internal/quic-validation.md) | 这几块功能的真实证据与限制 |
 
 安装与日常操作看[用户文档导航](user/index.md)。

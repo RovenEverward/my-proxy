@@ -1,6 +1,6 @@
 # RFC:三部分自动升级与 `mpx update`
 
-> 状态:已批准(2026-10-15,用户采纳全部推荐项)· M0 进行中 · 起草时基于 main 6d163fb
+> 状态:已批准(2026-10-15,采纳全部推荐项,但签名一项后来改为不做,见 §1)· M0 已完成 · 起草时基于 main 6d163fb
 > 这份 RFC 推翻了 `internal/model/model.go`(`UpdateInfo` 注释)、`internal/updatecheck` 包注释、`docs/design.md`「不做的事:自动升级自己」和 `docs/internal/decisions.md` §37 里的同一条决定:「升级永远是一次显式的人工决定」。这条决定落地时要在这四处一起改(见 M5)。
 
 ## 结论(先看这里)
@@ -15,13 +15,13 @@
 
 2. **每一部分都按同一条流程走:**
    1. 下载;
-   2. 校验 SHA256 和签名;
+   2. 按同一发布里的 SHA256SUMS 校验哈希;
    3. 落成 `.new` 并试跑;
    4. 原子替换,同时保留 `.prev`;
    5. 健康检查;
    6. 失败就自动换回 `.prev`。
 
-   当前最大的缺口是**发布件既没有 checksum,也没有签名**(release.yml 只上传 tar.gz/zip)。所以 **M0 先给发布件加签名**,之后才谈自动。
+   起草时发布件**没有任何 checksum**(release.yml 只上传 tar.gz/zip),所以 **M0 先给发布件加 SHA256SUMS**。**不做签名**(2026-10-15 决定,见 §1)。
 
 3. **顺序是控制面先、节点后,用户面独立。**
    - 节点核心的版本**由控制面那一版决定**,不追上游 latest。原因是节点配置由控制面渲染。
@@ -63,18 +63,17 @@
 
 ### 1. 发布件供应链(前提)
 
-- **release.yml 增加两样东西:**
-  - `SHA256SUMS`,覆盖全部发布件;
-  - `SHA256SUMS.sig`,用 ed25519 对 SHA256SUMS 签名。私钥放在 GitHub Actions secret 里,**公钥编进 mpx 二进制**(Go 标准库 `crypto/ed25519` 就能验,不新增依赖)。
-- **验证顺序:**
-  1. 先验签名;
-  2. 再对哈希;
-  3. 最后解包。
-
-  任何一步失败都直接停下,不碰现有文件。
+- **release.yml 生成 `SHA256SUMS`**,覆盖全部发布件,和发布件一起上传。
+- **校验顺序:**先下载同一发布里的 SHA256SUMS,核对哈希,通过了才解包。对不上就直接停下,不碰现有文件,也不退回别的安装途径。
+- **旧版本(早于 M0)没有 SHA256SUMS:**提示后照常安装。
 - **防降级:**自动升级只接受比当前版本更高的版本(复用 `Ahead`);降级只能手动指定 `--version`。
-- **xray 上游:**同样要校验 digest。XTLS 发布页**是否每个 zip 都附带 `.dgst` 摘要文件需要实测确认**(本 RFC 没有核实,不作为事实写入)。有就验,没有就只靠 TLS,并在 `mpx update` 里显示「未校验摘要」。
-- **轮换公钥:**新版本的二进制里同时带新旧两把公钥,过一个发布周期后再去掉旧的。
+- **xray 上游:**XTLS 发布页**是否每个 zip 都附带 `.dgst` 摘要文件需要实测确认**(本 RFC 没有核实,不作为事实写入)。有就验,没有就只靠 TLS,并在 `mpx update` 里显示「未校验摘要」。
+
+**决定:不做发布签名(2026-10-15,推翻起草时「ed25519 签名」的推荐)。**
+
+- **理由:**这是个人项目。签名真正防的是「GitHub 发布页或账号被攻破、发布件和 SHA256SUMS 一起被换掉」;要防住它,就得长期离线保管私钥、做备份、准备轮换流程。这些成本对个人项目不值得。
+- **接受的风险:**来源可信只靠 HTTPS 加 GitHub 账号安全。SHA256SUMS 和发布件放在同一个地方,所以它防的是下载损坏、截断和拿错包,**防不了发布源本身被攻破**。
+- **什么时候重新考虑:**项目有了其他使用者,或者有了别人维护的镜像或分发渠道。到那时再加签名不需要改校验流程,只需要在「核对哈希」之前多一步「验 SHA256SUMS 的签名」。
 
 ### 2. 用户面(本机 CLI / `mpx ui`)
 
@@ -201,7 +200,7 @@ $ mpx update
 
 ```
 $ mpx update apply control
-计划:控制面 v0.3.3 → v0.3.4(已验签名)。会重启 mpx.service,用户连接不受影响。继续? [y/N] y
+计划:控制面 v0.3.3 → v0.3.4(SHA256SUMS 已核对)。会重启 mpx.service,用户连接不受影响。继续? [y/N] y
 下载 ✓  校验 ✓  快照库 ✓  切换 ✓  重启 ✓  健康检查 … ✓ (6s)
 已升级到 v0.3.4。
 ```
@@ -215,7 +214,7 @@ $ mpx update apply control
 | 失败 | 发现方式 | 处理 |
 | --- | --- | --- |
 | 下载中断或超时 | HTTP 错误 | 不动现有文件,记为 `failed`,下个窗口再试 |
-| 签名或哈希不符 | 校验失败 | 停下,**不自动重试同一版本**,显示「签名不符」,需要人处理 |
+| 哈希与 SHA256SUMS 不符 | 校验失败 | 停下,**不自动重试同一版本**,显示「哈希不符」,需要人处理 |
 | 新二进制跑不起来(架构错误等) | `.new --version` 失败 | 删掉 `.new`,现有版本不动 |
 | 控制面新版本起不来或 API 不通 | 60 秒健康检查失败 | 切回上一版,并恢复库快照(新版本从没健康过),状态为 `rolled-back` |
 | 回退之后仍然起不来 | 第二次健康检查失败 | 状态为 `failed`,关掉自动升级,`mpx update` 给出 `journalctl -u mpx` 和手动 `ln -sf` 的命令 |
@@ -234,49 +233,26 @@ $ mpx update apply control
 | 控制面进程直接替换自己 | 需要放宽 `ProtectSystem=strict`,让对外服务的进程有权改写自己 |
 | 节点上装 mpx agent 自己升级 | 推翻「节点零维护、只用 SSH」;核心本来就能由控制面推送 |
 | 只用 apt/yum 仓库 | 要额外维护打包渠道,macOS 和 Windows 的 CLI 也覆盖不到 |
-| cosign / GitHub attestation | 验证要额外的工具或网络服务;ed25519 加嵌入公钥只用标准库 |
+| 发布签名(ed25519 / cosign / GitHub attestation) | 个人项目,长期保管和轮换密钥的成本不值;接受只靠 HTTPS 加 GitHub 的风险(见 §1) |
 | 保留完整升级历史和审计 | 用户已明确不要。只留最近一次,足够回答「现在怎样、上次怎样」 |
 
 ## 里程碑(每期都能独立合并)
 
 | 期 | 内容 | 验收标准 |
 | --- | --- | --- |
-| **M0 签名发布件** | release.yml 生成 SHA256SUMS 和 .sig;Go 里加 `verify` 包,内嵌公钥;install*.sh 校验 SHA256SUMS | 打一个测试 tag 后发布页出现两个新文件;篡改一个字节后验签失败的测试 FAIL→PASS;老的 install 路径照常可用 |
+| **M0 发布件校验和**(已完成) | release.yml 生成 SHA256SUMS;`internal/release` 包核对哈希;install.sh、install-cli.sh、install-cli.ps1 下载后先校验 | 发布页出现 SHA256SUMS;发布件被换时安装拒绝;没有 SHA256SUMS 的旧版本提示后照常安装 |
 | **M1 `mpx update` 只读** | 显示三部分当前/最新/目标版本;新增 `GET /api/update`(只读,先只返回版本);CLI 和控制面版本不一致时警告 | 真实控制面上跑出三部分版本;源码编译版显示「未知」,不报「有新版」 |
-| **M2 CLI 手动升级与回退** | `apply cli` / `rollback cli`、`.prev`、`~/.config/mpx/update.json` | linux/darwin/windows 上从 vN 升到 vN+1 再回退的 e2e;用坏签名的发布件测试时现有二进制不变 |
+| **M2 CLI 手动升级与回退** | `apply cli` / `rollback cli`、`.prev`、`~/.config/mpx/update.json` | linux/darwin/windows 上从 vN 升到 vN+1 再回退的 e2e;用哈希不符的发布件测试时现有二进制不变 |
 | **M3 控制面手动升级与回退** | `mpx-update` service/timer/path 单元由 install.sh 安装;符号链接布局;库快照;健康检查加回退;state.json | 在 VM 上:正常升级成功;注入一个「起不来」的版本,60 秒内自动回退且库内容一致;升级中途 kill 后能自愈 |
 | **M4 节点核心升级与回退** | 钉死 xray 目标版本(等问题 2 拍板);`.prev`;健康检查;金丝雀加逐台;渲染端加最低核心版本判断;每节点最近状态 | 两台测试节点:正常升级;注入坏核心后自动回退且整批停下;混合版本期间两台都能拿到可用配置 |
-| **M5 自动策略** | 开关、窗口、48 小时冷却、`mpx update policy`;**同步改 model.go、updatecheck 包注释、design.md、decisions.md §37**,写明推翻的理由和新的兜底(签名、.prev、健康检查、冷却) | 时钟注入测试:窗口外不动、冷却期内不动、关闭后不动;文档里不再有「升级永远是人工决定」 |
+| **M5 自动策略** | 开关、窗口、48 小时冷却、`mpx update policy`;**同步改 model.go、updatecheck 包注释、design.md、decisions.md §37**,写明推翻的理由和新的兜底(SHA256SUMS、.prev、健康检查、冷却) | 时钟注入测试:窗口外不动、冷却期内不动、关闭后不动;文档里不再有「升级永远是人工决定」 |
 | **M6 UI** | 总览「版本」卡片加触发按钮(带确认和等价命令) | Playwright:状态展示和 `mpx update` 一致;触发发出的请求和 CLI 一致 |
 
 ## 已拍板(2026-10-15 全部采纳推荐)
 
 1. **CLI 要不要后台静默自动替换?**推荐**不要**,只提示,由 `mpx update apply cli` 一键完成。CLI 没有常驻进程,静默替换只能发生在用户执行别的命令时,出错的时机很难预料。控制面和节点才是真正需要自动升级的部分。
 2. **节点 xray 的目标版本是钉死在 mpx 发布里,还是跟上游 latest?**推荐**钉死**,和 sing-box 一样。代价是安全修复要等 mpx 发一版。保留 `mpx node install --xray-version` 作为手动的逃生口。
-3. **签名方案:**推荐 **ed25519 私钥放 GitHub secret,公钥嵌进二进制**。需要你确认可以新增这个 secret,并决定私钥的离线备份放在哪里。
+3. **签名方案:**起草时推荐 ed25519。**后来改为不做签名**,只保留 SHA256SUMS(决定和理由见 §1)。
 4. **自动升级的默认值:**推荐**默认开**,窗口 03:00–05:00,冷却 48 小时。老用户升级到带这项功能的版本时,是否也默认开启?推荐**开,但第一次在 `mpx status` 里提示一次**。
 5. **节点自动升级前要不要先排水?**推荐**不排水**,只在窗口内逐台重启。排水要等客户端刷新订阅,通常是小时级,窗口装不下。如果在意凌晨那一次断线,可以把节点设成「只手动升级」。
 
-## M0 上线步骤(合并 M0 之前由维护者执行)
-
-M0 的代码里公钥是**占位**(`internal/release.PublicKeys` 为空、两个安装脚本里 `MPX_RELEASE_PUBKEY=""`)。占位期间:
-
-- 安装脚本只校验 SHA256SUMS 的哈希,并提示「还没配置签名公钥」;`MPX_REQUIRE_SIGNATURE=1` 时拒绝安装。
-- `release.yml` **会拒绝发布**:没有 secret、或仓库里的公钥还是占位、或两者不是一对,发布 job 直接失败,不会发出未签名的发布。
-
-上线要做的三步:
-
-1. **在离线可信机器上生成私钥**(OpenSSL 3):
-
-   ```sh
-   openssl genpkey -algorithm ed25519 -out mpx-release-signing.pem
-   openssl pkey -in mpx-release-signing.pem -pubout | sed '1d;$d' | tr -d '\n'; echo   # 打印公钥(一行 base64)
-   ```
-
-   私钥另做离线备份。丢了只能轮换,不能补签。
-2. **设 GitHub secret**:仓库 Settings → Secrets and variables → Actions,新建 `MPX_RELEASE_SIGNING_KEY`,值是 `mpx-release-signing.pem` 的完整内容(含 BEGIN/END 两行)。
-3. **把公钥写进仓库三处**,再跑 `go test ./internal/release`(`TestScriptsCarrySameKeys` 会检查三处是否一致):
-   - `internal/release/release.go`:`var PublicKeys = []string{"<公钥>"}`
-   - `deploy/install.sh` 与 `deploy/install-cli.sh`:`MPX_RELEASE_PUBKEY="<公钥>"`
-
-轮换时把新公钥放在 `PublicKeys` 的第一位,同时保留旧的那把;脚本里只放新的。换 secret 后过一个发布周期,再把旧公钥去掉。

@@ -45,44 +45,26 @@ note() {
 }
 
 # >>> verify_release(install.sh 与 install-cli.sh 里逐字相同,internal/release 的测试会比对)
-# 发布签名公钥:SPKI DER 的 base64,与 internal/release.PublicKeys 一致。
-# 空表示还没配置正式公钥,这时只校验哈希。
-MPX_RELEASE_PUBKEY=""
 sha256_of() {
 	if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
 	elif command -v shasum >/dev/null; then shasum -a 256 "$1" | cut -d' ' -f1
 	else return 1; fi
 }
-# 验 ed25519 要 OpenSSL 3 的 pkeyutl -rawin;macOS 自带的 LibreSSL 不行。
-openssl_ed25519() { command -v openssl >/dev/null && openssl version 2>/dev/null | grep -q '^OpenSSL [3-9]'; }
-# verify_release FILE NAME:先验 SHA256SUMS 的签名,再核对已下载的发布件 FILE 的哈希。
-# 早于签名发布的版本没有 SHA256SUMS:提示后放行(只靠 HTTPS);MPX_REQUIRE_SIGNATURE=1 时拒绝。
-# 有 SHA256SUMS 却验不过,一律 die,不退回别的安装途径:那正是要拦的情况。
+# verify_release FILE NAME:按同一发布里的 SHA256SUMS 核对已下载的发布件 FILE。
+# 不做签名(决定见 docs/internal/update-rfc.md):防的是下载损坏、截断和错包,来源靠 HTTPS + GitHub。
+# 早于 SHA256SUMS 的旧版本没有清单:提示后照常安装。
+# 有清单却对不上,一律 die,不退回别的安装途径。
 verify_release() {
-	local file="$1" name="$2" base sums="$TMP/SHA256SUMS" sig="$TMP/SHA256SUMS.sig" want got strict="${MPX_REQUIRE_SIGNATURE:-}"
+	local file="$1" name="$2" base sums="$TMP/SHA256SUMS" want got
 	if [[ "$VERSION" == latest ]]; then base="$DOWNLOAD_BASE/latest/download"; else base="$DOWNLOAD_BASE/download/$VERSION"; fi
 	if ! $FETCH "$base/SHA256SUMS" > "$sums" 2>/dev/null; then
-		[[ "$strict" == 1 ]] && die "这个版本没有 SHA256SUMS,而 MPX_REQUIRE_SIGNATURE=1"
-		note "这个版本发布时还没有 SHA256SUMS(早于签名发布),没法校验,只靠 HTTPS"
+		note "这个版本发布时还没有 SHA256SUMS,没法校验,照常安装"
 		return 0
-	fi
-	if [[ -z "$MPX_RELEASE_PUBKEY" ]]; then
-		[[ "$strict" == 1 ]] && die "脚本里还没配置签名公钥,而 MPX_REQUIRE_SIGNATURE=1"
-		note "脚本里还没配置签名公钥,只校验哈希"
-	elif ! openssl_ed25519; then
-		[[ "$strict" == 1 ]] && die "本机 openssl 验不了 ed25519 签名(要 OpenSSL 3),而 MPX_REQUIRE_SIGNATURE=1"
-		note "本机 openssl 验不了 ed25519 签名(要 OpenSSL 3),只校验哈希"
-	else
-		$FETCH "$base/SHA256SUMS.sig" > "$sig" 2>/dev/null || die "有 SHA256SUMS 却没有 SHA256SUMS.sig,拒绝安装"
-		printf -- '-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n' "$MPX_RELEASE_PUBKEY" > "$TMP/release-pub.pem"
-		openssl pkeyutl -verify -pubin -inkey "$TMP/release-pub.pem" -rawin -in "$sums" -sigfile "$sig" >/dev/null 2>&1 \
-			|| die "SHA256SUMS 的签名不对,拒绝安装(文件被改过,或不是本项目签的)"
-		echo "==> 签名 ✓"
 	fi
 	want="$(awk -v n="$name" '$2==n || $2=="*"n {print $1; exit}' "$sums")"
 	[[ -n "$want" ]] || die "SHA256SUMS 里没有 $name,拒绝安装"
 	got="$(sha256_of "$file")" || die "本机没有 sha256sum 或 shasum,没法校验发布件"
-	[[ "$got" == "$want" ]] || die "$name 的 sha256 与 SHA256SUMS 不符,拒绝安装"
+	[[ "$got" == "$want" ]] || die "$name 的 sha256 与 SHA256SUMS 不符,拒绝安装(下载损坏或被替换)"
 	echo "==> sha256 ✓"
 }
 # <<< verify_release

@@ -77,38 +77,14 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # SHA256SUMS 覆盖全部发布件,再用 ed25519 对它整个文件签一次名(64 字节原始签名)。
-      # 安装脚本与 internal/release 先验签名、再对哈希,见 docs/internal/update-rfc.md §1。
-      # 私钥只在这一步出现在 runner 的临时目录里,用完即删。
-      - name: SHA256SUMS 与签名
-        env:
-          SIGNING_KEY: ${{ secrets.MPX_RELEASE_SIGNING_KEY }}
+      # SHA256SUMS 覆盖全部发布件,安装脚本按它核对下载的文件。不做签名:决定与理由见
+      # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
+      - name: SHA256SUMS
         run: |
           set -eu
           cd dist
           sha256sum mpx_* > SHA256SUMS
           cat SHA256SUMS
-          if [ -z "$SIGNING_KEY" ]; then
-            echo "::error::没有设 secret MPX_RELEASE_SIGNING_KEY,不发未签名的发布(步骤见 docs/internal/update-rfc.md「M0 上线步骤」)"
-            exit 1
-          fi
-          # 仓库里写的公钥必须正是这把私钥的另一半:否则发出去的签名谁都验不过。
-          repo_pub=$(sed -n 's/^MPX_RELEASE_PUBKEY="\(.*\)"$/\1/p' ../deploy/install.sh)
-          if [ -z "$repo_pub" ]; then
-            echo "::error::deploy/install.sh 里的 MPX_RELEASE_PUBKEY 还是占位"
-            exit 1
-          fi
-          key="$RUNNER_TEMP/release-signing.pem"
-          ( umask 077; printf '%s\n' "$SIGNING_KEY" > "$key" )
-          trap 'rm -f "$key"' EXIT
-          key_pub=$(openssl pkey -in "$key" -pubout | sed '1d;$d' | tr -d '\n')
-          if [ "$key_pub" != "$repo_pub" ]; then
-            echo "::error::签名私钥与仓库里的公钥不是一对"
-            exit 1
-          fi
-          openssl pkeyutl -sign -inkey "$key" -rawin -in SHA256SUMS -out SHA256SUMS.sig
-          printf -- '-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n' "$repo_pub" > "$RUNNER_TEMP/pub.pem"
-          openssl pkeyutl -verify -pubin -inkey "$RUNNER_TEMP/pub.pem" -rawin -in SHA256SUMS -sigfile SHA256SUMS.sig
 
       - name: 取出 tag 消息当发布说明
         id: notes
