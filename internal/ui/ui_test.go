@@ -20,7 +20,7 @@ func (s *seen) last() *http.Request { s.mu.Lock(); defer s.mu.Unlock(); return s
 func (s *seen) count() int          { s.mu.Lock(); defer s.mu.Unlock(); return len(s.reqs) }
 
 // rig 起一个假控制面和一个 ui.Server,返回已登录的 cookie。
-func rig(t *testing.T, methods ...string) (*Server, *httptest.Server, *seen, *http.Cookie) {
+func rig(t *testing.T, allow ...string) (*Server, *httptest.Server, *seen, *http.Cookie) {
 	t.Helper()
 	sn := &seen{}
 	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,10 +33,10 @@ func rig(t *testing.T, methods ...string) (*Server, *httptest.Server, *seen, *ht
 	}))
 	t.Cleanup(cp.Close)
 	up, _ := url.Parse(cp.URL)
-	if len(methods) == 0 {
-		methods = []string{"GET"}
+	if len(allow) == 0 {
+		allow = []string{"GET /api"}
 	}
-	s, err := New("127.0.0.1:7480", Options{Upstream: up, Token: "secret-token", Methods: methods})
+	s, err := New("127.0.0.1:7480", Options{Upstream: up, Token: "secret-token", Allow: allow})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,20 +141,36 @@ func TestProxyInjectsTokenAndStripsBrowserCredentials(t *testing.T) {
 }
 
 func TestMethodAllowlist(t *testing.T) {
-	s, _, sn, c := rig(t, "GET")
-	for _, m := range []string{"POST", "PUT", "DELETE", "PATCH"} {
-		w := do(s, m, "/api/users", c, "Origin", "http://127.0.0.1:7480")
-		if w.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s 应 405,得到 %d", m, w.Code)
+	s, _, sn, c := rig(t, "GET /api", "PUT /api/users", "POST /api/users")
+	o := []string{"Origin", "http://127.0.0.1:7480"}
+	for _, tc := range []struct {
+		m, p string
+		ok   bool
+	}{
+		{"PUT", "/api/users/alice", true},
+		{"POST", "/api/users", true},
+		{"POST", "/api/users/alice/reset-traffic", true},
+		{"DELETE", "/api/users/alice", false},
+		{"PUT", "/api/usersx", false},
+		{"PUT", "/api/nodes/1", false},
+		{"POST", "/api/restore", false},
+		{"PATCH", "/api/users/alice", false},
+	} {
+		w := do(s, tc.m, tc.p, c, o...)
+		if got := w.Code != http.StatusMethodNotAllowed; got != tc.ok {
+			t.Errorf("%s %s: 得到 %d,放行应为 %v", tc.m, tc.p, w.Code, tc.ok)
 		}
 	}
-	if sn.count() != 0 {
-		t.Fatal("没放行的方法不能到控制面")
+	if sn.count() != 3 {
+		t.Fatalf("应只有 3 条到控制面,实际 %d", sn.count())
+	}
+	if _, err := New("127.0.0.1:1", Options{Upstream: &url.URL{Scheme: "http", Host: "x"}, Allow: []string{"GET /"}}); err == nil {
+		t.Fatal("放行 /api 之外的路径应该报错")
 	}
 }
 
 func TestOriginCheck(t *testing.T) {
-	s, _, sn, c := rig(t, "GET", "POST")
+	s, _, sn, c := rig(t, "GET /api", "POST /api/users")
 	cases := []struct {
 		method string
 		hdr    []string
@@ -222,7 +238,7 @@ func TestMetaHasNoToken(t *testing.T) {
 	if strings.Contains(w.Body.String(), "secret-token") {
 		t.Fatal("meta 泄露了 token")
 	}
-	if m["methods"] == nil || m["server"] == "" {
+	if m["allow"] == nil || m["server"] == "" {
 		t.Fatalf("meta: %s", w.Body)
 	}
 }

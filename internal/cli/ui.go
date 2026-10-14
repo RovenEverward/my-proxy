@@ -19,8 +19,16 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/ui"
 )
 
-// uiMethods 是 mpx ui 的转发层放行的方法。页面能做的事以此为界。
-var uiMethods = []string{http.MethodGet}
+// uiAllow 是 mpx ui 的转发层放行的请求。页面能做的事以此为界:每一条写操作都
+// 对应一条已有的 CLI 命令(见 internal/ui/e2e 里逐条对照的测试)。
+var uiAllow = []string{
+	"GET /api",
+	// 用户:add / edit / enable / disable / renew(都是 PUT 整体回写)/ rm /
+	// reset-traffic / revoke-sub
+	"POST /api/users",
+	"PUT /api/users",
+	"DELETE /api/users",
+}
 
 var uiFlags struct {
 	addr   string
@@ -65,7 +73,7 @@ var uiCmd = &cobra.Command{
 				profile = cfg.Current
 			}
 		}
-		s, err := ui.New(ln.Addr().String(), ui.Options{Upstream: up, Token: token, Methods: uiMethods, Profile: profile})
+		s, err := ui.New(ln.Addr().String(), ui.Options{Upstream: up, Token: token, Allow: uiAllow, Profile: profile})
 		if err != nil {
 			ln.Close()
 			return err

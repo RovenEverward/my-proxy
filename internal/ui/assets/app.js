@@ -67,7 +67,7 @@ const userSt = s => stBadge(...(USER_ST[s] || ["", s]));
 const RESET = { none: "不重置", daily: "每天", weekly: "每周", monthly: "每月" };
 const pct = u => u.data_limit ? Math.min(100, u.used_traffic / u.data_limit * 100) : 0;
 function usageBar(u, wide) {
-  if (!u.data_limit) return H`<div class="use"><span>${fmtBytes(u.used_traffic)} <span class="c-faint">· 不限</span></span></div>`;
+  if (!u.data_limit) return H`<div class="use"><span class="keep">${fmtBytes(u.used_traffic)} <span class="c-faint">· 不限</span></span></div>`;
   const p = pct(u), cls = p >= 100 ? "bad" : p >= 80 ? "warn" : "";
   return H`<div class="use"><div class="bar${wide ? " w100" : ""}"><i class="${cls}" style="width:${p.toFixed(1)}%"></i></div><span>${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}</span></div>`;
 }
@@ -100,8 +100,9 @@ const emptyBox = (icon, title, text, cmd, btn = "") => H`<div class="empty"><div
 /* ---------- 页面注册 ---------- */
 // 每个页面:{ title, nav: [组, 图标, 排序], load(route) → data, render(data, route) → H }
 const PAGES = {};
-let META = { server: "", profile: "", methods: ["GET"] };
-const canWrite = m => META.methods.includes(m);
+let META = { server: "", profile: "", allow: ["GET /api"] };
+// 页面只在转发层放行时才显示写操作(放行规则见 internal/cli/ui.go)。
+const can = (method, path) => META.allow.some(a => { const [m, p] = a.split(" "); return m === method && (path === p || path.startsWith(p.replace(/\/$/, "") + "/")); });
 let route = [], current = { page: null, data: null, error: null, loading: true, at: null };
 
 function shell(page, body, crumb) {
@@ -122,8 +123,7 @@ function shell(page, body, crumb) {
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
   <div class="page" id="page">${body}</div></main></div>
-  <nav class="mnav">${items.map(([k, p]) => H`<a href="#${k}" class="${route[0] === k ? "on" : ""}">${ic(p.nav[1])}${p.short || p.title}</a>`)}</nav>
-  <div class="scrim" id="scrim" data-act="close"></div><aside class="drawer" id="drawer" aria-modal="true" role="dialog"></aside><div class="modal" id="modal" role="alertdialog" aria-modal="true"></div>`;
+  <nav class="mnav">${items.map(([k, p]) => H`<a href="#${k}" class="${route[0] === k ? "on" : ""}">${ic(p.nav[1])}${p.short || p.title}</a>`)}</nav>`;
 }
 
 /* ---------- 总览 ---------- */
@@ -182,8 +182,36 @@ PAGES.overview = {
 
 /* ---------- 抽屉、确认框、提示 ---------- */
 function openDrawer(html) { const d = $("#drawer"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
-function closeOverlays() { $("#drawer")?.classList.remove("open"); $("#modal")?.classList.remove("open"); $("#scrim")?.classList.remove("open"); if (route[1] && PAGES[route[0]]?.closeTo) history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); }
+function closeOverlays() {
+  $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
+  if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
+}
 function toast(text, bad) { document.querySelector(".toast")?.remove(); const e = document.createElement("div"); e.className = "toast" + (bad ? " bad" : ""); e.setAttribute("role", "status"); e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`); document.body.append(e); setTimeout(() => e.remove(), bad ? 6000 : 2600); }
+
+// 写操作:发出请求、成功后提示并刷新当前页;失败把控制面原话报出来。
+async function write(method, path, body, okText) {
+  const init = { method, headers: {} };
+  if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
+  const res = await api(path, init);
+  if (okText) toast(okText);
+  return res;
+}
+// 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
+function confirmBox({ title, text, cmd, ok, danger, typed, run }) {
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mb"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
+  ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
+  ${cmd ? H`<div class="cmd mb">${cmd}</div>` : ""}<div class="err" id="modal-err" role="alert"></div></div>
+  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  const okb = $("#okb"), t = $("#typed");
+  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
+  okb.addEventListener("click", async () => {
+    okb.disabled = true; okb.classList.add("busy");
+    try { await run(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; okb.classList.remove("busy"); }
+  });
+}
 
 /* ---------- 渲染与路由 ---------- */
 let loadSeq = 0;
@@ -198,7 +226,7 @@ function paint() {
   scrollTo(0, y);
   p.after?.(current.data, route);
 }
-async function load(soft) {
+async function load(soft, force) {
   const key = (location.hash.slice(1) || "overview");
   route = key.split("/").map(decodeURIComponent);
   if (!PAGES[route[0]]) route = ["overview"];
@@ -214,13 +242,15 @@ async function load(soft) {
     current = { ...current, error: e, loading: false };
     if (current.data) toast("刷新失败:" + e.message, true);
   }
-  if (!soft || !$("#drawer.open, #modal.open")) paint();
+  if (!soft || force || !$("#drawer.open, #modal.open")) paint();
 }
 
 const ACTS = {
   reload: () => load(true),
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} paint(); },
   close: () => closeOverlays(),
+  "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
+  copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
@@ -229,11 +259,11 @@ document.addEventListener("click", e => {
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeOverlays(); });
-addEventListener("hashchange", () => load(false));
+addEventListener("hashchange", () => load(true, true));
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) load(true); }, 30000);
 
-(async () => {
+document.addEventListener("DOMContentLoaded", async () => {
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }
   load(false);
-})();
+});
