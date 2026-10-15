@@ -294,3 +294,12 @@ func parseInt(w http.ResponseWriter, v string) (int64, bool) {
 
 // 让编译器盯着:store.ErrNotFound 的语义必须由存储层保持。
 var _ = store.ErrNotFound
+
+// numericNodeName 拦下纯数字的新节点名:CLI 把纯数字参数当 id
+// (docs/internal/node-naming-rfc.md),叫 "2" 的节点只能写 name:2 才找得到。
+func numericNodeName(name string) string {
+	if _, err := strconv.ParseInt(name, 10, 64); err == nil {
+		return "节点名不能是纯数字(会被当成 id),例如写成 node-" + name
+	}
+	return ""
+}

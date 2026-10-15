@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // Purpose is a named recommendation. It never grants inbound authorization.
@@ -31,10 +32,14 @@ type PurposeMetadata struct {
 	Region   string   `json:"region"`
 	Line     string   `json:"line"`
 	Purposes []string `json:"purposes,omitempty"`
+	// City 与 Letter 只用于节点,拼显示名:旗帜 + 城市(缺省为国家中文名) + 字母。
+	City   string `json:"city,omitempty"`
+	Letter string `json:"letter,omitempty"`
 }
 
 var purposeSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 var purposeDomain = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
+var nodeLetter = regexp.MustCompile(`^[A-Z]{1,2}$`)
 var purposeCountry = regexp.MustCompile(`^[A-Z]{2}$`)
 
 func (p *Purpose) Normalize() {
@@ -113,6 +118,12 @@ func (p Purpose) Validate() error {
 func (m PurposeMetadata) Validate() error {
 	if len(m.Region) > 80 || len(m.Line) > 80 || len(m.Purposes) > 64 {
 		return fmt.Errorf("地区/线路最多 80 字节，用途标签最多 64 项")
+	}
+	if utf8.RuneCountInString(m.City) > 32 || strings.ContainsAny(m.City, "\t\r\n") {
+		return fmt.Errorf("城市最多 32 个字符,不能含换行或制表符")
+	}
+	if m.Letter != "" && !nodeLetter.MatchString(m.Letter) {
+		return fmt.Errorf("字母必须是 1–2 位大写字母,例如 A、B、AA")
 	}
 	for _, t := range m.Purposes {
 		if !purposeSlug.MatchString(t) {

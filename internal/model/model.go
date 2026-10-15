@@ -521,6 +521,8 @@ type NodeView struct {
 	Node
 	Status       *NodeStatus        `json:"status"`
 	Capabilities []CapabilityResult `json:"capabilities"`
+	// Display 是只读的显示名(旗帜 + 城市/国家 + 字母),由节点元数据拼出;没有地区时为空。
+	Display string `json:"display,omitempty"`
 }
 
 // 证书临期的两个阈值。doctor 与巡检告警共用,免得两处各写一个数字。
