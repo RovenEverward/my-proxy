@@ -274,3 +274,23 @@ func TestUpToDateSkipsListRequest(t *testing.T) {
 		t.Errorf("已是最新时应只请求 latest 一次,实际 %d 次", n)
 	}
 }
+
+// 回归:v0.5.0 中文 release notes 字节数 > maxNotes、rune 数 < maxNotes 时,
+// 旧实现用 len(s) 判断再按 [:maxNotes] 切 rune,直接 panic。
+func TestTruncateNotesMultibyteUnderRuneLimit(t *testing.T) {
+	var b strings.Builder
+	for b.Len() <= maxNotes {
+		b.WriteString("节点显示名🇺🇸洛杉矶")
+	}
+	s := b.String()
+	if len(s) <= maxNotes {
+		t.Fatalf("构造失败:字节数 %d 应 > %d", len(s), maxNotes)
+	}
+	if len([]rune(s)) >= maxNotes {
+		t.Fatalf("构造失败:rune 数 %d 应 < %d", len([]rune(s)), maxNotes)
+	}
+	got := truncateNotes(s)
+	if got != strings.TrimSpace(s) {
+		t.Fatalf("字数未超限时应原样返回,得到 %d bytes", len(got))
+	}
+}

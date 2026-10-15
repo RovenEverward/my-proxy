@@ -160,7 +160,7 @@ func (c *Checker) fetchLatest(ctx context.Context) (version, url, notes string, 
 	return body.TagName, body.HTMLURL, truncateNotes(body.Body), published, nil
 }
 
-// maxNotes 是发布正文保留的字节数。
+// maxNotes 是发布正文保留的字数(按 rune,不是字节)。
 //
 // 完整正文可能几十 KB(发布说明里常贴整段用法),而它每 6 小时就要跟着 status
 // 走一遍接口。头部几百字足够回答"这次改了什么"。
@@ -168,12 +168,13 @@ const maxNotes = 2000
 
 func truncateNotes(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= maxNotes {
+	// maxNotes 按 rune 计:UTF-8 多字节文字的字节数会大于字数,用 len(s) 判断
+	// 再用 [:maxNotes] 切 rune 切片会 panic(v0.5.0 起服后查更新就踩过)。
+	r := []rune(s)
+	if len(r) <= maxNotes {
 		return s
 	}
-	// 按 rune 截,免得把一个多字节字符切成半个。
-	cut := string([]rune(s)[:maxNotes])
-	return strings.TrimSpace(cut) + "\n…(截断,完整说明见发布页)"
+	return strings.TrimSpace(string(r[:maxNotes])) + "\n…(截断,完整说明见发布页)"
 }
 
 // countBehind 数当前版本与 latest 之间隔了几次发布。
