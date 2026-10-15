@@ -252,6 +252,10 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	meta, err := s.store.ListPurposeMetadata("nodes")
+	if err != nil {
+		return nil, err
+	}
 
 	// 各入站此刻"占用着"几个名额:只数对该入站授权且当前处于可用状态的用户。
 	// 授权为空 = 全部入站都能用,所以它要给每个入站都记一笔 —— 否则不限授权的
@@ -294,11 +298,11 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 		if n.Draining {
 			continue
 		}
-		eps = append(eps, render.Resolve(n, byNode[n.ID], byInbound, user)...)
+		eps = append(eps, render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user)...)
 	}
 	// 节点名唯一的约束落在整份订阅这一层:同一个入站的不同入口、以及不同节点上
 	// 恰巧取了一样的名字,都只有把所有人的入口放在一起看才知道撞没撞。
-	return render.DedupeRemarks(eps), nil
+	return render.DedupeRemarks(render.AddProtocolSuffix(eps)), nil
 }
 
 // placeholderEndpoint 是一个连不通、但各家客户端都肯接受的节点。

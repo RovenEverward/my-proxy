@@ -202,7 +202,8 @@ type Host struct {
 	ID        int64 `json:"id"`
 	InboundID int64 `json:"inbound_id"`
 	// Remark 是客户端看到的节点名。可用变量:{SERVER_IP}、{NODE_NAME}、
-	// {PROTOCOL}、{TRANSPORT}。{USERNAME} 在这里被抹成空串 —— 节点名会被截图
+	// {NODE_DISPLAY}(节点显示名,没有时同 {NODE_NAME})、{PROTOCOL}、{TRANSPORT}。
+	// 留空时用节点显示名(再退回节点名),同一节点多个入口时自动加「 · 协议短名」。{USERNAME} 在这里被抹成空串 —— 节点名会被截图
 	// 和转发,不该带上账号名;要按用户区分名字用订阅名那个字段。
 	Remark  string   `json:"remark"`
 	Address string   `json:"address"` // 空表示用 Node.Address

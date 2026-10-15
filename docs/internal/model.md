@@ -118,7 +118,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 ### 变量与随机子域
 
-`hosts.remark` 与 `hosts.address` 里可写 `{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、`{TRANSPORT}`;未知变量原样保留。地址里写 `*` 会换成按用户名派生的稳定子域 ——
+`hosts.remark` 与 `hosts.address` 里可写 `{SERVER_IP}`、`{NODE_NAME}`、`{NODE_DISPLAY}`(节点显示名,没有时同 `{NODE_NAME}`)、`{PROTOCOL}`、`{TRANSPORT}`;未知变量原样保留。`hosts.remark` 留空时用节点显示名(没有时用节点名);同一节点在一份订阅里有多个这样的默认名入口时,自动加 ` · 协议短名`(Reality、Hy2、TUIC、WS…),仍重名的再加序号。地址里写 `*` 会换成按用户名派生的稳定子域 ——
 
 ```
 remark: 香港 REALITY {PROTOCOL}         →  香港 REALITY vless
