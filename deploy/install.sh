@@ -22,8 +22,9 @@
 # (控制面首次启动时自己生成自签证书,CLI 按证书指纹认它),不需要域名和反向
 # 代理。`mpx init` 就是按这个口径装的。
 #
-# 二进制按顺序找:参数给的那个 → 脚本旁边的 mpx → 当前目录的 mpx → /tmp/mpx
-#               → GitHub Releases 的 linux 发布件 → 用本机 Go 从源码编。
+# 二进制按顺序找:参数给的那个 → GitHub Releases 的发布件 → 用本机 Go 从源码编。
+# 不再自己去捡脚本旁边、当前目录或 /tmp 下的 mpx:那里常躺着上一次 init 传上来的旧
+# 二进制,v0.4.0 就因此在一台机器上装回了一个十天前的版本。要装本地文件就显式传路径。
 
 set -euo pipefail
 
@@ -82,7 +83,7 @@ usage() {
 默认监听 127.0.0.1:8080。--addr 换成别的地址就写进 systemd 单元;0.0.0.0:8080
 会让订阅从公网可达;管理接口在同一端口上走 HTTPS(自签证书,按指纹认)。
 
-二进制按顺序找:参数 → 脚本旁边 → ./mpx → /tmp/mpx → GitHub Releases → 本机 Go 编译。
+二进制按顺序找:参数 → GitHub Releases → 本机 Go 编译。不会自动捡本机上现成的 mpx 文件。
 EOF
 	exit 0
 }
@@ -159,15 +160,6 @@ build_binary() {
 # ---- 二进制 -----------------------------------------------------------------
 
 BIN="$BIN_ARG"
-if [[ -z "$BIN" ]]; then
-	for candidate in "$SCRIPT_DIR/mpx" "./mpx" "/tmp/mpx"; do
-		if [[ -f "$candidate" ]]; then
-			BIN="$candidate"
-			break
-		fi
-	done
-fi
-
 if [[ -n "$BIN" ]]; then
 	[[ -f "$BIN" ]] || die "找不到要装的 mpx 二进制:$BIN"
 	echo "==> 二进制 $BIN"
@@ -180,7 +172,7 @@ else
 			URL="$DOWNLOAD_BASE/download/$VERSION/$ARCHIVE"
 		fi
 		echo "==> 下载 $URL"
-		if $FETCH "$URL" > "$TMP/$ARCHIVE" 2>/dev/null && verify_release "$TMP/$ARCHIVE" "$ARCHIVE" && tar -xzf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null; then
+		if $FETCH "$URL" > "$TMP/$ARCHIVE" 2>/dev/null && verify_release "$TMP/$ARCHIVE" "$ARCHIVE" && tar --no-same-owner -xzf "$TMP/$ARCHIVE" -C "$TMP" 2>/dev/null; then
 			BIN="$(find "$TMP" -maxdepth 2 -type f -name mpx -print -quit)"
 			[[ -n "$BIN" ]] || note "发布件里没有 mpx"
 		else
@@ -191,7 +183,7 @@ else
 	if [[ -z "$BIN" ]]; then
 		root="$REPO_ROOT"
 		if [[ -z "$root" ]]; then
-			command -v git >/dev/null || die "手边没有二进制,也没有 git。把二进制放到 $SCRIPT_DIR/mpx,或者把路径当参数传进来。"
+			command -v git >/dev/null || die "手边没有二进制,也没有 git。把编好的二进制路径当参数传进来。"
 			echo "==> 本地没有源码,clone 一份 $MPX_REPO"
 			if git clone --depth 1 --branch "$MPX_REF" "https://github.com/$MPX_REPO.git" "$TMP/src" >/dev/null 2>&1; then
 				root="$TMP/src"
@@ -214,6 +206,16 @@ install -m 0755 "$BIN" /usr/local/bin/mpx.new
 if ! /usr/local/bin/mpx.new --help >/dev/null 2>&1; then
 	rm -f /usr/local/bin/mpx.new
 	die "这个二进制在本机跑不起来(--help 就失败了),已放弃替换。检查编译时的 GOOS/GOARCH。"
+fi
+# 说清楚装的是哪个版本。连 --version 都不认的是很老的 mpx,多半是捡错了文件。
+if ! NEW_VERSION="$(/usr/local/bin/mpx.new --version 2>/dev/null)"; then
+	rm -f /usr/local/bin/mpx.new
+	die "这个二进制不认 --version,是很老的 mpx($BIN),已放弃替换。"
+fi
+echo "    版本:$NEW_VERSION"
+if [[ "$VERSION" != latest && "$NEW_VERSION" != *"$VERSION"* && -z "$BIN_ARG" ]]; then
+	rm -f /usr/local/bin/mpx.new
+	die "要装 $VERSION,拿到的却是「$NEW_VERSION」,已放弃替换。"
 fi
 mv -f /usr/local/bin/mpx.new /usr/local/bin/mpx
 
