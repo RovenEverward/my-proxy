@@ -19,13 +19,24 @@ function coreText(s) {
   if (s.cores?.length) return s.cores.map(c => `${c.core} ${c.active ? "运行中" : "未运行"}${c.version ? " · " + c.version : ""}`).join(" / ");
   return s.version ? `xray ${s.active ? "运行中" : "未运行"}` : "没装核心";
 }
+// previewDisplay:和服务端 model.NodeDisplay 同一套拼法(旗帜 + 城市/国家 + 字母),只用来预览;
+// 国家中文名浏览器自己有(Intl.DisplayNames),HK/MO 用 CLDR 短名,与服务端一致。
+function previewDisplay(m) {
+  const r = (m.region || "").trim().toUpperCase();
+  if (!r) return "";
+  const iso = /^[A-Z]{2}$/.test(r);
+  const flag = iso ? String.fromCodePoint(...[...r].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65)) : "";
+  let place = (m.city || "").trim();
+  if (!place) { place = { HK: "香港", MO: "澳门" }[r] || r; if (iso && !/^(HK|MO)$/.test(r)) { try { place = new Intl.DisplayNames(["zh-Hans"], { type: "region" }).of(r) || r; } catch { /* 老浏览器 */ } } }
+  return [flag, place, m.letter || ""].filter(Boolean).join(" ");
+}
 const sshText = n => `${n.ssh_user || "root"}@:${n.ssh_port || 22}`;
 const certText = c => c.error ? "读不到" : c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`;
 
 PAGES.nodes = {
   title: "节点", nav: ["管理", "nodes", 20],
   count: () => NODES_TOTAL ?? STATUS?.counts?.nodes ?? "",
-  crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${d?.node?.name || "#" + r[1]}</b>` : H`<b>节点</b>`,
+  crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${d?.node?.display || d?.node?.name || "#" + r[1]}</b>` : H`<b>节点</b>`,
   async load(r) {
     if (r[1]) {
       const id = +r[1];
@@ -48,7 +59,7 @@ function nodeList(d) {
   let inner;
   if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(5, 6)}</tbody></table>`;
   else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器,再在上面装核心。节点上不装任何 mpx 组件。", "mpx node add hk --address 203.0.113.10", W ? H`<button class="btn pri sm" data-act="node-new">${ic("plus")}添加节点</button>` : "");
-  else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${n.name}</b> <span class="sub">#${n.id}</span><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
+  else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${n.display || n.name}</b> ${n.display ? H`<span class="sub mono">${n.name}</span> ` : ""}<span class="sub">#${n.id}</span><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
     <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : H`<span class="sub">—</span>`}</td>
     <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
   return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存 · 对应 <code>mpx node list</code></p></div><div class="sp"></div>
@@ -68,7 +79,7 @@ function nodeDetail(d) {
   const rep = d.report && !d.report.error ? d.report : null;
   let summary = [];
   try { const j = rep ? (typeof rep.report === "string" ? JSON.parse(rep.report) : rep.report) : null; summary = (j && j.summary) || []; } catch { summary = []; }
-  return H`<div class="ph"><div><h1 class="hrow">${n.name} ${nodeSt(n)}</h1><p class="mono">#${id} · ${n.address} · ${sshText(n)}</p></div><div class="sp"></div>
+  return H`<div class="ph"><div><h1 class="hrow">${n.display || n.name} ${nodeSt(n)}</h1><p class="mono">${n.display ? n.name + " · " : ""}#${id} · ${n.address} · ${sshText(n)}</p></div><div class="sp"></div>
     <button class="btn" data-act="node-check" data-id="${id}">${ic("refresh")}现场检查</button>
     ${W ? H`<button class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}">下发配置</button>
     <button class="btn" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-on="${n.draining ? "1" : ""}">${n.draining ? "结束排水" : "排水"}</button>` : ""}
@@ -96,7 +107,8 @@ function nodeDetail(d) {
 /* ---- 编辑器:add / edit ---- */
 async function nodeEditor(id) {
   let v = null;
-  if (id) { try { v = await api(nodePath(id)); } catch (e) { toast(e.message, true); return; } }
+  let meta = null;
+  if (id) { try { [v, meta] = await Promise.all([api(nodePath(id)), api(nodePath(id) + "/metadata")]); } catch (e) { toast(e.message, true); return; } }
   const isNew = !v, n = v || { name: "", address: "", ssh_port: 0, ssh_user: "", api_port: 0, config_path: "", service_name: "" };
   const num = x => x ? String(x) : "";
   openDrawer(H`<form id="node-form" novalidate><div class="dh"><h2>${isNew ? "添加节点" : "编辑 " + n.name}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
@@ -105,6 +117,11 @@ async function nodeEditor(id) {
     <div class="field"><label for="n-address">对外地址</label><input class="in mono" id="n-address" name="address" value="${n.address}" placeholder="203.0.113.10"><span class="h">入口没写地址时订阅里用它</span></div></div>
     <div class="two"><div class="field"><label for="n-ssh-port">SSH 端口</label><input class="in mono" id="n-ssh-port" name="ssh_port" value="${num(n.ssh_port)}" placeholder="22" inputmode="numeric"></div>
     <div class="field"><label for="n-ssh-user">SSH 用户</label><input class="in mono" id="n-ssh-user" name="ssh_user" value="${n.ssh_user}" placeholder="root"></div></div>
+    ${isNew ? "" : H`<div class="field"><label>显示名<span class="sub" id="n-display"></span></label><div class="three">
+      <input class="in mono" id="n-region" name="region" value="${meta.region || ""}" placeholder="地区 US" aria-label="地区" autocomplete="off">
+      <input class="in" id="n-city" name="city" value="${meta.city || ""}" placeholder="城市,留空用国家名" aria-label="城市" autocomplete="off">
+      <input class="in mono" id="n-letter" name="letter" value="${meta.letter || ""}" placeholder="字母,留空自动" aria-label="字母" autocomplete="off"></div>
+      <div class="flex8 mt"><button type="button" class="btn sm" id="n-locate">重新识别</button><span class="h" id="n-locate-msg">按节点 IP 问 ipwho.is 给建议,只填进表单,保存才写入;节点 IP 会发给这个第三方。</span></div></div>`}
     <details class="adv"><summary>高级</summary>
     <div class="two"><div class="field"><label for="n-api-port">xray API 端口</label><input class="in mono" id="n-api-port" name="api_port" value="${num(n.api_port)}" placeholder="默认" inputmode="numeric"></div>
     <div class="field"><label for="n-service">服务名</label><input class="in mono" id="n-service" name="service_name" value="${n.service_name}" placeholder="mpx-xray"></div></div>
@@ -124,12 +141,39 @@ async function nodeEditor(id) {
       const changed = isNew ? out[k] !== "" && out[k] !== 0 : out[k] !== (n[k] || (INTS.has(k) ? 0 : ""));
       if (changed && !(isNew && k === "name")) flags.push(flag, INTS.has(k) ? String(out[k]) : out[k] === "" ? '""' : shq(out[k]));
     }
+    const metaFlags = [];
+    if (!isNew) {
+      const region = String(f.get("region") || "").trim().toUpperCase(), city = String(f.get("city") || "").trim(), letter = String(f.get("letter") || "").trim().toUpperCase();
+      if (letter && !/^[A-Z]{1,2}$/.test(letter)) err.push("--letter 要是 1–2 位字母");
+      out.meta = { region, city, letter };
+      if (region !== (meta.region || "")) metaFlags.push("--region", region === "" ? '""' : shq(region));
+      if (city !== (meta.city || "")) metaFlags.push("--city", city === "" ? '""' : shq(city));
+      if (letter !== (meta.letter || "")) metaFlags.push("--letter", letter === "" ? '""' : shq(letter));
+      out.metaChanged = metaFlags.length > 0;
+      out.nodeChanged = flags.length > 0;
+      flags.push(...metaFlags);
+    }
     if (isNew && !out.name) err.push("名称不能为空");
     if (isNew && !out.address) err.push("必须给对外地址");
     const cmd = isNew ? `mpx node add ${shq(out.name || "<名称>")} ${flags.join(" ")}` : `mpx node edit ${id} ${flags.join(" ") || "(没有改动)"}`;
     return { out, err, cmd };
   };
-  const sync = () => { $("#n-cmd").textContent = collect().cmd; };
+  const sync = () => {
+    const c = collect();
+    $("#n-cmd").textContent = c.cmd;
+    if (!isNew) {
+      // 字母留空、或换了地区/城市而没指定字母时,由控制面在保存时分配,这里先不猜。
+      const m = { ...c.out.meta }, group = x => (x.region || "").toUpperCase() + "\0" + (x.city || "");
+      if (m.letter === (meta.letter || "") && group(m) !== group(meta)) m.letter = "";
+      $("#n-display").textContent = m.region ? " · " + previewDisplay(m) + (m.letter ? "" : "(字母保存时自动分配)") : "";
+    }
+  };
+  if (!isNew) $("#n-locate").onclick = () => busy($("#n-locate"), async () => {
+    const sg = await api(nodePath(id) + "/locate", { method: "POST" }); // 只是建议,不写入,不刷新页面
+    $("#n-region").value = sg.region; $("#n-city").value = sg.city || "";
+    $("#n-locate-msg").textContent = `建议:${sg.display}(${sg.source},依据${sg.via === "node" ? "节点出口" : "节点"} IP ${sg.ip})${!sg.city && sg.city_en ? `;${sg.city_en} 不在对照表里,可手填城市` : ""}`;
+    sync();
+  });
   form.oninput = form.onchange = sync; sync();
   form.addEventListener("submit", async e => {
     e.preventDefault();
@@ -144,8 +188,22 @@ async function nodeEditor(id) {
         toast(`已创建节点 ${created.id}(${created.name})`);
         closeOverlays(); location.hash = "nodes/" + created.id;
       } else {
+        // 与 node edit 一致:只改显示名时只发 metadata;读回整份再改 region/city/letter,
+        // 换了地区或城市且没指定字母时发空字母,让控制面在新分组里重新取。
+        const { meta: m, metaChanged, nodeChanged, ...nodeOut } = c.out;
+        if (metaChanged) {
+          const fresh = await api(nodePath(id) + "/metadata");
+          const group = x => (x.region || "").toUpperCase() + "\0" + (x.city || "");
+          const body = { ...fresh, city: fresh.city || "", letter: fresh.letter || "" };
+          if (m.region !== (meta.region || "")) body.region = m.region;
+          if (m.city !== (meta.city || "")) body.city = m.city;
+          if (m.letter !== (meta.letter || "")) body.letter = m.letter;
+          else if (group(body) !== group(fresh)) body.letter = "";
+          const saved = await write("PUT", nodePath(id) + "/metadata", body);
+          if (!nodeChanged) { toast(`节点 ${id} 的显示名:${previewDisplay(saved) || "(没有地区,不显示)"}`); closeOverlays(); load(true, true); return; }
+        }
         const fresh = asModelNode(await api(nodePath(id)));
-        const updated = await write("PUT", nodePath(id), { ...fresh, ...c.out });
+        const updated = await write("PUT", nodePath(id), { ...fresh, ...nodeOut });
         toast(`已更新节点 ${updated.id}(${updated.name})`);
         closeOverlays(); load(true, true);
       }

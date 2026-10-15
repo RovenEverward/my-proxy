@@ -1,6 +1,6 @@
 // 用户页的写操作:每一条都和对应的 mpx user 命令对照,发到控制面的请求要一致。
 import { test, expect } from "@playwright/test";
-import { startEnv, normalize, login } from "./env.mjs";
+import { startEnv, normalize, login, cpFetch } from "./env.mjs";
 
 let env;
 test.beforeAll(async () => {
@@ -140,7 +140,7 @@ test("重置流量、吊销订阅:要确认,和 CLI 一致;吊销后显示新地
   await page.click("#okb");
   await expect(page.locator(".links code").first()).not.toHaveText(before);
   expect(normalize(env.takeLog(), names)).toEqual(revokeCLI);
-  const old = await fetch(before.replace(/^https?:\/\/[^/]+/, env.cpURL));
+  const old = await cpFetch(before.replace(/^https?:\/\/[^/]+/, env.cpURL));
   expect(old.status).toBe(404);
 });
 
@@ -160,7 +160,7 @@ test("删除用户:要逐字输入用户名才放行,和 mpx user rm 一致", as
   await page.click("#okb");
   await expect(page).toHaveURL(/#users$/);
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
-  const r = await fetch(env.cpURL + "/api/users/ui-misc", { headers: { Authorization: "Bearer " + env.token } });
+  const r = await cpFetch(env.cpURL + "/api/users/ui-misc", { headers: { Authorization: "Bearer " + env.token } });
   expect(r.status).toBe(404);
 });
 
