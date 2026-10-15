@@ -32,9 +32,9 @@ var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全
 func init() {
 	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundEditCmd, inboundRmCmd)
 
-	inboundListCmd.Flags().Int64Var(&inboundListNode, "node", 0, "只看这个节点上的入站")
+	inboundListCmd.Flags().Var(nodeFlag(&inboundListNode), "node", "只看这个节点上的入站(id、名字或唯一前缀)")
 
-	inboundAddCmd.Flags().Int64Var(&inboundAddFlags.node, "node", 0, "所属节点 id,必填")
+	inboundAddCmd.Flags().Var(nodeFlag(&inboundAddFlags.node), "node", "所属节点,必填(id、名字或唯一前缀)")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.tag, "tag", "", "入站 tag,空表示按协议与端口生成")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.protocol, "protocol", "", "协议:vless / vmess / trojan / shadowsocks / wireguard / hysteria2 / tuic,必填")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.listen, "listen", "", "监听地址,空表示 0.0.0.0")
@@ -212,11 +212,11 @@ var inboundListCmd = &cobra.Command{
 }
 
 var inboundShowCmd = &cobra.Command{
-	Use:   "show <id>",
+	Use:   "show <入站>",
 	Short: "显示一个入站的全部字段",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveInboundID(args[0], false)
 		if err != nil {
 			return err
 		}
@@ -352,7 +352,7 @@ var inboundAddCmd = &cobra.Command{
 }
 
 var inboundRmCmd = &cobra.Command{
-	Use:   "rm <id>",
+	Use:   "rm <入站>",
 	Short: "删除一个入站",
 	Long: `删除一个入站 —— 不可逆。
 
@@ -363,7 +363,7 @@ config.json 重写一遍,否则节点上的 xray 还会照旧监听一段时间�
 确认入站 id 用 mpx inbound list。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveInboundID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -412,7 +412,7 @@ var inboundEditFlags struct {
 }
 
 var inboundEditCmd = &cobra.Command{
-	Use:   "edit <id>",
+	Use:   "edit <入站>",
 	Short: "改一个入站",
 	Long: `改一个入站。只改给出来的字段,没给的保持原样。
 
@@ -430,7 +430,7 @@ mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-u
 --alpn / --short-ids 给空串表示清空这个列表,不给则是保持原样。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveInboundID(args[0], true)
 		if err != nil {
 			return err
 		}

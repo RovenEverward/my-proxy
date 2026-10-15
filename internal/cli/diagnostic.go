@@ -276,7 +276,7 @@ func diagnosticExecutionOutput(cmd *cobra.Command, raw []byte, requestErr error)
 }
 
 func newNodeDiagnoseCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "diagnose [id]", Short: "一键执行节点健康、入口能力和 Fusion 完整体检", Args: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "diagnose [节点]", Short: "一键执行节点健康、入口能力和 Fusion 完整体检", Args: func(cmd *cobra.Command, args []string) error {
 		all, _ := cmd.Flags().GetBool("all")
 		if (all && len(args) != 0) || (!all && len(args) != 1) {
 			return fmt.Errorf("请指定一个节点 id 或 --all,两者互斥")
@@ -298,7 +298,7 @@ func newNodeDiagnoseCmd() *cobra.Command {
 			all, _ := cmd.Flags().GetBool("all")
 			var id int64
 			if !all {
-				id, err = idArg(args[0])
+				id, err = resolveNodeID(args[0], false)
 				if err != nil {
 					return err
 				}
@@ -409,9 +409,9 @@ func diagnoseAllNodes(cmd *cobra.Command, c *Client, cfg diagnostics.Config, net
 }
 
 func newNodeDiagnosticsCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "diagnostics <id>", Short: "读取节点在指定位置的最新体检报告", Args: cobra.ExactArgs(1),
+	cmd := &cobra.Command{Use: "diagnostics <节点>", Short: "读取节点在指定位置的最新体检报告", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := idArg(args[0])
+			id, err := resolveNodeID(args[0], false)
 			if err != nil {
 				return err
 			}

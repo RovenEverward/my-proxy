@@ -17,7 +17,7 @@ func init() {
 }
 
 func capabilityFlags(cmd *cobra.Command, scheduled bool) {
-	cmd.Flags().Int64("inbound", 0, "检测使用的入站 ID,必填")
+	cmd.Flags().Var(inboundFlag(new(int64)), "inbound", "检测使用的入站,必填(id、节点/tag 或唯一 tag)")
 	cmd.Flags().Int64("host", 0, "检测使用的入口 ID;0 仅用于没有显式入口的入站")
 	cmd.Flags().StringSlice("targets", append([]string(nil), model.CapabilityTargets...), "检测目标:egress,youtube,netflix")
 	if scheduled {
@@ -28,7 +28,7 @@ func capabilityFlags(cmd *cobra.Command, scheduled bool) {
 }
 
 func capabilityConfigFromFlags(cmd *cobra.Command, scheduled bool) (model.CapabilityConfig, error) {
-	inbound, _ := cmd.Flags().GetInt64("inbound")
+	inbound, _ := strconv.ParseInt(cmd.Flags().Lookup("inbound").Value.String(), 10, 64)
 	host, _ := cmd.Flags().GetInt64("host")
 	targets, _ := cmd.Flags().GetStringSlice("targets")
 	cfg := model.CapabilityConfig{InboundID: inbound, HostID: host, Targets: targets}
@@ -48,12 +48,12 @@ func capabilityConfigFromFlags(cmd *cobra.Command, scheduled bool) (model.Capabi
 
 func newCapabilityProbeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "probe <id>", Short: "通过指定入站和入口现场检测节点能力",
+		Use: "probe <节点>", Short: "通过指定入站和入口现场检测节点能力",
 		Long:    "通过实际代理入口检测出口、YouTube 和 Netflix。手动检测只保存结果,不会启用定时检测。稳定状态需要连续两次一致观测。",
 		Args:    cobra.ExactArgs(1),
 		Example: "  mpx node probe 1 --inbound 2 --host 3 --targets egress,youtube,netflix",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := idArg(args[0])
+			id, err := resolveNodeID(args[0], false)
 			if err != nil {
 				return err
 			}
@@ -86,10 +86,10 @@ func newCapabilityProbeCmd() *cobra.Command {
 
 func newCapabilitiesCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "capabilities <id>", Short: "查看节点的能力检测配置和结果", Args: cobra.ExactArgs(1),
+		Use: "capabilities <节点>", Short: "查看节点的能力检测配置和结果", Args: cobra.ExactArgs(1),
 		Example: "  mpx node capabilities 1\n  mpx node capabilities 1 --output json",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := idArg(args[0])
+			id, err := resolveNodeID(args[0], false)
 			if err != nil {
 				return err
 			}
@@ -126,11 +126,11 @@ func newCapabilitiesCmd() *cobra.Command {
 
 func newCapabilitySetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "capability-set <id>", Short: "保存指定入口的定时能力检测配置", Args: cobra.ExactArgs(1),
+		Use: "capability-set <节点>", Short: "保存指定入口的定时能力检测配置", Args: cobra.ExactArgs(1),
 		Long:    "保存整份检测配置。省略选项使用默认值;--enabled 默认 false。此命令不会立即检测。",
 		Example: "  mpx node capability-set 1 --inbound 2 --host 3 --enabled --interval 1h --ttl 3h\n  mpx node capability-set 1 --inbound 2 --host 3 --enabled=false",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := idArg(args[0])
+			id, err := resolveNodeID(args[0], true)
 			if err != nil {
 				return err
 			}
