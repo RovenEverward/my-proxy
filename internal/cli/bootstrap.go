@@ -297,11 +297,17 @@ func ensureNode(c *Client, address string) (int64, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	created, err := decode[model.Node](raw)
+	created, err := decode[createdNode](raw)
 	if err != nil {
 		return 0, "", err
 	}
 	note("节点 %s 建好了(id=%d)", created.Name, created.ID)
+	if created.Display != "" {
+		note("显示名:%s(按 IP 自动识别)", created.Display)
+	}
+	if created.LocateNote != "" {
+		note("%s", created.LocateNote)
+	}
 	return created.ID, created.Name, nil
 }
 

@@ -149,7 +149,14 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateSubCache()
-	writeJSON(w, http.StatusCreated, n)
+	// 所有建节点的入口(node add、UI、init)都走这里,所以自动识别放在服务端;
+	// 失败不影响建节点,只在回答里带一句提示。
+	display, locateNote := s.autoLocateNode(r.Context(), n)
+	writeJSON(w, http.StatusCreated, struct {
+		model.Node
+		Display    string `json:"display,omitempty"`
+		LocateNote string `json:"locate_note,omitempty"`
+	}{n, display, locateNote})
 }
 
 // handleGetNode 回答一台节点,连同它最近一次的状态。

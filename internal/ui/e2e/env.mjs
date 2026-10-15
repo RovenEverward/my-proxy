@@ -23,7 +23,7 @@ export async function startEnv() {
   const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "" };
   const cpPort = await freePort();
   const procs = [];
-  const serve = spawn(bin, ["serve", "--addr", `127.0.0.1:${cpPort}`, "--db", path.join(dir, "mpx.db")], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const serve = spawn(bin, ["serve", "--addr", `127.0.0.1:${cpPort}`, "--db", path.join(dir, "mpx.db"), "--auto-locate=false"] /* 不出网:自动识别另有 Go 测试 */, { env, stdio: ["ignore", "pipe", "pipe"] });
   procs.push(serve);
   let serveOut = "";
   serve.stdout.on("data", d => { serveOut += d; }); serve.stderr.on("data", d => { serveOut += d; });

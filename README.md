@@ -169,7 +169,7 @@ mpx node online la-1          # 等价于 mpx node online 1
 mpx inbound show la/reality   # 节点 la-… 上 tag 为 reality… 的入站
 ```
 
-给节点起显示名(列表第一列、也能直接拿来指定节点):
+给节点起显示名(列表第一列、也能直接拿来指定节点)。新建节点时控制面会按 IP 问 ipwho.is 自动设好(失败只提示,不影响建节点;`mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0` 关闭),也可以手动:
 
 ```bash
 mpx node locate la-1                           # 按 IP 问 ipwho.is 给建议,不写入
