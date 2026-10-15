@@ -120,7 +120,7 @@ function shell(page, body, crumb) {
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img src="/logo.svg" alt="">mpx<small>${STATUS?.version || ""}</small></div>
-  <div class="profile"><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div style="min-width:0"><b>${META.profile || "default"}</b><br><span title="${META.server}">${META.server}</span></div></div>
+  <div class="profile"><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div></div>
   ${raw(nav)}
   <div class="foot"><span class="ro">${ic("term")} 由 <code>mpx ui</code> 提供</span><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -198,13 +198,17 @@ async function write(method, path, body, okText) {
   if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
   const res = await api(path, init);
   if (okText) toast(okText);
+  afterWrite();
   return res;
 }
+// 任何写成功后都重新拉当前页。放到宏任务里,等调用方关掉抽屉/改完地址再读 location.hash;
+// 否则地址没变(例如在 #users 删掉用户后又设 location.hash="users")时不会有 hashchange,列表就停在旧数据。
+function afterWrite() { setTimeout(() => load(true, true), 0); }
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单;cmdOf(modal) 给了就随输入重算等价命令。
 function confirmBox({ title, text, cmd, ok, danger, typed, run, extra, cmdOf }) {
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mb"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
+  m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}${cmd || cmdOf ? H`<div class="cmd mb" id="modal-cmd">${cmd || ""}</div>` : ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
