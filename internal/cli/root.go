@@ -81,6 +81,7 @@ func init() {
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
 func Execute() int {
+	wireCompletion(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		// doctor 发现故障时要给一个能被脚本认出来的码。它走的是"RunE 返回
 		// 错误"这条路(cobra 只认这一种失败方式),但它的输出已经打完了、

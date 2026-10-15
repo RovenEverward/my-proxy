@@ -160,6 +160,23 @@ mpx user links alice
 ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
 ```
 
+### 用名字指定对象，Tab 补全
+
+要指定节点或入站的地方，可以写 id，也可以写名字（不区分大小写）、唯一前缀；入站还可以写成 `节点/tag`。命中多个时会列出候选让你写具体些：
+
+```bash
+mpx node online la-1          # 等价于 mpx node online 1
+mpx inbound show la/reality   # 节点 la-… 上 tag 为 reality… 的入站
+```
+
+开启 shell 补全，节点名、入站、用户名都能按 Tab 补全：
+
+```bash
+source <(mpx completion bash)                  # bash，写进 ~/.bashrc 长期生效
+mpx completion zsh > "${fpath[1]}/_mpx"        # zsh
+mpx completion fish > ~/.config/fish/completions/mpx.fish
+```
+
 > **想先本地试一把？** 不装服务，直接跑前台进程：
 > ```bash
 > go build -o mpx ./cmd/mpx

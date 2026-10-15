@@ -27,7 +27,7 @@ func TestNodeRowShowsCachedStatus(t *testing.T) {
 
 	got := nodeRow(v, now)
 	want := []string{
-		"3", "hk", "1.2.3.4", "22", "root", "10085",
+		"hk", "hk", "1.2.3.4", "22", "root", "10085",
 		"/etc/mpx/xray/config.json", "mpx-xray",
 		"active", "26.3.27", "否", "1 分前", "9 天",
 	}
@@ -39,6 +39,9 @@ func TestNodeRowShowsCachedStatus(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("第 %d 列(%s): got %q want %q", i+1, nodeHeaders[i], got[i], want[i])
 		}
+	}
+	if got[len(got)-1] != "3" {
+		t.Errorf("id 应在最后一列,得到 %q", got[len(got)-1])
 	}
 }
 
