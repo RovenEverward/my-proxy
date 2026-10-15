@@ -65,16 +65,22 @@ func init() {
 // —— 列表是要能随手敲的,一次列出十几台节点如果每台都连一次,它就变成一条
 // 要等半分钟的命令了。想现场问一次用 node status。
 var nodeHeaders = []string{
-	"ID", "名称", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
-	"状态", "版本", "漂移", "最后检查", "证书最短", "能力",
+	"名称", "内部名", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
+	"状态", "版本", "漂移", "最后检查", "证书最短", "能力", "ID",
 }
 
 // nodeRow 按表格要展示的顺序取字段;留空的一律显示成生效的默认值,
 // 使用者看到的就是这个节点实际会用到的值。
 func nodeRow(v model.NodeView, now time.Time) []string {
 	n := v.Node
+	// 名字为主、id 放最后(docs/internal/node-naming-rfc.md §8):「名称」是展示名,
+	// 还没有展示名时就是内部名;「内部名」是 CLI 里敲的那个。
+	display := nodeDisplay(n)
+	if display == "" {
+		display = n.Name
+	}
 	return []string{
-		strconv.FormatInt(n.ID, 10),
+		display,
 		n.Name,
 		n.Address,
 		strconv.Itoa(n.SSHPortOrDefault()),
@@ -88,6 +94,7 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 		checkedCell(v, now),
 		certCell(v),
 		capabilitySummary(v.Capabilities),
+		strconv.FormatInt(n.ID, 10),
 	}
 }
 
