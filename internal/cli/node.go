@@ -57,6 +57,9 @@ func init() {
 	nodeEditCmd.Flags().IntVar(&nodeEditFlags.apiPort, "api-port", 0, "新的 xray API 端口,0 表示 10085")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.configPath, "config-path", "", "节点上新的 config.json 路径")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.serviceName, "service-name", "", "新的 systemd 服务名")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.region, "region", "", "地区(两位国家码,如 US),显示名的旗帜与国家")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.city, "city", "", "城市,如 洛杉矶;空表示用国家名")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.letter, "letter", "", "字母(A、B…AA);空表示自动取最小空闲字母")
 }
 
 // nodeHeaders 是节点表格的表头。列表与 show 共用同一套列。
@@ -75,7 +78,7 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 	n := v.Node
 	// 名字为主、id 放最后(docs/internal/node-naming-rfc.md §8):「名称」是展示名,
 	// 还没有展示名时就是内部名;「内部名」是 CLI 里敲的那个。
-	display := nodeDisplay(n)
+	display := v.Display
 	if display == "" {
 		display = n.Name
 	}
@@ -589,6 +592,9 @@ var nodeEditFlags struct {
 	apiPort     int
 	configPath  string
 	serviceName string
+	region      string
+	city        string
+	letter      string
 }
 
 var nodeEditCmd = &cobra.Command{
@@ -598,6 +604,11 @@ var nodeEditCmd = &cobra.Command{
 
   mpx node edit 2 --name jp-1
   mpx node edit 4 --ssh-port 2222 --ssh-user deploy
+  mpx node edit la --region US --city 洛杉矶      # 显示名 🇺🇸 洛杉矶 A,字母自动分配
+
+--region / --city / --letter 改的是显示名(存在节点元数据里,和 purpose metadata
+是同一份),不碰名字和连接参数。字母在同一地区同一城市内不重复,删掉节点不会让
+别的节点重排。
 
 注意几个连带影响:
 
@@ -631,6 +642,21 @@ var nodeEditCmd = &cobra.Command{
 		}
 		n := v.Node
 		oldAddress := n.Address
+
+		f := cmd.Flags()
+		metaChanged := f.Changed("region") || f.Changed("city") || f.Changed("letter")
+		nodeChanged := false
+		for _, name := range []string{"name", "address", "ssh-port", "ssh-user", "api-port", "config-path", "service-name"} {
+			nodeChanged = nodeChanged || f.Changed(name)
+		}
+		if metaChanged {
+			if err := editNodeMetadata(c, id, f.Changed("region"), f.Changed("city"), f.Changed("letter")); err != nil {
+				return err
+			}
+			if !nodeChanged {
+				return nil
+			}
+		}
 
 		if cmd.Flags().Changed("name") {
 			n.Name = nodeEditFlags.name
@@ -901,4 +927,46 @@ var nodeOnlineCmd = &cobra.Command{
 // nodePath 拼出节点资源的路径。
 func nodePath(id int64) string {
 	return "/api/nodes/" + strconv.FormatInt(id, 10)
+}
+
+// editNodeMetadata 读回节点元数据,只改给出的 region / city / letter 再整份写回
+// (地区、线路、用途标签要原样带回去)。字母由控制面分配和查重。
+func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
+	path := nodePath(id) + "/metadata"
+	raw, err := c.do("GET", path, nil)
+	if err != nil {
+		return err
+	}
+	m, err := decode[model.PurposeMetadata](raw)
+	if err != nil {
+		return err
+	}
+	oldGroup := model.LetterGroup(m)
+	if region {
+		m.Region = strings.ToUpper(strings.TrimSpace(nodeEditFlags.region))
+	}
+	if city {
+		m.City = nodeEditFlags.city
+	}
+	if letter {
+		m.Letter = nodeEditFlags.letter
+	} else if model.LetterGroup(m) != oldGroup {
+		m.Letter = "" // 换了地区或城市,就在新分组里重新取最小空闲字母
+	}
+	raw, err = c.do("PUT", path, m)
+	if err != nil {
+		return err
+	}
+	if opts.output == outputJSON {
+		return emitJSON(raw)
+	}
+	saved, err := decode[model.PurposeMetadata](raw)
+	if err != nil {
+		return err
+	}
+	display := model.NodeDisplay(saved)
+	if display == "" {
+		display = "(没有地区,不显示)"
+	}
+	return report(raw, "节点 %d 的显示名:%s", id, display)
 }

@@ -50,7 +50,7 @@ bootstrap --address <节点对外地址> [--name default] [--username user1] [--
 
 ### 用途 API 与订阅
 
-管理接口：`GET/POST /api/purposes`、`GET/PUT/DELETE /api/purposes/{slug}`、`GET /api/purposes/{slug}/preview/{username}/{format}`、`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。创建 201、重复 409、更新 200、删除 204、未知对象 404、无效字段或模板 400、预览不可用 422。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。预览只支持 clash-meta / sing-box 且正文含凭证。
+管理接口：`GET/POST /api/purposes`、`GET/PUT/DELETE /api/purposes/{slug}`、`GET /api/purposes/{slug}/preview/{username}/{format}`、`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。创建 201、重复 409、更新 200、删除 204、未知对象 404、无效字段或模板 400、预览不可用 422。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。节点元数据另有 `city`、`letter`（命名 RFC N3）：省略这两个键时保留原值（老客户端整份 PUT 不会冲掉）；有 `region` 而 `letter` 为空时由控制面按（地区, 城市）分配最小空闲字母，显式字母冲突 409；host 元数据带这两项 400。`GET /api/nodes`、`GET /api/nodes/{id}` 的节点视图多一个只读 `display`（旗帜 + 城市或国家中文名 + 字母，无地区时省略）。新建或改名为纯数字的节点名 400。预览只支持 clash-meta / sing-box 且正文含凭证。
 
 `/sub/{token}[/{format}]?purpose={slug}` 保持 token 授权。未知/已删除用途 404，无可用候选、状态不可用、依赖 daily 不可用、要求能力但 hook 未接入、格式不支持均 422，并附默认订阅 URL，不静默回落。浏览器页面增加用途选择、描述、错误与复制链接。配置 `daily_purpose` 显式决定其他流量使用哪个日常候选组；留空沿用模板原有路由。全部用途重算候选，默认缓存键加入 purpose 与 gzip 协商，避免压缩变体混用。
 

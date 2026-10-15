@@ -90,13 +90,10 @@ func ambiguous(kind, arg string, hit []candidate) error {
 func nodeCandidates(vs []model.NodeView) []candidate {
 	cs := make([]candidate, 0, len(vs))
 	for _, v := range vs {
-		cs = append(cs, candidate{ID: v.Node.ID, Name: v.Node.Name, Display: nodeDisplay(v.Node)})
+		cs = append(cs, candidate{ID: v.Node.ID, Name: v.Node.Name, Display: v.Display})
 	}
 	return cs
 }
-
-// nodeDisplay 是节点的展示名;还没有展示名时为空。
-func nodeDisplay(n model.Node) string { return "" }
 
 // resolveNode 把一个节点参数解析成节点。写操作(echo=true)靠前缀命中时,先在 stderr
 // 回显解析结果,免得「以为是 A、其实是 B」。

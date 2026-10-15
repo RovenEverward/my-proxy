@@ -60,9 +60,13 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
+	meta, err := s.store.ListPurposeMetadata("nodes")
+	if err != nil {
+		return nil, err
+	}
 	views := make([]model.NodeView, 0, len(nodes))
 	for _, n := range nodes {
-		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID]}
+		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID], Display: model.NodeDisplay(meta[n.ID])}
 		if st, ok := statuses[n.ID]; ok {
 			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
 			copied := st
@@ -107,6 +111,10 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	n := req.Node
 	if msg := validateNode(&n); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	if msg := numericNodeName(n.Name); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
@@ -160,6 +168,9 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := model.NodeView{Node: *n}
+	if m, err := s.store.GetPurposeMetadata("nodes", n.ID); err == nil {
+		view.Display = model.NodeDisplay(m)
+	}
 	view.Capabilities, err = s.capabilityResults(*n, time.Now())
 	if err != nil {
 		s.writeStoreError(w, err, "节点能力")
@@ -200,6 +211,13 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if msg := validateNode(&n); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
+	}
+	// 已有的纯数字名照常能改别的字段;只拦「改成」纯数字。
+	if old, err := s.store.GetNode(id); err == nil && old.Name != n.Name {
+		if msg := numericNodeName(n.Name); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 	other, err := s.store.GetCoreDeployment(id, model.CoreSingBox)
 	if err != nil {
