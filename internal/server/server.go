@@ -71,6 +71,7 @@ type Server struct {
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
 	subCache      subCache
 	purposeFilter func(model.Purpose, []render.Endpoint) ([]render.Endpoint, error)
+	ruleSets      ruleSetCache // 「测试一个网址」用的上游规则集缓存,见 routing_match.go
 
 	// subLimiter 与 apiLimiter 是两个独立的令牌桶:订阅公网可达且无鉴权,
 	// 是扫描器与定时刷新的主战场;管理面有鉴权,但仍值得防暴力撞 token。
@@ -126,6 +127,7 @@ func (s *Server) routes() {
 
 	api := http.NewServeMux()
 	s.purposeRoutes(api)
+	s.routingRoutes(api)
 	s.diagnosticRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
