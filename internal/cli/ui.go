@@ -28,7 +28,7 @@ var uiAllow = []string{
 	"POST /api/users",
 	"PUT /api/users",
 	"DELETE /api/users",
-	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose
+	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose / locate;metadata set
 	"POST /api/nodes",
 	"PUT /api/nodes",
 	"DELETE /api/nodes",

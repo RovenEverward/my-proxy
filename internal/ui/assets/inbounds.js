@@ -168,7 +168,7 @@ async function hostEditor(inbID, hostID) {
   const found = hostID ? hosts.find(h => h.id === hostID) : null;
   if (hostID && !found) { toast(`入站 ${inbID} 上没有 id 为 ${hostID} 的对外入口`, true); return; }
   const isNew = !found, h = found ? asModelHost(found) : { inbound_id: inbID, remark: "", address: "", port: 0 };
-  const F = [["remark", "--remark", "客户端看到的名字", "香港 · 直连", "可用 {SERVER_IP} {NODE_NAME} {PROTOCOL} {TRANSPORT}"], ["address", "--address", "对外地址", "留空用节点地址", ""], ["port", "--port", "对外端口", "留空用入站端口", ""],
+  const F = [["remark", "--remark", "客户端看到的名字", "香港 · 直连", "留空用节点显示名;可用 {SERVER_IP} {NODE_NAME} {NODE_DISPLAY} {PROTOCOL} {TRANSPORT}"], ["address", "--address", "对外地址", "留空用节点地址", ""], ["port", "--port", "对外端口", "留空用入站端口", ""],
     ["sni", "--sni", "SNI", "", ""], ["host", "--host", "Host 头", "ws / grpc", ""], ["path", "--path", "路径", "ws", ""], ["alpn", "--alpn", "ALPN", "逗号分隔", ""]];
   const fv = k => Array.isArray(h[k]) ? h[k].join(",") : h[k] ? String(h[k]) : "";
   openDrawer(H`<form id="host-form" novalidate><div class="dh"><h2>${isNew ? `给入站 #${inbID} 加入口` : `编辑入口 #${hostID}`}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>

@@ -18,7 +18,7 @@ test.afterAll(async () => { await env?.stop(); });
 const take = (names, opt) => normalize(env.takeLog(), names, opt);
 async function openNode(page, id) {
   await page.goto(env.origin + "/#nodes/" + id);
-  await expect(page.locator("h1")).toContainText(id === 2 ? "ui-n" : "ui-rm");
+  await expect(page.locator(".ph").first()).toContainText(id === 2 ? "ui-n" : "ui-rm");
 }
 
 test("添加节点:与 mpx node add 一致", async ({ page }) => {
@@ -53,6 +53,27 @@ test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
   await page.click("#n-save");
   await expect(page.locator(".toast")).toContainText("已更新节点 2");
   expect(take(names, opt)).toEqual(fromCLI);
+});
+
+test("显示名:与 mpx node edit --region / --city 一致,只发 metadata", async ({ page }) => {
+  await login(page, env);
+  const names = ["cli-n", "ui-n"], opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("node", "edit", "1", "--region", "US", "--city", "洛杉矶");
+  const fromCLI = take(names, opt);
+  expect(fromCLI.map(r => r.method + " " + r.path)).toEqual(["PUT /api/nodes/<id>/metadata"]);
+  await openNode(page, 2);
+  await page.click("[data-act=node-edit]");
+  await page.fill("#n-region", "us");
+  await page.fill("#n-city", "洛杉矶");
+  await expect(page.locator("#n-cmd")).toHaveText('mpx node edit 2 --region US --city "洛杉矶"');
+  await expect(page.locator("#n-display")).toContainText("🇺🇸 洛杉矶");
+  await page.click("#n-save");
+  await expect(page.locator(".toast")).toContainText("🇺🇸 洛杉矶 B");
+  expect(take(names, opt)).toEqual(fromCLI);
+  // 列表以显示名为主、内部名为辅。
+  await page.goto(env.origin + "/#nodes");
+  await expect(page.locator("tbody tr", { hasText: "ui-n" }).first()).toContainText("🇺🇸 洛杉矶 B");
 });
 
 test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致", async ({ page }) => {
