@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
+	"github.com/RovenEverward/my-proxy/internal/pin"
 )
 
 // init 是「我有一台空 VPS,想立刻用上订阅」的那条路。
@@ -83,6 +85,9 @@ var initCmd = &cobra.Command{
 它会依次做完这些事:装控制面(systemd 服务,监听 0.0.0.0:8080)、把控制面的公钥
 装进这台机器自己的 sshd、注册节点、建一个 VLESS+TCP+REALITY 入站、建对外入口、
 把订阅前缀指到本机、建一个用户,最后在节点上装 xray 核心并下发配置,打印订阅链接。
+一开始会让你设一个设备密码;装完后这台电脑自动接入控制面,并打印一行
+mpx connect 命令给别的设备用。之后不再需要登录 VPS。非交互运行时用环境变量
+MPX_DEVICE_PASSWORD 给出设备密码。
 
 它假设控制面与节点在同一台机器上(单机全包)。要分开部署,按 mpx node add、
 mpx inbound add、mpx host add 的 --help 一步步来。
@@ -146,6 +151,12 @@ func runInit() error {
 			return err
 		}
 		initFlags.password = pw
+	}
+
+	// 设备密码放在一开始问:装了二十分钟才发现没法设,比现在多问一句糟得多。
+	devicePW, err := initDevicePassword()
+	if err != nil {
+		return err
 	}
 
 	auth, err := initAuth(n)
@@ -252,26 +263,49 @@ func runInit() error {
 		return err
 	}
 
-	// ---- 收尾:告诉本机怎么管它 ----------------------------------------------
+	// ---- 收尾:设备密码 + 把本机接上去 --------------------------------------
 
-	token, fp := "", ""
-	tokenCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
+	// 指纹是经 SSH 读回来的:SSH 这条路本身已经认过这台机器,所以这里不用再让人
+	// 对一遍指纹。
+	fpCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
-	if out, err := node.RunAs(tokenCtx, n, auth, "sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env"); err == nil {
-		token = strings.TrimSpace(out)
+	fp := ""
+	if out, err := node.RunAs(fpCtx, n, auth, "cat /var/lib/mpx/tls-fingerprint"); err == nil {
+		fp, _ = pin.Normalize(strings.TrimSpace(out))
 	}
-	// 指纹由控制面首次启动时写在库旁边;读不到就让人去 mpx status 里看。
-	if out, err := node.RunAs(tokenCtx, n, auth, "cat /var/lib/mpx/tls-fingerprint"); err == nil {
-		fp = strings.TrimSpace(out)
+	hostport := net.JoinHostPort(host, strconv.Itoa(apiPort))
+	server := "https://" + hostport
+
+	fmt.Println()
+	switch {
+	case fp == "":
+		fmt.Println("没读到控制面的证书指纹(/var/lib/mpx/tls-fingerprint),本机没有自动接入。")
+		fmt.Printf("稍后在本机跑:mpx connect %s(它会显示指纹让你确认)\n", hostport)
+		return nil
+	case devicePW == "":
+		fmt.Println("没设设备密码,本机没有自动接入。")
+		return nil
 	}
 
-	server := "https://" + net.JoinHostPort(host, strconv.Itoa(apiPort))
+	step("设置设备密码")
+	// 在 VPS 本机经回环调接口:密码只走 SSH,不经公网。
+	setPW := fmt.Sprintf(`MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:%d device password --password-stdin`, apiPort)
+	pwCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
+	defer cancel()
+	if out, err := node.RunWithInputAs(pwCtx, n, auth, setPW, []byte(devicePW+"\n")); err != nil {
+		return fmt.Errorf("设置设备密码失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):%v %s", err, strings.TrimSpace(out))
+	}
+
+	step("把这台电脑接入控制面")
+	if _, err := connectAndSave(server, fp, devicePW, defaultDeviceName()); err != nil {
+		return fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s", err, hostport, fp)
+	}
+
 	fmt.Println()
-	fmt.Println("本机想管这台控制面就跑:")
-	fmt.Printf("  mpx login --server %s --token %s --fp %s\n", server,
-		firstNonEmpty(token, "<去 /etc/mpx/env 里拿>"), firstNonEmpty(fp, "<控制面证书指纹>"))
+	fmt.Println("别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:")
+	fmt.Printf("  mpx connect %s --fp %s\n", hostport, fp)
 	fmt.Println()
-	fmt.Println("管理接口走 HTTPS(控制面自签证书,CLI 按上面的指纹认它);订阅仍是同一个端口上的 HTTP。")
+	fmt.Println("同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。")
 	return nil
 }
 
@@ -420,4 +454,22 @@ func shellJoin(parts []string) string {
 		quoted[i] = node.ShellQuote(p)
 	}
 	return strings.Join(quoted, " ")
+}
+
+// initDevicePassword 取设备密码:交互时输两次;非交互时读 MPX_DEVICE_PASSWORD。
+// 都没有就返回空串 —— 照样装,只是本机不自动接入,事后在任一已接入设备上
+// mpx device password 补设。
+func initDevicePassword() (string, error) {
+	if pw := os.Getenv("MPX_DEVICE_PASSWORD"); pw != "" {
+		if n := len([]rune(pw)); n < 12 {
+			return "", fmt.Errorf("MPX_DEVICE_PASSWORD 至少 12 个字符,这个只有 %d 个", n)
+		}
+		return pw, nil
+	}
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "注意:非交互运行且没给 MPX_DEVICE_PASSWORD,这次不设设备密码。")
+		return "", nil
+	}
+	fmt.Fprintln(os.Stderr, "先设一个设备密码:以后任何设备 mpx connect 接入时输入它(不是 VPS 的密码)。")
+	return readNewDevicePassword(false)
 }

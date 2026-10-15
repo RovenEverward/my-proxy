@@ -1055,5 +1055,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Users:    len(users),
 	}
 	out.TLSFingerprint = s.tlsFingerprint
+	if ds, err := s.store.ListDevices(); err == nil {
+		out.Devices = len(ds)
+	}
+	if h, err := s.store.DevicePasswordHash(); err == nil {
+		out.DevicePasswordSet = h != ""
+	}
+	out.ConnectLockedUntil = s.connect.LockedUntil(time.Now())
 	writeJSON(w, http.StatusOK, out)
 }

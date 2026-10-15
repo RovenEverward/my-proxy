@@ -332,20 +332,18 @@ fi
 
 cat <<EOF
 同一个端口上:订阅走 HTTP,管理接口走 HTTPS(控制面的自签证书,指纹
-${FP:-<稍后 mpx status 里看>})。在操作者机器上装好命令行(deploy/install-cli.sh,
-Windows 用 deploy/install-cli.ps1),再接上它:
+${FP:-<稍后 mpx status 里看>})。
 
-  mpx login --server https://$SHOWN --token '<管理 token>' --fp '${FP:-<证书指纹>}'
+用 mpx init 装的,init 会接着设设备密码并把你的电脑接上去。其他设备装好命令行
+(deploy/install-cli.sh,Windows 用 deploy/install-cli.ps1)后:
+
+  mpx connect $SHOWN --fp '${FP:-<证书指纹>}'
+
+不是经 mpx init、而是直接跑本脚本装的,设备密码还没设,先在这台机器上设一个:
+
+  sudo sh -c 'MPX_TOKEN="\$(sed -n "s/^MPX_TOKEN=//p" /etc/mpx/env)" mpx --server http://127.0.0.1:${BOUND##*:} device password'
 
 EOF
-
-if [[ -n "$FRESH_TOKEN" ]]; then
-	echo "这次生成的管理 token(也存好了,以后不用再记):"
-	echo "  $FRESH_TOKEN"
-else
-	echo "管理 token 还是原来那个,取出来用:"
-	echo "  sudo sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env"
-fi
 
 cat <<EOF
 

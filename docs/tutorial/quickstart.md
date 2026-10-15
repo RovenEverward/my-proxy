@@ -25,13 +25,21 @@ curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/
 mpx init --host 203.0.113.10 --ssh-password
 ```
 
-命令提示你输入一次 SSH 密码。之后它装好你的公钥，全程改用密钥，并依次完成：
+命令先请你设一个**设备密码**（至少 12 个字符，以后别的设备接入时输入它，不是 VPS 的密码），再提示输入一次 SSH 密码。之后它装好你的公钥，全程改用密钥，并依次完成：
 
 1. 在 VPS 上安装控制面（systemd 服务，监听 `0.0.0.0:8080`）。
 2. 注册节点 `default`，创建一个 VLESS + TCP + REALITY 入站和对外入口。
 3. 把订阅地址前缀设为 `http://203.0.113.10:8080`。
 4. 创建用户 `user1`，在节点上安装 xray 并下发配置。
 5. 打印 `user1` 的订阅地址。
+6. 设好设备密码，把你这台电脑接入控制面，并打印一行给其他设备用的接入命令：
+
+```text
+别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:
+  mpx connect 203.0.113.10:8080 --fp SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg
+```
+
+从这里开始，你不再需要登录 VPS。
 
 ## 第 3 步：把订阅地址填进客户端
 
@@ -43,5 +51,6 @@ mpx init --host 203.0.113.10 --ssh-password
 
 ## 下一步
 
+- 在另一台电脑上管理：[在多台设备上管理控制面](/guides/devices)
 - 给更多人开账号：[添加用户并分发订阅](/guides/add-users)
 - 检查一切是否正常：[用 mpx doctor 排查](/guides/troubleshoot)

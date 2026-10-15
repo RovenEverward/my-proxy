@@ -50,6 +50,7 @@ type Server struct {
 	tlsFingerprint string
 	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
 	deviceTouched map[int64]time.Time
+	connect       *connectGuard
 	logger        *slog.Logger
 	mux           *http.ServeMux
 	nodeOps       NodeOps
@@ -89,6 +90,7 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		mux:        http.NewServeMux(),
 		subLimiter: newSubLimiter(),
 		apiLimiter: newAPILimiter(),
+		connect:    newConnectGuard(),
 	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
@@ -180,10 +182,14 @@ func (s *Server) routes() {
 
 	api.HandleFunc("GET /api/devices", s.handleListDevices)
 	api.HandleFunc("DELETE /api/devices/{id}", s.handleDeleteDevice)
+	api.HandleFunc("PUT /api/device-password", s.handleSetDevicePassword)
+	api.HandleFunc("DELETE /api/device-password", s.handleDisableDevicePassword)
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(api)))
+	// 设备接入不要 token(它就是来领 token 的),自带三道闸,见 connect.go。
+	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
 }
 
 // ---- 请求/响应工具 ----

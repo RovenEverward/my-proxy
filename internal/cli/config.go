@@ -229,7 +229,7 @@ func (c Config) pick(name string) (Profile, error) {
 func (c Config) profileHint() string {
 	names := c.names()
 	if len(names) == 0 {
-		return "先跑 mpx login --server <地址> --token <token>"
+		return "先跑 mpx connect <控制面地址>"
 	}
 	return "现有:" + joinComma(names)
 }

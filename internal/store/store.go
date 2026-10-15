@@ -311,6 +311,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateDevices(); err != nil {
 		return err
 	}
+	if err := s.migrateDevicePassword(); err != nil {
+		return err
+	}
 	return s.migrateDiagnostics()
 }
 
