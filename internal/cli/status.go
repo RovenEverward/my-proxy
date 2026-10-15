@@ -80,6 +80,7 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"退避中的节点", backoff},
 		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
+		{"设备接入", deviceLoginText(st)},
 	}
 }
 
@@ -163,4 +164,16 @@ func humanDuration(d time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%d 秒", int(d/time.Second)))
 	}
 	return strings.Join(parts, " ")
+}
+
+// deviceLoginText 写一行设备接入的状况:几台设备、密码开没开、是否被锁。
+func deviceLoginText(st model.ControlStatus) string {
+	t := fmt.Sprintf("%d 台设备", st.Devices)
+	if !st.DevicePasswordSet {
+		return t + ",未设设备密码(新设备接不进来;mpx device password 设一个)"
+	}
+	if st.ConnectLockedUntil != nil {
+		return t + ",密码连续输错,接入锁定到 " + st.ConnectLockedUntil.Format("15:04:05")
+	}
+	return t + ",设备密码已设"
 }

@@ -37,8 +37,9 @@ var rootCmd = &cobra.Command{
 它通过控制面的 /api 管理节点、入站、对外入口、用户与订阅设置。控制面地址由
 --server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。
 
-第一次用:一台新 VPS 上跑 mpx init,装完控制面、节点、入站、用户,并打印订阅链接。
-已经有控制面了:先 mpx login 存下地址与 token,再 mpx doctor 看它是否健康。
+第一次用:在你自己的电脑上跑 mpx init --host <VPS>,它经 SSH 把那台 VPS 装成控制面
+和节点,设好设备密码,并把这台电脑接上去。之后再也不用登录 VPS。
+别的设备:mpx connect <控制面地址>,输入设备密码即可接入。
 
 不知道下一步该敲什么,就先跑 mpx status 与 mpx doctor —— 这两条只读,不改动任何
 东西,它们会告诉你哪里不对。每个命令组(mpx node/inbound/host/user/settings)自己

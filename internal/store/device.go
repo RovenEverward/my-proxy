@@ -101,3 +101,42 @@ func (s *Store) TouchDevice(id int64, ip string, now time.Time) error {
 	_, err := s.db.Exec(`UPDATE devices SET last_used_at = ?, last_ip = ? WHERE id = ?`, now.Unix(), ip, id)
 	return err
 }
+
+// 设备密码只有一份,存它的 argon2id 哈希(PHC 字符串)。空串表示没设、设备
+// 密码接入关闭。
+func (s *Store) migrateDevicePassword() error {
+	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS device_password (
+		id   INTEGER PRIMARY KEY CHECK (id = 1),
+		hash TEXT    NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("建 device_password 表: %w", err)
+	}
+	return nil
+}
+
+// DevicePasswordHash 取设备密码哈希;没设过返回空串。
+func (s *Store) DevicePasswordHash() (string, error) {
+	var h string
+	err := s.db.QueryRow(`SELECT hash FROM device_password WHERE id = 1`).Scan(&h)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return h, err
+}
+
+// SetDevicePasswordHash 写入设备密码哈希;空串 = 关闭设备密码接入。
+func (s *Store) SetDevicePasswordHash(hash string) error {
+	_, err := s.db.Exec(`INSERT INTO device_password (id, hash) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET hash = excluded.hash`, hash)
+	return err
+}
+
+// DeleteAllDevices 吊销全部设备,返回吊销了几台。
+func (s *Store) DeleteAllDevices() (int64, error) {
+	res, err := s.db.Exec(`DELETE FROM devices`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

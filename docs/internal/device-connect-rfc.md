@@ -1,6 +1,6 @@
 # 设备接入:一行命令起控制面,多台设备用设备密码接入
 
-状态:Accepted(2026-10-15 用户批准,含控制面 API 改动)｜实现:M1–M3 进行中,M4 的 UI 部分等看截图再做。
+状态:Accepted(2026-10-15 用户批准,含控制面 API 改动)｜实现:M1 #28、M2 #29、M3 已合入;M4 的 UI 部分等看截图再做。
 
 ## 结论
 
@@ -37,6 +37,8 @@ ECDSA P-256,10 年,存库(`tls_identity`)而非文件——随备份恢复,指�
 - `mpx device password`:已接入的设备上改密码;改密码不吊销已发出的 token。
 - 防爆破:`/api/connect` 每 IP 每分钟 5 次、全局每分钟 20 次;连续失败 20 次全局锁 15 分钟(已接入设备不受影响)。
 - 旧安装迁移:`mpx connect --upgrade`(已有 http:// 配置档时)用旧 token 经旧通道读一次指纹,把配置档改成 https + 指纹;没设设备密码的,用 `mpx device password` 设一次。
+- init 设密码的做法:经 SSH 在 VPS 上以主 token 走回环调 `mpx device password --password-stdin`,密码只走 SSH 的 stdin,不进命令行、不经公网。
+- `/api/connect` 与改密码接口在明文且非回环时拒绝(403)。`mpx status` 显示设备数、密码是否已设、是否锁定。
 
 ### 2.5 明文管理的过渡
 本版本:非回环的明文 `/api` 仍可用,带 `X-Mpx-Warning` 头,CLI 打印一次提醒。下一个版本:拒绝。

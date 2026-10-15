@@ -25,7 +25,7 @@ $ mpx doctor
 
 | 症状 | 先看 | 处理 |
 | :--- | :--- | :--- |
-| 命令行报连不上 | `mpx login`（不带参数）显示当前地址和 token | 用 `mpx login --server ... --token ...` 重新保存 |
+| 命令行报连不上 | `mpx login`（不带参数）显示当前地址、token 和指纹 | 用 `mpx connect <地址>` 重新接入，见[在多台设备上管理控制面](/guides/devices) |
 | 订阅里没有线路 | `mpx doctor` 的「节点」一项 | 加节点和入站后运行 `mpx node sync <id>` |
 | 新建的入站不生效 | 是否运行过 `mpx node sync` | 结构改动只有 `sync` 后才生效；`sync` 会让该节点所有连接断一次 |
 | 客户端拿到的格式不对 | `mpx settings rules list` | 见[让某个客户端拿到指定格式](/guides/client-format) |

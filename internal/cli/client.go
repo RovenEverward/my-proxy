@@ -45,7 +45,7 @@ func newClient() (*Client, error) {
 		return nil, err
 	}
 	if server == "" {
-		return nil, errors.New("没配置控制面地址:先跑 mpx login --server URL --token TOKEN,或设置 MPX_SERVER")
+		return nil, errors.New("没配置控制面地址:先跑 mpx connect <控制面地址>")
 	}
 	tr, err := transportFor(server)
 	if err != nil {
