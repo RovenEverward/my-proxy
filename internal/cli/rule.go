@@ -402,5 +402,140 @@ func newRuleCmd() *cobra.Command {
 		}
 		return writeTable([]string{"KEY", "名称", "包含"}, rows)
 	}})
+	c.AddCommand(newRuleMigrateCmd(), newRuleModeCmd())
 	return c
+}
+
+type migrationReport struct {
+	Status        string   `json:"status"`
+	Source        string   `json:"source"`
+	SingBoxCustom bool     `json:"singbox_template_custom"`
+	Groups        []string `json:"groups"`
+	Rules         int      `json:"rules"`
+	Final         string   `json:"final"`
+	Purposes      []struct {
+		Slug    string   `json:"slug"`
+		Group   string   `json:"group"`
+		Rules   int      `json:"rules"`
+		Final   bool     `json:"final"`
+		Dropped []string `json:"dropped"`
+	} `json:"purposes"`
+	Unconvertible []string `json:"unconvertible"`
+	Notes         []string `json:"notes"`
+}
+
+var migrateStatusText = map[string]string{
+	"migrated":      "已迁移,订阅改由规则表生成",
+	"needs_confirm": "需要确认:存过自定义 sing-box 模板,加 --confirm 后迁移",
+	"blocked":       "没有迁移:自定义 clash-meta 模板有转换不了的规则,订阅继续按模板生成",
+	"skipped":       "没有迁移:已经有规则表(加 --replace 按旧配置重新生成,会覆盖现有规则)",
+	"dry_run":       "演算结果(未写入)",
+}
+
+func printMigrationReport(r *migrationReport) {
+	fmt.Println(migrateStatusText[r.Status])
+	fmt.Printf("来源:%s\n", r.Source)
+	if len(r.Groups) > 0 {
+		fmt.Printf("策略组(%d):%s\n", len(r.Groups), strings.Join(r.Groups, "、"))
+		fmt.Printf("全局规则:%d 条;其他全部 → %s\n", r.Rules, r.Final)
+	}
+	for _, p := range r.Purposes {
+		line := fmt.Sprintf("用途 %s → 策略组 %s,%d 条规则", p.Slug, p.Group, p.Rules)
+		if p.Final {
+			line += ",并作为「其他全部」"
+		}
+		fmt.Println(line)
+		for _, d := range p.Dropped {
+			fmt.Printf("  去掉了:%s\n", d)
+		}
+	}
+	for _, u := range r.Unconvertible {
+		fmt.Printf("无法转换:%s\n", u)
+	}
+	for _, n := range r.Notes {
+		fmt.Printf("注意:%s\n", n)
+	}
+}
+
+func newRuleMigrateCmd() *cobra.Command {
+	var dry, confirm, replace, report bool
+	c := &cobra.Command{Use: "migrate", Short: "把模板和用途迁移成分流规则(--report 只看上次的报告)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		cl, err := newClient()
+		if err != nil {
+			return err
+		}
+		var raw []byte
+		if report {
+			if raw, err = cl.do("GET", "/api/routing", nil); err != nil {
+				return err
+			}
+			var v struct {
+				Mode      string           `json:"mode"`
+				Migration *migrationReport `json:"migration"`
+			}
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return err
+			}
+			if opts.output == outputJSON {
+				return emitJSONValue(v)
+			}
+			fmt.Printf("当前模式:%s\n", v.Mode)
+			if v.Migration == nil {
+				fmt.Println("还没有迁移报告")
+				return nil
+			}
+			printMigrationReport(v.Migration)
+			return nil
+		}
+		if raw, err = cl.do("POST", "/api/routing/migrate", map[string]bool{"dry_run": dry, "confirm": confirm, "replace": replace}); err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		var r migrationReport
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return err
+		}
+		printMigrationReport(&r)
+		return nil
+	}}
+	c.Flags().BoolVar(&report, "report", false, "只显示上次迁移的报告")
+	c.Flags().BoolVar(&dry, "dry-run", false, "只演算,不写入")
+	c.Flags().BoolVar(&confirm, "confirm", false, "确认 sing-box 的分流改为跟随规则表")
+	c.Flags().BoolVar(&replace, "replace", false, "覆盖已有的规则和策略组")
+	return c
+}
+
+func newRuleModeCmd() *cobra.Command {
+	return &cobra.Command{Use: "mode [rules|template]", Short: "查看或切换分流模式(template = 回到旧模板与用途)", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		cl, err := newClient()
+		if err != nil {
+			return err
+		}
+		var raw []byte
+		if len(args) == 0 {
+			raw, err = cl.do("GET", "/api/routing", nil)
+		} else {
+			raw, err = cl.do("PUT", "/api/routing", map[string]string{"mode": args[0]})
+		}
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			return emitJSON(raw)
+		}
+		var v struct {
+			Mode     string   `json:"mode"`
+			Warnings []string `json:"warnings"`
+		}
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return err
+		}
+		fmt.Printf("分流模式:%s\n", v.Mode)
+		for _, w := range v.Warnings {
+			fmt.Printf("注意:%s\n", w)
+		}
+		return nil
+	}}
 }

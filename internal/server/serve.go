@@ -71,6 +71,7 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	srv.SetNodeOps(ctrl)
 	srv.autoLocate = !opt.NoAutoLocate
 	srv.SetPurposeFilter(srv.filterPurposeCapabilities)
+	srv.AutoMigrateRouting()
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)
 

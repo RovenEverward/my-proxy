@@ -469,3 +469,102 @@ func (s *Store) DeleteProxyGroup(id int64) error {
 	}
 	return tx.Commit()
 }
+
+// ErrRoutingNotEmpty:已经有规则或策略组,迁移不覆盖(除非 replace)。
+var ErrRoutingNotEmpty = errors.New("已经有分流规则或策略组")
+
+// RoutingEmpty 报告规则表与策略组是否都还是空的。
+func (s *Store) RoutingEmpty() (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT (SELECT COUNT(*) FROM route_rules) + (SELECT COUNT(*) FROM proxy_groups)`).Scan(&n)
+	return n == 0, err
+}
+
+// ApplyRoutingSeed 在一个事务里写入迁移结果:策略组、全局规则、全局兜底和分流状态。
+// groups 的 ID 是临时编号,rules / final 里的 "group:<临时编号>" 会换成真实 id。
+// replace=false 时,已有规则或策略组就返回 ErrRoutingNotEmpty;replace=true 时先清空
+// 全部规则(含各用户的)、兜底和策略组。
+func (s *Store) ApplyRoutingSeed(groups []model.ProxyGroup, rules []model.RouteRule, final string, state *RoutingState, replace bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow(`SELECT (SELECT COUNT(*) FROM route_rules) + (SELECT COUNT(*) FROM proxy_groups)`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 && !replace {
+		return ErrRoutingNotEmpty
+	}
+	for _, q := range []string{`DELETE FROM route_rules`, `UPDATE route_scopes SET final = '', version = version + 1`, `DELETE FROM proxy_groups`} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	ids := map[int64]int64{}
+	for _, g := range groups {
+		tmp := g.ID
+		g.Normalize()
+		if err := g.Validate(); err != nil {
+			return fmt.Errorf("策略组 %s: %w", g.Name, err)
+		}
+		cfg, err := groupJSON(&g)
+		if err != nil {
+			return err
+		}
+		res, err := tx.Exec(`INSERT INTO proxy_groups(name, config) VALUES(?, ?)`, g.Name, cfg)
+		if isUnique(err) {
+			return fmt.Errorf("策略组 %s: %w", g.Name, ErrDuplicate)
+		}
+		if err != nil {
+			return err
+		}
+		if ids[tmp], err = res.LastInsertId(); err != nil {
+			return err
+		}
+	}
+	remap := func(t string) (string, error) {
+		id, ok := model.TargetGroupID(t)
+		if !ok {
+			return t, nil
+		}
+		real, ok := ids[id]
+		if !ok {
+			return "", fmt.Errorf("去向 %s 没有对应的策略组", t)
+		}
+		return model.GroupTarget(real), nil
+	}
+	if len(rules) > model.MaxRulesPerScope {
+		return fmt.Errorf("每个作用域最多 %d 条规则", model.MaxRulesPerScope)
+	}
+	for i, r := range rules {
+		r.Normalize()
+		if err := r.Validate(); err != nil {
+			return fmt.Errorf("第 %d 条: %w", i+1, err)
+		}
+		if r.Target, err = remap(r.Target); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO route_rules(user_id, position, type, value, target, enabled, note) VALUES(NULL, ?, ?, ?, ?, ?, ?)`,
+			i, string(r.Type), r.Value, r.Target, r.Enabled, r.Note); err != nil {
+			return err
+		}
+	}
+	if final, err = remap(final); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO route_scopes(user_id, final, version) VALUES(0, ?, 1)
+		ON CONFLICT(user_id) DO UPDATE SET final = excluded.final, version = route_scopes.version + 1`, final); err != nil {
+		return err
+	}
+	var at any
+	if state.MigratedAt != nil {
+		at = state.MigratedAt.Unix()
+	}
+	if _, err := tx.Exec(`INSERT INTO routing_state(id, mode, report, migrated_at) VALUES(1, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET mode = excluded.mode, report = excluded.report, migrated_at = excluded.migrated_at`, string(state.Mode), state.Report, at); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

@@ -45,6 +45,14 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if slug := r.URL.Query().Get("purpose"); slug != "" && s.routingMode() == model.RoutingRules {
+		// 用途已经合并进规则表:?purpose= 保留一个版本,返回和普通订阅相同的内容。
+		w.Header().Set("Deprecation", "true")
+		w.Header().Set("X-Mpx-Deprecated", "purpose subscriptions are merged into routing rules; use the plain subscription URL")
+		q := r.URL.Query()
+		q.Del("purpose")
+		r.URL.RawQuery = q.Encode()
+	}
 	if slug := r.URL.Query().Get("purpose"); slug != "" {
 		if _, err := s.store.GetPurpose(slug); err != nil {
 			writeError(w, http.StatusNotFound, "用途不存在或已删除；默认订阅: "+subBaseURL(settings, r)+"/sub/"+subToken)
