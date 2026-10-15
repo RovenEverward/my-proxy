@@ -62,6 +62,10 @@ type Server struct {
 	// 话 EnsureSSHKey 会回退到 ~/.ssh。
 	sshKeyPath string
 
+	// autoLocate 为真时,新建节点后自动按 IP 问 ipwho.is 并写入显示名(见 autoLocateNode)。
+	// New 默认关(测试不出网),Serve 按 ServeOptions.NoAutoLocate 打开。
+	autoLocate bool
+
 	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。

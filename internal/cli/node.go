@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"strconv"
@@ -514,11 +515,15 @@ var nodeAddCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		created, err := decode[model.Node](raw)
+		created, err := decode[createdNode](raw)
 		if err != nil {
 			return err
 		}
-		return report(raw, "已创建节点 %d(%s)", created.ID, created.Name)
+		if err := report(raw, "已创建节点 %d(%s)", created.ID, created.Name); err != nil {
+			return err
+		}
+		created.printLocate(os.Stdout)
+		return nil
 	},
 }
 
@@ -980,4 +985,20 @@ func explicitMetadata(m model.PurposeMetadata) any {
 		City   string `json:"city"`
 		Letter string `json:"letter"`
 	}{m, m.City, m.Letter}
+}
+
+// createdNode 是 POST /api/nodes 的回答:节点本身,加上控制面自动识别出的显示名或提示。
+type createdNode struct {
+	model.Node
+	Display    string `json:"display"`
+	LocateNote string `json:"locate_note"`
+}
+
+func (c createdNode) printLocate(w io.Writer) {
+	if c.Display != "" {
+		fmt.Fprintf(w, "显示名:%s(按 IP 自动识别,ipwho.is;不对就用 mpx node edit 改)\n", c.Display)
+	}
+	if c.LocateNote != "" {
+		fmt.Fprintf(w, "提示:%s\n", c.LocateNote)
+	}
 }

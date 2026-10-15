@@ -24,6 +24,8 @@ type ServeOptions struct {
 	Token    string        // 管理 token;为空表示不校验,只适合本机开发
 	Interval time.Duration // 后台任务间隔,0 用 control.DefaultInterval
 	Logger   *slog.Logger
+	// NoAutoLocate 关掉「新建节点后自动识别地区」(mpx serve --auto-locate=false 或 MPX_AUTO_LOCATE=0)。
+	NoAutoLocate bool
 }
 
 // Serve 打开数据库、拉起后台任务、监听 HTTP,直到 ctx 结束或监听失败。
@@ -67,6 +69,7 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	srv.sshKeyPath = filepath.Join(filepath.Dir(opt.DBPath), ".ssh", "id_ed25519")
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
+	srv.autoLocate = !opt.NoAutoLocate
 	srv.SetPurposeFilter(srv.filterPurposeCapabilities)
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)

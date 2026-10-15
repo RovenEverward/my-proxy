@@ -16,9 +16,10 @@ import (
 
 // serveFlags 是启动控制面时能调的三件事;token 复用全局的 --token。
 var serveFlags struct {
-	addr     string
-	db       string
-	interval time.Duration
+	addr       string
+	db         string
+	interval   time.Duration
+	autoLocate bool
 }
 
 var serveCmd = &cobra.Command{
@@ -65,6 +66,8 @@ var serveCmd = &cobra.Command{
 			DBPath:   db,
 			Token:    token,
 			Interval: serveFlags.interval,
+			// 关闭开关:--auto-locate=false,或环境变量 MPX_AUTO_LOCATE=0(systemd 单元里好改)。
+			NoAutoLocate: !serveFlags.autoLocate || os.Getenv("MPX_AUTO_LOCATE") == "0",
 		})
 	},
 }
@@ -95,5 +98,6 @@ func isLoopback(addr string) bool {
 func init() {
 	serveCmd.Flags().StringVar(&serveFlags.addr, "addr", "127.0.0.1:8080", "HTTP 监听地址")
 	serveCmd.Flags().StringVar(&serveFlags.db, "db", defaultDBPath(), "SQLite 数据库路径")
+	serveCmd.Flags().BoolVar(&serveFlags.autoLocate, "auto-locate", true, "新建节点后按 IP 问 ipwho.is 自动设显示名(节点 IP 会发给它);也可设 MPX_AUTO_LOCATE=0 关闭")
 	serveCmd.Flags().DurationVar(&serveFlags.interval, "interval", 30*time.Second, "后台收敛人员名单与采集流量的间隔")
 }
