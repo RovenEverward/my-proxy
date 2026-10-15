@@ -70,7 +70,7 @@ CREATE TABLE proxy_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT N
 
 写在代码里（`model/rulecatalog_gen.go`，由两份默认模板生成，测试检查两边一致），每个键包含：中文名、说明、默认去向，以及每种格式的上游规则集列表。上游沿用现在两份默认模板里的源：Clash 用 blackmatrix7、Loyalsoldier 等，sing-box 用 SagerNet geosite。首批键按默认模板现有的分类整理（局域网、广告拦截、人工智能、谷歌、苹果、微软、社交、流媒体、游戏、开发、国内媒体、国内网站等，外加 GitHub、Telegram）。
 
-**代价：**同一个键在两种格式下命中的域名不完全相同，因为上游不同。「测试网址」的结果只能以一种格式为准，界面上要写明。
+**代价：**同一个键在两种格式下命中的域名不完全相同，因为上游不同。另外，sing-box 默认模板把国内规则（`private`、`geolocation-cn`、`cn`）放在分类规则之前，而 Clash 放在最后；规则表只有一个顺序，按 Clash 的来，所以改用规则表后，sing-box 订阅里的国内规则会排到分类规则之后（R2 实现时核实）。「测试网址」的结果只能以一种格式为准，界面上要写明。
 
 ### 4. 渲染
 
