@@ -124,10 +124,19 @@ func (r *rulesResp) scope(user string) ([]model.RouteRule, int64) {
 }
 
 func putRules(cl *Client, user string, rules []model.RouteRule, version int64) error {
-	if rules == nil {
-		rules = []model.RouteRule{}
+	// 只发规则内容;id 与位置由控制面按顺序重新编排(页面发的也是这几个字段)。
+	type ruleIn struct {
+		Type    model.RuleType `json:"type"`
+		Value   string         `json:"value"`
+		Target  string         `json:"target"`
+		Enabled bool           `json:"enabled"`
+		Note    string         `json:"note,omitempty"`
 	}
-	raw, err := cl.do("PUT", rulesPath(user), map[string]any{"rules": rules, "version": version})
+	in := make([]ruleIn, 0, len(rules))
+	for _, r := range rules {
+		in = append(in, ruleIn{r.Type, r.Value, r.Target, r.Enabled, r.Note})
+	}
+	raw, err := cl.do("PUT", rulesPath(user), map[string]any{"rules": in, "version": version})
 	if err != nil {
 		return err
 	}

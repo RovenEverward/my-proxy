@@ -30,18 +30,19 @@ PAGES.purposes = {
   title: "用途", nav: ["配置", "tpl", 40], closeTo: "purposes",
   crumb: r => r[1] ? H`<a href="#purposes">用途</a><i>/</i><b>${r[1]}</b>` : H`<b>用途</b>`,
   async load(r) {
-    const [purposes, detail] = await Promise.all([api("/api/purposes"), r[1] ? api(purposePath(r[1])) : null]);
-    return { purposes, detail };
+    const [purposes, detail, routing] = await Promise.all([api("/api/purposes"), r[1] ? api(purposePath(r[1])) : null, api("/api/routing").catch(() => null)]);
+    return { purposes, detail, routing };
   },
   render(d) {
     const W = can("POST", "/api/purposes");
     const head = H`<div class="ph"><div><h1>用途</h1><p>日常、流媒体、下载、游戏分组:按地区、线路、标签筛选节点 · 对应 <code>mpx purpose</code></p></div><div class="sp"></div>${W ? H`<button class="btn pri" data-act="purpose-new">${ic("plus")}新建用途</button>` : ""}</div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(4, 4)}</tbody></table></div>`;
+    const retired = d.routing?.mode === "rules" ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>用途已经合并进分流规则</b> · 订阅现在由<a href="#rules" class="u-link">分流规则</a>生成,这里的改动不再影响订阅;节点 / 入口的地区标签仍用于策略组。用途页会在下一个版本移除。</div></div>` : "";
     const P = Array.isArray(d.purposes) ? d.purposes : d.purposes?.purposes || [];
     const list = P.length ? H`<div class="tw"><table><thead><tr><th>用途</th><th>种类</th><th class="hide-m">筛选</th><th class="hide-m">策略</th><th class="hide-m">域名</th></tr></thead><tbody>${P.map(p => H`<tr data-href="#purposes/${encodeURIComponent(p.slug)}" tabindex="0"><td><b class="bold">${p.name || p.slug}</b><div class="sub mono">${p.slug}</div></td><td>${PURPOSE_KINDS[p.kind] || p.kind}</td>
       <td class="hide-m sub">${[...(p.regions || []).map(x => "地区 " + x), ...(p.lines || []).map(x => "线路 " + x), ...(p.tags || []).map(x => "标签 " + x)].join(" · ") || "全部已授权节点"}</td><td class="hide-m mono sub">${p.strategy}</td><td class="hide-m sub">${(p.domains || []).length || "—"}</td></tr>`)}</tbody></table></div>`
       : emptyBox("tpl", "还没有用途", "用途把已授权节点按地区、线路、标签分组,给流媒体、下载、游戏各配一组。", "mpx purpose create media -f media.json", W ? H`<button class="btn pri sm" data-act="purpose-new">${ic("plus")}新建用途</button>` : "");
-    return H`${head}<div class="card">${list}</div>
+    return H`${head}${retired}<div class="card">${list}</div>
       <div class="card mt"><div class="ch">节点 / 入口标签<small>· mpx purpose metadata</small></div>
         <div class="row wrap8"><select class="in w120" id="md-kind"><option value="nodes">节点</option><option value="hosts">入口</option></select><input class="in mono w120" id="md-id" placeholder="ID" inputmode="numeric"><button class="btn sm" data-act="md-load">读取</button><span class="sub">入口上非空的字段覆盖节点的。</span></div>
         <div id="md-box"></div></div>`;

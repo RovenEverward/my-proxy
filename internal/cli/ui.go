@@ -46,6 +46,16 @@ var uiAllow = []string{
 	"POST /api/purposes",
 	"PUT /api/purposes",
 	"DELETE /api/purposes",
+	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate / mode;
+	// group add / edit / rm / preview
+	"PUT /api/rules",
+	"PATCH /api/rules",
+	"POST /api/rules/test",
+	"POST /api/proxy-groups",
+	"PUT /api/proxy-groups",
+	"DELETE /api/proxy-groups",
+	"PUT /api/routing",
+	"POST /api/routing/migrate",
 }
 
 var uiFlags struct {
