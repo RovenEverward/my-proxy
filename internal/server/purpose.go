@@ -17,13 +17,26 @@ import (
 func (s *Server) SetPurposeFilter(f func(model.Purpose, []render.Endpoint) ([]render.Endpoint, error)) {
 	s.purposeFilter = f
 }
+
+// purposeDeprecated:规则表接管分流后,用途接口照常工作(不破坏兼容),但响应头标明已弃用,
+// 并指向分流规则。下一个次版本删除(RFC R6)。
+func (s *Server) purposeDeprecated(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.routingMode() == model.RoutingRules {
+			w.Header().Set("Deprecation", "true")
+			w.Header().Set("X-Mpx-Deprecated", "purposes are replaced by routing rules (/api/rules, /api/proxy-groups); changes here no longer affect subscriptions")
+		}
+		h(w, r)
+	}
+}
+
 func (s *Server) purposeRoutes(api *http.ServeMux) {
-	api.HandleFunc("GET /api/purposes", s.handleListPurposes)
-	api.HandleFunc("POST /api/purposes", s.handleCreatePurpose)
-	api.HandleFunc("GET /api/purposes/{slug}", s.handleGetPurpose)
-	api.HandleFunc("PUT /api/purposes/{slug}", s.handleUpdatePurpose)
-	api.HandleFunc("DELETE /api/purposes/{slug}", s.handleDeletePurpose)
-	api.HandleFunc("GET /api/purposes/{slug}/preview/{username}/{format}", s.handlePurposePreview)
+	api.HandleFunc("GET /api/purposes", s.purposeDeprecated(s.handleListPurposes))
+	api.HandleFunc("POST /api/purposes", s.purposeDeprecated(s.handleCreatePurpose))
+	api.HandleFunc("GET /api/purposes/{slug}", s.purposeDeprecated(s.handleGetPurpose))
+	api.HandleFunc("PUT /api/purposes/{slug}", s.purposeDeprecated(s.handleUpdatePurpose))
+	api.HandleFunc("DELETE /api/purposes/{slug}", s.purposeDeprecated(s.handleDeletePurpose))
+	api.HandleFunc("GET /api/purposes/{slug}/preview/{username}/{format}", s.purposeDeprecated(s.handlePurposePreview))
 	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetPurposeMetadata)
 	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutPurposeMetadata)
 	api.HandleFunc("POST /api/nodes/{id}/locate", s.handleLocateNode)

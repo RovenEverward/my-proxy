@@ -14,6 +14,8 @@ import (
 
 func (s *Server) routingRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/routing", s.handleGetRouting)
+	api.HandleFunc("PUT /api/routing", s.handleSetRoutingMode)
+	api.HandleFunc("POST /api/routing/migrate", s.handleMigrateRouting)
 	api.HandleFunc("GET /api/rules", s.handleListRules)
 	api.HandleFunc("PUT /api/rules", s.handleReplaceRules)
 	api.HandleFunc("PATCH /api/rules/{id}", s.handlePatchRule)
@@ -80,6 +82,7 @@ type routingView struct {
 	Mode          model.RoutingMode `json:"mode"`
 	MigratedAt    any               `json:"migrated_at,omitempty"`
 	Report        string            `json:"report,omitempty"`
+	Migration     *MigrationReport  `json:"migration,omitempty"` // report 解析后的结构
 	Warnings      []string          `json:"warnings"`
 	GroupsMembers map[int64]int     `json:"group_members"`
 }
@@ -96,7 +99,7 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "分流设置")
 		return
 	}
-	v := routingView{Mode: st.Mode, Report: st.Report, Warnings: warn, GroupsMembers: members}
+	v := routingView{Mode: st.Mode, Report: st.Report, Migration: parseReport(st.Report), Warnings: warn, GroupsMembers: members}
 	if st.MigratedAt != nil {
 		v.MigratedAt = st.MigratedAt
 	}
