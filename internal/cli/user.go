@@ -581,7 +581,7 @@ func init() {
 	userListCmd.Flags().IntVar(&userListFlags.pageSize, "page-size", 50, "每页多少条")
 	userListCmd.Flags().StringVar(&userListFlags.status, "status", "", "只看某种状态:active / expired / limited / disabled")
 	userListCmd.Flags().StringVar(&userListFlags.search, "search", "", "用户名包含这段文字(不分大小写)")
-	userListCmd.Flags().Int64Var(&userListFlags.inbound, "inbound", 0, "只看能用某个入站 id 的用户")
+	userListCmd.Flags().Var(inboundFlag(&userListFlags.inbound), "inbound", "只看能用某个入站的用户(id、节点/tag 或唯一 tag)")
 
 	userRenewCmd.Flags().StringVar(&userRenewFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
 	userRenewCmd.Flags().IntVar(&userRenewFlags.days, "days", 0, "从当前到期日(已过期则从今天)起顺延的天数")

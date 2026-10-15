@@ -22,7 +22,7 @@ func init() {
 }
 
 func corePath(args []string) (string, error) {
-	id, err := idArg(args[0])
+	id, err := resolveNodeID(args[0], false)
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +49,7 @@ func printCore(raw []byte) error {
 }
 
 var nodeCoreShowCmd = &cobra.Command{
-	Use: "show <节点 ID> <xray|sing-box>", Short: "查看核心的生效部署信息", Args: cobra.ExactArgs(2),
+	Use: "show <节点> <xray|sing-box>", Short: "查看核心的生效部署信息", Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, err := corePath(args)
 		if err != nil {
@@ -68,7 +68,7 @@ var nodeCoreShowCmd = &cobra.Command{
 }
 
 var nodeCoreEditCmd = &cobra.Command{
-	Use: "edit <节点 ID> <xray|sing-box>", Short: "修改给出的核心部署字段", Args: cobra.ExactArgs(2),
+	Use: "edit <节点> <xray|sing-box>", Short: "修改给出的核心部署字段", Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, err := corePath(args)
 		if err != nil {

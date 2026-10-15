@@ -197,11 +197,11 @@ var nodeListCmd = &cobra.Command{
 }
 
 var nodeShowCmd = &cobra.Command{
-	Use:   "show <id>",
+	Use:   "show <节点>",
 	Short: "显示一个节点",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], false)
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ var nodeShowCmd = &cobra.Command{
 // 下发)。所以它明确说"现场",而 list 里的状态列全部来自缓存 —— 一条命令该不该
 // 有副作用、该不该慢,使用者要能一眼看出来。
 var nodeStatusCmd = &cobra.Command{
-	Use:   "status [名称或 ID]",
+	Use:   "status [节点]",
 	Short: "现场查一次节点的状态(会 ssh 到节点上)",
 	Long: `现场查一次节点的状态:服务在不在跑、核心什么版本、配置有没有被改过、每张证书还有几天到期。
 
@@ -322,21 +322,17 @@ func resolveNodeArgs(c *Client, args []string) ([]model.Node, error) {
 		return out, nil
 	}
 
-	// 先按 ID 试,不是数字就当名字。
-	if id, err := idArg(args[0]); err == nil {
-		for _, v := range all {
-			if v.Node.ID == id {
-				return []model.Node{v.Node}, nil
-			}
-		}
-		return nil, fmt.Errorf("没有 ID 为 %d 的节点", id)
+	// id、名字、展示名、唯一前缀都认,规则见 resolve.go。
+	x, _, err := pick("节点", args[0], nodeCandidates(all))
+	if err != nil {
+		return nil, err
 	}
 	for _, v := range all {
-		if v.Node.Name == args[0] {
+		if v.Node.ID == x.ID {
 			return []model.Node{v.Node}, nil
 		}
 	}
-	return nil, fmt.Errorf("没有叫 %q 的节点", args[0])
+	return nil, fmt.Errorf("没有 id 为 %d 的节点", x.ID)
 }
 
 // listNodes 取节点列表。现场查状态前要先拿到节点本身,因为"有没有漂移"要靠
@@ -545,7 +541,7 @@ func promptPassword(prompt string) (string, error) {
 }
 
 var nodeRmCmd = &cobra.Command{
-	Use:   "rm <id>",
+	Use:   "rm <节点>",
 	Short: "删除一个节点",
 	Long: `删除一个节点 —— 不可逆。
 
@@ -557,7 +553,7 @@ var nodeRmCmd = &cobra.Command{
 漂走),不必删。确认节点 id 用 mpx node list。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -589,7 +585,7 @@ var nodeEditFlags struct {
 }
 
 var nodeEditCmd = &cobra.Command{
-	Use:   "edit <id>",
+	Use:   "edit <节点>",
 	Short: "改一个节点的连接参数或名字",
 	Long: `改一个节点的名字与连接参数。只改给出来的字段,没给的保持原样。
 
@@ -608,7 +604,7 @@ var nodeEditCmd = &cobra.Command{
 改完不会自动下发配置:名字与连接参数都不进节点上的 config.json。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -677,7 +673,7 @@ var nodeEditCmd = &cobra.Command{
 }
 
 var nodeConfigCmd = &cobra.Command{
-	Use:   "config <id>",
+	Use:   "config <节点>",
 	Short: "输出该节点完整的 xray config.json",
 	Long: `输出该节点完整的 xray config.json。
 
@@ -685,7 +681,7 @@ var nodeConfigCmd = &cobra.Command{
 用途就是重定向到文件或交给别的工具,重新排版只会让字节数和原来不一样。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], false)
 		if err != nil {
 			return err
 		}
@@ -709,7 +705,7 @@ var nodeConfigCmd = &cobra.Command{
 }
 
 var nodeSyncCmd = &cobra.Command{
-	Use:   "sync <id>",
+	Use:   "sync <节点>",
 	Short: "把当前配置下发到节点并重启它的 xray",
 	Long: `把当前配置下发到节点并重启它的 xray。
 
@@ -721,7 +717,7 @@ var nodeSyncCmd = &cobra.Command{
 不需要重启。下发前想看看到底会推什么,用 mpx node config。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -744,7 +740,7 @@ var nodeInstallFlags struct {
 }
 
 var nodeInstallCmd = &cobra.Command{
-	Use:   "install <id>",
+	Use:   "install <节点>",
 	Short: "在节点上装好指定核心并启动它",
 	Long: `在节点上装好指定核心并启动它。
 
@@ -765,7 +761,7 @@ var nodeInstallCmd = &cobra.Command{
   mpx node install 1 --core sing-box --version 1.12.0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -801,7 +797,7 @@ var nodeInstallCmd = &cobra.Command{
 }
 
 var nodeDrainCmd = &cobra.Command{
-	Use:   "drain <id>",
+	Use:   "drain <节点>",
 	Short: "开始排水:新订阅不再发这台节点的入口",
 	Long: `开始排水:新订阅不再发这台节点的入口。
 
@@ -811,7 +807,7 @@ var nodeDrainCmd = &cobra.Command{
 取消排水用 node undrain。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -828,11 +824,11 @@ var nodeDrainCmd = &cobra.Command{
 }
 
 var nodeUndrainCmd = &cobra.Command{
-	Use:   "undrain <id>",
+	Use:   "undrain <节点>",
 	Short: "取消排水",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], true)
 		if err != nil {
 			return err
 		}
@@ -853,11 +849,11 @@ var nodeUndrainCmd = &cobra.Command{
 // 这是除了 node status 之外唯一会真发 ssh 的 node 子命令。它不落库、不缓存 —
 // 在线名单下一秒就过期,存它没意义。要趋势请自己轮询,或者看 mpx status。
 var nodeOnlineCmd = &cobra.Command{
-	Use:   "online <id>",
+	Use:   "online <节点>",
 	Short: "现场读出节点上每个用户此刻的在线 IP 数",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := idArg(args[0])
+		id, err := resolveNodeID(args[0], false)
 		if err != nil {
 			return err
 		}

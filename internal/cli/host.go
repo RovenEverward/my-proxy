@@ -32,9 +32,9 @@ var hostHeaders = []string{"ID", "入站", "备注", "地址", "端口", "SNI", 
 func init() {
 	hostCmd.AddCommand(hostListCmd, hostAddCmd, hostEditCmd, hostRmCmd)
 
-	hostListCmd.Flags().Int64Var(&hostListInbound, "inbound", 0, "所属入站 id,必填")
+	hostListCmd.Flags().Var(inboundFlag(&hostListInbound), "inbound", "所属入站,必填(id、节点/tag 或唯一 tag)")
 
-	hostAddCmd.Flags().Int64Var(&hostAddFlags.inbound, "inbound", 0, "所属入站 id,必填")
+	hostAddCmd.Flags().Var(inboundFlag(&hostAddFlags.inbound), "inbound", "所属入站,必填(id、节点/tag 或唯一 tag)")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.remark, "remark", "", "客户端看到的节点名。变量:{SERVER_IP} {NODE_NAME} {PROTOCOL} {TRANSPORT};{USERNAME} 在这里被抹成空串")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.address, "address", "", "对外地址,空表示用节点地址")
 	hostAddCmd.Flags().IntVar(&hostAddFlags.port, "port", 0, "对外端口,0 表示用入站端口")
@@ -43,7 +43,7 @@ func init() {
 	hostAddCmd.Flags().StringVar(&hostAddFlags.path, "path", "", "ws 路径")
 	hostAddCmd.Flags().StringVar(&hostAddFlags.alpn, "alpn", "", "ALPN,逗号分隔")
 
-	hostEditCmd.Flags().Int64Var(&hostEditFlags.inbound, "inbound", 0, "所属入站 id,必填")
+	hostEditCmd.Flags().Var(inboundFlag(&hostEditFlags.inbound), "inbound", "所属入站,必填(id、节点/tag 或唯一 tag)")
 	hostEditCmd.Flags().StringVar(&hostEditFlags.remark, "remark", "", "客户端看到的节点名")
 	hostEditCmd.Flags().StringVar(&hostEditFlags.address, "address", "", "对外地址,给空串表示回落成节点地址")
 	hostEditCmd.Flags().IntVar(&hostEditFlags.port, "port", 0, "对外端口,给 0 表示回落成入站端口")
@@ -91,7 +91,7 @@ func hostRow(h model.HostView) []string {
 }
 
 var hostListCmd = &cobra.Command{
-	Use:   "list --inbound ID",
+	Use:   "list --inbound 入站",
 	Short: "列出一个入站的对外入口",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -122,7 +122,7 @@ var hostListCmd = &cobra.Command{
 }
 
 var hostAddCmd = &cobra.Command{
-	Use:   "add --inbound ID",
+	Use:   "add --inbound 入站",
 	Short: "给一个入站加一种对外暴露方式",
 	Example: `  # 让入站 1 对外走域名与 8443 端口(节点前面可能有反代)
   mpx host add --inbound 1 --address cdn.example.com --port 8443 --sni cdn.example.com
@@ -183,7 +183,7 @@ var hostEditFlags struct {
 }
 
 var hostEditCmd = &cobra.Command{
-	Use:   "edit <id> --inbound ID",
+	Use:   "edit <id> --inbound 入站",
 	Short: "改一个对外入口",
 	Long: `改一个对外入口。只改给出来的字段,没给的保持原样。
 
