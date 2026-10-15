@@ -298,3 +298,13 @@ func expectedUsers(users []model.User, inboundID int64, now time.Time) []model.U
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Username < out[j].Username })
 	return out
 }
+
+// ProbeEgressGeo 在节点上请求 ipwho.is(不带 IP,即查节点自己的出口),原样返回 JSON。
+// 给 POST /api/nodes/{id}/locate 在节点地址是域名时用。
+func (c *Control) ProbeEgressGeo(ctx context.Context, n model.Node) (string, error) {
+	out, err := c.runner.Run(ctx, n, "curl -fsS --max-time 10 https://ipwho.is/")
+	if err != nil {
+		return "", fmt.Errorf("节点上探测出口失败(需要 curl): %w", err)
+	}
+	return out, nil
+}

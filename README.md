@@ -172,6 +172,7 @@ mpx inbound show la/reality   # 节点 la-… 上 tag 为 reality… 的入站
 给节点起显示名(列表第一列、也能直接拿来指定节点):
 
 ```bash
+mpx node locate la-1                           # 按 IP 问 ipwho.is 给建议,不写入
 mpx node edit la-1 --region US --city 洛杉矶    # → 🇺🇸 洛杉矶 A,字母自动分配
 ```
 
