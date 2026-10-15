@@ -4,7 +4,7 @@
 *.exe
 
 # 文档站依赖与构建产物(vitepress 的输出)
-/node_modules/
+/node_modules
 /docs/.vitepress/dist/
 /docs/.vitepress/cache/
 

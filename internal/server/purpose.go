@@ -26,6 +26,7 @@ func (s *Server) purposeRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/purposes/{slug}/preview/{username}/{format}", s.handlePurposePreview)
 	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetPurposeMetadata)
 	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutPurposeMetadata)
+	api.HandleFunc("POST /api/nodes/{id}/locate", s.handleLocateNode)
 	api.HandleFunc("GET /api/hosts/{id}/metadata", s.handleGetPurposeMetadata)
 	api.HandleFunc("PUT /api/hosts/{id}/metadata", s.handlePutPurposeMetadata)
 }
