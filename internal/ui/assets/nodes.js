@@ -30,7 +30,7 @@ function previewDisplay(m) {
   if (!place) { place = { HK: "香港", MO: "澳门" }[r] || r; if (iso && !/^(HK|MO)$/.test(r)) { try { place = new Intl.DisplayNames(["zh-Hans"], { type: "region" }).of(r) || r; } catch { /* 老浏览器 */ } } }
   return [flag, place, m.letter || ""].filter(Boolean).join(" ");
 }
-const sshText = n => `${n.ssh_user || "root"}@:${n.ssh_port || 22}`;
+const sshText = n => `${n.ssh_user || "root"}@${n.address || "?"}:${n.ssh_port || 22}`;
 const certText = c => c.error ? "读不到" : c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`;
 
 PAGES.nodes = {
