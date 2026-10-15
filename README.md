@@ -174,7 +174,10 @@ mpx inbound show la/reality   # 节点 la-… 上 tag 为 reality… 的入站
 ```bash
 mpx node locate la-1                           # 按 IP 问 ipwho.is 给建议,不写入
 mpx node edit la-1 --region US --city 洛杉矶    # → 🇺🇸 洛杉矶 A,字母自动分配
+mpx node relabel --all --dry-run               # 老节点批量起名:先看「旧名 → 新名」对照表
 ```
+
+订阅里节点的默认名就是显示名;同一节点有多个入口时自动加 ` · Reality`、` · Hy2` 这类协议后缀。入口上手写的 remark 不受影响,remark 里可用 `{NODE_DISPLAY}`。
 
 开启 shell 补全，节点名、入站、用户名都能按 Tab 补全：
 

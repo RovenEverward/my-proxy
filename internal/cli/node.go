@@ -953,7 +953,7 @@ func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 	} else if model.LetterGroup(m) != oldGroup {
 		m.Letter = "" // 换了地区或城市,就在新分组里重新取最小空闲字母
 	}
-	raw, err = c.do("PUT", path, m)
+	raw, err = c.do("PUT", path, explicitMetadata(m))
 	if err != nil {
 		return err
 	}
@@ -969,4 +969,15 @@ func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 		display = "(没有地区,不显示)"
 	}
 	return report(raw, "节点 %d 的显示名:%s", id, display)
+}
+
+// explicitMetadata 让 PUT 体里总是带上 city 和 letter:model.PurposeMetadata 对这两个
+// 字段是 omitempty,而控制面把「没带」理解成「保留原值」—— 想清空城市、或让控制面
+// 在新分组里重新取字母,就必须显式发空串。
+func explicitMetadata(m model.PurposeMetadata) any {
+	return struct {
+		model.PurposeMetadata
+		City   string `json:"city"`
+		Letter string `json:"letter"`
+	}{m, m.City, m.Letter}
 }

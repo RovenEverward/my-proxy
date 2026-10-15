@@ -75,8 +75,10 @@ type Endpoint struct {
 	InboundID int64
 	HostID    int64 // zero identifies the default inbound exposure
 	Remark    string
-	Address   string
-	Port      int
+	// AutoRemark 表示 Remark 是默认生成的(host 没写 remark),可以加协议后缀。
+	AutoRemark bool
+	Address    string
+	Port       int
 
 	Protocol          model.Protocol
 	UUID              string // vless / vmess / tuic
@@ -117,6 +119,12 @@ type Endpoint struct {
 // 入站先按用户授权过滤;每个入站再展开成它的全部 Host,hosts 里没有该入站时
 // 按入站自身与节点地址生成一个默认入口。Host 上留空的字段回落到入站或节点。
 func Resolve(node model.Node, inbounds []model.Inbound, hosts map[int64][]model.Host, user *model.User) []Endpoint {
+	return ResolveNamed(node, "", inbounds, hosts, user)
+}
+
+// ResolveNamed 同 Resolve,另带节点显示名(docs/internal/node-naming-rfc.md §5):
+// host 没写 remark 时用它当默认名字,空时退回 node.Name;也供 {NODE_DISPLAY} 展开。
+func ResolveNamed(node model.Node, display string, inbounds []model.Inbound, hosts map[int64][]model.Host, user *model.User) []Endpoint {
 	uuid := model.DeriveUUID(user.Key)
 	password := model.DerivePassword(user.Key)
 	salt := saltOf(user)
@@ -131,7 +139,7 @@ func Resolve(node model.Node, inbounds []model.Inbound, hosts map[int64][]model.
 			exposures = []model.Host{{}}
 		}
 		for _, h := range exposures {
-			if ep, ok := endpoint(node, in, h, user, uuid, password, salt); ok {
+			if ep, ok := endpoint(node, display, in, h, user, uuid, password, salt); ok {
 				out = append(out, ep)
 			}
 		}
@@ -141,27 +149,33 @@ func Resolve(node model.Node, inbounds []model.Inbound, hosts map[int64][]model.
 
 // endpoint 把 (节点, 入站, 对外入口) 合成一个 Endpoint,并展开其中的变量。
 // 返回 ok=false 表示该端点的关键字段无法生成(如密钥派生失败),跳过而不是发一个坏配置。
-func endpoint(node model.Node, in model.Inbound, h model.Host, user *model.User, uuid, password, salt string) (Endpoint, bool) {
+func endpoint(node model.Node, display string, in model.Inbound, h model.Host, user *model.User, uuid, password, salt string) (Endpoint, bool) {
+	if display == "" {
+		display = node.Name
+	}
 	vars := map[string]string{
-		"USERNAME":  "",
-		"SERVER_IP": node.Address,
-		"NODE_NAME": node.Name,
-		"PROTOCOL":  string(in.Protocol),
-		"TRANSPORT": string(in.Network),
+		"USERNAME":     "",
+		"SERVER_IP":    node.Address,
+		"NODE_NAME":    node.Name,
+		"NODE_DISPLAY": display,
+		"PROTOCOL":     string(in.Protocol),
+		"TRANSPORT":    string(in.Network),
 	}
 
 	ex := ResolveExposure(node, in, h)
 
 	remark := expand(h.Remark, vars, salt)
-	if remark == "" {
-		remark = expand(node.Name, vars, salt)
+	auto := remark == ""
+	if auto {
+		remark = expand(display, vars, salt)
 	}
 
 	ep := Endpoint{
 		NodeID: node.ID, InboundID: in.ID, HostID: h.ID,
-		Remark:  remark,
-		Address: expand(ex.Address, vars, salt),
-		Port:    ex.Port,
+		Remark:     remark,
+		AutoRemark: auto,
+		Address:    expand(ex.Address, vars, salt),
+		Port:       ex.Port,
 
 		Protocol: in.Protocol,
 		UUID:     uuid,
@@ -363,4 +377,61 @@ func firstShortID(ids []string) string {
 		}
 	}
 	return ""
+}
+
+// AddProtocolSuffix 给同一节点在这份订阅里的多个默认名入口加「 · 协议短名」,
+// 例如「🇺🇸 洛杉矶 A · Reality」「🇺🇸 洛杉矶 A · Hy2」。host 上手写的 remark 不动;
+// 加完仍重名的交给 DedupeRemarks 加序号。原地修改并返回同一个切片。
+func AddProtocolSuffix(eps []Endpoint) []Endpoint {
+	count := map[int64]int{}
+	for _, ep := range eps {
+		if ep.AutoRemark {
+			count[ep.NodeID]++
+		}
+	}
+	for i := range eps {
+		if eps[i].AutoRemark && count[eps[i].NodeID] > 1 {
+			eps[i].Remark += " · " + ProtocolShort(eps[i])
+		}
+	}
+	return eps
+}
+
+// ProtocolShort 是端点的协议短名:优先协议本身有辨识度的(Hy2、TUIC、SS、WG),
+// 其次 Reality,再次传输层(WS、gRPC、XHTTP…),最后是协议名。
+func ProtocolShort(ep Endpoint) string {
+	switch ep.Protocol {
+	case model.ProtocolHysteria2:
+		return "Hy2"
+	case model.ProtocolTUIC:
+		return "TUIC"
+	case model.ProtocolShadowsocks:
+		return "SS"
+	case model.ProtocolWireguard:
+		return "WG"
+	}
+	if ep.Security == model.SecurityReality {
+		return "Reality"
+	}
+	switch ep.Network {
+	case model.NetworkWS:
+		return "WS"
+	case model.NetworkGRPC:
+		return "gRPC"
+	case model.NetworkXHTTP:
+		return "XHTTP"
+	case model.NetworkSplitHTTP:
+		return "SplitHTTP"
+	case model.NetworkHTTPUpgrade:
+		return "HTTPUpgrade"
+	}
+	switch ep.Protocol {
+	case model.ProtocolVLESS:
+		return "VLESS"
+	case model.ProtocolVMess:
+		return "VMess"
+	case model.ProtocolTrojan:
+		return "Trojan"
+	}
+	return strings.ToUpper(string(ep.Protocol))
 }

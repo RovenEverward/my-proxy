@@ -412,3 +412,33 @@ func TestUserRowNormalizesEmptyResetStrategy(t *testing.T) {
 		}
 	}
 }
+
+// 只改显示名:只发 metadata 请求;换城市时显式发空字母,让控制面在新分组里重新取。
+func TestNodeEditDisplayOnly(t *testing.T) {
+	resetEditFlags(t)
+	view := model.NodeView{Node: model.Node{ID: 2, Name: "la-2", Address: "1.2.3.4"}}
+	meta := model.PurposeMetadata{Region: "US", Line: "cn2", City: "洛杉矶", Letter: "B"}
+	calls := recordEdit(t, func(method, path string) []byte {
+		if path == "/api/nodes/2/metadata" {
+			return mustJSON(t, meta)
+		}
+		return mustJSON(t, view)
+	})
+	captureStdout(t, func() { runRoot(t, "node", "edit", "2", "--city", "圣何塞") })
+	put := (*calls)[len(*calls)-1]
+	if put.Method != http.MethodPut || put.Path != "/api/nodes/2/metadata" {
+		t.Fatalf("最后一个请求是 %s %s", put.Method, put.Path)
+	}
+	for _, c := range *calls {
+		if c.Method == http.MethodPut && c.Path == "/api/nodes/2" {
+			t.Fatal("只改显示名不该 PUT 节点")
+		}
+	}
+	var got map[string]any
+	if err := json.Unmarshal(put.Body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["city"] != "圣何塞" || got["letter"] != "" || got["region"] != "US" || got["line"] != "cn2" {
+		t.Fatalf("PUT body %s", put.Body)
+	}
+}
