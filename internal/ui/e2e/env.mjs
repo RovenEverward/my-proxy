@@ -127,3 +127,13 @@ export async function login(page, env) {
     env.cookies = await page.context().cookies();
   }
 }
+
+// cpFetch 直接问控制面,遇到 429 按 Retry-After 等一下再试 —— 和 CLI、页面的做法一样。
+// 整套用例在同一个 IP 上连续写,限流桶偶尔会见底;那是限流在正常工作,不是被测的东西坏了。
+export async function cpFetch(url, init) {
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, init);
+    if (r.status !== 429 || i >= 5) return r;
+    await new Promise(ok => setTimeout(ok, 1000 * (+r.headers.get("Retry-After") || 2)));
+  }
+}

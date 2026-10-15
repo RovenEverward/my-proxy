@@ -2,7 +2,7 @@
 // 节点地址是 127.0.0.1:1,SSH 立刻被拒,于是下发、安装、体检都会失败 —— 正好检查页面
 // 把控制面的原话报出来。
 import { test, expect } from "@playwright/test";
-import { startEnv, normalize, login } from "./env.mjs";
+import { startEnv, normalize, login, cpFetch } from "./env.mjs";
 
 let env;
 const cliTry = async (...a) => { try { await env.cli(...a); } catch { /* 失败也要比请求 */ } };
@@ -243,6 +243,6 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await page.click("#okb");
   await expect(page).toHaveURL(/#nodes$/);
   expect(take([], opt)).toEqual(nodeCLI);
-  const r = await fetch(env.cpURL + "/api/nodes/4", { headers: { Authorization: "Bearer " + env.token } });
+  const r = await cpFetch(env.cpURL + "/api/nodes/4", { headers: { Authorization: "Bearer " + env.token } });
   expect(r.status).toBe(404);
 });
