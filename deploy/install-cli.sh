@@ -5,7 +5,7 @@
 # 装和升级是同一条命令,重复跑是安全的。二进制从哪儿来,按下面的顺序试,第一条走通
 # 就停:
 #
-#   1. --from 指给你的文件,或者仓库里已经编好的 ./mpx
+#   1. --from 指给你的文件(不会自动捡 ./mpx、/tmp/mpx 之类的现成文件)
 #   2. 从 GitHub Releases 下载你这个系统对应的发布件
 #   3. 用本机的 Go 从源码编(在仓库里跑,或者先 git clone 一份)
 #
@@ -74,7 +74,7 @@ usage() {
   ./deploy/install-cli.sh --prefix /usr/local/bin
   ./deploy/install-cli.sh --uninstall
 
-二进制按顺序找:--from 或仓库里的 ./mpx → GitHub Releases → 用本机 Go 从源码编。
+二进制按顺序找:--from → GitHub Releases → 用本机 Go 从源码编。
 EOF
 	exit 0
 }
@@ -159,12 +159,7 @@ try_local() {
 		SRC="$FROM"
 		return 0
 	fi
-	for candidate in "$SCRIPT_DIR/mpx" "./mpx" "/tmp/mpx"; do
-		if [[ -f "$candidate" ]]; then
-			SRC="$candidate"
-			return 0
-		fi
-	done
+	# 不自己去捡 ./mpx、/tmp/mpx 这类现成文件:那里常躺着旧版本,会被当成新版装上。
 	return 1
 }
 
@@ -227,7 +222,7 @@ elif try_download; then
 elif try_build; then
 	echo "==> 用刚编出来的"
 else
-	die "三条路都没走通。装上 Go(https://go.dev/dl/),或者把二进制放到 ./mpx 再跑一次。"
+	die "三条路都没走通。装上 Go(https://go.dev/dl/),或者用 --from 指一个编好的二进制再跑一次。"
 fi
 
 # ---- 装上去并确认它真的能跑 -------------------------------------------------

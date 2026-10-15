@@ -35,8 +35,8 @@ const (
 	initRepo = "RovenEverward/my-proxy"
 	initRef  = "main"
 
-	// 上传到 VPS 的固定落点。用 /tmp 是因为安装脚本自己也是这么找二进制的
-	// (参数 → 脚本旁边 → ./mpx → /tmp/mpx),两边的直觉一致。
+	// 上传到 VPS 的固定落点。--binary 送上去的文件会显式把路径传给安装脚本;
+	// 脚本不会自己去捡 /tmp 下的文件(那里可能躺着上一次留下的旧二进制)。
 	initRemoteScript = "/tmp/mpx-install.sh"
 	initRemoteBinary = "/tmp/mpx"
 )
