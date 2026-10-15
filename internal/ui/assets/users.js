@@ -55,7 +55,9 @@ const userPath = n => "/api/users/" + encodeURIComponent(n);
 async function readModify(name, change) {
   const u = asModelUser(await api(userPath(name)));
   change(u);
-  return api(userPath(name), { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } });
+  const res = await api(userPath(name), { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } });
+  afterWrite();
+  return res;
 }
 
 /* ---- 列表状态 ---- */
