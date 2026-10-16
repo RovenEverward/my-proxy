@@ -254,6 +254,21 @@ func Ahead(current, latest string) bool {
 	return false
 }
 
+// SameMajorMinor 报告两个版本号的主版本与次版本是否一致。
+//
+// 它用来回答"CLI 和控制面是不是同一代":API 只新增不修改,同一主/次版本之间
+// 一般可以直接对话。两边任一边为空、或者带后缀(rc、dirty、伪版本)时返回 true,
+// 也就是"不判定为不一致" —— 比不出来时宁可不警告,也不要凭一个不认识的版本号
+// 吓人。
+func SameMajorMinor(a, b string) bool {
+	va, ok1 := parseVersion(a)
+	vb, ok2 := parseVersion(b)
+	if !ok1 || !ok2 {
+		return true
+	}
+	return va[0] == vb[0] && va[1] == vb[1]
+}
+
 func parseVersion(v string) ([3]int, bool) {
 	var out [3]int
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")

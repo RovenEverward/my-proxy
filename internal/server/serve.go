@@ -74,6 +74,8 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	srv.AutoMigrateRouting()
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)
+	// 更新结论也接上:GET /api/update 只转述后台任务问到的,自己不发起检查。
+	srv.SetUpdateSource(task)
 
 	// 自签证书:库里有就用,没有就生成。指纹另外落一份纯文本在库旁边,给
 	// mpx init 经 SSH 读回去打印接入命令用 —— 那一侧不该为了一个字符串去开库。

@@ -1,0 +1,90 @@
+package model
+
+import "time"
+
+// UpdatePart 是「某一部分的版本」的统一形状,GET /api/update、/api/status 与
+// mpx update 共用。
+//
+// 单独定义一份而不是直接复用 UpdateInfo:那个是 /api/status 里嵌套的形状,键名
+// 叫 url;这里按 RFC 用 release_url。两边各用各的名字,免得为了复用把已经发出去
+// 的键名改掉。
+type UpdatePart struct {
+	// Current 是这一部分现在跑的版本。从源码直接编出来时为空。
+	Current string `json:"current"`
+	// Latest 是上游最新发布的版本;控制面还没查到时为空。
+	Latest string `json:"latest"`
+	// Behind 是落后了几次发布;0 表示已是最新或数不出来。
+	Behind int `json:"behind"`
+	// Available 表示确实有一份更新可装。当前版本未知时一律为 false。
+	Available bool `json:"available"`
+	// ReleaseURL 是最新发布在网页上的地址,去看具体改了什么。
+	ReleaseURL string `json:"release_url"`
+	// PublishedAt 是最新发布的发布时间;没问到时为 null。
+	PublishedAt *time.Time `json:"published_at"`
+	// CheckedAt 是这份结论是什么时候问出来的;没问过时为 null。
+	CheckedAt *time.Time `json:"checked_at"`
+	// Error 非空表示最近一次没问成,其余字段是上一次的结论。
+	Error string `json:"error"`
+}
+
+// UpdateNodeCore 是一台节点上某个核心的版本行。
+//
+// 一个节点装了两种核心就出两行。Current 是观察到的值(可能为空:还没查过、或者
+// 查的时候核心没起来);Target 是控制面给这个核心钉的死版本,xray 目前没有钉死
+// 版本,所以恒为空。
+type UpdateNodeCore struct {
+	NodeID int64  `json:"id"`
+	Name   string `json:"name"`
+	// Display 是只读显示名(旗帜 + 城市/国家 + 字母);没有地区时为空。
+	Display string `json:"display"`
+	Core    Core   `json:"core"`
+	Current string `json:"current"`
+	Target  string `json:"target"`
+}
+
+// UpdateSnapshot 是 GET /api/update 的形状:控制面自己那一部分,加上各节点核心。
+//
+// 本机 CLI 的那一行不在里面 —— 控制面不认识调用它的那份 CLI,mpx update 拿回
+// 这份之后在自己这边补上 CLI 行。
+type UpdateSnapshot struct {
+	Control UpdatePart       `json:"control"`
+	Nodes   []UpdateNodeCore `json:"nodes"`
+}
+
+// UpdateReport 是 mpx update -o json 的完整形状,比控制面多一行本机 CLI。
+type UpdateReport struct {
+	CLI     UpdatePart       `json:"cli"`
+	Control UpdatePart       `json:"control"`
+	Nodes   []UpdateNodeCore `json:"nodes"`
+}
+
+// UpdatePartFrom 把 /api/status 里的更新结论翻成独立接口的形状。
+//
+// 「有没有更新」沿用 UpdateInfo.Newer() 的判据,和 /api/status 保持同一套说法:
+// 当前版本未知时不能说别人更新。抽成一个函数,是为了让 /api/update 与控制面
+// 内部那条路径共用同一份翻译,不会各算各的。
+func UpdatePartFrom(info UpdateInfo) UpdatePart {
+	return UpdatePart{
+		Current:     info.Current,
+		Latest:      info.Latest,
+		Behind:      info.Behind,
+		Available:   info.Newer(),
+		ReleaseURL:  info.URL,
+		PublishedAt: info.PublishedAt,
+		CheckedAt:   info.CheckedAt,
+		Error:       info.Error,
+	}
+}
+
+// ToUpdatePart 是控制面状态里那一份版本的独立形状,CLI 回退到 /api/status 时用。
+//
+// 当前版本优先取 status.version:RFC §5 说的就是"CLI 读取 /api/status.version",
+// 而嵌套的 update.current 可能因为更新源没接上而空着。两者本该一致,不一致时
+// 以显式的那一个为准。
+func (st ControlStatus) ToUpdatePart() UpdatePart {
+	part := UpdatePartFrom(st.Update)
+	if st.Version != "" {
+		part.Current = st.Version
+	}
+	return part
+}

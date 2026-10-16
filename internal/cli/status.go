@@ -29,27 +29,40 @@ var statusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if opts.output == outputJSON {
-			return emitJSON(raw)
-		}
+		// 先解出控制面版本,好在输出完之后提醒一句两边的代际是否一致。json 模式
+		// 下也提醒 —— 警告走 stderr,不污染 stdout 上那份原文。
 		st, err := decode[model.ControlStatus](raw)
 		if err != nil {
 			return err
 		}
-
-		now := time.Now()
-		if err := writeKV(statusPairs(st, now)); err != nil {
+		if err := printStatus(raw, st); err != nil {
 			return err
 		}
-		if len(st.Backoffs) == 0 {
-			return nil
-		}
-		rows := make([][]string, 0, len(st.Backoffs))
-		for _, b := range st.Backoffs {
-			rows = append(rows, statusBackoffRow(b, now))
-		}
-		return writeTable(statusBackoffHeaders, rows)
+		warnVersionMismatch(localVersion(), st.Version)
+		return nil
 	},
+}
+
+// printStatus 按输出格式把状态打出去。
+//
+// 与警告分开:警告要排在所有正经输出之后,不然在终端上会先冒出一行提示、
+// 再打出表格,读起来像是"先有结论后有数据"。
+func printStatus(raw []byte, st model.ControlStatus) error {
+	if opts.output == outputJSON {
+		return emitJSON(raw)
+	}
+	now := time.Now()
+	if err := writeKV(statusPairs(st, now)); err != nil {
+		return err
+	}
+	if len(st.Backoffs) == 0 {
+		return nil
+	}
+	rows := make([][]string, 0, len(st.Backoffs))
+	for _, b := range st.Backoffs {
+		rows = append(rows, statusBackoffRow(b, now))
+	}
+	return writeTable(statusBackoffHeaders, rows)
 }
 
 var statusBackoffHeaders = []string{"节点 ID", "名称", "连续失败", "再试时间"}

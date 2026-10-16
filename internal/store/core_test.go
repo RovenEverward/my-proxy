@@ -212,3 +212,43 @@ func TestCoreAtomicTrafficConcurrentDuplicates(t *testing.T) {
 		t.Fatalf("duplicate accounting: %+v %v", u, err)
 	}
 }
+
+// DeployedNodesForCore 只报"下发过基准"的节点:建了行但从没有过哈希的(比如
+// 只改过监听端口)不算装过,空哈希也是。
+func TestDeployedNodesForCore(t *testing.T) {
+	s := newTestStore(t)
+	withHash := newTestNode(t, s, "a")
+	withPort := newTestNode(t, s, "b")
+	none := newTestNode(t, s, "c")
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := s.SetCoreDeployed(withHash.ID, model.CoreSingBox, "sb-hash", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCoreDeployment(model.CoreDeployment{
+		NodeID: withPort.ID, Core: model.CoreSingBox, APIPort: 11086,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = none
+
+	got, err := s.DeployedNodesForCore(model.CoreSingBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got[withHash.ID] || got[withPort.ID] || got[none.ID] {
+		t.Fatalf("下发过基准的节点集合不对:%+v", got)
+	}
+	if len(got) != 1 {
+		t.Fatalf("只有一台下发过,实际 %d:%+v", len(got), got)
+	}
+
+	// xray 的基准在 nodes 表上,这个函数只回答第二核心。
+	xray, err := s.DeployedNodesForCore(model.CoreXray)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(xray) != 0 {
+		t.Fatalf("xray 不该有独立的下发记录:%+v", xray)
+	}
+}

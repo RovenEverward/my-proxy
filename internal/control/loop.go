@@ -521,6 +521,15 @@ func (t *Task) Snapshot(now time.Time) model.ControlStatus {
 	return st
 }
 
+// ControlUpdate 返回控制面自己这一份版本结论,给 GET /api/update 用。
+//
+// 结论来自同一个 updateInfo:接口与 /api/status 报的必须是同一件事,不能各算
+// 各的 —— 两处对不上时,使用者没法知道该信哪个。这里不发任何网络请求,上游的
+// 检查由后台任务按自己的节奏做。
+func (t *Task) ControlUpdate() model.UpdatePart {
+	return model.UpdatePartFrom(t.updateInfo())
+}
+
 // updateInfo 把更新检查的结论翻成 API 的形状。
 //
 // 当前版本优先用编译进去的 buildinfo:定在二进制里的版本号不会因为运行环境换了
