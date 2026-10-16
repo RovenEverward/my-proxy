@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -26,7 +27,19 @@ type Plan struct {
 	InboundIDs []int64 `json:"inbound_ids,omitempty"`
 	// Users 是挂在这个套餐上的用户数,存储层读取时填充,写入时忽略。
 	Users int `json:"users"`
+	// ExtraAuth 是挂在这个套餐、同时还有额外授权(inbound_ids 非空)的用户数。
+	// 与 Users 一样只在读取时填充,用来提示「套餐的设置没有完全生效」。
+	ExtraAuth int `json:"extra_auth"`
 }
+
+// 套餐字段的上限。名字与备注是给人看的短文本;节点/入站条数挡在写入口,免得
+// 一次请求把关联表写爆,也免得列表页一次渲染上千个标签。
+const (
+	PlanNameMaxBytes = 160
+	PlanNoteMaxBytes = 1000
+	PlanMaxNodes     = 200
+	PlanMaxInbounds  = 1000
+)
 
 // Normalize 去掉零值与重复的节点/入站 id,并按升序排列,保证同一组合在任何
 // 写法下都是同一份。
@@ -37,13 +50,23 @@ func (p *Plan) Normalize() {
 	p.InboundIDs = normalizePlanIDs(p.InboundIDs)
 }
 
-// Validate 检查套餐名。引用的节点与入站是否存在由存储层校验。
+// Validate 检查套餐名、备注长度与节点/入站条数上限。引用的节点与入站是否存在
+// 由存储层校验。
 func (p Plan) Validate() error {
 	if p.Name == "" {
 		return errors.New("套餐名不能为空")
 	}
-	if len(p.Name) > 160 {
-		return errors.New("套餐名最多 160 字节")
+	if len(p.Name) > PlanNameMaxBytes {
+		return fmt.Errorf("套餐名最多 %d 字节", PlanNameMaxBytes)
+	}
+	if len(p.Note) > PlanNoteMaxBytes {
+		return fmt.Errorf("备注最多 %d 字节", PlanNoteMaxBytes)
+	}
+	if len(p.NodeIDs) > PlanMaxNodes {
+		return fmt.Errorf("一个套餐最多包含 %d 个节点", PlanMaxNodes)
+	}
+	if len(p.InboundIDs) > PlanMaxInbounds {
+		return fmt.Errorf("一个套餐最多单独勾选 %d 个入站", PlanMaxInbounds)
 	}
 	return nil
 }

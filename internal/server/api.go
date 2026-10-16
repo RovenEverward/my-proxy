@@ -755,10 +755,25 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		inboundID = id
 	}
 
+	// plan 筛选用 store 层:判定在那一处,这里只解析参数。
+	var planID *int64
+	if v := q.Get("plan"); v != "" {
+		id, ok := parseInt(w, v)
+		if !ok {
+			return
+		}
+		if id <= 0 {
+			writeError(w, http.StatusBadRequest, "plan 必须是正整数")
+			return
+		}
+		planID = &id
+	}
+
 	users, total, err := s.store.ListUsersPage(store.UserQuery{
 		Status:    status,
 		Search:    q.Get("search"),
 		InboundID: inboundID,
+		PlanID:    planID,
 		Limit:     page.Limit,
 		Offset:    page.Offset,
 	})
@@ -793,6 +808,16 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	// 带了 plan_id 就按指定的套餐;没带则交给 store 的默认归属规则(空入站归
+	// 默认套餐、非空入站不挂套餐),这是旧客户端与脚本的兼容路径。
+	planID, hasPlan, err := req.takePlanID()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if hasPlan {
+		u.PlanID = planID
+	}
 	if _, err := s.store.GetUser(u.Username); err == nil {
 		writeError(w, http.StatusConflict, "用户名已存在")
 		return
@@ -802,6 +827,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.CreateUser(&u); err != nil {
+		if errors.Is(err, store.ErrPlanNotFound) {
+			writeError(w, http.StatusBadRequest, "指定的套餐不存在")
+			return
+		}
 		s.writeStoreError(w, err, "用户")
 		return
 	}
@@ -821,6 +850,11 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 // handleUpdateUser 是整体替换:调用方先读、改、再写回。
 //
 // 留空的 Key / SubToken 会沿用原值,这样 CLI 不必把它们回传。
+//
+// 套餐归属单独处理:请求体里没带 plan_id 就保持原值(老客户端整体 PUT 不会
+// 丢套餐);带了 null 摘掉;带了 id 改挂。改挂只在确实发生变化时才调用
+// SetUserPlan,这样 all_nodes 套餐被写入非空 inbound_ids 时 store 的摘除规则
+// 仍然生效 —— 客户端原样回传同一个套餐时不会把它又挂回去。
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("username")
 	old, err := s.store.GetUser(name)
@@ -842,6 +876,22 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	planID, hasPlan, err := req.takePlanID()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// 在动库之前先确认套餐存在,免得改完字段才发现套餐是坏的。
+	if hasPlan && planID != nil {
+		if _, err := s.store.GetPlan(*planID); err != nil {
+			if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrPlanNotFound) {
+				writeError(w, http.StatusBadRequest, "指定的套餐不存在")
+				return
+			}
+			s.writeStoreError(w, err, "套餐")
+			return
+		}
+	}
 	if u.Key == "" {
 		u.Key = old.Key
 	}
@@ -853,8 +903,35 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	if hasPlan && !samePlanID(old.PlanID, planID) {
+		if _, err := s.store.SetUserPlan(name, planID); err != nil {
+			if errors.Is(err, store.ErrPlanNotFound) {
+				writeError(w, http.StatusBadRequest, "指定的套餐不存在")
+				return
+			}
+			s.writeStoreError(w, err, "用户套餐")
+			return
+		}
+	}
 	s.invalidateSubCache()
+	// 重新读一次以反映被摘掉/改挂之后的套餐归属。
+	if updated, err := s.store.GetUser(name); err == nil {
+		writeJSON(w, http.StatusOK, toUserView(*updated))
+		return
+	}
 	writeJSON(w, http.StatusOK, toUserView(u))
+}
+
+// samePlanID 比较两个套餐归属是否相同(nil 表示没挂套餐)。
+func samePlanID(a, b *int64) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return *a == *b
+	}
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {

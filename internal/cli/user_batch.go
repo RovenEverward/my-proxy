@@ -195,7 +195,10 @@ func renewUser(c *Client, username string, days int, fixed *time.Time) (string, 
 		target = renewTarget(u.ExpireAt, days, time.Now())
 	}
 	u.ExpireAt = &target
-	raw, err = c.do("PUT", path, u)
+	// 不带 plan_id:GET 回来的套餐归属只是用来算到期日的现值,回传就成了"把
+	// 刚才读到的套餐再写一遍",并发下会覆盖别人刚改的归属。套餐三态见
+	// userWriteBody;renew 没有 --plan,永不显式改编归属。
+	raw, err = c.do("PUT", path, userWriteBody{User: u})
 	if err != nil {
 		return "", nil, err
 	}

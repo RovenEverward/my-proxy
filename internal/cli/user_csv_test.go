@@ -21,6 +21,7 @@ import (
 type fakeUserAPI struct {
 	mu       sync.Mutex
 	users    map[string]model.User // 按用户名存当前状态
+	plans    []model.Plan          // GET /api/plans 的返回
 	requests []fakeRequest         // 按时间顺序记下每个请求
 	nextID   int64
 	// failOn 是按用户名让读/写失败的钩子;用来测批量命令的部分失败。
@@ -67,6 +68,13 @@ func (f *fakeUserAPI) fail(username string, code int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.failOn[username] = code
+}
+
+// addPlan 往假控制面里塞一个套餐,供 CSV 的「套餐」列解析。
+func (f *fakeUserAPI) addPlan(p model.Plan) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.plans = append(f.plans, p)
 }
 
 // recorded 返回记录下来的请求(副本)。
@@ -141,6 +149,15 @@ func (f *fakeUserAPI) handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/plans":
+		// CSV 有「套餐」列时导入会先拉一次套餐列表。
+		f.mu.Lock()
+		plans := append([]model.Plan(nil), f.plans...)
+		f.mu.Unlock()
+		if plans == nil {
+			plans = []model.Plan{}
+		}
+		writeJSONReply(http.StatusOK, plans)
 	case r.Method == http.MethodGet && username == "":
 		// GET /api/users —— 导出/FetchAllUsers 走这里。
 		q := r.URL.Query()
@@ -221,6 +238,12 @@ func (f *fakeUserAPI) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		if u.SubToken == "" {
 			u.SubToken = old.SubToken
+		}
+		// 请求体里没带 plan_id 的键 → 保持原套餐(老客户端与空 CSV 单元格)。
+		var raw map[string]json.RawMessage
+		_ = json.Unmarshal(body, &raw)
+		if _, present := raw["plan_id"]; !present {
+			u.PlanID = old.PlanID
 		}
 		u.ID = old.ID
 		u.CreatedAt = old.CreatedAt
@@ -585,7 +608,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 		t.Fatalf("userCSVColumns: %v", err)
 	}
 	// 只有用户名,其余全空。
-	rec := []string{"alice", "", "", "", "", "", ""}
+	rec := []string{"alice", "", "", "", "", "", "", ""}
 	u, err := csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -611,7 +634,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 	}
 
 	// 显式写"不限/不过期/全部"和留空等价。
-	rec = []string{"bob", "不限", "不过期", "启用", "none", "全部", ""}
+	rec = []string{"bob", "不限", "不过期", "启用", "none", "全部", "", ""}
 	u, err = csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -622,7 +645,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 	}
 
 	// 单元格两侧的空白会被有意去掉(导出->导入不等价于原样保留空白)。
-	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "  备注  "}
+	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "", "  备注  "}
 	u, err = csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -649,12 +672,12 @@ func TestImportBadRowsColumnMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
-	// 表头 7 列;第 3 行(数据第 2 行)只给了 4 列。
+	// 表头 8 列;第 3 行(数据第 2 行)只给了 4 列。
 	csvText := strings.Join([]string{
 		strings.Join(userCSVHeader, ","),
-		"alice,1GB,2027-01-01,启用,none,全部,备注一",
+		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
 		"bob,2GB,2027-02-01,启用",
-		"carol,3GB,2027-03-01,停用,none,全部,备注三",
+		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
 	}, "\n") + "\n"
 
 	rep, err := importUsersCSV(c, strings.NewReader(csvText))
@@ -674,9 +697,9 @@ func TestImportBadRowsColumnMismatch(t *testing.T) {
 	if e.Line != 3 {
 		t.Fatalf("错误行号 = %d, want 3(表头是第 1 行)", e.Line)
 	}
-	wantMsg := "列数与表头不一致(表头 7 列,这行 4 列)"
+	wantMsg := "列数与表头不一致(表头 8 列,这行 4 列)"
 	if !strings.Contains(e.Error, "列数与表头不一致") ||
-		!strings.Contains(e.Error, "表头 7 列") || !strings.Contains(e.Error, "这行 4 列") {
+		!strings.Contains(e.Error, "表头 8 列") || !strings.Contains(e.Error, "这行 4 列") {
 		t.Fatalf("错误信息 = %q, want 包含 %q", e.Error, wantMsg)
 	}
 	// 其余两行确实写进去了。
@@ -700,9 +723,9 @@ func TestImportBadRowsUnknownEnabled(t *testing.T) {
 	}
 	csvText := strings.Join([]string{
 		strings.Join(userCSVHeader, ","),
-		"alice,1GB,2027-01-01,启用,none,全部,备注一",
-		"bob,2GB,2027-02-01,啟用,none,全部,备注二", // 繁体"啟用"认不出
-		"carol,3GB,2027-03-01,停用,none,全部,备注三",
+		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
+		"bob,2GB,2027-02-01,啟用,none,全部,,备注二", // 繁体"啟用"认不出
+		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
 	}, "\n") + "\n"
 
 	rep, err := importUsersCSV(c, strings.NewReader(csvText))
@@ -761,10 +784,10 @@ func TestImportStopsAfterThreeBadRows(t *testing.T) {
 	}
 	csvText := strings.Join([]string{
 		strings.Join(userCSVHeader, ","),
-		`alice,1GB,2027-01-01,启用,none,全部,"坏"引号`,
-		`bob,2GB,2027-02-01,停用,none,全部,"坏"引号`,
-		`carol,3GB,2027-03-01,启用,none,全部,"坏"引号`,
-		"dave,4GB,2027-04-01,启用,none,全部,正常行不该被处理",
+		`alice,1GB,2027-01-01,启用,none,全部,,"坏"引号`,
+		`bob,2GB,2027-02-01,停用,none,全部,,"坏"引号`,
+		`carol,3GB,2027-03-01,启用,none,全部,,"坏"引号`,
+		"dave,4GB,2027-04-01,启用,none,全部,,正常行不该被处理",
 	}, "\n") + "\n"
 
 	rep, err := importUsersCSV(c, strings.NewReader(csvText))
@@ -805,7 +828,7 @@ func TestImportCSVColumnCountUsesCSVRecords(t *testing.T) {
 	// 注意第二行备注用引号括起了逗号 —— CSV 眼里它仍是 7 个字段。
 	csvText := strings.Join([]string{
 		strings.Join(userCSVHeader, ","),
-		`alice,1GB,2027-01-01,启用,none,全部,"备注,有逗号"`,
+		`alice,1GB,2027-01-01,启用,none,全部,,"备注,有逗号"`,
 		"bob,2GB",
 	}, "\n") + "\n"
 
@@ -829,5 +852,127 @@ func TestImportCSVColumnCountUsesCSVRecords(t *testing.T) {
 	}
 	if got.Note != "备注,有逗号" {
 		t.Fatalf("备注 = %q, want 备注,有逗号(引号内的逗号要保留)", got.Note)
+	}
+}
+
+// TestCSVExportWritesPlanName 断言「套餐」列写出的是套餐名而不是 id。
+func TestCSVExportWritesPlanName(t *testing.T) {
+	id := int64(7)
+	users := []userRow{{
+		Username: "alice", Enabled: true, ResetStrategy: "none",
+		PlanID: &id, PlanName: "全球",
+	}}
+	var buf bytes.Buffer
+	if err := writeUsersCSV(&buf, users); err != nil {
+		t.Fatalf("writeUsersCSV: %v", err)
+	}
+	if !strings.Contains(buf.String(), "alice,不限,不过期,启用,none,全部,全球,") {
+		t.Fatalf("导出的套餐列不是套餐名:\n%s", buf.String())
+	}
+	// 没挂套餐的用户写空单元格,导入时表示不改。
+	noPlan := []userRow{{Username: "bob", Enabled: true, ResetStrategy: "none"}}
+	buf.Reset()
+	if err := writeUsersCSV(&buf, noPlan); err != nil {
+		t.Fatalf("writeUsersCSV: %v", err)
+	}
+	if !strings.Contains(buf.String(), "bob,不限,不过期,启用,none,全部,,") {
+		t.Fatalf("没挂套餐应写空单元格:\n%s", buf.String())
+	}
+}
+
+// TestCSVImportPlanColumn 断言「套餐」列的导入语义:
+// 写名字 → 按名字解析成 id;空 → 保持原套餐;认不出的名字 → 该行失败。
+func TestCSVImportPlanColumn(t *testing.T) {
+	f := newFakeUserAPI(t)
+	global := int64(7)
+	basic := int64(8)
+	f.addPlan(model.Plan{ID: global, Name: "全球"})
+	f.addPlan(model.Plan{ID: basic, Name: "基础"})
+	// alice 已经挂在「全球」上。
+	f.add(model.User{Username: "alice", Enabled: true, PlanID: &global})
+
+	c, err := newClient()
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	csvText := strings.Join([]string{
+		strings.Join(userCSVHeader, ","),
+		"alice,不限,不过期,启用,none,全部,基础,", // 改挂「基础」
+		"bob,不限,不过期,启用,none,全部,全球,",   // 新建并挂「全球」
+		"carol,不限,不过期,启用,none,全部,,",   // 新建,不挂套餐
+		"dave,不限,不过期,启用,none,全部,不存在,", // 名字认不出 → 失败
+	}, "\n") + "\n"
+
+	rep, err := importUsersCSV(c, strings.NewReader(csvText))
+	if err != nil {
+		t.Fatalf("importUsersCSV: %v", err)
+	}
+	if rep.Added != 2 || rep.Updated != 1 || rep.Failed != 1 {
+		t.Fatalf("导入结果 = %+v, want 2 新增 / 1 更新 / 1 失败", rep)
+	}
+	if rep.Errors[0].Line != 5 || !strings.Contains(rep.Errors[0].Error, "套餐") {
+		t.Fatalf("失败行信息 = %+v", rep.Errors[0])
+	}
+	if _, ok := f.get("dave"); ok {
+		t.Fatal("套餐名认不出的行不该被写进去")
+	}
+
+	if got, _ := f.get("alice"); got.PlanID == nil || *got.PlanID != basic {
+		t.Fatalf("alice 没改挂到「基础」: %+v", got.PlanID)
+	}
+	if got, _ := f.get("bob"); got.PlanID == nil || *got.PlanID != global {
+		t.Fatalf("bob 没挂到「全球」: %+v", got.PlanID)
+	}
+	if got, _ := f.get("carol"); got.PlanID != nil {
+		t.Fatalf("carol 的空套餐单元格应表示不挂: %+v", got.PlanID)
+	}
+
+	// 空「套餐」单元格覆盖已有用户时保持原套餐不动。
+	keepText := strings.Join([]string{
+		strings.Join(userCSVHeader, ","),
+		"alice,2GB,不过期,启用,none,全部,,备注",
+	}, "\n") + "\n"
+	rep, err = importUsersCSV(c, strings.NewReader(keepText))
+	if err != nil {
+		t.Fatalf("importUsersCSV: %v", err)
+	}
+	if rep.Updated != 1 || rep.Failed != 0 {
+		t.Fatalf("覆盖结果 = %+v", rep)
+	}
+	got, _ := f.get("alice")
+	if got.PlanID == nil || *got.PlanID != basic {
+		t.Fatalf("空套餐单元格覆盖时把套餐改掉了: %+v", got.PlanID)
+	}
+	if got.DataLimit != 2<<30 {
+		t.Fatalf("其余字段没被覆盖: limit=%d", got.DataLimit)
+	}
+}
+
+// TestCSVImportWithoutPlanColumnKeepsPlan 断言旧格式(没有「套餐」列)的文件
+// 仍然能导入,而且不会碰用户的套餐归属。
+func TestCSVImportWithoutPlanColumnKeepsPlan(t *testing.T) {
+	f := newFakeUserAPI(t)
+	global := int64(7)
+	f.addPlan(model.Plan{ID: global, Name: "全球"})
+	f.add(model.User{Username: "alice", Enabled: true, PlanID: &global})
+
+	c, err := newClient()
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	csvText := strings.Join([]string{
+		"用户名,流量上限,到期时间,可用性,重置策略,入站范围,备注",
+		"alice,1GB,不过期,启用,none,全部,备注",
+	}, "\n") + "\n"
+	rep, err := importUsersCSV(c, strings.NewReader(csvText))
+	if err != nil {
+		t.Fatalf("importUsersCSV: %v", err)
+	}
+	if rep.Updated != 1 || rep.Failed != 0 {
+		t.Fatalf("旧格式导入结果 = %+v", rep)
+	}
+	got, _ := f.get("alice")
+	if got.PlanID == nil || *got.PlanID != global {
+		t.Fatalf("旧格式导入碰了套餐归属: %+v", got.PlanID)
 	}
 }

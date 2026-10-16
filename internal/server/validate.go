@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -33,8 +34,10 @@ type userView struct {
 	ResetStrategy model.ResetStrategy `json:"reset_strategy"`
 	ResetAt       *time.Time          `json:"traffic_reset_at,omitempty"`
 	InboundIDs    []int64             `json:"inbound_ids,omitempty"`
-	Note          string              `json:"note,omitempty"`
-	CreatedAt     time.Time           `json:"created_at"`
+	// PlanID 是用户挂的套餐 id;omitempty 让没挂套餐的用户干脆不带这个字段。
+	PlanID    *int64    `json:"plan_id,omitempty"`
+	Note      string    `json:"note,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func toUserView(u model.User) userView {
@@ -51,6 +54,7 @@ func toUserView(u model.User) userView {
 		ResetStrategy: u.ResetStrategy,
 		ResetAt:       u.TrafficResetAt,
 		InboundIDs:    u.InboundIDs,
+		PlanID:        u.PlanID,
 		Note:          u.Note,
 		CreatedAt:     u.CreatedAt,
 	}
@@ -66,16 +70,18 @@ func userViews(users []model.User) []userView {
 
 // userRequest 是建用户与改用户的请求体。
 //
-// 比 model.User 只多一件事:Enabled 是 *bool,为了分得清「没说」和「说了
-// false」。model.User 里它是裸 bool,零值就是 false —— 手工打 API 时
-// `curl -d '{"username":"dave"}'` 会悄没声地建出一个连不上的用户,而 CLI
-// 不写 --disabled 就是启用,同一个字段两种结果。
+// 比 model.User 只多两件事:Enabled 是 *bool,为了分得清「没说」和「说了
+// false」;PlanID 是 json.RawMessage,为了分得清「没带 plan_id」「带了 null」
+// 和「带了一个 id」。model.User 里 PlanID 是指针,恰恰分不出前两者 —— 而不带
+// 时保持原套餐、带 null 时摘掉,是两个必须区分开的语义(见 RFC「新用户与旧
+// 客户端」)。
 //
-// 嵌入的 model.User 里那个同名字段会被外层这个遮住(JSON 里同名的取浅的那个),
+// 嵌入的 model.User 里那两个同名字段会被外层遮住(JSON 里同名的取浅的那个),
 // 其余字段照常解析。
 type userRequest struct {
 	model.User
-	Enabled *bool `json:"enabled"`
+	Enabled *bool           `json:"enabled"`
+	PlanID  json.RawMessage `json:"plan_id"`
 }
 
 // takeEnabled 把三态收成一个 bool:没说时,新建按启用、改动按保持原样。
@@ -88,6 +94,29 @@ func (req *userRequest) takeEnabled(old bool, creating bool) bool {
 	default:
 		return old
 	}
+}
+
+// takePlanID 把请求体里的 plan_id 收成三态:
+//
+//	(false, nil)  没带这个字段,调用方应保持原来的套餐;
+//	(true, nil)   显式带了 null,调用方应摘掉套餐;
+//	(true, &id)   带了具体 id,调用方应改挂到该套餐。
+func (req *userRequest) takePlanID() (*int64, bool, error) {
+	if req.PlanID == nil {
+		return nil, false, nil
+	}
+	text := strings.TrimSpace(string(req.PlanID))
+	if text == "null" {
+		return nil, true, nil
+	}
+	var id int64
+	if err := json.Unmarshal(req.PlanID, &id); err != nil {
+		return nil, true, errors.New("plan_id 必须是整数或 null")
+	}
+	if id <= 0 {
+		return nil, true, errors.New("plan_id 必须是正整数或 null")
+	}
+	return &id, true, nil
 }
 
 // fillUserSecrets 给新建用户生成密钥与订阅 token。
