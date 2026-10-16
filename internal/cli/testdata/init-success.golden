@@ -1,0 +1,44 @@
+stdout:
+fake install line
+fake install line
+
+
+别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:
+  mpx connect 203.0.113.10:8080 --fp SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+
+同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。
+stderr:
+==> 用密码登一次,把本机公钥装到 VPS 上
+    之后全程用密钥
+==> 看清这台机器
+    Linux x86_64,root,fetch=/usr/bin/curl
+==> 把安装脚本送上去
+    用的是本机的 <TMPDIR>/install.sh
+==> 在 VPS 上装控制面(监听 0.0.0.0:8080)
+==> 建节点、入站、入口、订阅设置与用户
+==> 设置设备密码
+==> 把这台电脑接入控制面
+err: <nil>
+calls:
+EnsureKey 
+---
+Bootstrap 
+---
+printf 'os=%s\n' "$(uname -s)"
+printf 'arch=%s\n' "$(uname -m)"
+printf 'uid=%s\n' "$(id -u)"
+printf 'fetch=%s\n' "$(command -v curl || command -v wget || echo)"
+printf 'mpx=%s\n' "$(command -v mpx || echo)"
+---
+PutFile /tmp/mpx-install.sh
+---
+bash '/tmp/mpx-install.sh' --addr '0.0.0.0:8080'
+---
+mpx bootstrap --help >/dev/null 2>&1 && echo MPX_BOOTSTRAP_OK || echo MPX_BOOTSTRAP_MISSING
+---
+'mpx' 'bootstrap' '--address' '203.0.113.10' '--ssh-user' 'root' '--ssh-port' '22' '--api-port' '8080' '--name' 'default' '--username' 'user1' '--sni' 'www.cloudflare.com' '--reality-dest' 'www.cloudflare.com:443'
+---
+cat /var/lib/mpx/tls-fingerprint
+---
+MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:8080 device password --password-stdin
+---

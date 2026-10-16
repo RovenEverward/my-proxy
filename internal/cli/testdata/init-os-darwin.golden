@@ -1,0 +1,12 @@
+stdout:
+stderr:
+注意:非交互运行且没给 MPX_DEVICE_PASSWORD,这次不设设备密码。
+==> 看清这台机器
+err: 控制面要在 Linux 上跑,这台机器报的是 Darwin
+calls:
+printf 'os=%s\n' "$(uname -s)"
+printf 'arch=%s\n' "$(uname -m)"
+printf 'uid=%s\n' "$(id -u)"
+printf 'fetch=%s\n' "$(command -v curl || command -v wget || echo)"
+printf 'mpx=%s\n' "$(command -v mpx || echo)"
+---

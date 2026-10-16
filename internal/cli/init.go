@@ -201,7 +201,7 @@ func runInit() error {
 		}
 		upCtx, cancel := context.WithTimeout(context.Background(), initUploadTimeout)
 		defer cancel()
-		if err := node.PutFileAs(upCtx, n, auth, initRemoteBinary, content); err != nil {
+		if err := initSSH.PutFile(upCtx, n, auth, initRemoteBinary, content); err != nil {
 			return err
 		}
 		note("已送达 %s(%s)", initRemoteBinary, humanBytes(int64(len(content))))
@@ -218,7 +218,7 @@ func runInit() error {
 	}
 	installCtx, cancel := context.WithTimeout(context.Background(), initInstallTimeout)
 	defer cancel()
-	if err := node.RunAsIO(installCtx, n, auth, install, os.Stdout, os.Stderr); err != nil {
+	if err := initSSH.RunIO(installCtx, n, auth, install, os.Stdout, os.Stderr); err != nil {
 		return err
 	}
 
@@ -226,7 +226,7 @@ func runInit() error {
 	// 清楚。发布件比这个功能旧的时候就是这样,错误信息得能直接指出该做什么。
 	checkCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
-	out, err := node.RunAs(checkCtx, n, auth,
+	out, err := initSSH.Run(checkCtx, n, auth,
 		"mpx bootstrap --help >/dev/null 2>&1 && echo MPX_BOOTSTRAP_OK || echo MPX_BOOTSTRAP_MISSING")
 	if err != nil {
 		return err
@@ -259,7 +259,7 @@ func runInit() error {
 
 	bootCtx, cancel := context.WithTimeout(context.Background(), initBootstrapTimeout)
 	defer cancel()
-	if err := node.RunAsIO(bootCtx, n, auth, shellJoin(bootArgs), os.Stdout, os.Stderr); err != nil {
+	if err := initSSH.RunIO(bootCtx, n, auth, shellJoin(bootArgs), os.Stdout, os.Stderr); err != nil {
 		return err
 	}
 
@@ -270,7 +270,7 @@ func runInit() error {
 	fpCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
 	fp := ""
-	if out, err := node.RunAs(fpCtx, n, auth, "cat /var/lib/mpx/tls-fingerprint"); err == nil {
+	if out, err := initSSH.Run(fpCtx, n, auth, "cat /var/lib/mpx/tls-fingerprint"); err == nil {
 		fp, _ = pin.Normalize(strings.TrimSpace(out))
 	}
 	hostport := net.JoinHostPort(host, strconv.Itoa(apiPort))
@@ -292,12 +292,12 @@ func runInit() error {
 	setPW := fmt.Sprintf(`MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:%d device password --password-stdin`, apiPort)
 	pwCtx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
-	if out, err := node.RunWithInputAs(pwCtx, n, auth, setPW, []byte(devicePW+"\n")); err != nil {
+	if out, err := initSSH.RunWithInput(pwCtx, n, auth, setPW, []byte(devicePW+"\n")); err != nil {
 		return fmt.Errorf("设置设备密码失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):%v %s", err, strings.TrimSpace(out))
 	}
 
 	step("把这台电脑接入控制面")
-	if _, err := connectAndSave(server, fp, devicePW, defaultDeviceName()); err != nil {
+	if _, err := initConnect(server, fp, devicePW, defaultDeviceName()); err != nil {
 		return fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s", err, hostport, fp)
 	}
 
@@ -319,7 +319,7 @@ func initAuth(n model.Node) (node.Auth, error) {
 	}
 
 	keyPath := strings.TrimSpace(initFlags.identity)
-	pubkey, err := node.EnsureSSHKey(keyPath)
+	pubkey, err := initSSH.EnsureKey(keyPath)
 	if err != nil {
 		return node.Auth{}, err
 	}
@@ -327,7 +327,7 @@ func initAuth(n model.Node) (node.Auth, error) {
 	step("用密码登一次,把本机公钥装到 VPS 上")
 	ctx, cancel := context.WithTimeout(context.Background(), initProbeTimeout)
 	defer cancel()
-	if err := node.BootstrapNode(ctx, n, keyPath, pubkey, initFlags.password); err != nil {
+	if err := initSSH.Bootstrap(ctx, n, keyPath, pubkey, initFlags.password); err != nil {
 		return node.Auth{}, err
 	}
 	note("之后全程用密钥")
@@ -344,7 +344,7 @@ printf 'uid=%s\n' "$(id -u)"
 printf 'fetch=%s\n' "$(command -v curl || command -v wget || echo)"
 printf 'mpx=%s\n' "$(command -v mpx || echo)"`
 
-	out, err := node.RunAs(ctx, n, a, script)
+	out, err := initSSH.Run(ctx, n, a, script)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ func uploadInstallScript(n model.Node, a node.Auth, info map[string]string) erro
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), initUploadTimeout)
 		defer cancel()
-		if err := node.PutFileAs(ctx, n, a, initRemoteScript, content); err != nil {
+		if err := initSSH.PutFile(ctx, n, a, initRemoteScript, content); err != nil {
 			return err
 		}
 		note("用的是本机的 %s", path)
@@ -395,7 +395,7 @@ func uploadInstallScript(n model.Node, a node.Auth, info map[string]string) erro
 
 	ctx, cancel := context.WithTimeout(context.Background(), initUploadTimeout)
 	defer cancel()
-	if _, err := node.RunAs(ctx, n, a, cmd); err != nil {
+	if _, err := initSSH.Run(ctx, n, a, cmd); err != nil {
 		return err
 	}
 	note("从 %s 取的", url)
