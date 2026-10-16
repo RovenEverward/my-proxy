@@ -49,8 +49,9 @@ func TestQUICPurposeHTTPMixedEligibility(t *testing.T) {
 	daily := model.Purpose{Slug: "mixed-daily", Name: "Daily", Kind: "daily", Tags: []string{"daily"}, RequiredCapabilities: []string{"egress"}, Strategy: "select"}
 	media := model.Purpose{Slug: "mixed-media", Name: "Media", Kind: "media", Tags: []string{"media"}, Domains: []string{"media.test"}, DailyPurpose: daily.Slug, RequiredCapabilities: []string{"netflix"}, CapabilityRegion: "JP", Strategy: "select"}
 	for _, p := range []model.Purpose{daily, media} {
-		if c, b := e.api("POST", "/api/purposes", p); c != 201 {
-			t.Fatalf("purpose %d %s", c, b)
+		p := p
+		if err := e.st.CreatePurpose(&p); err != nil {
+			t.Fatalf("purpose %v", err)
 		}
 	}
 	for idx, x := range entries {
