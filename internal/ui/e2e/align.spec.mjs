@@ -47,7 +47,7 @@ for (const theme of ["light", "dark"]) {
     await go("users"); await page.click("[data-act=user-new]"); await check("新建用户抽屉");
     await go("users/alice"); await expect(page.locator("#drawer.open")).toBeVisible();
     if (await page.locator("[data-act=user-edit]").count()) { await page.click("[data-act=user-edit]"); await check("编辑用户抽屉"); }
-    await go("nodes"); await page.click("[data-act=node-new]"); await check("新建节点抽屉");
+    await go("nodes"); await page.click("[data-act=node-wizard]"); await check("添加节点向导"); await page.click("#drawer .wlnk"); await check("新建节点抽屉");
     await go("nodes/1"); await expect(page.locator("h1")).toContainText("hk");
     await page.click("[data-act=node-install]"); await check("安装核心确认框");
     await go("inbounds"); await page.click("[data-act=inb-new] >> nth=0"); await check("新建入站抽屉");
