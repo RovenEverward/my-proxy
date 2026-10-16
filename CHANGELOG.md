@@ -2,6 +2,21 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.6.5 (2026-10-16)
+
+本版主题：`mpx ui` 顶部「更新」pill。
+
+### 新增
+- 有新版本时，`mpx ui` 顶栏出现「更新」按钮（magpie 风格）。点开弹窗看本机 CLI 与控制面各自的当前→最新、发布说明摘要，以及等价命令；「稍后」本会话内不再提示，「重启以更新」先升级控制面再升级本机 CLI。本机二进制换掉后需关掉终端里的 `mpx ui` 再开一次才生效。
+- 本机接口 `/local/update`（看版本）、`/local/update/cli`（升级本机 CLI）、`/local/update/control`（转发控制面升级请求）；`/ui/meta` 增加 `cli_version`。
+- 桌面程序方案入库：`docs/internal/desktop-rfc.md`（框架定 MyGo，Linux 出 .deb + tar.gz，不签名，自更新走 SHA256SUMS）。
+
+### 兼容性
+- 控制面 API 无变更；`POST /api/update/control` 已在上个版本，本版只是让 `mpx ui` 放行并加上入口。
+- 新增的 `/local/update*` 只在本机 `mpx ui` 进程里。
+
+包含：#78、#79。
+
 ## v0.6.4 (2026-10-16)
 
 本版主题：`mpx ui` 里点着就能加节点、装控制面。
