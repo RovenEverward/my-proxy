@@ -53,6 +53,19 @@ type UpdateSource interface {
 	ControlUpdate() model.UpdatePart
 }
 
+// UpdateRefresher 是 UpdateSource 的可选扩展:显式要求控制面现在就去上游查一次,
+// 不等后台任务的静默期。
+//
+// 单独一个接口而不是直接加进 UpdateSource:接口只新增不改,现有实现(测试里的
+// 假更新源、别处接进来的实现)不该因为多了一个方法就编译不过。GET /api/update
+// 在 handler 里做类型断言,接得上就支持 refresh=1,接不上就照旧只回缓存结论。
+//
+// 检查失败不能返回 error:结论里的 Error 字段会带上失败原因,其余字段是上一次
+// 的结果。查询失败不该让整个接口失败。
+type UpdateRefresher interface {
+	RefreshControlUpdate(ctx context.Context) model.UpdatePart
+}
+
 // Server 持有控制面运行期需要的东西。
 type Server struct {
 	store *store.Store

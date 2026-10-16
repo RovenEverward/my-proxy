@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -14,6 +15,96 @@ import (
 type fixedUpdate struct{ part model.UpdatePart }
 
 func (f fixedUpdate) ControlUpdate() model.UpdatePart { return f.part }
+
+// refreshUpdate 额外实现可选的 UpdateRefresher:记下被强制刷新了几次,并把结论
+// 换成刷新后的那一份。
+type refreshUpdate struct {
+	fixedUpdate
+	refreshed model.UpdatePart
+	calls     *int
+}
+
+func (f refreshUpdate) RefreshControlUpdate(context.Context) model.UpdatePart {
+	if f.calls != nil {
+		*f.calls++
+	}
+	if f.refreshed.Current == "" && f.refreshed.Latest == "" {
+		return f.fixedUpdate.part
+	}
+	return f.refreshed
+}
+
+// refresh=1 时先向上游强制检查一次再回答;不带时完全走缓存,一次检查都不触发。
+func TestUpdateRefreshForcesCheck(t *testing.T) {
+	e := newEnv(t)
+	calls := 0
+	e.s.SetUpdateSource(refreshUpdate{
+		fixedUpdate: fixedUpdate{part: model.UpdatePart{Current: "v0.2.0", Latest: "v0.2.0"}},
+		refreshed:   model.UpdatePart{Current: "v0.2.0", Latest: "v0.3.0", Behind: 1, Available: true},
+		calls:       &calls,
+	})
+
+	// 不带 refresh:只回缓存结论,绝不触发强制检查。
+	code, body := e.api("GET", "/api/update", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/update: got %d: %s", code, body)
+	}
+	if calls != 0 {
+		t.Fatalf("不带 refresh 不该触发检查,实际 %d 次", calls)
+	}
+	if got := decodeJSON[model.UpdateSnapshot](t, body).Control.Latest; got != "v0.2.0" {
+		t.Fatalf("不带 refresh 该回缓存结论,实际 latest=%q", got)
+	}
+
+	// 带 refresh=1:强制检查一次,并把刷新后的结论发出去。
+	code, body = e.api("GET", "/api/update?refresh=1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/update?refresh=1: got %d: %s", code, body)
+	}
+	if calls != 1 {
+		t.Fatalf("带 refresh=1 该触发一次检查,实际 %d 次", calls)
+	}
+	c := decodeJSON[model.UpdateSnapshot](t, body).Control
+	if c.Latest != "v0.3.0" || !c.Available {
+		t.Fatalf("refresh=1 该给出刷新后的结论:%+v", c)
+	}
+}
+
+// 更新源不支持刷新时,refresh=1 退回缓存结论照常回 200 —— 接口只新增不改,
+// 旧实现不该因为这个参数就失败。
+func TestUpdateRefreshFallsBackWithoutRefresher(t *testing.T) {
+	e := newEnv(t)
+	e.s.SetUpdateSource(fixedUpdate{part: model.UpdatePart{
+		Current: "v0.2.0", Latest: "v0.2.0",
+	}})
+
+	code, body := e.api("GET", "/api/update?refresh=1", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/update?refresh=1: got %d: %s", code, body)
+	}
+	if got := decodeJSON[model.UpdateSnapshot](t, body).Control.Latest; got != "v0.2.0" {
+		t.Fatalf("不支持刷新时该回缓存结论,实际 latest=%q", got)
+	}
+}
+
+// refresh 只认显式的真值;0/false/别的值都不触发检查。
+func TestUpdateRefreshOnlyExplicitTrue(t *testing.T) {
+	for _, q := range []string{"", "?refresh=0", "?refresh=false", "?refresh=", "?refresh=yes"} {
+		calls := 0
+		e := newEnv(t)
+		e.s.SetUpdateSource(refreshUpdate{
+			fixedUpdate: fixedUpdate{part: model.UpdatePart{Current: "v0.2.0"}},
+			calls:       &calls,
+		})
+		code, body := e.api("GET", "/api/update"+q, nil)
+		if code != http.StatusOK {
+			t.Fatalf("GET /api/update%s: got %d: %s", q, code, body)
+		}
+		if calls != 0 {
+			t.Errorf("%q 不该触发检查,实际 %d 次", q, calls)
+		}
+	}
+}
 
 // 版本接口是管理接口,和其它 /api 一样要 token —— 它虽然只读,但确实在说
 // 控制面与每台节点跑的是什么版本,不该公网可达。
