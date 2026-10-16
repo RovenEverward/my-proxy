@@ -231,6 +231,8 @@ type UserQuery struct {
 	// InboundID 大于 0 时只保留可用该入站的用户 —— 没限定入站的用户本来就能用
 	// 全部入站,算在内。
 	InboundID int64
+	// PlanID 非空时只保留挂在这个套餐上的用户;nil 表示不限。
+	PlanID *int64
 	// Limit 是每页条数,<=0 表示不分页;Offset 是跳过的条数。
 	Limit  int
 	Offset int
@@ -282,6 +284,9 @@ func (s *Store) ListUsersPage(q UserQuery) ([]model.User, int, error) {
 			continue
 		}
 		if q.InboundID > 0 && !u.AllowsInbound(q.InboundID) {
+			continue
+		}
+		if q.PlanID != nil && (u.PlanID == nil || *u.PlanID != *q.PlanID) {
 			continue
 		}
 		matched = append(matched, u)

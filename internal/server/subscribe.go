@@ -248,6 +248,24 @@ func (s *Server) renderSubscription(user *model.User, format model.ClientFormat)
 	}
 }
 
+// inboundOccupancy 数各入站此刻占着几个名额:只数对该入站授权、且当前处于可用
+// 状态的用户。授权判定唯一走 AllowsInbound。订阅渲染与套餐预览共用它,两处对
+// 「满员」的结论因此不会分叉。
+func inboundOccupancy(users []model.User, inbounds []model.Inbound, now time.Time) map[int64]int {
+	occupancy := make(map[int64]int, len(inbounds))
+	for _, u := range users {
+		if u.Status(now) != model.StatusActive {
+			continue
+		}
+		for _, in := range inbounds {
+			if u.AllowsInbound(in.ID) {
+				occupancy[in.ID]++
+			}
+		}
+	}
+	return occupancy
+}
+
 // endpointsFor 收集该用户在全部节点上的可用入口。
 //
 // 订阅是「所有节点合成一份」,所以这里把全部节点都过一遍;入站授权和状态由
@@ -278,22 +296,11 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 		return nil, err
 	}
 
-	// 各入站此刻"占用着"几个名额:只数对该入站授权且当前处于可用状态的用户。
-	// 授权判定唯一走 AllowsInbound —— 没挂套餐且没限定入站的用户能用全部入站,
-	// 挂了套餐的用户按套餐范围算,两处都不能各自解释,否则满员计数会和订阅
-	// 实际发出去的入口对不上。
+	// 各入站此刻"占用着"几个名额。判定唯一走 AllowsInbound —— 没挂套餐且没限定
+	// 入站的用户能用全部入站,挂了套餐的用户按套餐范围算,两处都不能各自解释,
+	// 否则满员计数会和订阅实际发出去的入口对不上。
 	now := time.Now()
-	occupancy := make(map[int64]int, len(inbounds))
-	for _, u := range users {
-		if u.Status(now) != model.StatusActive {
-			continue
-		}
-		for _, in := range inbounds {
-			if u.AllowsInbound(in.ID) {
-				occupancy[in.ID]++
-			}
-		}
-	}
+	occupancy := inboundOccupancy(users, inbounds, now)
 
 	byNode := make(map[int64][]model.Inbound, len(nodes))
 	for _, in := range inbounds {

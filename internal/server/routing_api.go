@@ -382,15 +382,23 @@ type previewEntry struct {
 }
 
 // handlePreviewGroup 给一个草稿策略组,返回全部入口各自进不进组、为什么。
+// 可选 ?plan=<id> 时只在该套餐范围内的入口里预览(见 RFC §3.5)。
 func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 	var g model.ProxyGroup
 	if !decodeBody(w, r, &g) {
 		return
 	}
 	g.Normalize()
-	eps, err := s.previewEndpoints()
+	eps, err := s.previewEndpointsFor(r.URL.Query().Get("plan"))
 	if err != nil {
-		s.writeStoreError(w, err, "入口")
+		switch {
+		case errors.Is(err, errInvalidPlanQuery):
+			writeError(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, store.ErrPlanNotFound), errors.Is(err, store.ErrNotFound):
+			writeError(w, http.StatusNotFound, "套餐不存在")
+		default:
+			s.writeStoreError(w, err, "入口")
+		}
 		return
 	}
 	// 能力结果只在有能力条件时才查;预览总是带上,方便界面显示。

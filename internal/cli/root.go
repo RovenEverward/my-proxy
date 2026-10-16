@@ -72,7 +72,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个配置档,覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
+	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
 
 	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
 	// 而这一行最该说清的恰恰是版本号本身是从哪来的。

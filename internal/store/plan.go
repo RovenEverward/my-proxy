@@ -458,19 +458,30 @@ func (s *Store) attachPlanDetails(plans []model.Plan) error {
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(`SELECT plan_id, COUNT(*) FROM user_plans GROUP BY plan_id`)
+	rows, err = s.db.Query(`
+		SELECT p.id,
+		       COUNT(u.id),
+		       COALESCE(SUM(CASE WHEN TRIM(u.inbound_ids) NOT IN ('', '[]', 'null') THEN 1 ELSE 0 END), 0)
+		FROM plans p
+		LEFT JOIN user_plans up ON up.plan_id = p.id
+		LEFT JOIN users u ON u.id = up.user_id
+		GROUP BY p.id`)
 	if err != nil {
 		return fmt.Errorf("统计套餐用户数: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var planID int64
-		var n int
-		if err := rows.Scan(&planID, &n); err != nil {
+		var (
+			planID int64
+			n      int
+			extra  int
+		)
+		if err := rows.Scan(&planID, &n, &extra); err != nil {
 			return fmt.Errorf("读取套餐用户数: %w", err)
 		}
 		if i, ok := idx[planID]; ok {
 			plans[i].Users = n
+			plans[i].ExtraAuth = extra
 		}
 	}
 	return rows.Err()
@@ -594,6 +605,93 @@ func (s *Store) DeletePlan(id int64) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// DeletePlanReassign 删除套餐,并与用户的改挂/摘除在同一个事务里完成:
+//
+//   - reassignTo 非空:先把挂着该套餐的用户整体改挂到 reassignTo;
+//   - detach 为真:先摘掉这些用户的套餐(回到旧语义);
+//   - 两者都没有且还有用户挂着:返回 *PlanInUseError,什么都不动。
+//
+// 默认套餐不能删。删除与改挂必须原子:先改挂再删,中途失败整体回滚,不会出现
+// 「用户改挂了、套餐还在」或「套餐删了、用户指向不存在的套餐」这两种中间态。
+func (s *Store) DeletePlanReassign(id int64, reassignTo *int64, detach bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("删除套餐 %d: %w", id, err)
+	}
+	defer tx.Rollback()
+
+	var isDefault int
+	err = tx.QueryRow(`SELECT is_default FROM plans WHERE id = ?`, id).Scan(&isDefault)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("未找到套餐 %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("读取套餐 %d: %w", id, err)
+	}
+	if isDefault != 0 {
+		return ErrDefaultPlan
+	}
+
+	switch {
+	case reassignTo != nil:
+		if *reassignTo == id {
+			return errors.New("不能把用户改挂到正在删除的套餐")
+		}
+		if err := planExists(tx, *reassignTo); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE user_plans SET plan_id = ? WHERE plan_id = ?`, *reassignTo, id); err != nil {
+			return fmt.Errorf("把用户从套餐 %d 改挂到 %d: %w", id, *reassignTo, err)
+		}
+	case detach:
+		if _, err := tx.Exec(`DELETE FROM user_plans WHERE plan_id = ?`, id); err != nil {
+			return fmt.Errorf("摘掉套餐 %d 的用户: %w", id, err)
+		}
+	default:
+		var n int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM user_plans WHERE plan_id = ?`, id).Scan(&n); err != nil {
+			return fmt.Errorf("统计套餐 %d 的用户数: %w", id, err)
+		}
+		if n > 0 {
+			return &PlanInUseError{Users: n}
+		}
+	}
+
+	res, err := tx.Exec(`DELETE FROM plans WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("删除套餐 %d: %w", id, err)
+	}
+	if err := affectedOrNotFound(res, fmt.Sprintf("套餐 %d", id)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// PlanAuthInbounds 返回套餐此刻的入站授权:allNodes 为真表示全部入站;否则是
+// 显式授权集合(节点展开成它当前的全部入站,再加上单独勾选的入站)。
+//
+// 它复用 loadPlanAuth 那一份解释,调用方(比如套餐预览)不用自己再算一遍,
+// 也就不会和 AllowsInbound 的判定出现分歧。
+func (s *Store) PlanAuthInbounds(planID int64) (allNodes bool, ids []int64, err error) {
+	auth, err := s.loadPlanAuth()
+	if err != nil {
+		return false, nil, err
+	}
+	pa, ok := auth[planID]
+	if !ok {
+		return false, nil, fmt.Errorf("未找到套餐 %d: %w", planID, ErrPlanNotFound)
+	}
+	if pa.allNodes {
+		return true, nil, nil
+	}
+	ids = make([]int64, 0, len(pa.inbounds))
+	for id := range pa.inbounds {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return false, ids, nil
 }
 
 // SetUserPlan 把用户改挂到某个套餐;planID 为 nil 表示摘掉套餐,回到旧语义。

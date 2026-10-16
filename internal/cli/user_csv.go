@@ -25,13 +25,14 @@ const (
 	csvColumnEnabled  = "可用性"
 	csvColumnStrategy = "重置策略"
 	csvColumnInbounds = "入站范围"
+	csvColumnPlan     = "套餐"
 	csvColumnNote     = "备注"
 )
 
 // userCSVHeader 是导出的表头,也是导入时认识的全部列(顺序固定)。
 var userCSVHeader = []string{
 	csvColumnUsername, csvColumnLimit, csvColumnExpire,
-	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnNote,
+	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
 }
 
 var userExportCmd = &cobra.Command{
@@ -52,6 +53,9 @@ var userExportCmd = &cobra.Command{
 		}
 		users, err := fetchAllUsers(c)
 		if err != nil {
+			return err
+		}
+		if err := attachPlanNames(c, users); err != nil {
 			return err
 		}
 		return writeUsersCSV(os.Stdout, users)
@@ -101,6 +105,7 @@ func writeUsersCSV(w io.Writer, users []userRow) error {
 			enabledText(u.Enabled),
 			strategyText(u.ResetStrategy),
 			joinIDs(u.InboundIDs),
+			u.PlanName,
 			u.Note,
 		}
 		if err := cw.Write(row); err != nil {
@@ -222,6 +227,19 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 		return rep, err
 	}
 
+	// 有「套餐」列时把套餐名→id 映出来一次,逐行复用。空单元格表示不改编归属。
+	var planIDs map[string]int64
+	if _, ok := cols[csvColumnPlan]; ok {
+		plans, err := listPlans(c)
+		if err != nil {
+			return rep, err
+		}
+		planIDs = make(map[string]int64, len(plans))
+		for _, p := range plans {
+			planIDs[p.Name] = p.ID
+		}
+	}
+
 	readErrors := 0
 	for line := 2; ; line++ {
 		rec, err := cr.Read()
@@ -253,6 +271,15 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 			rep.Failed++
 			rep.Errors = append(rep.Errors, importError{Line: line, Error: err.Error()})
 			continue
+		}
+		if u.PlanName != "" {
+			id, ok := planIDs[u.PlanName]
+			if !ok {
+				rep.Failed++
+				rep.Errors = append(rep.Errors, importError{Line: line, Error: fmt.Sprintf("套餐 %q 不存在", u.PlanName)})
+				continue
+			}
+			u.PlanID = &id
 		}
 		created, err := upsertUser(c, u)
 		if err != nil {
@@ -330,6 +357,8 @@ func csvRowToUser(cols map[string]int, rec []string) (userRow, error) {
 		}
 		u.InboundIDs = ids
 	}
+	// 空的「套餐」单元格表示不改归属;非空在这里先记下名字,由导入方解析成 id。
+	u.PlanName = cell(csvColumnPlan)
 	u.Note = cell(csvColumnNote)
 	return u, nil
 }
@@ -374,7 +403,12 @@ func upsertUser(c *Client, u userRow) (bool, error) {
 	old.ResetStrategy = model.ResetStrategy(u.ResetStrategy)
 	old.InboundIDs = u.InboundIDs
 	old.Note = u.Note
-	if _, err := c.do("PUT", path, old); err != nil {
+	body := userWriteBody{User: old}
+	// 只有文件里给了套餐名(已解析成 id)才改归属;空的「套餐」单元格保持原样。
+	if u.PlanID != nil {
+		body.PlanID = planIDJSON(u.PlanID)
+	}
+	if _, err := c.do("PUT", path, body); err != nil {
 		return false, err
 	}
 	return false, nil
