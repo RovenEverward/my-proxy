@@ -65,6 +65,7 @@ var uiAllow = []string{
 var uiFlags struct {
 	addr   string
 	noOpen bool
+	setup  bool
 }
 
 var uiCmd = &cobra.Command{
@@ -83,40 +84,59 @@ var uiCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		server, token, err := resolve()
 		if err != nil {
-			return err
-		}
-		if server == "" {
-			return errors.New("没配置控制面地址:先跑 mpx connect <控制面地址>")
-		}
-		up, err := url.Parse(server)
-		if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
-			return fmt.Errorf("控制面地址 %q 不是 http(s) URL", server)
+			// 没配置控制面是正常状态(首次安装),不是错误;只有配置存在却读不出
+			// 该用哪个 profile 时才把错误抛出去。
+			cfg, cerr := loadConfig()
+			if cerr != nil || len(cfg.Profiles) > 0 {
+				return err
+			}
+			server, token = "", ""
 		}
 		if !isLoopback(uiFlags.addr) {
 			return fmt.Errorf("mpx ui 只监听回环地址,%s 不是;要在别的设备上看,用 SSH 隧道", uiFlags.addr)
 		}
+
+		setupMode := server == "" || uiFlags.setup
+		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}}
+		if !setupMode {
+			up, err := url.Parse(server)
+			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
+				return fmt.Errorf("控制面地址 %q 不是 http(s) URL", server)
+			}
+			profile := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"))
+			if profile == "" {
+				if cfg, err := loadConfig(); err == nil {
+					profile = cfg.Current
+				}
+			}
+			tr, err := transportFor(server)
+			if err != nil {
+				return err
+			}
+			pageOpts.Upstream = up
+			pageOpts.Token = token
+			pageOpts.Profile = profile
+			pageOpts.Transport = tr
+		}
+
 		ln, err := net.Listen("tcp", uiFlags.addr)
 		if err != nil {
 			return err
 		}
-		profile := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"))
-		if profile == "" {
-			if cfg, err := loadConfig(); err == nil {
-				profile = cfg.Current
-			}
-		}
-		tr, err := transportFor(server)
-		if err != nil {
-			ln.Close()
-			return err
-		}
-		s, err := ui.New(ln.Addr().String(), ui.Options{Upstream: up, Token: token, Allow: uiAllow, Profile: profile, Transport: tr})
+		s, err := ui.New(ln.Addr().String(), pageOpts)
 		if err != nil {
 			ln.Close()
 			return err
 		}
 		link := "http://" + ln.Addr().String() + "/?k=" + s.Key()
-		fmt.Printf("mpx ui 已启动,连的是 %s\n", up.Redacted())
+		switch {
+		case uiFlags.setup:
+			fmt.Println("首次安装模式")
+		case setupMode:
+			fmt.Println("还没有配置控制面:在打开的页面里完成首次安装")
+		default:
+			fmt.Printf("mpx ui 已启动,连的是 %s\n", pageOpts.Upstream.Redacted())
+		}
 		fmt.Println(link)
 		fmt.Println("这条链接只能打开一次;Ctrl-C 结束。")
 		if !uiFlags.noOpen {
@@ -156,5 +176,6 @@ func openBrowser(link string) {
 func init() {
 	uiCmd.Flags().StringVar(&uiFlags.addr, "addr", "127.0.0.1:7480", "页面监听的回环地址;端口写 0 表示随便挑一个")
 	uiCmd.Flags().BoolVar(&uiFlags.noOpen, "no-open", false, "只打印链接,不自动打开浏览器")
+	uiCmd.Flags().BoolVar(&uiFlags.setup, "setup", false, "进入首次安装向导,即使已经配置了控制面")
 	rootCmd.AddCommand(uiCmd)
 }
