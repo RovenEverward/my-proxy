@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -103,12 +102,6 @@ func TestMigrateDefaultAndPurposes(t *testing.T) {
 	if code, _, _ := e.sub(path+"?purpose=gone", ""); code != 200 {
 		t.Fatal("rules 模式下不存在的用途也返回普通订阅")
 	}
-	if c, b := e.api("GET", "/api/purposes", nil); c != 200 || !strings.Contains(string(b), "media") {
-		t.Fatal("用途接口应照常可读")
-	}
-	if c, _ := e.api("POST", "/api/purposes", model.Purpose{Slug: "x", Name: "X", Kind: "daily", Strategy: "select", TestURL: "https://www.gstatic.com/generate_204", Interval: 300}); c != 201 {
-		t.Fatalf("用途写接口不破坏兼容,得到 %d", c)
-	}
 
 	// 回滚开关
 	if c, b := e.api("PUT", "/api/routing", map[string]string{"mode": "template"}); c != 200 || !strings.Contains(string(b), "template") {
@@ -163,14 +156,6 @@ func TestMigrateCustomTemplates(t *testing.T) {
 func TestPurposeDeprecationHeaders(t *testing.T) {
 	e := newEnv(t)
 	u := e.createUser("alice")
-	req := httptest.NewRequest("GET", "/api/purposes", nil)
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rec := httptest.NewRecorder()
-	e.s.Handler().ServeHTTP(rec, req)
-	code, h := rec.Code, rec.Header()
-	if code != 200 || h.Get("Deprecation") != "true" || !strings.Contains(h.Get("X-Mpx-Deprecated"), "v0.7.0") {
-		t.Fatalf("模板模式下用途接口也要带废弃头: %d %v", code, h)
-	}
 	if _, h, _ := e.sub("/sub/"+u.SubToken+"/clash-meta?purpose=gone", ""); h.Get("Deprecation") != "true" {
 		t.Fatal("?purpose= 要带废弃头")
 	}

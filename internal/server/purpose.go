@@ -1,11 +1,9 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
-	"github.com/RovenEverward/my-proxy/internal/store"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,116 +16,19 @@ func (s *Server) SetPurposeFilter(f func(model.Purpose, []render.Endpoint) ([]re
 	s.purposeFilter = f
 }
 
-// purposeDeprecated:用途接口从 v0.6.0 起废弃、v0.7.0 删除(RFC R6)。接口照常工作,
-// 响应头一律标明废弃与下线版本;规则表接管分流后,这里的改动不再影响订阅。
-func (s *Server) purposeDeprecated(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		setPurposeDeprecation(w)
-		h(w, r)
-	}
-}
-
+// setPurposeDeprecation 只服务订阅侧的 ?purpose= 兼容(见 subscribe.go),
+// 那个入口保留到 v0.7.0,下一刀再随规则表迁移一起删。
 func setPurposeDeprecation(w http.ResponseWriter) {
 	w.Header().Set("Deprecation", "true")
 	w.Header().Set("X-Mpx-Deprecated", "purposes are deprecated since v0.6.0 and will be removed in v0.7.0; use routing rules (/api/rules, /api/proxy-groups)")
 }
 
 func (s *Server) purposeRoutes(api *http.ServeMux) {
-	api.HandleFunc("GET /api/purposes", s.purposeDeprecated(s.handleListPurposes))
-	api.HandleFunc("POST /api/purposes", s.purposeDeprecated(s.handleCreatePurpose))
-	api.HandleFunc("GET /api/purposes/{slug}", s.purposeDeprecated(s.handleGetPurpose))
-	api.HandleFunc("PUT /api/purposes/{slug}", s.purposeDeprecated(s.handleUpdatePurpose))
-	api.HandleFunc("DELETE /api/purposes/{slug}", s.purposeDeprecated(s.handleDeletePurpose))
-	api.HandleFunc("GET /api/purposes/{slug}/preview/{username}/{format}", s.purposeDeprecated(s.handlePurposePreview))
 	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetPurposeMetadata)
 	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutPurposeMetadata)
 	api.HandleFunc("POST /api/nodes/{id}/locate", s.handleLocateNode)
 	api.HandleFunc("GET /api/hosts/{id}/metadata", s.handleGetPurposeMetadata)
 	api.HandleFunc("PUT /api/hosts/{id}/metadata", s.handlePutPurposeMetadata)
-}
-func (s *Server) handleListPurposes(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.ListPurposes()
-	if err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	writeJSON(w, 200, p)
-}
-func (s *Server) handleGetPurpose(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.GetPurpose(r.PathValue("slug"))
-	if err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	writeJSON(w, 200, p)
-}
-func (s *Server) decodePurpose(w http.ResponseWriter, r *http.Request) (*model.Purpose, bool) {
-	var p model.Purpose
-	if !decodeBody(w, r, &p) {
-		return nil, false
-	}
-	if slug := r.PathValue("slug"); slug != "" {
-		if p.Slug != "" && p.Slug != slug {
-			writeError(w, 400, "slug 与路径不一致")
-			return nil, false
-		}
-		p.Slug = slug
-	}
-	p.Normalize()
-	if err := p.Validate(); err != nil {
-		writeError(w, 400, err.Error())
-		return nil, false
-	}
-	for f, t := range p.Templates {
-		if err := validateTemplate(model.ClientFormat(f), []byte(t)); err != nil {
-			writeError(w, 400, err.Error())
-			return nil, false
-		}
-		if f != "clash-meta" && f != "sing-box" {
-			writeError(w, 400, "用途模板只支持 clash-meta / sing-box")
-			return nil, false
-		}
-	}
-	return &p, true
-}
-func (s *Server) handleCreatePurpose(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.decodePurpose(w, r)
-	if !ok {
-		return
-	}
-	if _, err := s.store.GetPurpose(p.Slug); err == nil {
-		writeError(w, 409, "用途已存在")
-		return
-	} else if !errors.Is(err, store.ErrNotFound) {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	if err := s.store.CreatePurpose(p); err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	s.invalidateSubCache()
-	writeJSON(w, 201, p)
-}
-func (s *Server) handleUpdatePurpose(w http.ResponseWriter, r *http.Request) {
-	p, ok := s.decodePurpose(w, r)
-	if !ok {
-		return
-	}
-	if err := s.store.UpdatePurpose(p); err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	s.invalidateSubCache()
-	writeJSON(w, 200, p)
-}
-func (s *Server) handleDeletePurpose(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeletePurpose(r.PathValue("slug")); err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	s.invalidateSubCache()
-	w.WriteHeader(204)
 }
 func purposeMetadataKind(r *http.Request) string {
 	if strings.HasPrefix(r.URL.Path, "/api/nodes/") {
@@ -194,26 +95,6 @@ func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request
 	}
 	s.invalidateSubCache()
 	writeJSON(w, 200, m)
-}
-func (s *Server) handlePurposePreview(w http.ResponseWriter, r *http.Request) {
-	p, err := s.store.GetPurpose(r.PathValue("slug"))
-	if err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	u, err := s.store.GetUser(r.PathValue("username"))
-	if err != nil {
-		s.writeStoreError(w, err, "用户")
-		return
-	}
-	f := model.ClientFormat(r.PathValue("format"))
-	body, err := s.renderPurposeSubscription(u, *p, f)
-	if err != nil {
-		writeError(w, 422, err.Error())
-		return
-	}
-	w.Header().Set("Content-Type", contentTypeOf(f))
-	w.Write(body)
 }
 func (s *Server) renderPurposeSubscription(u *model.User, p model.Purpose, f model.ClientFormat) ([]byte, error) {
 	if f != model.FormatClashMeta && f != model.FormatSingBox {

@@ -23,14 +23,8 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 	u := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID, in2.ID} })
 	p := model.Purpose{Slug: "media", Name: "流媒体", Kind: "media", Tags: []string{"media"}, Domains: []string{"netflix.com"}, Strategy: "select"}
-	if code, b := e.request("POST", "/api/purposes", p, nil); code != 401 {
-		t.Fatalf("auth %d %s", code, b)
-	}
-	if code, b := e.api("POST", "/api/purposes", p); code != 201 {
-		t.Fatalf("create %d %s", code, b)
-	}
-	if code, _ := e.api("POST", "/api/purposes", p); code != 409 {
-		t.Fatal(code)
+	if err := e.st.CreatePurpose(&p); err != nil {
+		t.Fatalf("create %v", err)
 	}
 	if code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n2.ID), model.PurposeMetadata{Region: "US", Line: "premium", Purposes: []string{"media"}}); code != 200 {
 		t.Fatalf("metadata %d %s", code, b)
@@ -84,15 +78,16 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 	}
 	// Explicit daily fallback differentiates normal and media traffic in one config.
 	daily := model.Purpose{Slug: "daily", Name: "日常", Kind: "daily", Tags: []string{"daily"}, Strategy: "select"}
-	if code, b := e.api("POST", "/api/purposes", daily); code != 201 {
-		t.Fatalf("%d %s", code, b)
+	if err := e.st.CreatePurpose(&daily); err != nil {
+		t.Fatalf("create daily %v", err)
 	}
 	if code, _ := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), model.PurposeMetadata{Purposes: []string{"daily"}}); code != 200 {
 		t.Fatal(code)
 	}
 	p.DailyPurpose = "daily"
-	if code, b := e.api("PUT", "/api/purposes/media", p); code != 200 {
-		t.Fatalf("%d %s", code, b)
+	p.Normalize()
+	if err := e.st.UpdatePurpose(&p); err != nil {
+		t.Fatalf("update media %v", err)
 	}
 	for _, f := range []string{"clash-meta", "sing-box"} {
 		code, _, b := e.sub(path+"/"+f+"?purpose=media", "")
@@ -115,18 +110,16 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 			}
 		}
 	}
-	if code, _ := e.api("DELETE", "/api/purposes/daily", nil); code != 204 {
-		t.Fatal(code)
+	if err := e.st.DeletePurpose("daily"); err != nil {
+		t.Fatal(err)
 	}
 	if code, _, b := e.sub(path+"/sing-box?purpose=media", ""); code != 422 || !strings.Contains(string(b), "日常用途 daily 不存在或已删除") {
 		t.Fatalf("missing fallback %d %s", code, b)
 	}
 	p.DailyPurpose = ""
-	if code, _ := e.api("PUT", "/api/purposes/media", p); code != 200 {
-		t.Fatal(code)
-	}
-	if code, b := e.api("GET", "/api/purposes/media/preview/alice/sing-box", nil); code != 200 || !strings.Contains(string(b), "mpx-media") {
-		t.Fatalf("preview %d %s", code, b)
+	p.Normalize()
+	if err := e.st.UpdatePurpose(&p); err != nil {
+		t.Fatal(err)
 	}
 	code, b := e.request("GET", path+"?purpose=media", nil, map[string]string{"Accept": "text/html"})
 	if code != 200 || !strings.Contains(string(b), "选择用途") || !strings.Contains(string(b), "?purpose=media") || !strings.Contains(string(b), "HTTP 延迟") {
@@ -149,14 +142,15 @@ func TestPurposeHTTPRoutingAndLifecycle(t *testing.T) {
 		t.Fatalf("metadata refresh %d %s", code, b)
 	}
 	p.Tags = []string{"absent"}
-	if code, _ := e.api("PUT", "/api/purposes/media", p); code != 200 {
-		t.Fatal(code)
+	p.Normalize()
+	if err := e.st.UpdatePurpose(&p); err != nil {
+		t.Fatal(err)
 	}
 	if code, _, _ := e.sub(path+"/sing-box?purpose=media", ""); code != 422 {
 		t.Fatal(code)
 	}
-	if code, _ := e.api("DELETE", "/api/purposes/media", nil); code != 204 {
-		t.Fatal(code)
+	if err := e.st.DeletePurpose("media"); err != nil {
+		t.Fatal(err)
 	}
 	if code, _, b := e.sub(path+"/clash-meta?purpose=media", ""); code != 404 || !strings.Contains(string(b), "默认订阅:") {
 		t.Fatalf("deleted %d %s", code, b)
@@ -172,8 +166,8 @@ func TestPurposeCapabilitiesFailClosedAndRestrictFilter(t *testing.T) {
 	u := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID} })
 	p := model.Purpose{Slug: "daily", Name: "日常", Kind: "daily", RequiredCapabilities: []string{"youtube"}}
-	if c, b := e.api("POST", "/api/purposes", p); c != 201 {
-		t.Fatalf("%d %s", c, b)
+	if err := e.st.CreatePurpose(&p); err != nil {
+		t.Fatalf("%v", err)
 	}
 	path := "/sub/" + u.SubToken + "/sing-box?purpose=daily"
 	if c, _, b := e.sub(path, ""); c != 422 || !strings.Contains(string(b), "尚未接入") {
@@ -191,8 +185,8 @@ func TestPurposeCapabilitiesFailClosedAndRestrictFilter(t *testing.T) {
 	}
 	// Missing and invalid configurations have distinct errors.
 	p.RequiredCapabilities = []string{"magic"}
-	if c, _ := e.api("PUT", "/api/purposes/daily", p); c != 400 {
-		t.Fatal(c)
+	if err := e.st.UpdatePurpose(&p); err == nil {
+		t.Fatal("invalid capability must be rejected")
 	}
 	if c, _ := e.api("PUT", "/api/nodes/9999/metadata", model.PurposeMetadata{}); c != 404 {
 		t.Fatal(c)
@@ -205,8 +199,8 @@ func TestPurposeDrainStatusAndCacheEncoding(t *testing.T) {
 	u := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID} })
 	p := model.Purpose{Slug: "daily", Name: "日常", Kind: "daily"}
-	if c, _ := e.api("POST", "/api/purposes", p); c != 201 {
-		t.Fatal(c)
+	if err := e.st.CreatePurpose(&p); err != nil {
+		t.Fatal(err)
 	}
 	path := "/sub/" + u.SubToken + "/clash-meta"
 	if c, _, _ := e.sub(path, ""); c != 200 {

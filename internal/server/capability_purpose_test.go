@@ -17,8 +17,8 @@ func TestPurposeCapabilityLiveRemovalRecoveryAndAuthorization(t *testing.T) {
 	e.updateUser(u.Username, func(v *model.User) { v.InboundIDs = []int64{in.ID} })
 	e.s.SetPurposeFilter(e.s.filterPurposeCapabilities)
 	p := model.Purpose{Slug: "media", Name: "流媒体", Kind: "media", Domains: []string{"netflix.com"}, RequiredCapabilities: []string{"netflix"}, CapabilityRegion: "JP"}
-	if code, b := e.api("POST", "/api/purposes", p); code != 201 {
-		t.Fatalf("create: %d %s", code, b)
+	if err := e.st.CreatePurpose(&p); err != nil {
+		t.Fatalf("create: %v", err)
 	}
 	node, _ := e.st.GetNode(n.ID)
 	inbound, _ := e.st.GetInbound(in.ID)
