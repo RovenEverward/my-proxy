@@ -303,3 +303,5 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
 .upd-cmds{display:flex;flex-direction:column;gap:6px;margin:10px 0}
 .upd-cmds .cmd{margin:0}
+/* 自检页:说明列要换行(名称/结论都很短),否则 detail 与 hint 会把表格撑得很宽 */
+.doc-d{white-space:normal;min-width:280px;max-width:720px;line-height:1.55}.doc-d .sub{margin-top:3px}
