@@ -171,7 +171,7 @@ mpx ui                                         # 在本机浏览器里打开管�
 curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 ```
 
-`mpx status` 会显示现在装的版本和有没有更新的发布。控制面只提醒，不会自己替换二进制。每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
+`mpx status` 会显示现在装的版本和有没有更新的发布。从支持远程升级的版本起，控制面装好后可以在本机用 `mpx update apply control` 升级（失败会自动回退），不必每次都重跑 `install.sh`；`install.sh` 只在第一次升到支持远程升级的版本时需要。控制面仍不会自己替换二进制，每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
 
 <details>
 <summary>Tab 补全、本地试用</summary>

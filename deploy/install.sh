@@ -71,6 +71,125 @@ verify_release() {
 }
 # <<< verify_release
 
+# >>> install_release_layout(install.sh 的测试会把这一段原样拿出来,对着临时目录跑)
+# 版本目录 + 符号链接布局:
+#
+#   $LOCAL_RELEASES/<版本>/mpx      每一版一个目录
+#   $LOCAL_BIN/mpx -> 上面某一版    符号链接,用 rename 原子切换
+#
+# 路径都从 MPX_PREFIX 拼出来:默认空,就是真实的 /usr/local;测试把它设成临时目录,
+# 就能在不碰 /usr 的情况下验证迁移、切换和清理。控制面的 root 侧执行器
+# (internal/selfupdate)按同一套布局找二进制。
+PREFIX="${MPX_PREFIX:-}"
+LOCAL_BIN="$PREFIX/usr/local/bin"
+LOCAL_RELEASES="$PREFIX/usr/local/lib/mpx/releases"
+
+# version_field_of BIN:`BIN --version` 输出的最后一个字段(发布件形如「mpx version v0.6.0」)。
+# 跑不起来或没有输出时给空串,由调用方决定退回什么名字。
+version_field_of() {
+	local out
+	out="$("$1" --version 2>/dev/null)" || return 0
+	printf '%s' "$out" | awk '{print $NF}'
+}
+
+# prune_releases KEEP...:只保留列出的版本目录,多余的删掉。调用方负责把「当前版」
+# 和「上一版」都列上;一个不剩时把 releases 清空也是允许的。
+prune_releases() {
+	local d name keep=("$@") found
+	for d in "$LOCAL_RELEASES"/*/; do
+		[[ -d "$d" ]] || continue
+		d="${d%/}"
+		name="$(basename "$d")"
+		found=
+		for keep_name in "${keep[@]}"; do
+			if [[ "$name" == "$keep_name" ]]; then found=1; break; fi
+		done
+		if [[ -n "$found" ]]; then continue; fi
+		rm -rf "$d"
+	done
+}
+
+# newest_release KEEP:按修改时间返回除 KEEP 外最近动过的一个版本目录名(可能为空)。
+# 版本号目录名的排序和「谁更新」无关(手动回退、重复装同一版都会打乱它),所以
+# 挑选上一版时看的是目录的修改时间。
+newest_release() {
+	local keep="$1" d newest= name
+	for d in "$LOCAL_RELEASES"/*/; do
+		[[ -d "$d" ]] || continue
+		d="${d%/}"
+		name="$(basename "$d")"
+		[[ "$name" == "$keep" ]] && continue
+		if [[ -z "$newest" || "$d" -nt "$newest" ]]; then newest="$d"; fi
+	done
+	if [[ -n "$newest" ]]; then
+		basename "$newest"
+	fi
+}
+
+# install_release_link BIN:把 BIN 装进 releases/<版本>/mpx,再把 $LOCAL_BIN/mpx 这个
+# 符号链接原子地指过去。重复运行安全,同一版本会直接覆盖同名文件。
+install_release_link() {
+	local bin="$1" new_version v prev link="$LOCAL_BIN/mpx" old_version
+	install -d -m 0755 "$LOCAL_BIN"
+
+	# 先落到 .new 并试跑一次:更新时如果换上一个跑不起来的二进制(多半是交叉编译时
+	# GOOS/GOARCH 填错了),这台机器就没有控制面了,而数据库和节点都还在等它。
+	# 直接改名覆盖正在运行的文件也是可以的:老的 inode 会活到进程退出。
+	install -m 0755 "$bin" "$LOCAL_BIN/mpx.new"
+	if ! "$LOCAL_BIN/mpx.new" --help >/dev/null 2>&1; then
+		rm -f "$LOCAL_BIN/mpx.new"
+		die "这个二进制在本机跑不起来(--help 就失败了),已放弃替换。检查编译时的 GOOS/GOARCH。"
+	fi
+	# 说清楚装的是哪个版本。连 --version 都不认的是很老的 mpx,多半是捡错了文件。
+	if ! new_version="$("$LOCAL_BIN/mpx.new" --version 2>/dev/null)"; then
+		rm -f "$LOCAL_BIN/mpx.new"
+		die "这个二进制不认 --version,是很老的 mpx($bin),已放弃替换。"
+	fi
+	echo "    版本:$new_version"
+	if [[ "$VERSION" != latest && "$new_version" != *"$VERSION"* && -z "$BIN_ARG" ]]; then
+		rm -f "$LOCAL_BIN/mpx.new"
+		die "要装 $VERSION,拿到的却是「$new_version」,已放弃替换。"
+	fi
+
+	# 从输出的最后一个字段取版本号当目录名;取不到或不是 v 开头时用本地时间戳,
+	# 让源码编出来的二进制也有个唯一的版本目录。
+	v="$(printf '%s' "$new_version" | awk '{print $NF}')"
+	case "$v" in
+		v*) ;;
+		*) v="local-$(date +%Y%m%d%H%M%S)" ;;
+	esac
+
+	# 先记下现在生效的是哪一版,切完要把它当上一版留下。老布局是普通文件
+	# (以前直接 mv 上去的):把它按自己的版本搬进 releases 当上一版,这样回退时
+	# 有得可用;读不出版本就叫 previous。
+	prev=""
+	if [[ -L "$link" ]]; then
+		prev="$(basename "$(dirname "$(readlink "$link")")")"
+	elif [[ -f "$link" ]]; then
+		old_version="$(version_field_of "$link")"
+		case "$old_version" in
+			v*) prev="$old_version" ;;
+			*) prev=previous ;;
+		esac
+		install -d -m 0755 "$LOCAL_RELEASES/$prev"
+		mv -f "$link" "$LOCAL_RELEASES/$prev/mpx"
+		echo "    $link 原是普通文件,按上一版 $prev 收进版本目录"
+	fi
+
+	install -d -m 0755 "$LOCAL_RELEASES/$v"
+	mv -f "$LOCAL_BIN/mpx.new" "$LOCAL_RELEASES/$v/mpx"
+	# 临时链接 + rename:切换是原子的,不会出现指向半个文件的窗口。
+	ln -sfn "$LOCAL_RELEASES/$v/mpx" "$link.tmp"
+	mv -Tf "$link.tmp" "$link"
+
+	# 重复装同一版时上一版仍在链接后面,prev 会等于 v;这时按修改时间挑一个留。
+	if [[ -z "$prev" || "$prev" == "$v" ]]; then
+		prev="$(newest_release "$v")"
+	fi
+	prune_releases "$v" "$prev"
+}
+# <<< install_release_layout
+
 usage() {
 	cat <<'EOF'
 在控制面这台机器上安装或更新 mpx。
@@ -198,26 +317,9 @@ else
 	fi
 fi
 
-# 先落到 .new 并试跑一次:更新时如果换上一个跑不起来的二进制(多半是交叉编译时
-# GOOS/GOARCH 填错了),这台机器就没有控制面了,而数据库和节点都还在等它。
-# 直接改名覆盖正在运行的文件也是可以的:老的 inode 会活到进程退出。
-echo "==> 装到 /usr/local/bin/mpx"
-install -m 0755 "$BIN" /usr/local/bin/mpx.new
-if ! /usr/local/bin/mpx.new --help >/dev/null 2>&1; then
-	rm -f /usr/local/bin/mpx.new
-	die "这个二进制在本机跑不起来(--help 就失败了),已放弃替换。检查编译时的 GOOS/GOARCH。"
-fi
-# 说清楚装的是哪个版本。连 --version 都不认的是很老的 mpx,多半是捡错了文件。
-if ! NEW_VERSION="$(/usr/local/bin/mpx.new --version 2>/dev/null)"; then
-	rm -f /usr/local/bin/mpx.new
-	die "这个二进制不认 --version,是很老的 mpx($BIN),已放弃替换。"
-fi
-echo "    版本:$NEW_VERSION"
-if [[ "$VERSION" != latest && "$NEW_VERSION" != *"$VERSION"* && -z "$BIN_ARG" ]]; then
-	rm -f /usr/local/bin/mpx.new
-	die "要装 $VERSION,拿到的却是「$NEW_VERSION」,已放弃替换。"
-fi
-mv -f /usr/local/bin/mpx.new /usr/local/bin/mpx
+echo "==> 装到 $LOCAL_BIN/mpx"
+# 布局与迁移都收在 install_release_link 里(见文件上半部分),这里只调用。
+install_release_link "$BIN"
 
 # ---- 用户与目录 -------------------------------------------------------------
 
@@ -233,6 +335,9 @@ if ! getent passwd mpx >/dev/null; then
 	useradd --system --gid mpx --home-dir /var/lib/mpx --no-create-home --shell "$NOLOGIN" mpx
 fi
 install -d -m 0755 -o mpx -g mpx /var/lib/mpx
+# 控制面(mpx 用户)要有地方放本机触发的升级请求:它只往这里写一个 request 文件,
+# root 的 mpx-update.path 监听到就拉起 mpx-update.service。
+install -d -m 0755 -o mpx -g mpx /var/lib/mpx/update
 install -d -m 0755 -o root -g mpx /etc/mpx
 
 # ---- 管理 token -------------------------------------------------------------
@@ -268,33 +373,64 @@ fi
 # ---- systemd 单元 -----------------------------------------------------------
 
 echo "==> systemd 单元"
-SRC="$SCRIPT_DIR/mpx.service"
-if [[ ! -f "$SRC" ]]; then
-	# `curl | sudo bash` 跑起来的时候脚本旁边什么都没有,去仓库里取一份。
-	[[ -n "$FETCH" ]] || die "找不到单元文件 $SRC(它和这个脚本放在一起)"
-	$FETCH "$RAW_BASE/deploy/mpx.service" > "$TMP/mpx.service" 2>/dev/null \
-		|| die "取不到 systemd 单元文件。把 deploy/ 整个目录传上来再跑。"
-	SRC="$TMP/mpx.service"
-fi
-UNIT=/etc/systemd/system/mpx.service
-# --addr 只在换了监听地址时才动单元:默认那份是仓库里的原文,直接装。
+
+# fetch_unit NAME:优先用脚本旁边那份;`curl | sudo bash` 的时候旁边什么都没有,
+# 去仓库里取一份。打印最终可用的路径。
+fetch_unit() {
+	local name="$1" src="$SCRIPT_DIR/$1"
+	if [[ -f "$src" ]]; then
+		printf '%s' "$src"
+		return 0
+	fi
+	[[ -n "$FETCH" ]] || die "找不到单元文件 $src(它和这个脚本放在一起)"
+	$FETCH "$RAW_BASE/deploy/$name" > "$TMP/$name" 2>/dev/null \
+		|| die "取不到 $name。把 deploy/ 整个目录传上来再跑。"
+	printf '%s' "$TMP/$name"
+}
+
+# install_unit NAME [ADDR]:装一份单元。ADDR 为空就原样装;非空时把文件里现有的
+# --addr 换成 ADDR。
 #
 # 替换后的单元写到 $TMP,不改仓库里那份 —— 从源码目录跑这个脚本是常规用法,
 # 就地 sed 会把工作区改脏,下次 git status 里多出一处莫名其妙的改动。
+# 单元文件跟着程序走,所以每次都以手上这份为准;但你改过的内容不能就这么没了,
+# 有差异就先备份。
+install_unit() {
+	local name="$1" addr="${2:-}" src unit
+	src="$(fetch_unit "$name")"
+	unit="/etc/systemd/system/$name"
+	if [[ -n "$addr" ]]; then
+		grep -q -- '--addr ' "$src" || die "$src 里没有 --addr,没法替换监听地址"
+		sed "s|--addr [^ ]*|--addr $addr|" "$src" > "$TMP/$name.final"
+		src="$TMP/$name.final"
+	fi
+	if [[ -f "$unit" ]] && ! cmp -s "$src" "$unit"; then
+		cp -f "$unit" "$unit.bak"
+		echo "    $unit 与手上这份不同,原文件备份到 $unit.bak"
+	fi
+	install -m 0644 "$src" "$unit"
+}
+
+# --addr 只在换了监听地址时才动单元:默认那份是仓库里的原文,直接装。
 if [[ -n "$ADDR" ]]; then
 	[[ "$ADDR" == *:* ]] || die "--addr 要写成 地址:端口(比如 0.0.0.0:8080)"
-	grep -q -- '--addr ' "$SRC" || die "$SRC 里没有 --addr,没法替换监听地址"
-	sed "s|--addr [^ ]*|--addr $ADDR|" "$SRC" > "$TMP/mpx.service.final"
-	SRC="$TMP/mpx.service.final"
 fi
-if [[ -f "$UNIT" ]] && ! cmp -s "$SRC" "$UNIT"; then
-	# 单元文件跟着程序走,所以每次都以手上这份为准。但你改过的内容不能就这么没了。
-	cp -f "$UNIT" "$UNIT.bak"
-	echo "    $UNIT 与手上这份不同,原文件备份到 $UNIT.bak"
+install_unit mpx.service "${ADDR:-}"
+
+# 控制面升级用的两个单元:path 监视请求文件,service 由它拉起,以 root 执行换二进制。
+# health check 只从本机连控制面,所以 service 里的 --addr 固定成回环;控制面监听的
+# 是 0.0.0.0:P 时,这里就是 127.0.0.1:P。
+UPDATE_ADDR=""
+if [[ -n "$ADDR" ]]; then
+	UPDATE_ADDR="127.0.0.1:${ADDR##*:}"
 fi
-install -m 0644 "$SRC" "$UNIT"
+install_unit mpx-update.service "$UPDATE_ADDR"
+install_unit mpx-update.path
+
 systemctl daemon-reload
 systemctl enable mpx >/dev/null
+# --now 会立刻把 path 单元挂上:控制面刚装好,本机就能用 mpx update apply control 了。
+systemctl enable --now mpx-update.path >/dev/null
 
 # ---- 起服务并确认它真的在跑 -------------------------------------------------
 
