@@ -15,7 +15,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 /* sidebar */
 .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
 .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px;font-weight:620;font-size:14px}
-.brand img{width:22px;height:22px}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
+.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
 .profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}
@@ -305,3 +305,4 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .upd-cmds .cmd{margin:0}
 /* 自检页:说明列要换行(名称/结论都很短),否则 detail 与 hint 会把表格撑得很宽 */
 .doc-d{white-space:normal;min-width:280px;max-width:720px;line-height:1.55}.doc-d .sub{margin-top:3px}
+.lk-d,.mk-d{display:none}[data-theme=dark] .lk-l,[data-theme=dark] .mk-l{display:none}[data-theme=dark] .lk-d,[data-theme=dark] .mk-d{display:inline-block}
