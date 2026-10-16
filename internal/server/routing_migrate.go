@@ -179,7 +179,7 @@ func (s *Server) migrateRouting(opt migrateOptions) (*MigrationReport, error) {
 }
 
 // AutoMigrateRouting 在 serve 启动时调用:从没迁移过、规则表也是空的,就按 RFC 做一次
-// 迁移。需要确认或转换不了时只记报告,继续按模板出订阅。
+// 迁移。需要确认或转换不了时只记报告,规则表保持原样(调用方随后会拒绝启动)。
 func (s *Server) AutoMigrateRouting() {
 	st, err := s.store.GetRoutingState()
 	if err != nil {

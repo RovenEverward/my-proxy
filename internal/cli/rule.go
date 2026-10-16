@@ -437,7 +437,7 @@ type migrationReport struct {
 var migrateStatusText = map[string]string{
 	"migrated":      "已迁移,订阅改由规则表生成",
 	"needs_confirm": "需要确认:存过自定义 sing-box 模板,加 --confirm 后迁移",
-	"blocked":       "没有迁移:自定义 clash-meta 模板有转换不了的规则,订阅继续按模板生成",
+	"blocked":       "没有迁移:自定义 clash-meta 模板有转换不了的规则,规则表保持原样",
 	"skipped":       "没有迁移:已经有规则表(加 --replace 按旧配置重新生成,会覆盖现有规则)",
 	"dry_run":       "演算结果(未写入)",
 }
