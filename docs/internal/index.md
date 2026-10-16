@@ -173,7 +173,7 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 
 「不做什么」、三层各管一段、以及每一条取舍的理由,在[设计](../design.md)与[关键决策与理由](decisions.md)里,不在这里重复。
 
-管理界面 `mpx ui` 的方案与安全设计见 [管理 UI 方案](ui-rfc.md)。自动升级与发布件校验见 [自动升级方案](update-rfc.md)。分流规则(替代用途)见 [分流规则方案](routing-rules-rfc.md)。套餐(权限组)见 [套餐方案](plans-rfc.md)。添加节点与首次安装两个向导见 [向导方案](wizard-rfc.md)。
+管理界面 `mpx ui` 的方案与安全设计见 [管理 UI 方案](ui-rfc.md)。自动升级与发布件校验见 [自动升级方案](update-rfc.md)。分流规则(替代用途)见 [分流规则方案](routing-rules-rfc.md)。套餐(权限组)见 [套餐方案](plans-rfc.md)。添加节点与首次安装两个向导见 [向导方案](wizard-rfc.md)。桌面程序(MyGo 壳包装 `mpx ui`)见 [桌面程序方案](desktop-rfc.md)。
 
 ### 用户帮助与运维指南
 - [用户文档站](https://RovenEverward.github.io/my-proxy/)：教程、指南、参考与原理。
