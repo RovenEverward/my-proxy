@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
@@ -64,6 +65,9 @@ type Checker struct {
 	// (含伪版本、空版本)去跑判据,而不是只能测碰巧编出来的那一版。
 	version func() string
 
+	// mu 串行化 Check 与 Snapshot:后台任务和 GET /api/update?refresh=1 会从
+	// 不同 goroutine 同时调用。
+	mu   sync.Mutex
 	last Result
 }
 
@@ -89,10 +93,17 @@ func New(repo string, interval time.Duration) *Checker {
 // 至少问到一次,不会出现"发布三天了界面上还没动静"。
 const DefaultInterval = 6 * time.Hour
 
+// MinRefreshInterval 是手动刷新(GET /api/update?refresh=1)之间的最短间隔:
+// 有人反复跑 mpx update show 时,一分钟内复用上一次结论,不把 GitHub 未登录
+// 配额(每小时 60 次)耗光。
+const MinRefreshInterval = time.Minute
+
 // Check 给出结论。距离上次成功查询不足间隔时直接复用,不发请求。
 //
 // force 为真时忽略间隔(给人手动触发的入口用:他刚发了新版本想立刻看到)。
 func (c *Checker) Check(ctx context.Context, force bool) Result {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.last.Current = c.version()
 	if !force && !c.last.CheckedAt.IsZero() && c.now().Sub(c.last.CheckedAt) < c.interval {
 		return c.last
@@ -117,6 +128,8 @@ func (c *Checker) Check(ctx context.Context, force bool) Result {
 
 // Snapshot 返回上一次的结论,不触发任何请求。
 func (c *Checker) Snapshot() Result {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	r := c.last
 	r.Current = c.version()
 	return r

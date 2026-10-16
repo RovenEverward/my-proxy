@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,19 +19,40 @@ import (
 
 // handleUpdate 回控制面自己与各节点核心的版本,给 mpx update 用。
 //
-// 只读:不查上游、不 SSH 节点。所有结论都来自别处已经算好的东西 —— 上游检查是
-// 后台任务按静默期在跑,节点版本是上一轮巡检观察到的。一个"看一下现在什么版本"
+// 默认只读:不查上游、不 SSH 节点。所有结论都来自别处已经算好的东西 —— 上游检查
+// 是后台任务按静默期在跑,节点版本是上一轮巡检观察到的。一个"看一下现在什么版本"
 // 的操作不该顺手把每台节点连一遍,更不该因为某台连不上就整个失败。
+//
+// 带 ?refresh=1 时例外:先强制向上游查一次再回答,给"刚发了新版想立刻看到"的
+// 手动入口用。这仍然是只读的(不碰节点),失败也不让接口失败 —— 结果里的 error
+// 字段会说明为什么,其余字段照旧是上一次的结论。
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	nodes, err := s.updateNodes()
 	if err != nil {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
+	control := s.controlUpdate()
+	if wantsRefresh(r) {
+		control = s.refreshControlUpdate(r.Context())
+	}
 	writeJSON(w, http.StatusOK, model.UpdateSnapshot{
-		Control: s.controlUpdate(),
+		Control: control,
 		Nodes:   nodes,
 	})
+}
+
+// wantsRefresh 报告这次请求要不要强制刷新:查询参数 refresh 为 1(或 true)。
+//
+// 只认显式的真值:不带、带 0、带 false 都不算。这样旧 CLI 的请求行为完全不变,
+// 不认识这个参数的旧控制面也会原样忽略它。
+func wantsRefresh(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("refresh"))) {
+	case "1", "true":
+		return true
+	default:
+		return false
+	}
 }
 
 // controlUpdate 说控制面自己这一份。没接更新源时只有版本,不声称有新版。
@@ -41,6 +63,25 @@ func (s *Server) controlUpdate() model.UpdatePart {
 	part := model.UpdatePart{}
 	if s.updates != nil {
 		part = s.updates.ControlUpdate()
+	}
+	if part.Current == "" {
+		part.Available = false
+	}
+	part.Last = s.controlLastRun()
+	return part
+}
+
+// refreshControlUpdate 强制查一次上游再给出结论。接不上刷新能力时退回缓存结论,
+// 行为与不带 refresh 完全一致 —— 旧实现不该因为不认识这个参数就让请求失败。
+//
+// 检查失败不在这里返回错误:RefreshControlUpdate 的实现把失败记进 Error 字段,
+// 上一次的结论照常带回来。接口层只负责把这份结论发出去。
+func (s *Server) refreshControlUpdate(ctx context.Context) model.UpdatePart {
+	part := model.UpdatePart{}
+	if ref, ok := s.updates.(UpdateRefresher); ok {
+		part = ref.RefreshControlUpdate(ctx)
+	} else {
+		part = s.controlUpdate()
 	}
 	if part.Current == "" {
 		part.Available = false

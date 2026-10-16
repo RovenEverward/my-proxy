@@ -164,6 +164,32 @@ func TestUpdateShowIsEquivalent(t *testing.T) {
 	}
 }
 
+// mpx update / update show 必须带 refresh=1,让控制面绕过后台检查的静默期:
+// 新版发布后立刻能看到,而不是等它那 6 小时一轮的检查。
+func TestUpdateShowRequestsRefresh(t *testing.T) {
+	withLocalVersion(t, "v0.2.0")
+	opts.output = outputTable
+	t.Cleanup(func() { opts.output = outputTable })
+
+	var queries []string
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		_, _ = w.Write(updatePayload(t, "v0.2.0", "v0.3.0", nil))
+	})
+
+	captureStdout(t, func() { runRoot(t, "update") })
+	captureStdout(t, func() { runRoot(t, "update", "show") })
+
+	if len(queries) != 2 {
+		t.Fatalf("该发两次请求,实际 %d 次:%q", len(queries), queries)
+	}
+	for i, q := range queries {
+		if q != "refresh=1" {
+			t.Errorf("第 %d 次请求的查询串 = %q,想要 refresh=1", i+1, q)
+		}
+	}
+}
+
 // -o json 给的是客户端拼的报告,形状要含三部分,且不能混进警告文字。
 func TestUpdateCommandJSON(t *testing.T) {
 	withLocalVersion(t, "v0.2.0")
