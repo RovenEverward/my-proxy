@@ -2,6 +2,33 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.7.0 (2026-10-16)
+
+本版主题：「用途」与模板分流整体下线，分流模式固定为 `rules`。删除计划见 [routing-rules-rfc.md](docs/internal/routing-rules-rfc.md) 的「R6 用途下线计划」。
+
+### 破坏性变更
+- **`/api/purposes*` 与 `mpx purpose` 删除**（#83、#84）。旧版 CLI 或脚本再调用这些接口得到 **404**，命令不存在。请改用 `mpx rule` / `mpx group`；节点和入口的地区改用 `mpx node edit --region`。
+- **订阅 `?purpose=` 被忽略**（#85）。带这个查询参数的订阅链接不再报错，但一律返回普通订阅，分流完全按规则表。以前靠用途订阅链接挑节点的客户端会拿到完整订阅。
+- **`purposes` 表删除**（#86）。仍是 `template` 模式的库**控制面拒绝启动**：先用 v0.6.6 执行 `mpx rule migrate` 切到 `rules`，再升级到 v0.7.0。
+- **metadata 的 `line` / `purposes` 字段删除**。老客户端写入这两个字段会被忽略（不报错），读出时也不会返回这两个键。节点与入口元数据只认 `region` / `city` / `letter`；库里残留的旧 JSON 读出时自然丢弃。
+- **`PUT /api/routing` 下线**。旧 CLI `mpx rule mode template` 得到 404 / 405；`mpx rule mode` 只保留查看，带参数（设置）时报错「v0.7.0 起分流模式固定为 rules」。模板回退分支与用途渲染代码一并删除，Clash Meta / sing-box 订阅一律由规则表生成。
+
+### 老客户端会受到的影响
+- 旧版 CLI（≤ v0.6.6）调用已删除的接口会看到 404：
+  - `mpx purpose …` 全部子命令；
+  - `mpx rule mode rules|template`（设置模式）；
+  - 其余 `mpx rule` / `mpx group` 子命令照常可用。
+- 旧版 `mpx ui`（≤ v0.6.6）连 v0.7.0 控制面，除上面这些入口外功能正常：用户、节点、入站与入口、分流规则、设置、备份都不受影响。用途页会因接口 404 而不可用。
+- 用用途订阅链接的客户端不会报错，只是拿到完整订阅；在客户端里更新一次订阅即可。
+
+### 升级步骤
+1. 在 v0.6.6 控制面上先确认分流已迁移：`mpx rule mode` 应显示 `rules`；若还是 `template`，运行 `mpx rule migrate` 切过去。
+2. 升级控制面到 v0.7.0。若库仍是 `template` 模式，控制面会拒绝启动并提示先用 v0.6.6 迁移。
+3. 升级本机 CLI 到 v0.7.0。旧脚本里凡是用到 `mpx purpose`、`?purpose=` 或 `mpx rule mode <mode>` 的地方，按上面的替换关系改写。
+4. 迁移与升级不删除 `settings.Templates`；模板里保留的 DNS、嗅探等与分流无关的段继续生效。
+
+包含：#83、#84、#85、#86 与本 PR。
+
 ## v0.6.6 (2026-10-16)
 
 ### 变更
