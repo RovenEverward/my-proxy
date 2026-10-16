@@ -184,7 +184,7 @@ async function runFrom(stage) {
     W.pw = ""; t.rows[0]._t0 = Date.now(); t.rows[0].st = "run";
     try {
       const res = await api("/api/nodes", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: 0, name, address, ssh_port: +sshPort, ssh_user: sshUser, api_port: 0, config_path: "", service_name: "", draining: false, ssh_password: pw }) });
+        body: JSON.stringify({ id: 0, name, address, ssh_port: +sshPort, ssh_user: sshUser === "root" ? "" : sshUser, api_port: 0, config_path: "", service_name: "", draining: false, ssh_password: pw }) });
       t.nodeId = res.id; W.display = res.display || ""; W.locateNote = res.locate_note || "";
       const ms = Date.now() - t.rows[0]._t0;
       t.rows[0].st = "done"; t.rows[0].du = fmtDur(ms);
@@ -197,7 +197,7 @@ async function runFrom(stage) {
     try {
       if (!t.inboundId) {
         const inb = await api("/api/inbounds", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: 0, node_id: t.nodeId, tag: "", protocol: "vless", listen: "", port: +W.inbPort, network: "tcp", security: "reality", sni: W.sni, reality_dest: W.dest, flow: "xtls-rprx-vision" }) });
+          body: JSON.stringify({ id: 0, node_id: t.nodeId, tag: "", protocol: "vless", listen: "", port: +W.inbPort, network: "tcp", security: "reality", sni: W.sni, reality_dest: W.dest, wg_mtu: 1420, flow: "xtls-rprx-vision" }) });
         t.inboundId = inb.id;
       }
       await api(`/api/inbounds/${t.inboundId}/hosts`, { method: "POST", headers: { "Content-Type": "application/json" },
