@@ -41,6 +41,8 @@ type Options struct {
 	// Transport 是转发到控制面用的传输;https 控制面要用只认证书指纹的那种
 	// (见 internal/pin)。为空时用默认传输。
 	Transport http.RoundTripper
+	// Setup 非空时启用 /local/setup/*;Upstream 为空时页面进入首次安装模式。
+	Setup SetupRunner
 }
 
 // Server 是一个已经绑定好端口的页面服务。
@@ -53,6 +55,7 @@ type Server struct {
 	proxy   *httputil.ReverseProxy
 	static  http.Handler
 	allow   []rule
+	job     *setupJob
 }
 
 type rule struct{ method, prefix string }
@@ -73,7 +76,9 @@ func New(addr string, opts Options) (*Server, error) {
 		return nil, err
 	}
 	if opts.Upstream == nil || opts.Upstream.Host == "" {
-		return nil, errors.New("没有控制面地址")
+		if opts.Setup == nil {
+			return nil, errors.New("没有控制面地址")
+		}
 	}
 	sub, err := fs.Sub(assets, "assets")
 	if err != nil {
@@ -88,9 +93,16 @@ func New(addr string, opts Options) (*Server, error) {
 		}
 		s.allow = append(s.allow, rule{m, p})
 	}
-	up := opts.Upstream
-	s.proxy = &httputil.ReverseProxy{
-		Transport: opts.Transport,
+	if opts.Upstream != nil && opts.Upstream.Host != "" {
+		s.setUpstream(opts.Upstream, opts.Token, opts.Transport)
+	}
+	return s, nil
+}
+
+// setUpstream 换(或第一次装)控制面:更新 opts 与转发代理。装完切正常模式时调用。
+func (s *Server) setUpstream(up *url.URL, token string, tr http.RoundTripper) {
+	proxy := &httputil.ReverseProxy{
+		Transport: tr,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(up)
 			r.Out.Host = up.Host
@@ -98,8 +110,8 @@ func New(addr string, opts Options) (*Server, error) {
 			for _, h := range []string{"Cookie", "Authorization", "Origin", "Referer"} {
 				r.Out.Header.Del(h)
 			}
-			if opts.Token != "" {
-				r.Out.Header.Set("Authorization", "Bearer "+opts.Token)
+			if token != "" {
+				r.Out.Header.Set("Authorization", "Bearer "+token)
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
@@ -111,7 +123,12 @@ func New(addr string, opts Options) (*Server, error) {
 			writeError(w, http.StatusBadGateway, "连不上控制面 "+up.Redacted()+": "+err.Error())
 		},
 	}
-	return s, nil
+	s.mu.Lock()
+	s.proxy = proxy
+	s.opts.Upstream = up
+	s.opts.Token = token
+	s.opts.Transport = tr
+	s.mu.Unlock()
 }
 
 // Key 是登录链接里那一次性的 key;用掉之后返回空串。
@@ -156,16 +173,45 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "拒绝跨站请求")
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/local/setup") {
+		s.serveSetup(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.mu.Lock()
+		proxy := s.proxy
+		s.mu.Unlock()
+		if proxy == nil {
+			writeError(w, http.StatusServiceUnavailable, "还没有控制面:先完成首次安装")
+			return
+		}
 		if !s.allowed(r.Method, r.URL.Path) {
 			writeError(w, http.StatusMethodNotAllowed, "mpx ui 不放行 "+r.Method+" "+r.URL.Path)
 			return
 		}
-		s.proxy.ServeHTTP(w, r)
+		proxy.ServeHTTP(w, r)
 		return
 	}
 	if r.URL.Path == "/ui/meta" {
-		writeJSON(w, map[string]any{"server": s.opts.Upstream.Redacted(), "profile": s.opts.Profile, "allow": s.opts.Allow})
+		s.mu.Lock()
+		proxy := s.proxy
+		up := s.opts.Upstream
+		profile := s.opts.Profile
+		s.mu.Unlock()
+		mode := "normal"
+		server := ""
+		if proxy == nil {
+			mode = "setup"
+		} else if up != nil {
+			server = up.Redacted()
+		}
+		writeJSON(w, map[string]any{
+			"server":  server,
+			"profile": profile,
+			"allow":   s.opts.Allow,
+			"setup":   s.opts.Setup != nil,
+			"mode":    mode,
+		})
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
