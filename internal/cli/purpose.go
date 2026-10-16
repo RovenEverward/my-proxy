@@ -12,7 +12,18 @@ import (
 
 func init() { rootCmd.AddCommand(newPurposeCmd()) }
 func newPurposeCmd() *cobra.Command {
-	c := &cobra.Command{Use: "purpose", Short: "管理用途分组、标签与订阅预览", Long: `管理日常、流媒体、下载和游戏用途。用途通过 regions / lines / tags 筛选已授权节点；
+	c := &cobra.Command{Use: "purpose", Short: "(已废弃,v0.7.0 删除)管理用途分组、标签与订阅预览",
+		// cobra 只跑最近的一个 PersistentPreRun:先打警告,再接着跑根命令的(读配置档等)。
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintln(cmd.ErrOrStderr(), "警告:mpx purpose 已废弃,将在 v0.7.0 删除。分流改用 mpx rule / mpx group;节点地区改用 mpx node edit --region。")
+			if rootCmd.PersistentPreRunE != nil {
+				return rootCmd.PersistentPreRunE(cmd, args)
+			}
+			return nil
+		},
+		Long: `已废弃:v0.6.0 起不再维护,v0.7.0 删除。请改用 mpx rule / mpx group。
+
+管理日常、流媒体、下载和游戏用途。用途通过 regions / lines / tags 筛选已授权节点；
  required_capabilities 可选 egress / youtube / netflix，capability_region 为两位大写地区代码。
  下载与游戏需配置 domains；url-test 测量的是客户端 HTTP 响应延迟，不代表下载吞吐、游戏 RTT 或丢包。`}
 	c.AddCommand(&cobra.Command{Use: "list", Args: cobra.NoArgs, Short: "列出用途", RunE: func(cmd *cobra.Command, args []string) error {

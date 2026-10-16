@@ -104,3 +104,19 @@ func TestPurposeCLIPropagatesPreviewAndAPIErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPurposeCLIDeprecationWarning(t *testing.T) {
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`[]`)) })
+	cmd := newPurposeCmd()
+	var errb strings.Builder
+	cmd.SetErr(&errb)
+	cmd.SetArgs([]string{"list"})
+	captureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(errb.String(), "v0.7.0 删除") {
+		t.Fatalf("应打废弃警告: %q", errb.String())
+	}
+}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -113,7 +114,7 @@ func TestMigrateDefaultAndPurposes(t *testing.T) {
 	if c, b := e.api("PUT", "/api/routing", map[string]string{"mode": "template"}); c != 200 || !strings.Contains(string(b), "template") {
 		t.Fatalf("%d %s", c, b)
 	}
-	if _, h, b := e.sub(path+"?purpose=media", ""); h.Get("Deprecation") != "" || string(b) != string(before) {
+	if _, h, b := e.sub(path+"?purpose=media", ""); h.Get("Deprecation") != "true" || string(b) != string(before) {
 		t.Fatal("切回 template 后用途订阅应恢复原样")
 	}
 	if r := migrateAPI(t, e, map[string]bool{"replace": true}); r.Status != MigrateDone {
@@ -156,5 +157,21 @@ func TestMigrateCustomTemplates(t *testing.T) {
 	set(model.FormatClashMeta, "proxy-groups:\n  - {name: PROXY, type: select, include-all-proxies: true}\nrules:\n  - DOMAIN-SUFFIX,a.com,PROXY\n  - MATCH,DIRECT\n")
 	if r := migrateAPI(t, e, nil); r.Status != MigrateDone || r.Source != "自定义 clash-meta 模板" || r.Rules != 1 || r.Final != "直连" {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestPurposeDeprecationHeaders(t *testing.T) {
+	e := newEnv(t)
+	u := e.createUser("alice")
+	req := httptest.NewRequest("GET", "/api/purposes", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	e.s.Handler().ServeHTTP(rec, req)
+	code, h := rec.Code, rec.Header()
+	if code != 200 || h.Get("Deprecation") != "true" || !strings.Contains(h.Get("X-Mpx-Deprecated"), "v0.7.0") {
+		t.Fatalf("模板模式下用途接口也要带废弃头: %d %v", code, h)
+	}
+	if _, h, _ := e.sub("/sub/"+u.SubToken+"/clash-meta?purpose=gone", ""); h.Get("Deprecation") != "true" {
+		t.Fatal("?purpose= 要带废弃头")
 	}
 }

@@ -156,7 +156,7 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 | R3 API 与 CLI | 第 5、6 节的接口和命令，含 preview 和 test | e2e 测试对照 CLI 和页面发出的请求 |
 | R4 迁移 | 自定义模板和用途的转换、迁移报告、`?purpose=` 兼容、默认切到 `rules` | 在 144 控制面的数据副本上演练迁移，订阅对比前后差异，并逐条解释 |
 | R5 UI | 按原型实现分流规则页（规则、策略组、用户覆盖、测试网址、空状态） | Playwright 测试；截图给用户确认后再合并 |
-| R6 清理（下一个次版本） | 删除用途的 API、CLI、表和 `routing_mode` | 上一个版本发布后才做 |
+| R6 用途下线 | v0.6.0 废弃、v0.7.0 删除，见下方「R6 用途下线计划」 | v0.6.0 发布后才开始删除 |
 
 ## 替代方案
 
@@ -192,3 +192,22 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 - 迁移后的配置都用官方 mihomo 1.19.32（`-t`）和 sing-box 1.14.3（`check`）校验通过。
 
 **兼容性取舍：**按「控制面接口只增不改」的要求，`/api/purposes*` 的写操作**没有**改成 410，仍然照常工作。改为在 rules 模式下给响应加 `Deprecation: true` 和 `X-Mpx-Deprecated` 头，说明这些改动不再影响订阅。`?purpose=` 在 rules 模式下返回普通订阅，带同样的弃用头。
+
+## R6 用途下线计划（2026-10-16 定）
+
+**v0.6.0：废弃（随分流规则一起发布）**
+- `/api/purposes*` 继续工作，但无论哪种分流模式，响应都带 `Deprecation: true` 和 `X-Mpx-Deprecated`，写明 v0.7.0 删除，并指向 `/api/rules`、`/api/proxy-groups`。
+- `?purpose=` 订阅继续可用，响应带同样的头。rules 模式下返回普通订阅。
+- `mpx purpose` 的每个子命令都在 stderr 打废弃警告，帮助里标「已废弃，v0.7.0 删除」。
+- 用途页顶部提示已合并进分流规则。
+
+**v0.7.0：删除**
+- 接口：`/api/purposes`、`/api/purposes/{slug}`、`/api/purposes/{slug}/preview/...`。
+- 命令：`mpx purpose` 全部子命令。节点和入口的地区改用 `mpx node edit --region`；`/api/nodes|hosts/{id}/metadata` 仍保留给地区和城市使用，删除其中的 `line`、`purposes` 字段。
+- 订阅：`?purpose=` 兼容逻辑，以及 `render/purpose.go` 等用途渲染代码。
+- 数据：`purposes` 表，加一个迁移来删表。
+- UI：用途页、`mpx ui` 放行列表里的用途写操作、相关 e2e 用例。
+- 开关：`routing_mode` 的 template 回退路径（旧模板渲染依赖用途，一起移除），`mpx rule mode` 只保留查看。
+- 文档：用途相关指南和 `purpose-validation.md`。
+
+**前提：**v0.6.0 已经发布，并且至少运行一个版本周期。删除时以 GitHub issue「v0.7.0 删除用途接口」为清单逐项勾掉。

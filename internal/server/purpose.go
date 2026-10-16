@@ -18,16 +18,18 @@ func (s *Server) SetPurposeFilter(f func(model.Purpose, []render.Endpoint) ([]re
 	s.purposeFilter = f
 }
 
-// purposeDeprecated:规则表接管分流后,用途接口照常工作(不破坏兼容),但响应头标明已弃用,
-// 并指向分流规则。下一个次版本删除(RFC R6)。
+// purposeDeprecated:用途接口从 v0.6.0 起废弃、v0.7.0 删除(RFC R6)。接口照常工作,
+// 响应头一律标明废弃与下线版本;规则表接管分流后,这里的改动不再影响订阅。
 func (s *Server) purposeDeprecated(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.routingMode() == model.RoutingRules {
-			w.Header().Set("Deprecation", "true")
-			w.Header().Set("X-Mpx-Deprecated", "purposes are replaced by routing rules (/api/rules, /api/proxy-groups); changes here no longer affect subscriptions")
-		}
+		setPurposeDeprecation(w)
 		h(w, r)
 	}
+}
+
+func setPurposeDeprecation(w http.ResponseWriter) {
+	w.Header().Set("Deprecation", "true")
+	w.Header().Set("X-Mpx-Deprecated", "purposes are deprecated since v0.6.0 and will be removed in v0.7.0; use routing rules (/api/rules, /api/proxy-groups)")
 }
 
 func (s *Server) purposeRoutes(api *http.ServeMux) {
