@@ -18,6 +18,12 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .brand img{width:22px;height:22px}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
 .profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}
+.pflist{display:grid;gap:6px;margin-bottom:6px}
+.pfitem{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:9px;background:var(--panel);text-align:left;cursor:pointer}
+.pfitem:hover{background:var(--hover)}.pfitem.on{background:var(--canvas);box-shadow:inset 0 0 0 1px var(--stone)}
+.pfitem .pf-t{flex:1;min-width:0}.pfitem b,.pfitem span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pfitem b{font-weight:560;font-size:13px}.pfitem span{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.pfitem svg{width:15px;height:15px;flex:none;color:var(--ok)}
 .navg{font-size:11px;color:var(--faint);padding:12px 10px 4px;letter-spacing:.02em}
 .nav{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:7px;color:var(--ink2);font-weight:470;transition:background 120ms}
 .nav:hover{background:var(--hover)}.nav.on{background:var(--canvas);color:var(--ink);font-weight:560}

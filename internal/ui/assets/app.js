@@ -230,7 +230,7 @@ function shell(page, body, crumb) {
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img src="/logo.svg" alt="">mpx<small>${STATUS?.version || ""}</small></div>
-  <div class="profile"><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div></div>
+  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span class="ro">${ic("term")} 由 <code>mpx ui</code> 提供</span><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -334,6 +334,42 @@ function confirmBox({ title, text, cmd, ok, danger, typed, run, extra, cmdOf }) 
   });
 }
 
+/* ---------- 配置档切换 ---------- */
+// 点左上角的配置档卡片:拉一次列表。只有一个档时不弹,直接提示去登录加一个;
+// 有多个时弹窗,当前档打勾,点别的就 POST 切换,成功后整页 reload。
+async function openProfiles() {
+  if (!META.profiles) return;
+  let list;
+  try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
+  catch (e) { toast("读不到配置档:" + e.message, true); return; }
+  if (!Array.isArray(list)) list = [];
+  if (list.length <= 1) {
+    toast(H`只有一个配置档 ${list[0]?.name || "default"};用 mpx login --profile <名字> 添加`);
+    return;
+  }
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>切换配置档</h2>
+  <p>只影响这个 mpx ui 进程;配置文件里的 current 不动。</p>
+  <div class="pflist">${list.map(p => H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
+    <span class="dot ${p.current ? "ok" : ""}"></span><span class="pf-t"><b>${p.name}</b><span>${String(p.server || "").replace(/^https?:\/\//, "")}</span></span>${p.current ? ic("check") : ""}</button>`)}</div>
+  <div class="err" id="prof-err" role="alert"></div></div>
+  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  for (const b of m.querySelectorAll(".pfitem")) b.addEventListener("click", () => useProfile(b.dataset.name, b));
+}
+// useProfile:切到 name。成功整页刷新,让所有页面数据都跟着新控制面重来。
+async function useProfile(name, el) {
+  if (el) { el.disabled = true; el.classList.add("busy"); }
+  try {
+    await api("/local/profiles/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    location.reload();
+  } catch (e) {
+    const box = $("#prof-err");
+    if (box) box.textContent = e.message; else toast(e.message, true);
+    if (el) { el.disabled = false; el.classList.remove("busy"); }
+  }
+}
+
 /* ---------- 渲染与路由 ---------- */
 let loadSeq = 0;
 function paint() {
@@ -376,6 +412,7 @@ const ACTS = {
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
+  "profile-open": () => openProfiles(),
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {

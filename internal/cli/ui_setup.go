@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/pin"
 	"github.com/RovenEverward/my-proxy/internal/ui"
 )
 
@@ -97,6 +100,54 @@ func profileForServer(cfg Config, server string) (string, Profile, bool) {
 		}
 	}
 	return "", Profile{}, false
+}
+
+// profilesRunner 把页面的配置档列表/切换接到配置文件上:列出 cfg.Profiles,
+// 切换时用 loadConfig / cfg.pick / transportFor 解析出转发要用的东西。
+type profilesRunner struct{}
+
+// List:返回配置档的名字与地址,current 先按配置文件里的 current 打勾。
+// token 与指纹绝不进返回值。
+func (profilesRunner) List() ([]ui.ProfileInfo, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ui.ProfileInfo, 0, len(cfg.Profiles))
+	for name, p := range cfg.Profiles {
+		out = append(out, ui.ProfileInfo{Name: name, Server: p.Server, Current: name == cfg.Current})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// Resolve:把档名解析成转发用的 upstream/token/transport。做法同 SetupRunner:
+// 地址用 url.Parse,传输用 transportFor(https 需要配置里那份指纹)。
+func (profilesRunner) Resolve(name string) (*url.URL, string, http.RoundTripper, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, "", nil, err
+	}
+	p, err := cfg.pick(name)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if p.Server == "" {
+		return nil, "", nil, fmt.Errorf("配置档 %s 没有控制面地址", name)
+	}
+	up, err := url.Parse(p.Server)
+	if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
+		return nil, "", nil, fmt.Errorf("控制面地址 %q 不是 http(s) URL", p.Server)
+	}
+	// 该档自己存了指纹就只认它:transportFor 取指纹看的是 --profile/env/current,
+	// 切换到的档未必是它们,用错指纹会连错或连不上。没存指纹(http 地址)才退回 transportFor。
+	var tr http.RoundTripper
+	if p.Fingerprint != "" {
+		tr = pin.Transport(p.Fingerprint)
+	} else if tr, err = transportFor(p.Server); err != nil {
+		return nil, "", nil, err
+	}
+	return up, p.Token, tr, nil
 }
 
 // setupInitParams 把页面表单补成一份 initParams:缺省值跟 mpx init 的 flag 默认一致。
