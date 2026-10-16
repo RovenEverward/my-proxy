@@ -174,6 +174,9 @@ func TestRollbackNoPrev(t *testing.T) {
 }
 
 func TestSaveLoadStateRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有 Unix 文件权限位")
+	}
 	dir := t.TempDir()
 	// 多套一层目录，验证自动建目录。
 	path := filepath.Join(dir, "nested", "state.json")

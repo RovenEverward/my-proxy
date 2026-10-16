@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -68,6 +69,9 @@ func fakeControlPlane(t *testing.T, handler http.HandlerFunc) {
 }
 
 func TestBackupCommandWritesArchiveToFlagPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有 Unix 文件权限位")
+	}
 	payload := []byte("fake-archive-bytes")
 	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/backup" {
