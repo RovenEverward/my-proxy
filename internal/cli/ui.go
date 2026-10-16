@@ -96,7 +96,7 @@ var uiCmd = &cobra.Command{
 		}
 
 		setupMode := server == "" || uiFlags.setup
-		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{}}
+		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{}, Relabel: relabelRunner{}}
 		if !setupMode {
 			up, err := url.Parse(server)
 			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {

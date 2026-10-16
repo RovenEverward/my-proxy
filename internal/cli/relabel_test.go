@@ -71,3 +71,76 @@ func TestNodeRelabel(t *testing.T) {
 		t.Fatalf("写入结果 puts=%v meta=%v", puts, meta)
 	}
 }
+
+// fakeDoer 是最小的 doer:按路径记下调用,metadata 存在内存里。
+type fakeDoer struct {
+	mu    sync.Mutex
+	calls []string
+	meta  map[int64]model.PurposeMetadata
+}
+
+func (f *fakeDoer) do(method, path string, body any) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, method+" "+path)
+	var id int64
+	fmt.Sscanf(path, "/api/nodes/%d/metadata", &id)
+	if method == "GET" {
+		return json.Marshal(f.meta[id])
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	var m model.PurposeMetadata
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	f.meta[id] = m
+	return json.Marshal(m)
+}
+
+func (f *fakeDoer) has(s string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.calls {
+		if strings.Contains(c, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// apply 只写计划里的那份 metadata,绝不重新 locate;节点中途被别人改过就跳过。
+func TestRelabelApplyNoLocateAndSkipsChanged(t *testing.T) {
+	f := &fakeDoer{meta: map[int64]model.PurposeMetadata{
+		1: {},                                      // 干净:按计划写
+		2: {Region: "JP", City: "东京", Letter: "A"}, // 已被改过:跳过
+	}}
+	plans := []relabelPlanItem{
+		{ID: 1, Name: "n1", Metadata: model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "B"}},
+		{ID: 2, Name: "n2", Metadata: model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "C"}},
+	}
+	results, err := relabelApply(f, plans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.has("/locate") {
+		t.Fatalf("apply 不应调 locate: %v", f.calls)
+	}
+	if len(results) != 2 {
+		t.Fatalf("results=%+v", results)
+	}
+	if results[0].Skipped || results[0].Display != "🇺🇸 洛杉矶 B" {
+		t.Fatalf("节点 1 应写入: %+v", results[0])
+	}
+	if !results[1].Skipped || results[1].Reason != "已被改过,跳过" {
+		t.Fatalf("节点 2 应跳过: %+v", results[1])
+	}
+	if f.meta[2].Region != "JP" || f.meta[2].Letter != "A" {
+		t.Fatalf("跳过时不能改节点 2: %+v", f.meta[2])
+	}
+	if f.meta[1].City != "洛杉矶" || f.meta[1].Letter != "B" {
+		t.Fatalf("节点 1 未按计划写入: %+v", f.meta[1])
+	}
+}
