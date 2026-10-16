@@ -2,6 +2,13 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## Unreleased
+
+### 用途废弃，计划在 v0.7.0 删除
+- 分流改由「分流规则」管理（`mpx rule`、`mpx group`、UI 的分流规则页）。升级后首次启动时，旧模板和用途会自动迁移成规则表；`mpx rule migrate --report` 可以查看迁移报告。
+- 从 v0.6.0 起，`/api/purposes*` 和 `?purpose=` 的响应带 `Deprecation: true` 头，`mpx purpose` 每次运行都会打警告。它们仍然可用，但改动不再影响 rules 模式下的订阅。
+- **v0.7.0 会删除**用途的接口、`mpx purpose` 命令、`purposes` 表和 `?purpose=` 兼容。请在此之前改用分流规则。
+
 ## v0.5.1 (2026-10-15)
 
 ### 修复

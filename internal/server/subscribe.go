@@ -45,10 +45,11 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Query().Get("purpose") != "" {
+		setPurposeDeprecation(w) // ?purpose= 兼容保留到 v0.7.0
+	}
 	if slug := r.URL.Query().Get("purpose"); slug != "" && s.routingMode() == model.RoutingRules {
 		// 用途已经合并进规则表:?purpose= 保留一个版本,返回和普通订阅相同的内容。
-		w.Header().Set("Deprecation", "true")
-		w.Header().Set("X-Mpx-Deprecated", "purpose subscriptions are merged into routing rules; use the plain subscription URL")
 		q := r.URL.Query()
 		q.Del("purpose")
 		r.URL.RawQuery = q.Encode()
