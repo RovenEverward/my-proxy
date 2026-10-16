@@ -63,8 +63,9 @@ function renderWelcome() {
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、入站和入口</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
   <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。</p></div>`,
-  H`<span class="sub" style="flex:1">已经有控制面？在终端运行 <code>mpx connect</code></span>${btn("开始", "pri", "", "s-start")}`);
+  H`<span class="sub" style="flex:1">已经有控制面？${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换已有配置档</a>` : H`在终端运行 <code>mpx connect</code>`}</span>${btn("开始", "pri", "", "s-start")}`);
   $("#s-start").addEventListener("click", () => renderConnect());
+  $("#s-profiles")?.addEventListener("click", e => { e.preventDefault(); openProfiles(); });
 }
 
 /* ---------- 屏 2:连接 ---------- */

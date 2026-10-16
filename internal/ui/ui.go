@@ -45,6 +45,9 @@ type Options struct {
 	Transport http.RoundTripper
 	// Setup 非空时启用 /local/setup/*;Upstream 为空时页面进入首次安装模式。
 	Setup SetupRunner
+	// Profiles 非空时启用 /local/profiles(列出)与 /local/profiles/use(切换)。
+	// 为 nil 时两个接口都 404。
+	Profiles ProfileSource
 }
 
 // Server 是一个已经绑定好端口的页面服务。
@@ -78,7 +81,7 @@ func New(addr string, opts Options) (*Server, error) {
 		return nil, err
 	}
 	if opts.Upstream == nil || opts.Upstream.Host == "" {
-		if opts.Setup == nil {
+		if opts.Setup == nil && opts.Profiles == nil {
 			return nil, errors.New("没有控制面地址")
 		}
 	}
@@ -183,6 +186,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveUpdate(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/local/profiles") {
+		s.serveProfiles(w, r)
+		return
+	}
 	if r.URL.Path == "/local/qr.svg" {
 		s.serveQR(w, r)
 		return
@@ -220,6 +227,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"profile":     profile,
 			"allow":       s.opts.Allow,
 			"setup":       s.opts.Setup != nil,
+			"profiles":    s.opts.Profiles != nil,
 			"mode":        mode,
 			"cli_version": buildinfo.Version(),
 		})

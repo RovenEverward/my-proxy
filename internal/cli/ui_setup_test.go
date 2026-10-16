@@ -210,3 +210,37 @@ func TestSetupRunnerRun(t *testing.T) {
 		t.Errorf("Token = %q,want tok-run", res.Token)
 	}
 }
+
+func TestProfilesRunnerListAndResolve(t *testing.T) {
+	path := useTempConfig(t)
+	writeRaw(t, path, `{"current":"prod","profiles":{
+		"prod":{"server":"https://cp.example.net","token":"prod-token","fingerprint":"`+validFP+`"},
+		"dev":{"server":"http://127.0.0.1:9001","token":"dev-token"}
+	}}`)
+
+	list, err := profilesRunner{}.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 2 || list[0].Name != "dev" || list[1].Name != "prod" {
+		t.Fatalf("列表应按名字排序: %+v", list)
+	}
+	if list[1].Current != true || list[0].Current {
+		t.Fatalf("current 应标在 prod: %+v", list)
+	}
+	if list[1].Server != "https://cp.example.net" {
+		t.Fatalf("地址不对: %+v", list[1])
+	}
+
+	// Resolve 不应把 token/指纹暴露给调用方之外的任何输出;这里只验证转发要素。
+	up, token, tr, err := profilesRunner{}.Resolve("dev")
+	if err != nil {
+		t.Fatalf("Resolve dev: %v", err)
+	}
+	if up.String() != "http://127.0.0.1:9001" || token != "dev-token" || tr == nil {
+		t.Fatalf("dev 解析不对: %v %q %v", up, token, tr)
+	}
+	if _, _, _, err := (profilesRunner{}).Resolve("nope"); err == nil {
+		t.Fatal("不存在的档应报错")
+	}
+}
