@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -54,6 +55,9 @@ func TestScriptsShareVerify(t *testing.T) {
 
 // TestScriptVerify 把脚本里那段 verify_release 原样拿出来,对着 file:// 的模拟发布目录跑。
 func TestScriptVerify(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install 脚本只在 Linux/macOS 上运行;Git Bash 下 sha256sum 结果与测试写入的文件不一致")
+	}
 	if _, err := exec.LookPath("curl"); err != nil {
 		t.Skip("没有 curl")
 	}
