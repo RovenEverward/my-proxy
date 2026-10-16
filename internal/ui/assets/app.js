@@ -280,5 +280,6 @@ setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) loa
 
 document.addEventListener("DOMContentLoaded", async () => {
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }
+  if (META && META.mode === "setup") { openSetup(); return; }
   load(false);
 });

@@ -115,6 +115,30 @@ export function normalize(reqs, names, opt = {}) {
   });
 }
 
+// startSetupEnv:给「首次安装向导」用的独立环境。没有控制面,只有 mpx ui 自己。
+// 编译一次 mpx,HOME/配置目录指到临时目录,清掉 MPX_SERVER/MPX_TOKEN/MPX_PROFILE,
+// 于是页面进入 setup 模式、显示向导。从 stdout 抓带一次性 key 的登录链接。
+export async function startSetupEnv() {
+  const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-setup-"));
+  const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
+  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
+  const env = {
+    ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir,
+    MPX_SERVER: "", MPX_TOKEN: "", MPX_PROFILE: "",
+  };
+  const cp = spawn(bin, ["ui", "--no-open", "--addr", "127.0.0.1:0"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const link = await new Promise((res, rej) => {
+    let out = "";
+    cp.stdout.on("data", d => { out += d; const m = /http:\/\/\S+\?k=\S+/.exec(out); if (m) res(m[0]); });
+    cp.stderr.on("data", d => { out += d; });
+    cp.on("exit", c => rej(new Error("mpx ui 退出了: " + c + "\n" + out)));
+  });
+  return {
+    link, origin: new URL(link).origin,
+    async stop() { cp.kill(); await sleep(200); rmSync(dir, { recursive: true, force: true }); },
+  };
+}
+
 // 登录:用一次性链接换 cookie。
 // 链接里的 key 只能换一次会话;之后的用例复用第一次拿到的 cookie。
 export async function login(page, env) {
