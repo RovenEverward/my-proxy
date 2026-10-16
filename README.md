@@ -128,8 +128,8 @@ mpx ui                                         # 在本机浏览器里打开管�
 ### 订阅和分流
 
 - **按客户端下发**：按 `User-Agent` 返回 Clash Meta、sing-box 或 Base64 订阅，浏览器打开是用量和能力页。
-- **分流规则** *（在 main 上，下一版发布）*：一张从上往下匹配的规则表，每条指向直连、拦截或策略组；内置常用规则组，可以给某个用户单独加规则，也能测试一个网址会走哪里。对应 `mpx rule`、`mpx group`。旧的「用途」会在升级时自动迁移成规则，计划在 v0.7.0 删除。
-- **套餐** *（在 main 上，下一版发布）*：按节点给一组人授权，每个用户挂一个套餐；自带包含全部节点的「默认套餐」。对应 `mpx plan`、`mpx user add --plan`。
+- **分流规则**：一张从上往下匹配的规则表，每条指向直连、拦截或策略组；内置常用规则组，可以给某个用户单独加规则，也能测试一个网址会走哪里。对应 `mpx rule`、`mpx group`。旧的「用途」会在升级时自动迁移成规则，计划在 v0.7.0 删除。
+- **套餐**：按节点给一组人授权，每个用户挂一个套餐；自带包含全部节点的「默认套餐」。对应 `mpx plan`、`mpx user add --plan`。
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/plans-dark.png">
@@ -165,13 +165,25 @@ mpx ui                                         # 在本机浏览器里打开管�
 
 ## 升级
 
-在控制面那台机器上再跑一遍安装命令。装和更新是同一条命令，不会动已有的 token、数据库和密钥：
+从 v0.6.1 起，升级都在本机（装了 `mpx` 的那台电脑）上做，不用再登录 VPS：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
+mpx update show                  # 看本机 CLI、控制面、各节点核心的当前版本和最新版本（只读）
+mpx update apply cli             # 升级本机 CLI，核对 SHA256SUMS 后替换，旧文件留作回退
+mpx update apply control         # 让控制面升级到最新版，失败会自动回退
+mpx update rollback control      # 控制面退回上一版
+mpx update rollback cli          # 本机 CLI 退回上一版
 ```
 
-`mpx status` 会显示现在装的版本和有没有更新的发布。从支持远程升级的版本起，控制面装好后可以在本机用 `mpx update apply control` 升级（失败会自动回退），不必每次都重跑 `install.sh`；`install.sh` 只在第一次升到支持远程升级的版本时需要。控制面仍不会自己替换二进制，每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
+`--version v0.6.1` 指定版本，`-y` 跳过确认（脚本里必须加）。数据库、token 和密钥都不会动，升级前仍建议备份数据库。
+
+**从 v0.6.0 及以前升级时**，还要在 VPS 上跑一次安装脚本，装上本机升级需要的组件，之后就能在本机升级了：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash -s -- --version v0.6.1
+```
+
+每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
 
 <details>
 <summary>Tab 补全、本地试用</summary>

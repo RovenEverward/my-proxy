@@ -2,7 +2,9 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
-## Unreleased
+## v0.6.1 (2026-10-16)
+
+本版主题：在本机升级 CLI 和控制面（`mpx update`）。
 
 ### 版本查看
 - 新增 `mpx update`（`mpx update show` 等价）：一行显示本机 CLI、控制面、每台节点每个核心各自的当前版本与目标/最新版本，只读、不升级、不连节点。源码编译的版本显示「未知（源码编译）」，不报「有新版」。
@@ -14,6 +16,14 @@
 
 ### 安装与升级
 - 安装脚本改为「版本目录 + 符号链接」布局：每版装在 `/usr/local/lib/mpx/releases/<版本>/mpx`，`/usr/local/bin/mpx` 改为指向当前版的符号链接，切换用 rename 原子完成，只保留当前版与上一版；旧布局（普通文件）会在升级时按自身版本收进版本目录当上一版，重复安装同一版本安全。`install.sh` 同时装上并启用 `mpx-update.service` 与 `mpx-update.path`（`.path` 监视 `/var/lib/mpx/update/request`），控制面装好后即可在本机用 `mpx update apply control` 升级，不必每次重跑 `install.sh`。
+### 文档
+- README「升级」一节改为在本机用 `mpx update show / apply cli / apply control / rollback` 操作，并说明从 v0.6.0 及以前升级时需在 VPS 上先跑一次 `install.sh --version v0.6.1`。
+
+### 兼容性
+- 控制面 API 只新增：`GET /api/update`、`POST /api/update/control`。
+
+包含：#57–#64。
+
 ## v0.6.0 (2026-10-16)
 
 ### 分流规则（替代用途）
