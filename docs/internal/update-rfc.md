@@ -2,6 +2,7 @@
 
 > 状态:已批准(2026-10-15,采纳全部推荐项,但签名一项后来改为不做,见 §1)· M0 已完成 · 起草时基于 main 6d163fb
 > 这份 RFC 推翻了 `internal/model/model.go`(`UpdateInfo` 注释)、`internal/updatecheck` 包注释、`docs/design.md`「不做的事:自动升级自己」和 `docs/internal/decisions.md` §37 里的同一条决定:「升级永远是一次显式的人工决定」。这条决定落地时要在这四处一起改(见 M5)。
+> 后续(decisions 第 39 条):M5 的定时自动升级不做了,升级是人在场的一键(`mpx ui`「更新」按钮,控制面 → 节点核心 → 本机);节点 xray 也改为节点自己从 GitHub 拉、按 `.dgst` 校验(本文 §4 写的是控制面推送),渲染端最低核心版本判断仍未做。
 
 ## 结论(先看这里)
 
