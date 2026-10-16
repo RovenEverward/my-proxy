@@ -1,9 +1,18 @@
 package server
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 	"github.com/RovenEverward/my-proxy/internal/singboxbuild"
 )
 
@@ -36,7 +45,120 @@ func (s *Server) controlUpdate() model.UpdatePart {
 	if part.Current == "" {
 		part.Available = false
 	}
+	part.Last = s.controlLastRun()
 	return part
+}
+
+// controlLastRun 读一次控制面升级状态文件,翻成接口形状。
+//
+// 文件不存在、读不出、或者目录没配时都返回 nil:状态只是附加信息,不能因为
+// 它读不到就让整个 GET /api/update 失败。
+func (s *Server) controlLastRun() *model.UpdateRun {
+	if s.updateDir == "" {
+		return nil
+	}
+	st, ok, err := selfupdate.ReadControlState(filepath.Join(s.updateDir, controlStateFile))
+	if err != nil || !ok {
+		return nil
+	}
+	return &model.UpdateRun{
+		Component:  st.Component,
+		State:      st.State,
+		From:       st.From,
+		To:         st.To,
+		StartedAt:  st.StartedAt,
+		FinishedAt: st.FinishedAt,
+		Result:     st.Result,
+		Trigger:    st.Trigger,
+		Error:      st.Error,
+	}
+}
+
+// 控制面升级请求/状态在 update 目录下的固定文件名,与 root 侧执行器约定一致。
+const (
+	controlRequestFile = "request"
+	controlStateFile   = "state.json"
+)
+
+// controlVersionRe 是控制面升级接口接受的版本号形状:v 加三段数字。
+// 空串也是合法的,表示"最新版",由调用方另行处理。
+var controlVersionRe = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+
+// controlRunActions 是控制面升级接口允许的动作。
+var controlRunActions = map[string]bool{"upgrade": true, "rollback": true}
+
+// handleUpdateControl 接收一次控制面升级/回退请求,只落请求文件。
+//
+// 鉴权与限流已由 /api 的 mux 负责。这里不自己动二进制、不重启服务:控制面以
+// 普通用户运行,换 /usr/local/bin/mpx 是 root 的一次性单元 `mpx update run
+// control` 干的活,两边靠 update 目录里的请求/状态文件对接。
+func (s *Server) handleUpdateControl(w http.ResponseWriter, r *http.Request) {
+	if s.updateDir == "" {
+		writeError(w, http.StatusServiceUnavailable, "控制面未配置库路径")
+		return
+	}
+
+	var body struct {
+		Version        string `json:"version"`
+		AllowDowngrade bool   `json:"allow_downgrade"`
+		Action         string `json:"action"`
+	}
+	// 空正文等价于"按默认升级到最新版",不该因为没带 body 就 400。
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON: "+err.Error())
+		return
+	}
+
+	body.Version = strings.TrimSpace(body.Version)
+	if body.Version != "" && !controlVersionRe.MatchString(body.Version) {
+		writeError(w, http.StatusBadRequest, "version 必须是形如 v0.7.0 的版本号,或留空表示最新")
+		return
+	}
+	if body.Action == "" {
+		body.Action = "upgrade"
+	}
+	if !controlRunActions[body.Action] {
+		writeError(w, http.StatusBadRequest, `action 只能是 "upgrade" 或 "rollback"`)
+		return
+	}
+
+	reqPath := filepath.Join(s.updateDir, controlRequestFile)
+	statePath := filepath.Join(s.updateDir, controlStateFile)
+	if st, ok, err := selfupdate.ReadControlState(statePath); err != nil {
+		s.logger.Error("读取控制面升级状态失败", "error", err)
+		writeError(w, http.StatusInternalServerError, "读取控制面升级状态失败")
+		return
+	} else if ok && st.State != "" && st.State != "idle" {
+		writeError(w, http.StatusConflict, "上一次升级还在进行")
+		return
+	}
+
+	err := selfupdate.WriteControlRequest(reqPath, selfupdate.ControlRequest{
+		Action:         body.Action,
+		To:             body.Version,
+		AllowDowngrade: body.AllowDowngrade,
+		RequestedAt:    time.Now(),
+	})
+	switch {
+	case errors.Is(err, selfupdate.ErrRequestPending):
+		writeError(w, http.StatusConflict, "已有待执行的升级请求")
+		return
+	case err != nil:
+		s.logger.Error("写入控制面升级请求失败", "error", err)
+		writeError(w, http.StatusInternalServerError,
+			s.updateDir+" 不可写,请用 install.sh 升级到支持远程升级的版本一次")
+		return
+	}
+
+	to := body.Version
+	if to == "" {
+		to = "latest"
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"from":   buildinfo.Version(),
+		"to":     to,
+		"action": body.Action,
+	})
 }
 
 // updateNodes 拼出每台节点装了哪些核心、各自是什么版本。
