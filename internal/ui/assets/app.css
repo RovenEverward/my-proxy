@@ -284,3 +284,16 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
  .pl-pv{position:static}
  .pl-n .tail{display:none}
 }
+/* 顶部「更新」pill 与更新弹窗 */
+.upd-pill{
+  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:0;border-radius:99px;
+  background:var(--ink);color:var(--canvas);font-weight:560;font-size:12.5px;cursor:pointer;
+}
+.upd-pill:hover{opacity:.9}
+.upd-pill[hidden]{display:none!important}
+.upd-notes{max-height:220px;overflow:auto;white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--stone);padding:10px 12px;border-radius:8px;margin:10px 0}
+.upd-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2);padding:3px 0}
+.upd-row b{font-weight:560;color:var(--ink);min-width:56px}
+.upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
+.upd-cmds{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.upd-cmds .cmd{margin:0}

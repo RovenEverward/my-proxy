@@ -114,6 +114,111 @@ let META = { server: "", profile: "", allow: ["GET /api"] };
 const can = (method, path) => META.allow.some(a => { const [m, p] = a.split(" "); return m === method && (path === p || path.startsWith(p.replace(/\/$/, "") + "/")); });
 let route = [], current = { page: null, data: null, error: null, loading: true, at: null };
 
+/* ---------- 更新 pill ---------- */
+// GET /local/update 的最近一次结论;null 表示还没问过。弹窗读它,不重复请求。
+let UPDATE = null;
+const UPD_SKIP_KEY = "mpx-upd-skip";
+
+// cmpVer 给版本号做粗略排序:按数字段比,段数不够的算小。"v" 前缀与预发布后缀不计。
+function cmpVer(a, b) {
+  const seg = v => String(v || "").replace(/^v/i, "").split(/[.\-+]/).map(x => /^\d+$/.test(x) ? +x : 0);
+  const A = seg(a), B = seg(b);
+  for (let i = 0; i < Math.max(A.length, B.length); i++) { const d = (A[i] || 0) - (B[i] || 0); if (d) return d; }
+  return 0;
+}
+// updLatest 取 cli/control 里较新且非空的 latest;都空时返回 ""。skip 以它为准。
+function updLatest(u) {
+  let out = "";
+  for (const p of [u && u.control, u && u.cli]) if (p && p.latest && (!out || cmpVer(p.latest, out) > 0)) out = p.latest;
+  return out;
+}
+function updSkipped() { try { return sessionStorage.getItem(UPD_SKIP_KEY) || ""; } catch { return ""; } }
+// 有可升级项、且本会话没对这个版本点过「稍后」时才显示 pill。
+function showUpdatePill(u) {
+  if (!u) return false;
+  const c = u.control || {}, l = u.cli || {};
+  if (!(c.available || l.available)) return false;
+  const latest = updLatest(u);
+  return !(latest && updSkipped() === latest);
+}
+// 失败静默:保留上次状态,不打扰用户。同一轮里多个 load 只真问一次。
+let updAt = 0, updBusy = false;
+async function refreshUpdatePill(force) {
+  if (updBusy) return;
+  if (!force && Date.now() - updAt < 30000) return;
+  updBusy = true;
+  let u;
+  try { u = await api("/local/update"); } catch { updBusy = false; return; }
+  updAt = Date.now(); updBusy = false;
+  UPDATE = u;
+  const b = $("#upd-pill");
+  if (b) b.hidden = !showUpdatePill(u);
+}
+function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+function updTitle(u) {
+  const c = u.control || {}, l = u.cli || {};
+  const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
+  return `更新到 ${ver}`.trim();
+}
+function updRow(name, p) {
+  p = p || {};
+  const to = p.latest || "—";
+  return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
+}
+// openUpdateModal 直接写 #modal,与 confirmBox 同一套 .mbody / .mf 结构。
+function openUpdateModal() {
+  const u = UPDATE;
+  if (!u) return;
+  const c = u.control || {}, l = u.cli || {};
+  const cmds = [];
+  if (c.available) cmds.push("mpx update apply control");
+  if (l.available) cmds.push("mpx update apply cli");
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
+  ${updRow("本机 CLI", l)}${updRow("控制面", c)}
+  ${u.notes ? H`<pre class="upd-notes">${u.notes}</pre>` : ""}
+  ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
+  ${cmds.length ? H`<div class="upd-cmds">${cmds.map(x => H`<div class="cmd">${x}</div>`)}</div>` : ""}
+  <div class="err" id="upd-err" role="alert"></div></div>
+  <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  setTimeout(() => $("#upd-ok")?.focus(), 50);
+}
+// 本机二进制换掉后,mpx ui 进程还在用旧的;只留一个「知道了」。
+function updDoneModal(message) {
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>本机二进制已更新</h2>
+  <p>请关掉终端里的 mpx ui,再重新运行一次。</p>${message ? H`<p class="sub">${message}</p>` : ""}</div>
+  <div class="mf"><button class="btn pri" data-act="modal-cancel">知道了</button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  setTimeout(() => $("#modal [data-act=modal-cancel]")?.focus(), 50);
+}
+// 先控制面后 cli,与 mpx update apply all 的顺序一致。
+async function applyUpdate(el) {
+  const u = UPDATE || {}, c = u.control || {}, l = u.cli || {};
+  el.disabled = true; el.classList.add("busy");
+  try {
+    let msg = "";
+    if (c.available) {
+      const r = await api("/local/update/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (r && r.message) msg = r.message;
+    }
+    let cliUp = false;
+    if (l.available) {
+      const r = await api("/local/update/cli", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      cliUp = !!(r && r.to && r.to !== r.from);
+      if (r && r.message) msg = r.message;
+    }
+    if (cliUp) updDoneModal(msg);
+    else { closeModal(); toast(msg || "升级完成"); }
+    refreshUpdatePill(true);
+  } catch (e) {
+    const box = $("#upd-err");
+    if (box) box.textContent = e.message;
+    el.disabled = false; el.classList.remove("busy");
+  }
+}
+
 function shell(page, body, crumb) {
   const dark = document.documentElement.dataset.theme === "dark";
   const items = Object.entries(PAGES).filter(([, p]) => p.nav).sort((a, b) => a[1].nav[2] - b[1].nav[2]);
@@ -129,6 +234,7 @@ function shell(page, body, crumb) {
   ${raw(nav)}
   <div class="foot"><span class="ro">${ic("term")} 由 <code>mpx ui</code> 提供</span><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
+  <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
   <div class="page" id="page">${body}</div></main></div>
@@ -258,6 +364,7 @@ async function load(soft, force) {
     if (current.data) toast("刷新失败:" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
+  if (!current.error) refreshUpdatePill();
 }
 
 const ACTS = {
@@ -265,6 +372,10 @@ const ACTS = {
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
+  "update-open": () => openUpdateModal(),
+  // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
+  "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
+  "update-apply": (d, el) => applyUpdate(el),
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {
@@ -277,6 +388,8 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeOverlay
 addEventListener("hashchange", () => load(true, true));
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) load(true); }, 30000);
+// 更新检查慢一些:60 秒一次,同样避开抽屉/模态与后台标签页。
+setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) refreshUpdatePill(true); }, 60000);
 
 document.addEventListener("DOMContentLoaded", async () => {
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }

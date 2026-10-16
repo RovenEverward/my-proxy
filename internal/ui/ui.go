@@ -19,6 +19,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 )
 
 //go:embed assets
@@ -177,6 +179,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveSetup(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/local/update") {
+		s.serveUpdate(w, r)
+		return
+	}
 	if r.URL.Path == "/local/qr.svg" {
 		s.serveQR(w, r)
 		return
@@ -210,11 +216,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			server = up.Redacted()
 		}
 		writeJSON(w, map[string]any{
-			"server":  server,
-			"profile": profile,
-			"allow":   s.opts.Allow,
-			"setup":   s.opts.Setup != nil,
-			"mode":    mode,
+			"server":      server,
+			"profile":     profile,
+			"allow":       s.opts.Allow,
+			"setup":       s.opts.Setup != nil,
+			"mode":        mode,
+			"cli_version": buildinfo.Version(),
 		})
 		return
 	}
