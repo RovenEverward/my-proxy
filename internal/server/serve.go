@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/control"
+	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
@@ -70,7 +71,17 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
 	srv.autoLocate = !opt.NoAutoLocate
-	srv.AutoMigrateRouting()
+	// 还有用途的 template 老库不能自动迁移(新迁移不读用途,会丢数据),直接拒绝。
+	if n, err := st.LegacyPurposeCount(); err != nil {
+		return err
+	} else if n == 0 {
+		srv.AutoMigrateRouting()
+	}
+	// 迁移后仍是 template,说明这是还没切到 rules 的老库:用途表和模板回退路径
+	// 都已在 v0.7.0 删除,拒绝启动而不是按旧行为出订阅。
+	if err := requireRoutingRules(st); err != nil {
+		return err
+	}
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)
 	// 更新结论也接上:GET /api/update 默认只转述后台任务问到的,自己不发起检查;
@@ -140,6 +151,20 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	}
 	<-taskDone
 	logger.Info("控制面已停止")
+	return nil
+}
+
+// requireRoutingRules 在控制面启动时确认分流模式已切到 rules。仍停在 template
+// 的老库拒绝启动:用途表和模板回退路径在 v0.7.0 已删除,继续跑只会按半套旧行为
+// 出订阅。错误文案带着升级步骤,直接打给运维看。
+func requireRoutingRules(st *store.Store) error {
+	stt, err := st.GetRoutingState()
+	if err != nil {
+		return err
+	}
+	if stt.Mode != model.RoutingRules {
+		return errors.New("v0.7.0 起不再支持 template 分流模式;请先用 v0.6.6 执行 mpx rule migrate 切到 rules,再升级")
+	}
 	return nil
 }
 

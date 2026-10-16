@@ -22,22 +22,13 @@ func migrateAPI(t *testing.T, e *env, body map[string]bool) MigrationReport {
 	return r
 }
 
-func TestMigrateDefaultAndPurposes(t *testing.T) {
+func TestMigrateDefault(t *testing.T) {
 	e := newEnv(t)
 	n := e.createNode("jp-1", "jp.example.com")
 	in := e.createInbound(n.ID, "r", 443)
 	e.createHost(in.ID, "", "jp.example.com")
 	u := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID} })
-	for _, p := range []model.Purpose{
-		{Slug: "daily", Name: "日常", Kind: "daily", Strategy: "url-test", Regions: []string{"JP"}, Lines: []string{"cn2"}, TestURL: "https://www.gstatic.com/generate_204", Interval: 300},
-		{Slug: "media", Name: "流媒体", Kind: "media", Strategy: "select", Regions: []string{"US"}, Domains: []string{"netflix.com", "nflxvideo.net"}, RequiredCapabilities: []string{"netflix"}, CapabilityRegion: "US", TestURL: "https://www.gstatic.com/generate_204", Interval: 300},
-	} {
-		p := p
-		if err := e.st.CreatePurpose(&p); err != nil {
-			t.Fatal(err)
-		}
-	}
 	path := "/sub/" + u.SubToken + "/clash-meta"
 
 	dry := migrateAPI(t, e, map[string]bool{"dry_run": true})
@@ -58,30 +49,17 @@ func TestMigrateDefaultAndPurposes(t *testing.T) {
 		t.Fatalf("应已迁移: %+v", st)
 	}
 	rep := parseReport(st.Report)
-	if rep == nil || rep.Status != MigrateDone || rep.Final != "日常" || len(rep.Purposes) != 2 {
+	if rep == nil || rep.Status != MigrateDone {
 		t.Fatalf("%+v", rep)
 	}
-	drops := strings.Join(append(rep.Purposes[0].Dropped, rep.Purposes[1].Dropped...), "|")
-	if !strings.Contains(drops, "cn2") || !strings.Contains(drops, "能力检测地区 US") {
-		t.Fatalf("报告应列出丢掉的线路与能力地区: %s", drops)
-	}
 	rules, _ := e.st.ListRules(0)
-	if rules[0].Value != "netflix.com" || rules[1].Value != "nflxvideo.net" {
-		t.Fatalf("用途域名应在最前: %+v", rules[:2])
-	}
 	seed, _ := render.DefaultRoutingSeed()
-	if len(rules) != len(seed.Rules)+2 {
+	if len(rules) != len(seed.Rules) {
 		t.Fatalf("规则数 %d, 底稿 %d", len(rules), len(seed.Rules))
 	}
 	groups, _ := e.st.ListProxyGroups()
-	var media *model.ProxyGroup
-	for i := range groups {
-		if groups[i].Name == "流媒体" || strings.HasPrefix(groups[i].Name, "流媒体(用途") {
-			media = &groups[i]
-		}
-	}
-	if media == nil || media.Capabilities[0] != "netflix" || media.Mode != model.GroupManual {
-		t.Fatalf("用途组: %+v", groups)
+	if len(groups) == 0 {
+		t.Fatalf("应生成策略组: %+v", groups)
 	}
 
 	// 再启动不会重复迁移

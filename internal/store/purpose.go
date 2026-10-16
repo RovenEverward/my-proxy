@@ -8,91 +8,47 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
+// migratePurposes 只建用途元数据表(节点/入口的 region、tags 等)。purposes 表
+// 从 v0.7.0 起不再创建,老库的表由 migrate() 末尾的 dropPurposes 按分流模式处理。
 func (s *Store) migratePurposes() error {
 	for _, ddl := range []string{
-		`CREATE TABLE IF NOT EXISTS purposes (slug TEXT PRIMARY KEY, config TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS node_metadata (id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE, config TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS host_metadata (id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE, config TEXT NOT NULL)`,
 	} {
 		if _, err := s.db.Exec(ddl); err != nil {
-			return fmt.Errorf("用途建表: %w", err)
+			return fmt.Errorf("用途元数据建表: %w", err)
 		}
 	}
 	return nil
 }
-func (s *Store) ListPurposes() ([]model.Purpose, error) {
-	rows, err := s.db.Query(`SELECT config FROM purposes ORDER BY slug`)
+
+// dropPurposes 在分流模式已是 rules 时删掉遗留的 purposes 表。仍是 template 模式
+// 的老库保留它(先按老版本迁移到 rules 再升级);新库根本没建过这张表,DROP IF
+// EXISTS 是空操作。
+func (s *Store) dropPurposes() error {
+	st, err := s.GetRoutingState()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer rows.Close()
-	out := []model.Purpose{}
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-		var p model.Purpose
-		if err := json.Unmarshal([]byte(raw), &p); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
-}
-func (s *Store) GetPurpose(slug string) (*model.Purpose, error) {
-	var raw string
-	err := s.db.QueryRow(`SELECT config FROM purposes WHERE slug=?`, slug).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+	has, err := s.tableExists("purposes")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var p model.Purpose
-	err = json.Unmarshal([]byte(raw), &p)
-	return &p, err
+	if st.Mode != model.RoutingRules && has {
+		return nil
+	}
+	if _, err := s.db.Exec(`DROP TABLE IF EXISTS purposes`); err != nil {
+		return fmt.Errorf("删除 purposes 表: %w", err)
+	}
+	return nil
 }
 
-// CreatePurpose and UpdatePurpose distinguish duplicate and missing objects; deleted URLs stay missing.
-func (s *Store) CreatePurpose(p *model.Purpose) error {
-	p.Normalize()
-	if err := p.Validate(); err != nil {
-		return err
-	}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.Exec(`INSERT INTO purposes(slug,config) VALUES(?,?)`, p.Slug, string(b))
-	return err
+func (s *Store) tableExists(name string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&n)
+	return n > 0, err
 }
-func (s *Store) UpdatePurpose(p *model.Purpose) error {
-	p.Normalize()
-	if err := p.Validate(); err != nil {
-		return err
-	}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	res, err := s.db.Exec(`UPDATE purposes SET config=? WHERE slug=?`, string(b), p.Slug)
-	return purposeAffected(res, err)
-}
-func (s *Store) DeletePurpose(slug string) error {
-	res, err := s.db.Exec(`DELETE FROM purposes WHERE slug=?`, slug)
-	return purposeAffected(res, err)
-}
-func purposeAffected(res sql.Result, err error) error {
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err == nil && n == 0 {
-		return ErrNotFound
-	}
-	return err
-}
+
 func metadataTable(kind string) (string, error) {
 	switch kind {
 	case "nodes":
@@ -179,4 +135,17 @@ func (s *Store) GetPurposeMetadata(kind string, id int64) (model.PurposeMetadata
 	var m model.PurposeMetadata
 	err = json.Unmarshal([]byte(raw), &m)
 	return m, err
+}
+
+// LegacyPurposeCount 返回遗留 purposes 表里的行数;表不存在时为 0。控制面启动时
+// 用它挡住「template 模式 + 还有用途」的老库:v0.7.0 的迁移不再读用途,自动迁移
+// 会把用途悄悄丢掉。
+func (s *Store) LegacyPurposeCount() (int, error) {
+	has, err := s.tableExists("purposes")
+	if err != nil || !has {
+		return 0, err
+	}
+	var n int
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM purposes`).Scan(&n)
+	return n, err
 }

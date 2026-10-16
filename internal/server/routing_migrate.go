@@ -12,8 +12,9 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 一次性迁移:模板 + 用途 → 规则表(docs/internal/routing-rules-rfc.md「迁移与兼容」)。
-// 原数据(settings.templates、purposes、metadata)一律不删,切回 template 模式即恢复旧行为。
+// 一次性迁移:模板 → 规则表(docs/internal/routing-rules-rfc.md「迁移与兼容」)。
+// settings.templates 与节点/入口 metadata 一律不删。purposes 表在 v0.7.0 起已不再
+// 读取,它的删除由 store 的 dropPurposes 按分流模式处理。
 
 // 迁移结果的几种状态。
 const (
@@ -113,61 +114,6 @@ func (s *Server) planMigration(opt migrateOptions) (*migrationPlan, *MigrationRe
 	}
 	plan := &migrationPlan{groups: seed.Groups, rules: seed.Rules, final: seed.Final}
 
-	purposes, err := s.store.ListPurposes()
-	if err != nil {
-		return nil, nil, err
-	}
-	used := map[string]bool{}
-	for _, g := range plan.groups {
-		used[g.Name] = true
-	}
-	var front []model.RouteRule
-	finalFrom := ""
-	for _, p := range purposes {
-		out := PurposeOutcome{Slug: p.Slug}
-		g := model.ProxyGroup{
-			ID: int64(len(plan.groups) + 1), Mode: model.GroupManual,
-			Regions: p.Regions, Tags: p.Tags, Capabilities: p.RequiredCapabilities,
-			TestURL: p.TestURL, Interval: p.Interval,
-		}
-		if p.Strategy == "url-test" {
-			g.Mode = model.GroupAuto
-		}
-		g.Name = uniqueGroupName(firstNonEmpty(p.Name, p.Slug), used)
-		used[g.Name] = true
-		out.Group = g.Name
-		if len(p.Lines) > 0 {
-			out.Dropped = append(out.Dropped, "线路条件 "+strings.Join(p.Lines, "、")+"(新模型没有线路,需要的话用标签)")
-		}
-		if p.CapabilityRegion != "" {
-			out.Dropped = append(out.Dropped, "能力检测地区 "+p.CapabilityRegion+"(策略组只按能力是否通过筛选)")
-		}
-		if len(p.Templates) > 0 {
-			out.Dropped = append(out.Dropped, "用途自带的客户端模板")
-		}
-		if p.DailyPurpose != "" {
-			out.Dropped = append(out.Dropped, "兜底用途 "+p.DailyPurpose+"(统一由「其他全部」决定)")
-		}
-		plan.groups = append(plan.groups, g)
-		for _, d := range p.Domains {
-			d = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(d)), "+.")
-			if d == "" {
-				continue
-			}
-			front = append(front, model.RouteRule{Type: model.RuleSuffix, Value: d, Target: model.GroupTarget(g.ID), Enabled: true, Note: "来自用途 " + p.Slug})
-			out.Rules++
-		}
-		if p.Kind == "daily" {
-			if finalFrom == "" {
-				finalFrom, out.Final = p.Slug, true
-				plan.final = model.GroupTarget(g.ID)
-			} else {
-				out.Dropped = append(out.Dropped, "兜底去向(已由用途 "+finalFrom+" 决定)")
-			}
-		}
-		rep.Purposes = append(rep.Purposes, out)
-	}
-	plan.rules = append(front, plan.rules...)
 	if len(plan.rules) > model.MaxRulesPerScope {
 		rep.Status = MigrateBlocked
 		rep.Unconvertible = []string{fmt.Sprintf("转换后有 %d 条规则,超过上限 %d", len(plan.rules), model.MaxRulesPerScope)}
@@ -185,36 +131,6 @@ func (s *Server) planMigration(opt migrateOptions) (*migrationPlan, *MigrationRe
 		}
 	}
 	return plan, rep, nil
-}
-
-func firstNonEmpty(a ...string) string {
-	for _, s := range a {
-		if strings.TrimSpace(s) != "" {
-			return strings.TrimSpace(s)
-		}
-	}
-	return ""
-}
-
-// uniqueGroupName 避开已用的名字、保留名和内置规则组名。
-func uniqueGroupName(name string, used map[string]bool) string {
-	ok := func(n string) bool {
-		g := model.ProxyGroup{Name: n, Mode: model.GroupManual}
-		g.Normalize()
-		return !used[n] && g.Validate() == nil
-	}
-	if ok(name) {
-		return name
-	}
-	for i := 1; ; i++ {
-		n := name + "(用途)"
-		if i > 1 {
-			n = fmt.Sprintf("%s(用途 %d)", name, i)
-		}
-		if ok(n) {
-			return n
-		}
-	}
 }
 
 // migrateRouting 演算并(除 dry run 外)写入迁移结果。只有状态为 migrated 时才写规则表
