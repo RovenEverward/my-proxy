@@ -2,6 +2,20 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.7.4 (2026-10-17)
+
+### 新增
+- 发布页多了各平台安装包，和原来的压缩包一起长期提供：
+  - macOS：`mpx_<版本>_darwin_universal.pkg`（Intel 与 Apple 芯片通用，装到 `/usr/local/bin/mpx`）
+  - Windows：`mpx_<版本>_windows_amd64_setup.exe`（装到 `%ProgramFiles%\mpx` 并加入 PATH，带卸载程序）
+  - Linux：`mpx_<版本>_linux_<amd64|arm64>.deb` 与 `.rpm`（装到 `/usr/bin/mpx`）
+  - 安装包都没有代码签名；`SHA256SUMS` 覆盖全部文件。
+- CI：PR 与 main 上在 Ubuntu / macOS / Windows 跑 `go test`，并跑桌面端 S1 冒烟（MyGo 窗口加载本地 `mpx ui` 并截图）。
+
+### 兼容性
+- 压缩包文件名不变，`mpx update`、`install.sh`、`install-cli.sh` 照旧使用压缩包，老版本升级不受影响。
+- 控制面 API 无变更。
+
 ## v0.7.3 (2026-10-16)
 
 ### 修复
