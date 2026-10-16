@@ -171,20 +171,4 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=0
 
 ## 其他文档
 
-「不做什么」、三层各管一段、以及每一条取舍的理由,在[设计](../design.md)与[关键决策与理由](decisions.md)里,不在这里重复。
-
-管理界面 `mpx ui` 的方案与安全设计见 [管理 UI 方案](ui-rfc.md)。自动升级与发布件校验见 [自动升级方案](update-rfc.md)。分流规则(替代用途)见 [分流规则方案](routing-rules-rfc.md)。套餐(权限组)见 [套餐方案](plans-rfc.md)。添加节点与首次安装两个向导见 [向导方案](wizard-rfc.md)。桌面程序(MyGo 壳包装 `mpx ui`)见 [桌面程序方案](desktop-rfc.md)。
-
-### 用户帮助与运维指南
-- [用户文档站](https://RovenEverward.github.io/my-proxy/)：教程、指南、参考与原理。
-
-### 内部工程与决策文档
-| 文档 | 回答什么 |
-| --- | --- |
-| [model.md](model.md) | 数据长什么样、状态怎么判 |
-| [contracts.md](contracts.md) | 对外契约的确切形状 |
-| [decisions.md](decisions.md) | 为什么这么选,换掉会怎样 |
-| [status.md](status.md) | 做到哪、验到什么程度 |
-| [roadmap.md](roadmap.md) | 分批演进计划,从用量与计量做起 |
-| [open-questions.md](open-questions.md) | 还有哪些缺口、下一步做什么 |
-| [QUIC 运行验证](quic-validation.md) | 官方构建、真实 SSH 与分用户流量证据及限制 |
+「不做什么」、三层各管一段、以及每一条取舍的理由,在[设计](../design.md)与[关键决策与理由](decisions.md)里,不在这里重复。其余内部文档(各份 RFC、模型、契约、现状、路线图)统一列在 [atlas 的文档地图](../atlas/README.md#文档地图)。

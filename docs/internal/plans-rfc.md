@@ -1,6 +1,6 @@
 # RFC：套餐（权限组）
 
-> 状态：已批准（2026-10-16，§8 全部按推荐项定案，并新增「默认套餐」）· 按 P1–P3 实现（P4 可选）· 起草时基于 main `bc3231c` · 节点一律用显示名
+> 状态：已批准（2026-10-16，§8 全部按推荐项定案，并新增「默认套餐」）· P1–P3 已实现（#50–#54），P4（配额默认值）未做 · 起草时基于 main `bc3231c` · 节点一律用显示名
 
 ## 已定案（2026-10-16）
 
@@ -173,7 +173,7 @@ mpx user list --plan 全球
 
 ## 7. UI 需求（给原型设计）
 
-**风格基准：**产品静态资源在 `internal/ui/assets/`（app.css、app.js、users.js、rules.js），已有原型在 `/workspace/mpx-purpose-ui-proto/`，历史截图在 `/workspace/mpx-ui-shots/`（参考 `r5/`、`rules-proto/`）。沿用现有组件：卡片、表格、`.seg`、`.chip`、右侧抽屉、确认框、callout、空状态。示例数据用 4 个真实节点：🇺🇸 洛杉矶 A、🇺🇸 洛杉矶 B、🇯🇵 东京 A、🇸🇬 新加坡 A，每个节点 1–2 个入站（例如 Reality、Hysteria2）。
+**风格基准：**产品静态资源在 `internal/ui/assets/`（app.css、app.js、users.js、rules.js）。沿用现有组件：卡片、表格、`.seg`、`.chip`、右侧抽屉、确认框、callout、空状态。示例数据用 4 个真实节点：🇺🇸 洛杉矶 A、🇺🇸 洛杉矶 B、🇯🇵 东京 A、🇸🇬 新加坡 A，每个节点 1–2 个入站（例如 Reality、Hysteria2）。
 
 ### 7.1 导航
 
