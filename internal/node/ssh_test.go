@@ -156,6 +156,9 @@ func fakeSSH(t *testing.T, body string) {
 
 // 远端命令卡住时,Run 必须自己断掉并说清是超时 —— 而不是把整轮任务挂死。
 func TestRunTimesOutInsteadOfHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 ssh 本地套接字")
+	}
 	fakeSSH(t, "exec sleep 30")
 
 	start := time.Now()
@@ -178,6 +181,9 @@ func TestRunTimesOutInsteadOfHanging(t *testing.T) {
 // 调用方自带 deadline 时以它为准:兜底值大得多,一旦覆盖就等于把某个节点的卡顿
 // 放大成整轮任务的卡顿。
 func TestRunHonorsCallerDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 ssh 本地套接字")
+	}
 	fakeSSH(t, "exec sleep 30")
 
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Millisecond)
