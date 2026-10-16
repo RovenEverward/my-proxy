@@ -8,10 +8,11 @@ import (
 )
 
 // PurposeMetadata belongs to one node or host. Nonempty host fields override node fields.
+//
+// v0.7.0 删掉了 line 与 purposes:老客户端写进来的这两个字段解不出来,直接忽略;
+// 库里残留的 JSON 也一样,读出时自然丢弃。现在只认 region / city / letter。
 type PurposeMetadata struct {
-	Region   string   `json:"region"`
-	Line     string   `json:"line"`
-	Purposes []string `json:"purposes,omitempty"`
+	Region string `json:"region"`
 	// City 与 Letter 只用于节点,拼显示名:旗帜 + 城市(缺省为国家中文名) + 字母。
 	City   string `json:"city,omitempty"`
 	Letter string `json:"letter,omitempty"`
@@ -21,8 +22,8 @@ var purposeSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 var nodeLetter = regexp.MustCompile(`^[A-Z]{1,2}$`)
 
 func (m PurposeMetadata) Validate() error {
-	if len(m.Region) > 80 || len(m.Line) > 80 || len(m.Purposes) > 64 {
-		return fmt.Errorf("地区/线路最多 80 字节，用途标签最多 64 项")
+	if len(m.Region) > 80 {
+		return fmt.Errorf("地区最多 80 字节")
 	}
 	if utf8.RuneCountInString(m.City) > 32 || strings.ContainsAny(m.City, "\t\r\n") {
 		return fmt.Errorf("城市最多 32 个字符,不能含换行或制表符")
@@ -30,22 +31,11 @@ func (m PurposeMetadata) Validate() error {
 	if m.Letter != "" && !nodeLetter.MatchString(m.Letter) {
 		return fmt.Errorf("字母必须是 1–2 位大写字母,例如 A、B、AA")
 	}
-	for _, t := range m.Purposes {
-		if !purposeSlug.MatchString(t) {
-			return fmt.Errorf("无效用途标签 %q", t)
-		}
-	}
 	return nil
 }
 func EffectivePurposeMetadata(node, host PurposeMetadata) PurposeMetadata {
 	if host.Region != "" {
 		node.Region = host.Region
-	}
-	if host.Line != "" {
-		node.Line = host.Line
-	}
-	if len(host.Purposes) > 0 {
-		node.Purposes = host.Purposes
 	}
 	return node
 }

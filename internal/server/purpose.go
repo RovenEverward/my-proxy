@@ -38,8 +38,8 @@ func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	// city / letter 用指针判断「有没有带」:只认识 region/line/purposes 的老客户端
-	// 整份 PUT 时,不能把已分配的城市和字母冲掉。
+	// city / letter 用指针判断「有没有带」:只认识 region 的老客户端整份 PUT 时,
+	// 不能把已分配的城市和字母冲掉。老客户端带来的 line / purposes 字段会被忽略。
 	var in struct {
 		model.PurposeMetadata
 		City   *string `json:"city"`

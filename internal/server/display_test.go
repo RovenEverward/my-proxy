@@ -34,8 +34,8 @@ func TestNodeDisplayLetters(t *testing.T) {
 	if _, m := put(c.ID, map[string]any{"region": "US", "city": "圣何塞"}); m.Letter != "A" {
 		t.Fatalf("other city %+v", m)
 	}
-	// 老客户端只发 region/line/purposes:城市与字母保留。
-	if _, m := put(b.ID, model.PurposeMetadata{Region: "US", Line: "cn2"}); m.City != "洛杉矶" || m.Letter != "B" {
+	// 老客户端只发 region/line/purposes:line/purposes 被忽略,城市与字母保留。
+	if _, m := put(b.ID, map[string]any{"region": "US", "line": "cn2", "purposes": []string{"media"}}); m.City != "洛杉矶" || m.Letter != "B" {
 		t.Fatalf("legacy put lost fields %+v", m)
 	}
 	// 删掉 A 不让 B 重排;新节点补 A。
