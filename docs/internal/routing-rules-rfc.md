@@ -85,7 +85,7 @@ CREATE TABLE proxy_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT N
 - **成员为空的组：**输出一个只含 `DIRECT` 的 `select` 组，整份订阅不失败；用途现在的 422 行为不再沿用（定案 3）。
 
 **sing-box**
-- `route.rule_set` 和 `route.rules` 由规则生成，`route.final` 等于兜底去向。保留底稿开头连续的 `sniff`/`hijack-dns` 等前置规则：这正是 `purpose-validation.md` 里验证过的插入位置。
+- `route.rule_set` 和 `route.rules` 由规则生成，`route.final` 等于兜底去向。保留底稿开头连续的 `sniff`/`hijack-dns` 等前置规则：这是 R2 渲染验证过的插入位置。
 - 每个策略组输出一个 `urltest` 或 `selector` 出站；`DIRECT`/`REJECT` 映射到 `direct` 出站和 `reject` 动作。WireGuard 端点不能放进 urltest，沿用 `render/purpose.go` 的现有处理。
 
 **其他格式**
@@ -139,13 +139,13 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 
 | 风险 | 影响 | 应对 |
 | --- | --- | --- |
-| 生成的配置和原模板不等价 | 用户流量走错（国内站绕道、广告漏拦） | 默认底稿的快照等价测试；沿用 `purpose-validation.md` 的方法，用官方 mihomo 和 sing-box 解析配置，再发真实 SOCKS 请求 |
+| 生成的配置和原模板不等价 | 用户流量走错（国内站绕道、广告漏拦） | 默认底稿的快照等价测试；用官方 mihomo 和 sing-box 解析配置，再发真实 SOCKS 请求 |
 | 规则组改名或成员变动，客户端里的手动选择失效 | 用户需要重新选节点 | 组名稳定，去向按 id 引用；改名时在 UI 里提示 |
 | 上游规则集 URL 失效或被墙 | 客户端下载规则失败 | 和现在一样由客户端处理；目录里集中维护 URL，方便一次修好 |
 | 「测试网址」和客户端实际行为不一致 | 用户误判 | 界面写明以哪种格式、哪份上游为准；IP 类规则标近似 |
 | 并发编辑 | 后写的覆盖先写的 | 整表 PUT 加版本号；冲突返回 409 |
 
-**回滚：**迁移不删除 `settings.Templates`、`purposes` 和 metadata。新增一个设置 `routing_mode: rules|template`，迁移成功后默认 `rules`；出问题时 `mpx settings set routing_mode template` 立即回到旧渲染路径（模板原样，用途照旧）。降级到旧版本二进制时新表会被忽略，旧数据仍然完整。这个开关在删除用途的那个版本一起移除。
+**回滚：**迁移不删除 `settings.Templates` 和 metadata。R1–R4 期间曾有一个设置 `routing_mode: rules|template`，迁移成功后默认 `rules`；出问题时 `mpx settings set routing_mode template` 回到旧渲染路径（模板原样，用途照旧）。**R6 已把它与用途一起移除**：v0.7.0 起模式固定为 `rules`，`PUT /api/routing` 下线，`mpx rule mode` 只读。降级到旧版本二进制时新表会被忽略，旧数据仍然完整。
 
 ## 里程碑（每期都能独立合并）
 
@@ -156,7 +156,7 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 | R3 API 与 CLI | 第 5、6 节的接口和命令，含 preview 和 test | e2e 测试对照 CLI 和页面发出的请求 |
 | R4 迁移 | 自定义模板和用途的转换、迁移报告、`?purpose=` 兼容、默认切到 `rules` | 在 144 控制面的数据副本上演练迁移，订阅对比前后差异，并逐条解释 |
 | R5 UI | 按原型实现分流规则页（规则、策略组、用户覆盖、测试网址、空状态） | Playwright 测试；截图给用户确认后再合并 |
-| R6 用途下线 | v0.6.0 废弃、v0.7.0 删除，见下方「R6 用途下线计划」 | v0.6.0 发布后才开始删除 |
+| R6 用途下线 | v0.6.0 废弃、v0.7.0 删除，见下方「R6 用途下线计划」 | ✅ 已完成（v0.7.0） |
 
 ## 替代方案
 
@@ -193,7 +193,7 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 
 **兼容性取舍：**按「控制面接口只增不改」的要求，`/api/purposes*` 的写操作**没有**改成 410，仍然照常工作。改为在 rules 模式下给响应加 `Deprecation: true` 和 `X-Mpx-Deprecated` 头，说明这些改动不再影响订阅。`?purpose=` 在 rules 模式下返回普通订阅，带同样的弃用头。
 
-## R6 用途下线计划（2026-10-16 定）
+## R6 用途下线计划（2026-10-16 定，已在 v0.7.0 完成）
 
 **v0.6.0：废弃（随分流规则一起发布）**
 - `/api/purposes*` 继续工作，但无论哪种分流模式，响应都带 `Deprecation: true` 和 `X-Mpx-Deprecated`，写明 v0.7.0 删除，并指向 `/api/rules`、`/api/proxy-groups`。
@@ -201,7 +201,7 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 - `mpx purpose` 的每个子命令都在 stderr 打废弃警告，帮助里标「已废弃，v0.7.0 删除」。
 - 用途页顶部提示已合并进分流规则。
 
-**v0.7.0：删除**
+**v0.7.0：删除（已完成）**
 - 接口：`/api/purposes`、`/api/purposes/{slug}`、`/api/purposes/{slug}/preview/...`。
 - 命令：`mpx purpose` 全部子命令。节点和入口的地区改用 `mpx node edit --region`；`/api/nodes|hosts/{id}/metadata` 仍保留给地区和城市使用，删除其中的 `line`、`purposes` 字段。
 - 订阅：`?purpose=` 兼容逻辑，以及 `render/purpose.go` 等用途渲染代码。
@@ -209,5 +209,7 @@ mpx group list | add 美国节点 --region US --mode auto | edit … | rm …
 - UI：用途页、`mpx ui` 放行列表里的用途写操作、相关 e2e 用例。
 - 开关：`routing_mode` 的 template 回退路径（旧模板渲染依赖用途，一起移除），`mpx rule mode` 只保留查看。
 - 文档：用途相关指南和 `purpose-validation.md`。
+
+以上各项随 v0.7.0 一起完成：#83 删除 `mpx purpose`，#84 删除 `/api/purposes*`，#85 删除 `?purpose=` 与用途渲染，#86 删除 `purposes` 表，#49 收尾 metadata、模式开关、文档与 CHANGELOG。
 
 **前提：**v0.6.0 已经发布，并且至少运行一个版本周期。删除时以 GitHub issue「v0.7.0 删除用途接口」为清单逐项勾掉。

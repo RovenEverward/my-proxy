@@ -14,7 +14,6 @@ import (
 
 func (s *Server) routingRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/routing", s.handleGetRouting)
-	api.HandleFunc("PUT /api/routing", s.handleSetRoutingMode)
 	api.HandleFunc("POST /api/routing/migrate", s.handleMigrateRouting)
 	api.HandleFunc("GET /api/rules", s.handleListRules)
 	api.HandleFunc("PUT /api/rules", s.handleReplaceRules)
@@ -88,6 +87,7 @@ type routingView struct {
 }
 
 // handleGetRouting 返回分流模式、迁移报告与警告(空策略组、失效的规则组)。
+// v0.7.0 起模式固定为 rules:没有回退开关,这里只是把它如实报出来。
 func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 	st, err := s.store.GetRoutingState()
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *Server) handleGetRouting(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "分流设置")
 		return
 	}
-	v := routingView{Mode: st.Mode, Report: st.Report, Migration: parseReport(st.Report), Warnings: warn, GroupsMembers: members}
+	v := routingView{Mode: model.RoutingRules, Report: st.Report, Migration: parseReport(st.Report), Warnings: warn, GroupsMembers: members}
 	if st.MigratedAt != nil {
 		v.MigratedAt = st.MigratedAt
 	}

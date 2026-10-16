@@ -48,7 +48,7 @@ var uiAllow = []string{
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",
 	"POST /api/settings/test-webhook",
-	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate / mode;
+	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate;
 	// group add / edit / rm / preview
 	"PUT /api/rules",
 	"PATCH /api/rules",
@@ -56,7 +56,6 @@ var uiAllow = []string{
 	"POST /api/proxy-groups",
 	"PUT /api/proxy-groups",
 	"DELETE /api/proxy-groups",
-	"PUT /api/routing",
 	"POST /api/routing/migrate",
 }
 

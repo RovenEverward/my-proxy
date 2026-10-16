@@ -38,9 +38,6 @@ func TestMigrateDefault(t *testing.T) {
 	if empty, _ := e.st.RoutingEmpty(); !empty {
 		t.Fatal("dry run 不应写入")
 	}
-	if code, _ := e.api("PUT", "/api/routing", map[string]string{"mode": "rules"}); code != 409 {
-		t.Fatal("规则表为空时不能切到 rules")
-	}
 	_, _, before := e.sub(path, "")
 
 	e.s.AutoMigrateRouting()
@@ -78,13 +75,6 @@ func TestMigrateDefault(t *testing.T) {
 		t.Fatalf("purpose 兼容: %d", code)
 	}
 
-	// 回滚开关
-	if c, b := e.api("PUT", "/api/routing", map[string]string{"mode": "template"}); c != 200 || !strings.Contains(string(b), "template") {
-		t.Fatalf("%d %s", c, b)
-	}
-	if _, _, b := e.sub(path+"?purpose=media", ""); string(b) != string(before) {
-		t.Fatal("切回 template 后订阅应恢复原样")
-	}
 	if r := migrateAPI(t, e, map[string]bool{"replace": true}); r.Status != MigrateDone {
 		t.Fatalf("replace: %+v", r)
 	}

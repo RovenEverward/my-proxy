@@ -21,8 +21,8 @@
 | name 出现在日志、错误文案、webhook 的 `NodeName` 和能力检测的 `Location` 里 | `control/*.go`、`node/*.go`、`server/api.go` |
 | 订阅显示名的来源:`host.Remark` 展开变量;为空时**退回 `node.Name`**。可用变量有 `{SERVER_IP}`、`{NODE_NAME}`、`{PROTOCOL}`、`{TRANSPORT}`;`{USERNAME}` 会被抹成空串 | `render/ir.go` 的 `endpoint`、`model.Host` 注释 |
 | 重名处理:`DedupeRemarks` 按顺序加 ` 2`、` 3`;sing-box 和 xray 的 tag 用 `uniqueTag` | `render/ir.go` |
-| Clash 的 `name`、sing-box 的 `tag`、purpose 分组都直接用这个 Remark | `render/clash.go`、`singbox.go`、`purpose.go` |
-| **已经有国家级别的地区标签:**`node_metadata` / `host_metadata` 里的 `region`(校验格式 `^[A-Z]{2}$`),通过 `mpx purpose metadata` 读写,用途路由会用到 | `model/purpose.go`、`store/purpose.go`、`cli/purpose.go` |
+| Clash 的 `name`、sing-box 的 `tag` 都直接用这个 Remark | `render/clash.go`、`singbox.go` |
+| **已经有国家级别的地区标签:**`node_metadata` / `host_metadata` 里的 `region`(校验格式 `^[A-Z]{2}$`),通过 `mpx node edit --region` 读写,策略组按地区筛入口 | `model/purpose.go`、`store/purpose.go`、`cli/node.go` |
 | **能力检测里的 egress:**经过某个入口的代理出口去请求 `api.ip.sb/geoip`,**只解析 IP 和 `country_code`**,没有城市。需要给这个入口单独开启检测(`CapabilityConfig.Enabled`) | `node/capability.go`、`model/capability.go` |
 | **`node diagnose` 的 IP 检测**会请求 ipwho.is,解析出 country / region / city(英文)和 ASN | `diagnostics/ip.go` 的 `parseGeoIP` |
 | 仓库里**没有**离线 GeoIP 库,也没有中文地名表 | 全仓库搜索 |
@@ -118,7 +118,7 @@ display = flag(region) + " " + (city || 国家中文名) + " " + letter
 | 入口(host) | `host edit/rm <id>` | 无。host 只有 remark,没有名字 |
 | 用户 | 无 | 所有命令都收 `<username>`(`UNIQUE`) |
 | 设备 | 无 | `device revoke <id\|名称>` |
-| 用途元数据 | `purpose metadata` 的 `args[0]/args[1]` 直接拼进 URL(`/api/nodes/{id}/metadata`) | 无 |
+| 节点/入口元数据 | `node edit --region/--city/--letter` 的 `args[0]/args[1]` 直接拼进 URL(`/api/nodes/{id}/metadata`) | 无 |
 
 统一的入口只有 `idArg`(`strconv.ParseInt`,失败就报「id 不是整数」)。cobra 默认的 `completion` 子命令在(代码里没有禁用),但**没有任何 `ValidArgsFunction`**,所以现在只能补全子命令,补全不了对象名。
 

@@ -19,7 +19,7 @@ func TestPurposeMetadataPersistsReopensAndCascades(t *testing.T) {
 	if err = s.CreateHost(h); err != nil {
 		t.Fatal(err)
 	}
-	m := model.PurposeMetadata{Region: "US", Line: "premium", Purposes: []string{"media"}}
+	m := model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "A"}
 	for kind, id := range map[string]int64{"nodes": n.ID, "hosts": h.ID} {
 		if err = s.SavePurposeMetadata(kind, id, m); err != nil {
 			t.Fatal(err)

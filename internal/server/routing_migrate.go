@@ -26,6 +26,7 @@ const (
 )
 
 // MigrationReport 是给人看的迁移报告,也存进 routing_state.report。
+// Purposes 字段保留形状只为解析历史报告:v0.7.0 起迁移不再读用途,新报告一律为空。
 type MigrationReport struct {
 	Status        string           `json:"status"`
 	At            time.Time        `json:"at"`
@@ -40,7 +41,7 @@ type MigrationReport struct {
 	Notes         []string         `json:"notes,omitempty"`
 }
 
-// PurposeOutcome 记一个用途转成了什么、丢了什么。
+// PurposeOutcome 是历史迁移报告里记一个用途转成了什么;v0.7.0 起只用于兼容旧报告。
 type PurposeOutcome struct {
 	Slug    string   `json:"slug"`
 	Group   string   `json:"group"`
@@ -178,7 +179,7 @@ func (s *Server) migrateRouting(opt migrateOptions) (*MigrationReport, error) {
 }
 
 // AutoMigrateRouting 在 serve 启动时调用:从没迁移过、规则表也是空的,就按 RFC 做一次
-// 迁移。需要确认或转换不了时只记报告,继续按模板出订阅。
+// 迁移。需要确认或转换不了时只记报告,规则表保持原样(调用方随后会拒绝启动)。
 func (s *Server) AutoMigrateRouting() {
 	st, err := s.store.GetRoutingState()
 	if err != nil {
@@ -223,41 +224,7 @@ func (s *Server) handleMigrateRouting(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-// handleSetRoutingMode 切换分流模式(RFC 的回滚开关)。切到 rules 要求规则表已就绪。
-func (s *Server) handleSetRoutingMode(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Mode model.RoutingMode `json:"mode"`
-	}
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	if body.Mode != model.RoutingRules && body.Mode != model.RoutingTemplate {
-		writeError(w, http.StatusBadRequest, "mode 只能是 rules 或 template")
-		return
-	}
-	st, err := s.store.GetRoutingState()
-	if err != nil {
-		s.writeStoreError(w, err, "分流设置")
-		return
-	}
-	if body.Mode == model.RoutingRules {
-		if empty, err := s.store.RoutingEmpty(); err != nil {
-			s.writeStoreError(w, err, "分流设置")
-			return
-		} else if empty {
-			writeError(w, http.StatusConflict, "规则表是空的,先迁移:mpx rule migrate")
-			return
-		}
-	}
-	st.Mode = body.Mode
-	if err := s.store.SaveRoutingState(st); err != nil {
-		s.writeStoreError(w, err, "分流设置")
-		return
-	}
-	s.invalidateSubCache()
-	s.handleGetRouting(w, r)
-}
-
+// handleMigrateRouting 演算并写入迁移结果。
 func parseReport(raw string) *MigrationReport {
 	if raw == "" {
 		return nil

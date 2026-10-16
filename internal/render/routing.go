@@ -263,7 +263,7 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 		route = map[string]any{}
 		cfg["route"] = route
 	}
-	// 模板开头连续的 sniff / hijack-dns / resolve 等纯动作规则要留在最前(见 purpose-validation.md)。
+	// 模板开头连续的 sniff / hijack-dns / resolve 等纯动作规则要留在最前(见 docs/internal/routing-rules-rfc.md)。
 	rules := []any{}
 	for _, r := range toAnySlice(route["rules"]) {
 		m, ok := r.(map[string]any)

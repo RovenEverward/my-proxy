@@ -89,9 +89,17 @@ func TestRuleAndGroupCLI(t *testing.T) {
 	if out := run(rule, "migrate", "--report"); !strings.Contains(out, "当前模式:rules") {
 		t.Fatal(out)
 	}
-	if out := run(rule, "mode", "template"); !strings.Contains(out, "分流模式:template") {
+	if out := run(rule, "mode"); !strings.Contains(out, "分流模式:rules") {
 		t.Fatal(out)
 	}
+	// 带参数(设置)已下线:报错并指向固定模式。
+	cmdMode := newRuleCmd()
+	cmdMode.SetArgs([]string{"mode", "template"})
+	captureStdout(t, func() {
+		if err := cmdMode.Execute(); err == nil || !strings.Contains(err.Error(), "v0.7.0 起分流模式固定为 rules") {
+			t.Errorf("带参数的 mode 应报错: %v", err)
+		}
+	})
 	run(group, "add", "日本", "--region", "JP")
 	run(rule, "add", "suffix", "example.jp", "日本")
 	cmd := newGroupCmd()

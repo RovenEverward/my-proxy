@@ -934,7 +934,7 @@ func nodePath(id int64) string {
 }
 
 // editNodeMetadata 读回节点元数据,只改给出的 region / city / letter 再整份写回
-// (地区、线路、用途标签要原样带回去)。字母由控制面分配和查重。
+// (地区要原样带回去)。字母由控制面分配和查重。
 func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 	path := nodePath(id) + "/metadata"
 	raw, err := c.do("GET", path, nil)

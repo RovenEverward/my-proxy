@@ -74,14 +74,12 @@ function rpTargetOptions(sel, d = RP.d, follow) {
 }
 
 function modeBanner(d) {
-  const st = d.routing, rep = st.migration, W = can("PUT", "/api/routing");
+  const st = d.routing, rep = st.migration;
   const out = [];
-  if (rep && (rep.status === "needs_confirm" || rep.status === "blocked") && st.mode !== "rules") {
-    out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div><b>${rep.status === "needs_confirm" ? "需要确认后才能改用规则表" : "旧模板里有转换不了的规则,订阅仍按模板生成"}</b>
+  if (rep && (rep.status === "needs_confirm" || rep.status === "blocked")) {
+    out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div><b>${rep.status === "needs_confirm" ? "需要确认后才能改用规则表" : "旧模板里有转换不了的规则"}</b>
       ${rep.status === "needs_confirm" ? H`<div>存过自定义 sing-box 模板:迁移后 sing-box 的分流改为跟随规则表(模板里的其他部分照用)。</div>` : H`<div>${(rep.unconvertible || []).slice(0, 5).map(x => H`<code>${x}</code> `)}${rep.unconvertible?.length > 5 ? `等 ${rep.unconvertible.length} 条` : ""}</div>`}
       ${rep.status === "needs_confirm" && can("POST", "/api/routing/migrate") ? H`<div class="mt6"><button class="btn sm" data-act="rp-migrate" data-confirm="1">确认并迁移</button> <span class="sub">mpx rule migrate --confirm</span></div>` : ""}</div></div>`);
-  } else if (st.mode !== "rules" && (d.rules.global.length || d.groups.length)) {
-    out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div><b>订阅现在还按旧模板生成</b>,这里的改动暂不生效。${W ? H` <button class="btn sm" data-act="rp-mode" data-mode="rules">改用规则表</button>` : ""} <span class="sub">mpx rule mode rules</span></div></div>`);
   }
   if (st.warnings?.length) out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div>${st.warnings.map(w => H`<div>${w}</div>`)}</div></div>`);
   return out;
@@ -92,9 +90,9 @@ function rpEmpty(d) {
   return H`<div class="card rp-empty"><div class="rp-flow"><div class="rp-fb"><b>你打开一个网站</b><span class="mono">netflix.com</span></div><span class="rp-arr">→</span>
     <div class="rp-fb wide"><b>按规则从上往下对</b><span>广告 → 拦截</span><span>国内网站 → 直连</span><span class="on">流媒体 → 📺 流媒体</span><span>其他全部 → ⚡ 自动选择</span></div><span class="rp-arr">→</span>
     <div class="rp-fb"><b>走对应的出口</b><span>策略组挑出的节点</span></div></div>
-    <h4>还没有分流规则,订阅按旧模板生成</h4><p class="sub">先选一套起步方案,之后随时增删、拖动排序、改去向。</p>
+    <h4>还没有分流规则</h4><p class="sub">先选一套起步方案,之后随时增删、拖动排序、改去向。</p>
     ${W ? H`<div class="rp-starts">
-      <button class="rp-start rec" data-act="rp-migrate"><span class="pill on">推荐</span><b>沿用现在的分流</b><span>把现在的模板${d.routing.migration?.purposes?.length ? "和用途" : ""}转换成规则表:国内直连、拦广告、各类网站走对应分组,其他自动选最快。</span><em>转换 ${ic("arrow")}</em></button>
+      <button class="rp-start rec" data-act="rp-migrate"><span class="pill on">推荐</span><b>沿用现在的分流</b><span>把现在的模板转换成规则表:国内直连、拦广告、各类网站走对应分组,其他自动选最快。</span><em>转换 ${ic("arrow")}</em></button>
       <button class="rp-start" data-act="rp-blank" data-k="all"><b>全部走代理</b><span>只建一个「自动选择」组,除了局域网,所有网站都走它。</span><em>用这套 ${ic("arrow")}</em></button>
       <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部 → 自动选择」,你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>
       <p class="sub mt">等价命令:<code>mpx rule migrate</code> · <code>mpx group add 自动选择 --mode auto</code></p>` : H`<div class="cmd mt">mpx rule migrate</div>`}</div>`;
@@ -279,14 +277,11 @@ Object.assign(ACTS, {
   "gp-edit": d => groupEditor(d.id),
   "gp-rm": d => confirmBox({ title: `删除策略组 ${d.name}?`, text: "删除后订阅里不再有这个组。", cmd: `mpx group rm ${shq(d.name)}`, ok: "删除", danger: true,
     run: async () => { await write("DELETE", groupPath(d.id), undefined, `策略组「${d.name}」已删除`); closeOverlays(); } }),
-  "rp-migrate": d => confirmBox({ title: d.confirm ? "确认迁移到规则表?" : "把现在的分流转换成规则表?", text: "按现在的模板和用途生成策略组与规则,订阅改由规则表生成。原来的模板和用途都保留,随时可以切回(mpx rule mode template)。", cmd: d.confirm ? "mpx rule migrate --confirm" : "mpx rule migrate", ok: "转换",
+  "rp-migrate": d => confirmBox({ title: d.confirm ? "确认迁移到规则表?" : "把现在的分流转换成规则表?", text: "按现在的模板生成策略组与规则,订阅改由规则表生成。原来的模板保留。", cmd: d.confirm ? "mpx rule migrate --confirm" : "mpx rule migrate", ok: "转换",
     run: async () => { const r = await write("POST", "/api/routing/migrate", d.confirm ? { confirm: true } : {}); if (r.status !== "migrated") throw new Error(r.status === "needs_confirm" ? "存过自定义 sing-box 模板,需要确认后迁移" : (r.unconvertible || r.notes || []).join(";") || r.status); toast(`已转换:${r.groups.length} 个策略组、${r.rules} 条规则`); } }),
-  "rp-mode": d => confirmBox({ title: d.mode === "rules" ? "改用规则表生成订阅?" : "切回旧模板?", text: d.mode === "rules" ? "Clash Meta 和 sing-box 订阅改由这里的规则生成,客户端更新订阅后生效。" : "订阅回到旧模板与用途。", cmd: `mpx rule mode ${d.mode}`, ok: "切换",
-    run: async () => { await write("PUT", "/api/routing", { mode: d.mode }, "已切换"); } }),
   "rp-blank": async (d, b) => busy(b, async () => {
     const g = await write("POST", "/api/proxy-groups", { name: "自动选择", icon: "⚡", mode: "auto" });
     if (d.k === "all") await write("PUT", "/api/rules", { rules: [{ type: "set", value: "lan", target: "DIRECT", enabled: true }], version: 0 });
     await write("PUT", "/api/rules/final", { target: "group:" + g.id });
-    await write("PUT", "/api/routing", { mode: "rules" }, "已应用,客户端更新订阅后生效");
   }),
 });

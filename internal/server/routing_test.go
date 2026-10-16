@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
-	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
 func TestSubscriptionRoutingMode(t *testing.T) {
@@ -23,7 +22,6 @@ func TestSubscriptionRoutingMode(t *testing.T) {
 		t.Fatalf("metadata %d %s", code, b)
 	}
 	path := "/sub/" + u.SubToken + "/clash-meta"
-	_, _, before := e.sub(path, "")
 
 	jp := &model.ProxyGroup{Name: "日本", Regions: []string{"JP"}, Mode: model.GroupManual}
 	if err := e.st.CreateProxyGroup(jp); err != nil {
@@ -39,13 +37,7 @@ func TestSubscriptionRoutingMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.s.invalidateSubCache()
-	if _, _, b := e.sub(path, ""); string(b) != string(before) {
-		t.Fatal("template 模式下订阅不应变化")
-	}
-	if err := e.st.SaveRoutingState(&store.RoutingState{Mode: model.RoutingRules}); err != nil {
-		t.Fatal(err)
-	}
-	e.s.invalidateSubCache()
+	// v0.7.0 起模式恒为 rules:没有先写 routing_state 也会按规则表生成订阅。
 	code, _, b := e.sub(path, "")
 	if code != 200 {
 		t.Fatalf("%d %s", code, b)

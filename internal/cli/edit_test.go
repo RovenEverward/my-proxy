@@ -417,7 +417,7 @@ func TestUserRowNormalizesEmptyResetStrategy(t *testing.T) {
 func TestNodeEditDisplayOnly(t *testing.T) {
 	resetEditFlags(t)
 	view := model.NodeView{Node: model.Node{ID: 2, Name: "la-2", Address: "1.2.3.4"}}
-	meta := model.PurposeMetadata{Region: "US", Line: "cn2", City: "洛杉矶", Letter: "B"}
+	meta := model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "B"}
 	calls := recordEdit(t, func(method, path string) []byte {
 		if path == "/api/nodes/2/metadata" {
 			return mustJSON(t, meta)
@@ -438,7 +438,14 @@ func TestNodeEditDisplayOnly(t *testing.T) {
 	if err := json.Unmarshal(put.Body, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["city"] != "圣何塞" || got["letter"] != "" || got["region"] != "US" || got["line"] != "cn2" {
+	if got["city"] != "圣何塞" || got["letter"] != "" || got["region"] != "US" {
 		t.Fatalf("PUT body %s", put.Body)
+	}
+	// 已删除的 line / purposes 不再出现在 PUT 体里。
+	if _, ok := got["line"]; ok {
+		t.Fatalf("PUT body 不该带 line: %s", put.Body)
+	}
+	if _, ok := got["purposes"]; ok {
+		t.Fatalf("PUT body 不该带 purposes: %s", put.Body)
 	}
 }

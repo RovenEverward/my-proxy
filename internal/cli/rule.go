@@ -422,7 +422,8 @@ type migrationReport struct {
 	Groups        []string `json:"groups"`
 	Rules         int      `json:"rules"`
 	Final         string   `json:"final"`
-	Purposes      []struct {
+	// Purposes 只为解析 v0.6.x 存下的历史报告;v0.7.0 的迁移不再产生用途结果。
+	Purposes []struct {
 		Slug    string   `json:"slug"`
 		Group   string   `json:"group"`
 		Rules   int      `json:"rules"`
@@ -436,7 +437,7 @@ type migrationReport struct {
 var migrateStatusText = map[string]string{
 	"migrated":      "已迁移,订阅改由规则表生成",
 	"needs_confirm": "需要确认:存过自定义 sing-box 模板,加 --confirm 后迁移",
-	"blocked":       "没有迁移:自定义 clash-meta 模板有转换不了的规则,订阅继续按模板生成",
+	"blocked":       "没有迁移:自定义 clash-meta 模板有转换不了的规则,规则表保持原样",
 	"skipped":       "没有迁移:已经有规则表(加 --replace 按旧配置重新生成,会覆盖现有规则)",
 	"dry_run":       "演算结果(未写入)",
 }
@@ -468,7 +469,7 @@ func printMigrationReport(r *migrationReport) {
 
 func newRuleMigrateCmd() *cobra.Command {
 	var dry, confirm, replace, report bool
-	c := &cobra.Command{Use: "migrate", Short: "把模板和用途迁移成分流规则(--report 只看上次的报告)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: "migrate", Short: "把模板迁移成分流规则(--report 只看上次的报告)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -517,17 +518,15 @@ func newRuleMigrateCmd() *cobra.Command {
 }
 
 func newRuleModeCmd() *cobra.Command {
-	return &cobra.Command{Use: "mode [rules|template]", Short: "查看或切换分流模式(template = 回到旧模板与用途)", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "mode", Short: "查看分流模式(v0.7.0 起固定为 rules)", Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("v0.7.0 起分流模式固定为 rules")
+		}
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		var raw []byte
-		if len(args) == 0 {
-			raw, err = cl.do("GET", "/api/routing", nil)
-		} else {
-			raw, err = cl.do("PUT", "/api/routing", map[string]string{"mode": args[0]})
-		}
+		raw, err := cl.do("GET", "/api/routing", nil)
 		if err != nil {
 			return err
 		}

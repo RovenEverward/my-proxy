@@ -61,8 +61,9 @@
 | `node` | 管理节点：`add` `list` `show` `edit` `rm` `install` `sync` `config` `status` `online` `drain` `undrain` `core` `probe` `capabilities` `capability-set` `diagnose` `diagnostics` |
 | `inbound` | 管理入站：`add` `list` `show` `edit` `rm` |
 | `host` | 管理入站的对外入口：`add` `list` `edit` `rm` |
+| `rule` | 管理分流规则：`list` `add` `move` `rm` `toggle` `final` `test` `catalog` `migrate` `mode`（`mode` 只读，模式固定为 `rules`） |
+| `group` | 管理策略组：`list` `add` `edit` `rm` `preview` |
 | `user` | 管理用户：`add` `list` `edit` `rm` `enable` `disable` `renew` `reset-traffic` `revoke-sub` `links` `import` `export` |
-| `purpose` | 管理用途分组：`create` `set` `get` `list` `del` `metadata` `preview` |
 | `settings` | 订阅设置：`show` `set` `rules` `template` `test` |
 | `backup` / `restore` | 下载备份；把备份暂存到控制面，重启后生效 |
 | `diagnose` | 在本机直连或经 SOCKS 代理做综合体检，不需要登录控制面 |
