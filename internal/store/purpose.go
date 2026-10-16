@@ -126,11 +126,17 @@ func (s *Store) SavePurposeMetadata(kind string, id int64, m model.PurposeMetada
 	return err
 }
 func (s *Store) ListPurposeMetadata(kind string) (map[int64]model.PurposeMetadata, error) {
+	return listPurposeMetadata(s.db, kind)
+}
+
+// listPurposeMetadata 与 ListPurposeMetadata 同义,但接受任意 querier,好让迁移
+// 事务内部也能读到节点元数据(*sql.Tx 与 *sql.DB 都满足 querier)。
+func listPurposeMetadata(q querier, kind string) (map[int64]model.PurposeMetadata, error) {
 	table, err := metadataTable(kind)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(`SELECT id,config FROM ` + table)
+	rows, err := q.Query(`SELECT id,config FROM ` + table)
 	if err != nil {
 		return nil, err
 	}

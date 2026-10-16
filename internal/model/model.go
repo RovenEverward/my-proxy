@@ -294,11 +294,44 @@ type User struct {
 	// 重置过(以 CreatedAt 起算)。只存这一个事实,下次重置时间由它现算。
 	TrafficResetAt *time.Time `json:"traffic_reset_at,omitempty"`
 
-	// InboundIDs 限定该用户可用的入站;为空表示全部入站。
+	// InboundIDs 限定该用户可用的入站;为空表示全部入站(没挂套餐时)。
+	// 挂了套餐时,它是套餐之外的「额外授权」,与套餐取并集。
 	InboundIDs []int64 `json:"inbound_ids,omitempty"`
+
+	// PlanID 是用户挂的套餐 id;nil 表示没挂套餐,完全沿用上面的旧语义。
+	// 用指针是为了在整体 PUT 里区分「没提这个字段」和「摘掉套餐」。
+	PlanID *int64 `json:"plan_id,omitempty"`
+
+	// planAllNodes / planInbounds 是挂套餐时解析出来的授权,只在内存里,不序列化。
+	// 判定入口只有 AllowsInbound 一处,别的地方不再各自解释套餐。
+	//
+	// planResolved 表示这份授权是否已经按套餐解析过,只有 SetPlanAuth 会置位。
+	// 从 JSON 直接解码出来的用户即使带着 plan_id,这份授权也是空的;不把
+	// 「已解析」与「plan_id 非空」分开,这种对象会被误判成什么入站都不能用。
+	planResolved bool
+	planAllNodes bool
+	planInbounds map[int64]bool
 
 	Note      string    `json:"note,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// SetPlanAuth 设置解析后的套餐授权(仅内存,不落库),并把这份授权标记为已解析。
+// allNodes 为真表示全部入站,此时 inboundIDs 被忽略。存储层读用户时按套餐表解析
+// 后调用它;没挂套餐的用户也要调用(传 allNodes=false、inboundIDs=nil),这样
+// 「已解析」与「有没有套餐」是两件独立的事实。
+func (u *User) SetPlanAuth(allNodes bool, inboundIDs []int64) {
+	u.planResolved = true
+	u.planAllNodes = allNodes
+	if len(inboundIDs) == 0 {
+		u.planInbounds = nil
+		return
+	}
+	m := make(map[int64]bool, len(inboundIDs))
+	for _, id := range inboundIDs {
+		m[id] = true
+	}
+	u.planInbounds = m
 }
 
 // Status 按固定优先级判定用户状态:显式停用 > 过期 > 超限 > 可用。
@@ -316,8 +349,22 @@ func (u *User) Status(now time.Time) Status {
 }
 
 // AllowsInbound 报告该用户是否被授权使用某个入站。
+//
+// 判定只有这一份,订阅、xray 下发、收敛、能力检测、用户筛选都走这里。
+//
+//   - 套餐授权没解析(从没调用过 SetPlanAuth,例如从 JSON 解码出来的用户):
+//     按旧语义判定,InboundIDs 为空表示全部入站 —— 不能因为带着 plan_id 却
+//     没有解析结果就判成什么都不能用。
+//   - 已解析且没挂套餐(PlanID 为空):同样按旧语义,InboundIDs 为空表示全部。
+//   - 已解析且挂了套餐:all_nodes 套餐就是全部;否则可用范围 = 套餐入站 ∪ 用户
+//     自己的 InboundIDs(额外授权)。套餐为空且没有额外授权时什么都不能用 ——
+//     空套餐不等于全开,这是有意的(见 docs/internal/plans-rfc.md)。
 func (u *User) AllowsInbound(inboundID int64) bool {
-	if len(u.InboundIDs) == 0 {
+	if u.planResolved && u.PlanID != nil {
+		if u.planAllNodes || u.planInbounds[inboundID] {
+			return true
+		}
+	} else if len(u.InboundIDs) == 0 {
 		return true
 	}
 	for _, id := range u.InboundIDs {
