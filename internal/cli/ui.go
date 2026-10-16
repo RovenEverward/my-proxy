@@ -23,6 +23,8 @@ import (
 // 对应一条已有的 CLI 命令(见 internal/ui/e2e 里逐条对照的测试)。
 var uiAllow = []string{
 	"GET /api",
+	// 远程升级控制面(mpx update apply control 的对应接口)
+	"POST /api/update/control",
 	// 用户:add / edit / enable / disable / renew(都是 PUT 整体回写)/ rm /
 	// reset-traffic / revoke-sub
 	"POST /api/users",
