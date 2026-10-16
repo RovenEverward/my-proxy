@@ -89,8 +89,12 @@ func TestRoutingAPI(t *testing.T) {
 	if code, _ := e.api("POST", "/api/rules/test", map[string]any{"domain": "nodot"}); code != 400 {
 		t.Fatal("非域名应 400")
 	}
-	if code, b := e.api("GET", "/api/routing", nil); code != 200 || !strings.Contains(string(b), `"mode": "template"`) {
+	// 模式只读:GET 恒为 rules,PUT /api/routing 已下线。
+	if code, b := e.api("GET", "/api/routing", nil); code != 200 || !strings.Contains(string(b), `"mode": "rules"`) {
 		t.Fatalf("routing %d %s", code, b)
+	}
+	if code, _ := e.api("PUT", "/api/routing", map[string]string{"mode": "template"}); code != 405 && code != 404 {
+		t.Fatalf("PUT /api/routing 应已下线,得到 %d", code)
 	}
 	if code, b := e.api("GET", "/api/rule-catalog", nil); code != 200 || !strings.Contains(string(b), `"ai"`) {
 		t.Fatalf("catalog %d", code)

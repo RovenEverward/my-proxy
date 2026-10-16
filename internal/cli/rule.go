@@ -517,17 +517,15 @@ func newRuleMigrateCmd() *cobra.Command {
 }
 
 func newRuleModeCmd() *cobra.Command {
-	return &cobra.Command{Use: "mode [rules|template]", Short: "查看或切换分流模式(template = 回到旧模板与用途)", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "mode", Short: "查看分流模式(v0.7.0 起固定为 rules)", Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("v0.7.0 起分流模式固定为 rules")
+		}
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		var raw []byte
-		if len(args) == 0 {
-			raw, err = cl.do("GET", "/api/routing", nil)
-		} else {
-			raw, err = cl.do("PUT", "/api/routing", map[string]string{"mode": args[0]})
-		}
+		raw, err := cl.do("GET", "/api/routing", nil)
 		if err != nil {
 			return err
 		}

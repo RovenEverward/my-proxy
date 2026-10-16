@@ -223,41 +223,7 @@ func (s *Server) handleMigrateRouting(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-// handleSetRoutingMode 切换分流模式(RFC 的回滚开关)。切到 rules 要求规则表已就绪。
-func (s *Server) handleSetRoutingMode(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Mode model.RoutingMode `json:"mode"`
-	}
-	if !decodeBody(w, r, &body) {
-		return
-	}
-	if body.Mode != model.RoutingRules && body.Mode != model.RoutingTemplate {
-		writeError(w, http.StatusBadRequest, "mode 只能是 rules 或 template")
-		return
-	}
-	st, err := s.store.GetRoutingState()
-	if err != nil {
-		s.writeStoreError(w, err, "分流设置")
-		return
-	}
-	if body.Mode == model.RoutingRules {
-		if empty, err := s.store.RoutingEmpty(); err != nil {
-			s.writeStoreError(w, err, "分流设置")
-			return
-		} else if empty {
-			writeError(w, http.StatusConflict, "规则表是空的,先迁移:mpx rule migrate")
-			return
-		}
-	}
-	st.Mode = body.Mode
-	if err := s.store.SaveRoutingState(st); err != nil {
-		s.writeStoreError(w, err, "分流设置")
-		return
-	}
-	s.invalidateSubCache()
-	s.handleGetRouting(w, r)
-}
-
+// handleMigrateRouting 演算并写入迁移结果。
 func parseReport(raw string) *MigrationReport {
 	if raw == "" {
 		return nil

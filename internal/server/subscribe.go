@@ -184,8 +184,9 @@ func (s *Server) renderSubscription(user *model.User, format model.ClientFormat)
 		return nil, err
 	}
 
-	// 分流规则模式只接管 clash-meta 与 sing-box 的分流部分;原版 clash、links、xray 不变。
-	if (format == model.FormatClashMeta || format == model.FormatSingBox) && s.routingMode() == model.RoutingRules {
+	// v0.7.0 起分流模式固定为 rules:clash-meta 与 sing-box 的分流部分一律由规则表
+	// 生成;原版 clash、links、xray 不变。
+	if format == model.FormatClashMeta || format == model.FormatSingBox {
 		plan, err := s.routingPlan(user, eps)
 		if err != nil {
 			return nil, err

@@ -58,8 +58,9 @@ func (s *Server) routingPlan(user *model.User, eps []render.Endpoint) (render.Ro
 	return p, nil
 }
 
-// groupCandidates 给每个端点算出策略组条件要看的属性:地区与标签来自节点/入口
-// 元数据(入口上非空的字段覆盖节点),协议用订阅名后缀同一套短名,能力取已稳定的结果。
+// groupCandidates 给每个端点算出策略组条件要看的属性:地区来自节点/入口元数据
+// (入口上非空的字段覆盖节点),协议用订阅名后缀同一套短名,能力取已稳定的结果。
+// v0.7.0 起 metadata 不再有标签来源,所以候选的 Tags 恒为空。
 func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGroup) ([]model.GroupCandidate, error) {
 	nodeMeta, err := s.store.ListPurposeMetadata("nodes")
 	if err != nil {
@@ -101,17 +102,7 @@ func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGrou
 	out := make([]model.GroupCandidate, len(eps))
 	for i, ep := range eps {
 		m := model.EffectivePurposeMetadata(nodeMeta[ep.NodeID], hostMeta[ep.HostID])
-		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep), Tags: m.Purposes, Capabilities: caps[[2]int64{ep.InboundID, ep.HostID}]}
+		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep), Capabilities: caps[[2]int64{ep.InboundID, ep.HostID}]}
 	}
 	return out, nil
-}
-
-// routingMode 读当前分流模式;读失败时按旧路径走,保证订阅不因此中断。
-func (s *Server) routingMode() model.RoutingMode {
-	st, err := s.store.GetRoutingState()
-	if err != nil {
-		s.logger.Error("读取分流模式失败,按模板模式出订阅", "error", err)
-		return model.RoutingTemplate
-	}
-	return st.Mode
 }
