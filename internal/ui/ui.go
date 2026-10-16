@@ -177,6 +177,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveSetup(w, r)
 		return
 	}
+	if r.URL.Path == "/local/qr.svg" {
+		s.serveQR(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		s.mu.Lock()
 		proxy := s.proxy

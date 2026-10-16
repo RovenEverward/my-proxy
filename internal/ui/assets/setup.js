@@ -1,5 +1,5 @@
-// 首次安装向导(向导 B)前 4 屏:欢迎 / 连接 / 检查 / 设置。第 5 屏由后续实现。
-// 对外只暴露 window.openSetup;第 5 屏入口读 window.setupStartRun。
+// 首次安装向导(向导 B)全部 6 屏:欢迎 / 连接 / 检查 / 设置 / 安装 / 完成。
+// 对外暴露 window.openSetup 与 window.setupStartRun;轮询状态挂在 window.__setupPoll。
 "use strict";
 (() => {
 Object.assign(ICONS, {
@@ -8,6 +8,7 @@ Object.assign(ICONS, {
   back: '<path d="M15 6l-6 6 6 6"/>',
   srv: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
 });
 const X = ic("x");
 const BN = ["连接", "检查", "设置", "安装", "完成"];
@@ -15,7 +16,7 @@ const S = {
   step: 1, host: "", sshPort: 22, sshUser: "root", auth: "password", pw: "", identity: "",
   pwShown: false, probe: null, checkErr: "", checkAt: 0,
   username: "user1", name: "default", dpw: "", dpw2: "", dpwShown: false,
-  addr: "0.0.0.0:8080", subPrefix: "", sni: "www.cloudflare.com", errs: {},
+  addr: "0.0.0.0:8080", subPrefix: "", sni: "www.cloudflare.com", errs: {}, run: null,
 };
 
 /* ---------- 小工具(与 wizard.js 同款) ---------- */
@@ -28,7 +29,7 @@ function field(label, inputRaw, hint, err) {
 const btn = (t, cls = "", icn, id = "") => H`<button type="button" class="btn ${cls}"${id ? raw(` id="${id}"`) : ""}>${icn ? ic(icn) : ""}${t}</button>`;
 const opt = (on, id, title, h) => H`<div class="opt ${on ? "on" : ""}" id="${id}"><span class="rd"></span><div><b>${title}</b><span class="h">${h}</span></div></div>`;
 const pwBox = (id, shown) => H`<div class="pw"><input id="${id}" class="in ${shown ? "mono" : ""}" type="${shown ? "text" : "password"}" autocomplete="off"><button type="button" class="ib" id="${id}-eye" aria-label="${shown ? "隐藏密码" : "显示密码"}">${ic(shown ? "eyeoff" : "eye")}</button></div>`;
-const row = (st, t, du) => H`<li class="${st}"><span class="pi">${st === "run" ? raw('<span class="spin"></span>') : st === "done" ? ic("check") : st === "fail" ? X : st === "skip" ? ic("dash") : raw("<i></i>")}</span><span class="t">${t}</span><span class="du">${du || ""}</span></li>`;
+const row = (st, t, du, extraRaw) => H`<li class="${st}"><span class="pi">${st === "run" ? raw('<span class="spin"></span>') : st === "done" ? ic("check") : st === "fail" ? X : st === "skip" ? ic("dash") : raw("<i></i>")}</span><span class="t">${t}</span><span class="du">${du || ""}</span>${extraRaw || ""}</li>`;
 function clearErr(el, key) {
   if (!S.errs || !S.errs[key]) return;
   delete S.errs[key];
@@ -244,9 +245,171 @@ function renderSettings() {
   });
 }
 
+/* ---------- 屏 5:安装(轮询) ---------- */
+// P 是轮询状态,单独成一个对象方便测试 window.__setupPoll 读 delay。
+const P = { id: "", since: 0, delay: 2000, idle: 0, timer: null, steps: [], lines: [], elapsed: 0, ended: false, result: null, error: "", busy: false };
+window.__setupPoll = P;
+// poll/schedule/start 也挂在 P 上,便于测试直接驱动。
+Object.assign(P, { poll, schedule, start: startPoll });
+
+function fmtClock(secs) {
+  const s = Math.max(0, Math.floor(secs || 0));
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+function stepDur(secs) { return secs > 0 ? fmtDur(secs * 1000) : ""; }
+function logBlock() { return H`<div class="logt">${P.lines.join("\n")}</div>`; }
+function scrollLog() { const lg = $(".logt"); if (lg) lg.scrollTop = lg.scrollHeight; }
+
+function renderInstall() {
+  const list = P.steps.length ? P.steps : [{ title: "准备安装", state: "run", secs: 0 }];
+  setup(["done", "done", "done", "cur", ""], H`<h2>安装</h2>
+  <div class="banner">${ic("term")}<span>安装期间不要关闭运行 <code>mpx ui</code> 的终端。可以刷新这个页面，进度会接着显示。</span></div>
+  <ol class="plist">${list.map(s => row(s.state, s.title, stepDur(s.secs),
+    s.state === "run" ? H`<div class="sub2"><span class="tog">${ic("arrow")}最近 50 行输出</span></div>${logBlock()}` : ""))}</ol>`,
+  H`<span class="sub" style="flex:1">已用 ${fmtClock(P.elapsed)} · 最长约 25 分钟</span>${raw('<button type="button" class="btn pri" disabled style="opacity:.5">安装中…</button>')}`);
+  scrollLog();
+}
+
+function renderFail() {
+  const cmd = cmdSetup();
+  setup(["done", "done", "done", "fail", ""], H`<h2>安装</h2>
+  <ol class="plist">${P.steps.map(s => row(s.state, s.title, stepDur(s.secs), s.state === "fail" ? logBlock() : ""))}</ol>
+  <div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>安装失败</b><div class="raw">${P.error || "安装没有完成"}</div><div class="mt2">每一步都可以安全重跑，已经装好的部分会复用。也可以在终端运行下面的命令。</div></div></div>
+  <div class="field"><label>等价命令</label><div class="cmd" style="padding-left:12px">${cmd}</div></div>`,
+  H`<span class="sp"></span>${raw(`<button type="button" class="btn" data-act="copy" data-text="${esc(cmd)}">${ic("copy")}复制命令</button>`)}${btn("重新运行", "pri", "refresh", "s-rerun")}`);
+  scrollLog();
+  $("#s-rerun").addEventListener("click", () => {
+    if (S.run) window.setupStartRun(S.run);
+    else renderSettings();
+  });
+}
+
+function schedule() {
+  P.timer = null;
+  if (document.hidden || P.ended) return;
+  P.timer = setTimeout(poll, P.delay);
+}
+
+async function poll() {
+  if (P.timer) { clearTimeout(P.timer); P.timer = null; }
+  if (P.ended || !P.id || P.busy) return;
+  P.busy = true;
+  let resp;
+  try {
+    resp = await api(`/local/setup/jobs/${encodeURIComponent(P.id)}?since=${P.since}`);
+  } catch (e) {
+    // 网络/接口失败:退避到最多 10s 再试,任务本身可能还在跑。
+    P.busy = false;
+    P.delay = Math.min(P.delay * 2, 10000);
+    schedule();
+    return;
+  }
+  P.busy = false;
+  let changed = false;
+  if (resp.seq != null) P.since = resp.seq;
+  if (resp.elapsed != null) P.elapsed = resp.elapsed;
+  if (resp.steps && resp.steps.length) { P.steps = resp.steps; changed = true; }
+  if (resp.lines && resp.lines.length) {
+    P.lines = P.lines.concat(resp.lines);
+    if (P.lines.length > 50) P.lines = P.lines.slice(P.lines.length - 50);
+    changed = true;
+  }
+  if (changed) { P.idle = 0; P.delay = 2000; }
+  else {
+    P.idle++;
+    if (P.idle >= 6) P.delay = 10000;
+    else if (P.idle >= 3) P.delay = 5000;
+  }
+  if (resp.state === "done") {
+    P.ended = true;
+    if (resp.result) P.result = resp.result;
+    renderDone(P.result);
+    return;
+  }
+  if (resp.state === "failed") {
+    P.ended = true;
+    P.error = resp.error || "";
+    renderFail();
+    return;
+  }
+  if (changed) renderInstall();
+  if (resp.more) { P.timer = setTimeout(poll, 0); return; }
+  schedule();
+}
+
+function startPoll(id) {
+  P.id = id; P.since = 0; P.idle = 0; P.delay = 2000;
+  P.steps = []; P.lines = []; P.elapsed = 0;
+  P.ended = false; P.result = null; P.error = ""; P.timer = null; P.busy = false;
+  renderInstall();
+  poll();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (P.timer) { clearTimeout(P.timer); P.timer = null; }
+  } else if (!P.ended && P.id && !P.timer) {
+    poll();
+  }
+});
+
+/* ---------- 屏 6:完成 ---------- */
+async function renderDone(res) {
+  S.step = 6;
+  res = res || {};
+  S.dpw = ""; S.dpw2 = "";
+  if (S.run) S.run.device_password = "";
+  const hp = res.host_port || S.host || "", fp = res.fingerprint || "", username = res.username || S.username || "";
+  const connCmd = `mpx connect ${hp} --fp ${fp}`;
+  const plainCmd = `mpx connect ${hp}`;
+  let url = "";
+  if (res.connected) {
+    try {
+      const d = await api(`/api/users/${encodeURIComponent(username)}/links`);
+      url = (d && (d.auto || d.links)) || "";
+    } catch { url = ""; }
+  }
+  const copyBtn = t => raw(`<button type="button" class="ib" data-act="copy" data-text="${esc(t)}" aria-label="复制">${ic("copy")}</button>`);
+  const cmdBox = t => H`<div class="cmdc"><div class="cmd">${t}</div>${copyBtn(t)}</div>`;
+  setup(["done", "done", "done", "done", "cur"], H`<div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>装好了</h3><p>控制面已经在 <b>${hp}</b> 上运行${res.connected ? "，这台电脑已经接入。" : "。"}</p></div></div>
+  ${res.connected ? (url ? H`<div class="qrw"><img class="qr" src="/local/qr.svg?d=${encodeURIComponent(url)}" alt="订阅二维码">
+    <div class="field"><label>${username} 的订阅链接</label>${cmdBox(url)}<span class="h">在手机客户端里扫码，或复制链接导入</span></div></div>`
+    : H`<div class="field"><label>订阅链接</label><span class="h">到用户页查看订阅链接</span></div>`)
+  : H`<div class="callout stone mb">${ic("info")}<div><b>本机没有自动接入</b><div class="mt2">在终端运行下面的命令，把这台电脑接入控制面。</div></div></div>
+    <div class="field"><label>接入命令</label>${cmdBox(plainCmd)}<span class="h">对方运行后输入设备密码即可</span></div>`}
+  <div class="field"><label>给别的电脑用</label>${cmdBox(connCmd)}<span class="h">对方运行后输入设备密码即可</span></div>
+  <div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${fp || "（未知）"}</div></div>
+  <p class="sub">本机用了 <code>~/.ssh</code> 里的一把密钥；VPS 上追加了这把公钥和控制面自己的公钥。</p>`,
+  H`<span class="sp"></span>${btn("进入管理界面", "pri", "arrow", "s-enter")}`);
+  $("#s-enter").addEventListener("click", () => location.reload());
+}
+
+window.setupStartRun = async params => {
+  S.run = params;
+  let data = null, ok = false, id = "";
+  try {
+    const res = await fetch("/local/setup/run", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(params),
+    });
+    const text = await res.text();
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+    if (res.status === 202 && data && data.id) { id = data.id; ok = true; }
+    else if (res.status === 409 && data && data.id) { id = data.id; ok = true; }
+  } catch (e) { data = null; }
+  if (!ok) { toast((data && data.error) || "安装启动失败", true); return; }
+  renderInstall();
+  startPoll(id);
+};
+
 function openSetup() {
   S.probe = null; S.checkErr = ""; S.errs = {};
-  renderWelcome();
+  return api("/local/setup").then(st => {
+    if (st && st.job && st.job.state === "running") { startPoll(st.job.id); return; }
+    if (st && st.mode === "normal") { location.reload(); return; }
+    renderWelcome();
+  }).catch(() => renderWelcome());
 }
 window.openSetup = openSetup;
 })();
