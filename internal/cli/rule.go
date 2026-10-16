@@ -422,7 +422,8 @@ type migrationReport struct {
 	Groups        []string `json:"groups"`
 	Rules         int      `json:"rules"`
 	Final         string   `json:"final"`
-	Purposes      []struct {
+	// Purposes 只为解析 v0.6.x 存下的历史报告;v0.7.0 的迁移不再产生用途结果。
+	Purposes []struct {
 		Slug    string   `json:"slug"`
 		Group   string   `json:"group"`
 		Rules   int      `json:"rules"`
@@ -468,7 +469,7 @@ func printMigrationReport(r *migrationReport) {
 
 func newRuleMigrateCmd() *cobra.Command {
 	var dry, confirm, replace, report bool
-	c := &cobra.Command{Use: "migrate", Short: "把模板和用途迁移成分流规则(--report 只看上次的报告)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	c := &cobra.Command{Use: "migrate", Short: "把模板迁移成分流规则(--report 只看上次的报告)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err

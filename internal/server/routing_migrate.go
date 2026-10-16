@@ -26,6 +26,7 @@ const (
 )
 
 // MigrationReport 是给人看的迁移报告,也存进 routing_state.report。
+// Purposes 字段保留形状只为解析历史报告:v0.7.0 起迁移不再读用途,新报告一律为空。
 type MigrationReport struct {
 	Status        string           `json:"status"`
 	At            time.Time        `json:"at"`
@@ -40,7 +41,7 @@ type MigrationReport struct {
 	Notes         []string         `json:"notes,omitempty"`
 }
 
-// PurposeOutcome 记一个用途转成了什么、丢了什么。
+// PurposeOutcome 是历史迁移报告里记一个用途转成了什么;v0.7.0 起只用于兼容旧报告。
 type PurposeOutcome struct {
 	Slug    string   `json:"slug"`
 	Group   string   `json:"group"`

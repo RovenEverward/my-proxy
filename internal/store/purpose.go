@@ -8,7 +8,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// migratePurposes 只建用途元数据表(节点/入口的 region、tags 等)。purposes 表
+// migratePurposes 只建元数据表(节点/入口的 region、city、letter);purposes 表
 // 从 v0.7.0 起不再创建,老库的表由 migrate() 末尾的 dropPurposes 按分流模式处理。
 func (s *Store) migratePurposes() error {
 	for _, ddl := range []string{
