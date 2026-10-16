@@ -2,6 +2,13 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.6.2 (2026-10-16)
+
+### 文档
+- README「升级」补充 `mpx update apply control` 的阶段报告说明：控制面重启的几秒里连不上属于正常。
+
+本版只改文档，用来验证从 v0.6.1 在本机升级控制面（`mpx update apply control`）与回退。
+
 ## v0.6.1 (2026-10-16)
 
 本版主题：在本机升级 CLI 和控制面（`mpx update`）。
