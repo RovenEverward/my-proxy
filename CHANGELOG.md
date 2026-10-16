@@ -2,6 +2,13 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## Unreleased
+
+### 版本查看
+- 新增 `mpx update`（`mpx update show` 等价）：一行显示本机 CLI、控制面、每台节点每个核心各自的当前版本与目标/最新版本，只读、不升级、不连节点。源码编译的版本显示「未知（源码编译）」，不报「有新版」。
+- 新增只读接口 `GET /api/update`，返回控制面自己与各节点核心的版本；控制面没有这个接口时（旧版本），`mpx update` 回退到 `/api/status` 里已有的版本信息，并说明节点核心版本取不到。
+- CLI 与控制面主版本或次版本不一致时，`mpx update` 与 `mpx status` 在 stderr 打一行警告，不影响退出码；`--json` 输出不受影响。
+
 ## v0.6.0 (2026-10-16)
 
 ### 分流规则（替代用途）

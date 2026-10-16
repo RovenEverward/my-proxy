@@ -123,6 +123,28 @@ func path2(p string) string {
 	return p
 }
 
+func TestSameMajorMinor(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want bool
+	}{
+		{"v0.2.0", "v0.2.9", true},
+		{"v0.2.0", "v0.3.0", false},
+		{"v0.9.0", "v1.0.0", false},
+		{"0.2.0", "v0.2.0", true},
+		// 比不出来时一律当作"一致":发警告需要证据,不认识对方就不是证据。
+		{"", "v0.3.0", true},
+		{"v0.2.0", "", true},
+		{"v0.0.0-abc-dirty", "v0.3.0", true},
+		{"v0.2.0", "v0.3.0-rc1", true},
+	}
+	for _, c := range cases {
+		if got := SameMajorMinor(c.a, c.b); got != c.want {
+			t.Errorf("SameMajorMinor(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+	}
+}
+
 func TestCheckCachesWithinInterval(t *testing.T) {
 	var hits int32
 	srv := fakeGitHub(t, "v0.9.0", []string{"v0.9.0", "v0.2.0"}, &hits)

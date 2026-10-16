@@ -37,6 +37,36 @@ func (s *Store) GetCoreDeployment(nodeID int64, core model.Core) (*model.CoreDep
 	return &d, nil
 }
 
+// DeployedNodesForCore 返回哪些节点为核心 core 下发过配置(基准哈希非空)。
+//
+// 一次取回全部节点,给「这台节点装没装这个核心」这类列表判断用 —— 逐台问一次
+// 会变成 N 次查询,而节点数是十几台的量级,一次全表扫描更划算。
+//
+// xray 的基准在 nodes 表上,不在这里;这个函数只回答第二核心。
+func (s *Store) DeployedNodesForCore(core model.Core) (map[int64]bool, error) {
+	if !core.Valid() {
+		return nil, fmt.Errorf("不支持的核心: %s", core)
+	}
+	rows, err := s.db.Query(`SELECT node_id FROM core_deployments WHERE core=? AND deployed_hash != ''`, core)
+	if err != nil {
+		return nil, fmt.Errorf("查询已下发的核心: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("读取核心下发记录: %w", err)
+		}
+		out[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历核心下发记录: %w", err)
+	}
+	return out, nil
+}
+
 // SetCoreDeployment 整体覆盖部署信息。传入下发记录由控制面维护。
 func (s *Store) SetCoreDeployment(d model.CoreDeployment) error {
 	if !d.Core.Valid() {

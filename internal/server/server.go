@@ -42,6 +42,16 @@ type StatusSource interface {
 	Snapshot(now time.Time) model.ControlStatus
 }
 
+// UpdateSource 是控制面查更新那条线的结论,GET /api/update 靠它回答。
+//
+// 单独一个接口而不是直接复用 StatusSource:两者只有版本信息这一小块重叠,
+// 而 /api/update 想要的恰恰是「不查心跳、不碰节点」的那一份。
+type UpdateSource interface {
+	// ControlUpdate 返回控制面自己这一份版本结论,不发任何网络请求 —— 上游
+	// 的检查由后台任务按自己的节奏做,接口只负责把手里的结论说出来。
+	ControlUpdate() model.UpdatePart
+}
+
 // Server 持有控制面运行期需要的东西。
 type Server struct {
 	store *store.Store
@@ -55,6 +65,7 @@ type Server struct {
 	mux           *http.ServeMux
 	nodeOps       NodeOps
 	status        StatusSource
+	updates       UpdateSource
 	dbPath        string
 
 	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
@@ -112,6 +123,12 @@ func (s *Server) SetNodeOps(o NodeOps) { s.nodeOps = o }
 // 但对象数量照给 —— CLI 的 status 不该因为后台任务没起就整个失败。
 func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
 
+// SetUpdateSource 接上控制面的更新检查结论,GET /api/update 靠它回答。
+//
+// 不接时那一行只有本机版本、说不了有没有新版 —— 这也是 /api/update 该有的
+// 退化样子:接口本身照常回 200,不因为后台任务没起来就整个失败。
+func (s *Server) SetUpdateSource(src UpdateSource) { s.updates = src }
+
 // Handler 返回可以直接交给 http.Server 的处理器。
 func (s *Server) Handler() http.Handler { return s.mux }
 
@@ -131,6 +148,7 @@ func (s *Server) routes() {
 	s.planRoutes(api)
 	s.diagnosticRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
+	api.HandleFunc("GET /api/update", s.handleUpdate)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	// GET /api/nodes/{id} 认一个 ?fresh=1:不带就读库里缓存的状态,带了就现场
