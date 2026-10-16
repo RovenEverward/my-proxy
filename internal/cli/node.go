@@ -611,8 +611,7 @@ var nodeEditCmd = &cobra.Command{
   mpx node edit 4 --ssh-port 2222 --ssh-user deploy
   mpx node edit la --region US --city 洛杉矶      # 显示名 🇺🇸 洛杉矶 A,字母自动分配
 
---region / --city / --letter 改的是显示名(存在节点元数据里,和 purpose metadata
-是同一份),不碰名字和连接参数。字母在同一地区同一城市内不重复,删掉节点不会让
+--region / --city / --letter 改的是显示名(存在节点元数据里),不碰名字和连接参数。字母在同一地区同一城市内不重复,删掉节点不会让
 别的节点重排。
 
 注意几个连带影响:

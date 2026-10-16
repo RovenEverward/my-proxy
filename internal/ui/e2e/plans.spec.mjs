@@ -1,15 +1,11 @@
 // 套餐页与用户页的套餐相关操作:每条写操作都和对应的 mpx plan / mpx user 命令
 // 对照,发到控制面的请求要一致(做法同 rules.spec.mjs)。
 import { test, expect } from "@playwright/test";
-import { writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { startEnv, normalize, login, cpFetch } from "./env.mjs";
 
 let env;
 const cp = (p, init = {}) => cpFetch(env.cpURL + p, { ...init, headers: { Authorization: "Bearer " + env.token, "Content-Type": "application/json", ...(init.headers || {}) } });
 const getJSON = async p => (await cp(p)).json();
-const file = (name, text) => { const f = path.join(tmpdir(), `mpx-e2e-${process.pid}-${name}`); writeFileSync(f, text); return f; };
 const planByID = async id => (await getJSON("/api/plans")).find(p => p.id === id);
 const planByName = async name => (await getJSON("/api/plans")).find(p => p.name === name);
 const inboundByTag = async tag => (await getJSON("/api/inbounds")).find(i => i.tag === tag);
@@ -19,7 +15,7 @@ test.beforeAll(async () => {
   const nodes = [["tokyo-a", "JP", "东京", "A"], ["la-a", "US", "洛杉矶", "A"], ["la-b", "US", "洛杉矶", "B"]];
   for (const [i, [n, region, city, letter]] of nodes.entries()) {
     await env.seed("node", "add", n, "--address", `203.0.113.${10 + i}`, "--ssh-port", "1");
-    await env.seed("purpose", "metadata", "set", "nodes", String(i + 1), "-f", file(`md${i}.json`, JSON.stringify({ region, city, letter })));
+    await env.seed("node", "edit", n, "--region", region, "--city", city, "--letter", letter);
   }
   // 东京 1 个入站;洛杉矶 A 2 个;洛杉矶 B 1 个。tag 唯一,方便 CLI 按名字解析。
   const ins = [
