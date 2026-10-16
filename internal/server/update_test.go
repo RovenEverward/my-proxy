@@ -9,6 +9,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/singboxbuild"
+	"github.com/RovenEverward/my-proxy/internal/xrayrelease"
 )
 
 // fixedUpdate 交回一份写死的控制面版本结论,把 /api/update 的回答钉住。
@@ -275,17 +276,17 @@ func TestUpdateReportsNodeCoreRows(t *testing.T) {
 	if hk.Current != "26.3.27" {
 		t.Errorf("hk-1 的 xray 版本不对:%+v", hk)
 	}
-	// xray 还没有钉死目标版本,目标该空着,而不是随便填一个。
-	if hk.Target != "" {
-		t.Errorf("xray 的目标版本该为空:%+v", hk)
+	// xray 的推荐版本跟着 MPX 发布钉死,目标就是那个常量。
+	if hk.Target != xrayrelease.RecommendedVersion {
+		t.Errorf("xray 的目标该是推荐版本 %s,实际 %q", xrayrelease.RecommendedVersion, hk.Target)
 	}
 
 	jpX := rows["jp-2/xray"]
 	if jpX.Current != "26.3.27" {
 		t.Errorf("混合节点上 xray 的版本不对:%+v", jpX)
 	}
-	if jpX.Target != "" {
-		t.Errorf("xray 的目标版本该为空:%+v", jpX)
+	if jpX.Target != xrayrelease.RecommendedVersion {
+		t.Errorf("xray 的目标该是推荐版本 %s,实际 %q", xrayrelease.RecommendedVersion, jpX.Target)
 	}
 	jpS := rows["jp-2/sing-box"]
 	if jpS.Current != "1.12.0" {

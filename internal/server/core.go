@@ -8,11 +8,23 @@ import (
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 )
 
 // CoreInstaller 扩展节点安装通道,保留旧 Xray NodeOps 实现的兼容性。
 type CoreInstaller interface {
 	InstallNodeCore(ctx context.Context, n model.Node, core model.Core, version string) (string, error)
+}
+
+// CoreUpgrader 是节点操作通道的可选扩展:让节点从 GitHub 自己拉一份 xray 换上。
+//
+// 与 CoreInstaller 的安装不同,这条路控制面不推 65MB:它只把资产地址与 sha256
+// 递给节点,下载、校验、替换、回滚都在节点上发生(见 node.UpgradeXray)。
+type CoreUpgrader interface {
+	// ResolveXray 问清节点架构,给出该平台该版本的下载地址与官方 sha256。
+	ResolveXray(ctx context.Context, n model.Node, version string) (assetURL, sha256 string, err error)
+	// UpgradeXray 让节点自己下载并原地换上指定版本,失败回滚(由 node 层负责)。
+	UpgradeXray(ctx context.Context, n model.Node, version, assetURL, sha256 string) (node.UpgradeResult, error)
 }
 
 var coreServicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]*$`)

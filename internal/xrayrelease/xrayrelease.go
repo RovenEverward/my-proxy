@@ -22,6 +22,13 @@ import (
 // repo 是 xray 的上游仓库。
 const repo = "XTLS/Xray-core"
 
+// RecommendedVersion 是这个 MPX 版本推荐装的 xray 版本。
+//
+// 刻意钉死而不是追上游 latest:一次出的 MPX 发布对应的是一套已经一起验证过的
+// 组合,节点上跑哪个版本应当由控制面说了算,而不是"上游昨天发了什么"。要换推荐
+// 版本就改这个常量、跟着一次 MPX 发布走。
+const RecommendedVersion = "v26.3.27"
+
 // 发布包里只取这三个文件。包里还有 LICENSE 和 README,推到几百台节点上没用。
 const (
 	fileXray    = "xray"
@@ -398,3 +405,8 @@ func normalize(v string) string {
 func releaseURL(version, asset string) string {
 	return downloadBase + "/" + repo + "/releases/download/" + version + "/" + asset
 }
+
+// DownloadURL 是对外暴露的 releaseURL:控制面要把地址递给节点,让节点自己去
+// 下载同一份资产,所以这个拼法不能再只留在包里。version 与 asset 都原样使用,
+// 不在这里补 v —— 调用方拿到的版本号本来就是上游的标签写法。
+func DownloadURL(version, asset string) string { return releaseURL(version, asset) }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -89,6 +90,16 @@ type Server struct {
 	// 话 EnsureSSHKey 会回退到 ~/.ssh。
 	sshKeyPath string
 
+	// resolveXray 与 upgradeXray 是节点核心一键升级里 xray 那条路的两个实现点。
+	// 默认分别走 CoreUpgrader 的 ResolveXray / UpgradeXray(控制面进程里的真实
+	// 通道),测试替换成假实现,免得真去 ssh 节点或问 GitHub。
+	resolveXray func(ctx context.Context, n model.Node, version string) (assetURL, sha256 string, err error)
+	upgradeXray func(ctx context.Context, n model.Node, version, assetURL, sha256 string) (node.UpgradeResult, error)
+
+	// nodeUpdate 是节点核心升级任务的内存状态。任务只跑在控制面进程里,重启即
+	// 清空 —— 这是有意的:升级是操作者此刻发起的一件事,不是要落库的历史。
+	nodeUpdate nodeUpdateState
+
 	// autoLocate 为真时,新建节点后自动按 IP 问 ipwho.is 并写入显示名(见 autoLocateNode)。
 	// New 默认关(测试不出网),Serve 按 ServeOptions.NoAutoLocate 打开。
 	autoLocate bool
@@ -129,6 +140,8 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 	if s.dbPath != "" {
 		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
 	}
+	s.resolveXray = s.defaultResolveXray
+	s.upgradeXray = s.defaultUpgradeXray
 	s.routes()
 	return s
 }
@@ -174,6 +187,10 @@ func (s *Server) routes() {
 	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的
 	// 一次性单元跑 `mpx update run control` 完成,见 selfupdate.ControlRunner。
 	api.HandleFunc("POST /api/update/control", s.handleUpdateControl)
+	// 节点核心一键升级:POST 起一个后台任务,GET 带 since 增量拉进度。
+	// 任务状态只在内存里,不落库。
+	api.HandleFunc("POST /api/update/nodes", s.handleUpdateNodesStart)
+	api.HandleFunc("GET /api/update/nodes", s.handleUpdateNodesProgress)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	// GET /api/nodes/{id} 认一个 ?fresh=1:不带就读库里缓存的状态,带了就现场
