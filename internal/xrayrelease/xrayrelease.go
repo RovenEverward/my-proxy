@@ -169,6 +169,75 @@ func resolveLatest(ctx context.Context, asset string) (version, url string, err 
 	return "", "", fmt.Errorf("发布 %s 里没有 %s", body.TagName, asset)
 }
 
+// Latest 问 GitHub xray 仓库最新发布是哪个版本,返回上游的标签形式(v26.3.27)。
+//
+// 只回答「最新是哪个版本」:要下载哪个平台的包由调用方用 AssetName 决定,下载
+// 地址用 releaseURL 拼。升级流程往往要先知道版本号才能算资产名和摘要地址,所以
+// 它比 resolveLatest 窄 —— 后者还要在资产列表里挑出该平台那一个。
+func Latest(ctx context.Context) (string, error) {
+	resp, err := get(ctx, apiBase+"/repos/"+repo+"/releases/latest")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var body struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&body); err != nil {
+		return "", fmt.Errorf("读 GitHub 的发布信息: %w", err)
+	}
+	if body.TagName == "" {
+		return "", errors.New("GitHub 没有给出最新版的版本号")
+	}
+	return body.TagName, nil
+}
+
+// Digest 取某个发布资产的官方摘要(.dgst),返回小写的 sha256。
+//
+// 摘要和资产是同一个 release 下的两个文件,内容是一行 "SHA2-256= <hex>"。升级时
+// 先取摘要、再让节点解包前自己核对 —— 一个下坏的核心顶替上去会让整台节点断流。
+// 摘要里没有这一行就报错,不猜、不放行。
+func Digest(ctx context.Context, version, asset string) (string, error) {
+	resp, err := get(ctx, releaseURL(version, asset)+".dgst")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("读 %s 的摘要: %w", asset, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "SHA2-256=")
+		if !ok {
+			continue
+		}
+		sum := strings.ToLower(strings.TrimSpace(rest))
+		if !isSHA256Hex(sum) {
+			return "", fmt.Errorf("%s 的 SHA2-256 不是 64 位十六进制: %q", asset, sum)
+		}
+		return sum, nil
+	}
+	return "", fmt.Errorf("%s 的摘要里没有 SHA2-256 行", asset)
+}
+
+// isSHA256Hex 报告 s 是不是 64 位小写十六进制。
+func isSHA256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // fetchInto 把发布包取到 dest 的旁边解开,最后整体改名成 dest。
 //
 // 先落临时目录再改名,是为了让缓存目录里出现的每一个版本都是完整的:解到一半
