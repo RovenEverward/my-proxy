@@ -56,7 +56,7 @@
 | `device` | 接入的设备：`list` `revoke` `password` |
 | `serve` | 启动控制面 |
 | `status` | 查看控制面状态（只读） |
-| `update` | 查看本机 CLI、控制面与各节点核心的版本（只读）；`mpx update show` 等价；`mpx update apply cli` 升级本机 CLI、`mpx update rollback cli` 回退 |
+| `update` | 查看本机 CLI、控制面与各节点核心的版本（只读）；`mpx update show` 等价；`mpx update apply cli` 升级本机 CLI、`mpx update rollback cli` 回退；`mpx update apply control` 远程升级控制面、`mpx update rollback control` 回退 |
 | `doctor` | 逐项自检（只读） |
 | `node` | 管理节点：`add` `list` `show` `edit` `rm` `install` `sync` `config` `status` `online` `drain` `undrain` `core` `probe` `capabilities` `capability-set` `diagnose` `diagnostics` |
 | `inbound` | 管理入站：`add` `list` `show` `edit` `rm` |

@@ -8,7 +8,8 @@
 - 新增 `mpx update`（`mpx update show` 等价）：一行显示本机 CLI、控制面、每台节点每个核心各自的当前版本与目标/最新版本，只读、不升级、不连节点。源码编译的版本显示「未知（源码编译）」，不报「有新版」。
 - 新增只读接口 `GET /api/update`，返回控制面自己与各节点核心的版本；控制面没有这个接口时（旧版本），`mpx update` 回退到 `/api/status` 里已有的版本信息，并说明节点核心版本取不到。
 - CLI 与控制面主版本或次版本不一致时，`mpx update` 与 `mpx status` 在 stderr 打一行警告，不影响退出码；`--json` 输出不受影响。
-- 新增 `mpx update apply cli` 与 `mpx update rollback cli`：从发布站取回指定版本（默认最新）、核对 SHA256SUMS 后替换本机 CLI，旧文件留在 `<mpx>.prev`；`--version` 选版本，`--allow-downgrade` 允许降级，`-y/--yes` 跳过确认（非交互环境必须加）。`control`、`nodes` 两个部件暂未支持。`mpx update` 会在本机 CLI 那行附上最近一次结果（成功/失败/已回退），`-o json` 增加 `cli_last` 字段。
+- 新增 `mpx update apply cli` 与 `mpx update rollback cli`：从发布站取回指定版本（默认最新）、核对 SHA256SUMS 后替换本机 CLI，旧文件留在 `<mpx>.prev`；`--version` 选版本，`--allow-downgrade` 允许降级，`-y/--yes` 跳过确认（非交互环境必须加）。`nodes` 部件暂未支持。`mpx update` 会在本机 CLI 那行附上最近一次结果（成功/失败/已回退），`-o json` 增加 `cli_last` 字段。
+- 新增 `mpx update apply control` 与 `mpx update rollback control`：先在控制面登记升级/回退请求（`--version` 选版本，默认最新；`-y/--yes` 跳过确认，非交互环境必须加），再轮询 `GET /api/update` 报告下载、校验、切换、健康检查各阶段，直到升级成功、失败或自动回退；控制面重启期间连不上不算失败，超时后提示用 `mpx update` 查看结果。旧控制面没有 `/api/update` 时提示先用 `install.sh` 升级一次，进行中会先拒绝。`mpx update` 会在控制面那行附上最近一次结果（进行中报阶段）。
 - 新增 `POST /api/update/control`（只新增）：登记一次控制面升级/回退请求（`version` 可留空表示最新，另有 `allow_downgrade`、`action`）；请求文件由 root 的一次性单元执行，`GET /api/update` 的 `control` 部分相应附带最近一次执行状态 `last`；新增隐藏命令 `mpx update run control`，由 `mpx-update.service` 调用。
 
 ## v0.6.0 (2026-10-16)

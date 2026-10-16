@@ -154,7 +154,7 @@ func cliUpdatePart(control model.UpdatePart) model.UpdatePart {
 func updateRows(cli, control model.UpdatePart, nodes []model.UpdateNodeCore, cliLast *selfupdate.State) [][]string {
 	rows := [][]string{
 		{"本机 CLI", updateVersionText(cli.Current), dash(cli.Latest), updatePartStatus(cli) + cliLastSuffix(cliLast)},
-		{"控制面", updateVersionText(control.Current), dash(control.Latest), updatePartStatus(control)},
+		{"控制面", updateVersionText(control.Current), dash(control.Latest), updatePartStatus(control) + controlLastSuffix(control.Last)},
 	}
 	for _, n := range nodes {
 		label := n.Name
@@ -278,14 +278,37 @@ func cliLastSuffix(st *selfupdate.State) string {
 	if st == nil || st.Result == "" {
 		return ""
 	}
+	return lastRunSuffix(st.State, st.Result, st.From, st.To, st.FinishedAt.Local().Format("01-02 15:04"))
+}
+
+// controlLastSuffix 把控制面最近一次升级/回退结果附在控制面那行后面。
+//
+// 进行中时不说"上次",而是直接报阶段 —— 那是一个此刻仍然成立的状态,用过去式
+// 会让人以为已经结束了。
+func controlLastSuffix(last *model.UpdateRun) string {
+	if last == nil || last.State == "" {
+		return ""
+	}
+	if last.State != "idle" {
+		return " · 进行中：" + controlStageName(last.State)
+	}
+	if last.Result == "" {
+		return ""
+	}
+	return lastRunSuffix(last.State, last.Result, last.From, last.To, last.FinishedAt.Local().Format("01-02 15:04"))
+}
+
+// lastRunSuffix 是本机 CLI 与控制面共用的"最近一次结果"格式化。
+//
+// 两行用同一个函数,免得同一个状态在两处被说成不同的话。
+func lastRunSuffix(state, result, from, to, when string) string {
 	word := map[string]string{
 		"ok":          "成功",
 		"failed":      "失败",
 		"rolled-back": "已回退",
-	}[st.Result]
+	}[result]
 	if word == "" {
-		word = st.Result
+		word = result
 	}
-	when := st.FinishedAt.Local().Format("01-02 15:04")
-	return fmt.Sprintf(" · 上次 %s %s→%s %s", when, dash(st.From), dash(st.To), word)
+	return fmt.Sprintf(" · 上次 %s %s→%s %s", when, dash(from), dash(to), word)
 }
