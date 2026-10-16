@@ -62,7 +62,7 @@ mpx init --host 203.0.113.10 --ssh-password
 
 **3 · 填进客户端。** 把输出里 `auto` 那条订阅地址导入 Clash Verge、sing-box、v2rayN 或 Shadowrocket。
 
-重复跑 `mpx init` 是安全的，已有的节点、入站、用户都会复用。
+重复跑 `mpx init` 是安全的，已有的节点、入站、用户都会复用。不想敲命令也可以直接运行 `mpx ui`：还没配置控制面时，它打开的就是首次安装向导，步骤和 `mpx init` 一样。
 
 <details>
 <summary><code>mpx init</code> 的常用参数</summary>
