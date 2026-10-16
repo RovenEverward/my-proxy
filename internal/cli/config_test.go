@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -150,6 +151,9 @@ func TestSaveConfigLeavesNoPartialFile(t *testing.T) {
 }
 
 func TestSaveConfigPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有 Unix 文件权限位")
+	}
 	path := useTempConfig(t)
 	if err := saveConfig(Config{
 		Current:  defaultProfile,

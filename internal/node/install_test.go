@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -67,6 +68,9 @@ func TestInstallCorePushesOnlyWhatChanged(t *testing.T) {
 // 三种都算对不出来:节点上没装 sha256sum/shasum、文件不在、这次 ssh 就失败了。
 // 少推一个文件只是多等一会儿,推错一个装不起来 —— 两者不对称,所以拿不准就推。
 func TestInstallCorePushesEverythingWhenHashesAreUnknown(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("远端路径用 Unix 语义,控制面只跑在 Linux")
+	}
 	for name, reply := range map[string]func(string) (string, error){
 		"节点上没有算 sha256 的工具": func(string) (string, error) { return "", nil },
 		"查 sha256 这一步就失败了":  func(string) (string, error) { return "", errors.New("ssh 断了") },

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -255,6 +256,9 @@ func TestDiagnosticResponseHTMLAtStorageLimit(t *testing.T) {
 }
 
 func TestDiagnosticResponseCLIBinaryStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("测试编出的二进制没有 .exe 后缀")
+	}
 	binary := filepath.Join(t.TempDir(), "mpx")
 	build := exec.Command("go", "build", "-o", binary, "../../cmd/mpx")
 	if out, err := build.CombinedOutput(); err != nil {

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -197,6 +198,9 @@ func TestRunSpeedFallbackFailedPartialRequestContinues(t *testing.T) {
 }
 
 func TestRunSpeedFallbackCancellationAndCallerDeadline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 Unix ping/curl 与临时目录清理语义")
+	}
 	for _, mode := range []string{"cancel", "deadline"} {
 		t.Run(mode, func(t *testing.T) {
 			tmp := t.TempDir()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +197,9 @@ func TestRunHonorsCallerDeadline(t *testing.T) {
 
 // 超时与「节点不可达」在日志里要能一眼分开:后者要把 ssh 自己的话带出来。
 func TestRunReportsUnreachableNotTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 ssh 本地套接字")
+	}
 	fakeSSH(t, `echo "ssh: connect to host 203.0.113.10 port 22: Connection refused" >&2; exit 255`)
 
 	_, err := SSH{}.Run(t.Context(), model.Node{Name: "断电节点", Address: "203.0.113.10"}, "echo hi")

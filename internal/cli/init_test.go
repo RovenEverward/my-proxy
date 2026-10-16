@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -216,6 +217,9 @@ func setDevicePassword(t *testing.T, pw string) {
 }
 
 func TestInitRemoteGolden(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("golden 里的安装脚本路径用 Unix 分隔符,Windows 上对不上")
+	}
 	const devicePW = "device-password-1234"
 
 	cases := []struct {

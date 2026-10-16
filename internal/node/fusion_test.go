@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,9 @@ func TestFusionRequiresBoundedRunner(t *testing.T) {
 }
 
 func TestFusionScriptGuards(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("脚本作为命令行参数超出 Windows 长度限制")
+	}
 	args := fusionArguments(fusion.Config{}, 60)
 	for _, want := range []string{"-upload=false", "-privacy=true", "-menu=false", "-json=-", "-cpu=false", "-disk=false", "-memory=false", "-speed=false", "-nt3=false"} {
 		if !strings.Contains(args, want) {

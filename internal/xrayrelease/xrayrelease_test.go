@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -103,6 +104,9 @@ func makeZip(t *testing.T, names ...string) []byte {
 
 // 取一次发布要把三个文件按正确的权限落地;同一个版本再取一次不该重新下载。
 func TestFetchTakesLatestAndReusesCache(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有 Unix 文件权限位")
+	}
 	// 包里带上不该被取出来的文件,确认我们只挑要的那几个。
 	gh := newFakeGitHub(t, "Xray-linux-64.zip",
 		makeZip(t, fileXray, fileGeoIP, fileGeoSite, "LICENSE", "README.md"))

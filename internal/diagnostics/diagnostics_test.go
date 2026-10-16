@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -237,6 +238,9 @@ func TestPUTExactBodyDirectAndSOCKS(t *testing.T) {
 }
 
 func TestExecutorBoundsCancellationAndCleanup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 Unix 的临时目录清理语义")
+	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no shell")
 	}
@@ -365,6 +369,9 @@ func TestSourceContractsAndValidation(t *testing.T) {
 }
 
 func TestInterruptedPingDoesNotInventLoss(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 Unix ping")
+	}
 	e := testEngine(t)
 	e.cfg.Samples = 5
 	e.cfg.RequestTimeoutSeconds = 1
@@ -497,6 +504,9 @@ fi
 }
 
 func TestActualRouteAndPingParsers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("依赖 Unix ping/traceroute")
+	}
 	mtr := `{"report":{"hubs":[{"count":1,"host":"192.0.2.1","Loss%":0.0,"Avg":1.4},{"count":2,"host":"???","Loss%":100.0,"Avg":0}]}}`
 	if h := parseMTR(mtr); len(h) != 2 || h[0].RTTMS == nil || !h[1].Unanswered {
 		t.Fatal(h)

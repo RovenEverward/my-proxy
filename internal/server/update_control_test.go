@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -154,6 +155,9 @@ func TestUpdateControlConflictsWhileRunning(t *testing.T) {
 
 // 目录写不进去时 500,且信息要指向 install.sh。root 下 chmod 拦不住写入,跳过。
 func TestUpdateControlUnwritableDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 没有 Unix 文件权限位")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root 无视目录权限,跳过不可写用例")
 	}

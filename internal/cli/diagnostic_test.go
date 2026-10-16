@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -298,6 +299,9 @@ func TestDiagnosticCLISpeedFalseAndNetworkModePayload(t *testing.T) {
 // Run the actual binary because SetOut in in-process command tests hides Cobra's
 // default stream choice. No external diagnostic tools or public URLs are used.
 func TestDiagnosticCLIBinaryAllUsesStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("测试编出的二进制没有 .exe 后缀")
+	}
 	binary := filepath.Join(t.TempDir(), "mpx")
 	build := exec.Command("go", "build", "-o", binary, "../../cmd/mpx")
 	if output, err := build.CombinedOutput(); err != nil {
