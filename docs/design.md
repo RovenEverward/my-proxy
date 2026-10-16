@@ -2,7 +2,7 @@
 
 mpx 是一个自建代理节点的控制面:一台机器上跑一个服务,管住若干台服务器上的 xray 与 sing-box,对外托管用户订阅。操作者在本机敲命令行,那是它唯一的入口;`mpx ui` 把同一套命令搬进本机浏览器,是 CLI 的另一种界面,不是第二个入口。
 
-这份文档讲清三件事:它为什么要有、基本形态是什么、哪些事明确不做。它是这组工程文档的入口,其余几篇各回答一个问题,见[文档分工](#文档分工)。
+这份文档讲清三件事:它为什么要有、基本形态是什么、哪些事明确不做。工程文档的总入口是 [atlas](atlas/README.md),其余几篇各回答一个问题,见[文档分工](#文档分工)。
 
 ## 目标
 
@@ -161,18 +161,4 @@ CLI 那一行有一个例外:`mpx init` 会 SSH。它是**在控制面存在之�
 
 ## 文档分工
 
-| 文档 | 回答什么 |
-| --- | --- |
-| **设计**(本篇) | 它为什么要有、基本形态是什么、哪些事不做 |
-| [对外契约](internal/contracts.md) | CLI、管理接口、订阅接口、节点侧契约的确切形状 |
-| [数据模型与语义](internal/model.md) | 数据长什么样、状态怎么判 |
-| [关键决策与理由](internal/decisions.md) | 每一条取舍为什么这么定,换掉会怎样 |
-| [现状](internal/status.md) | 做到哪、验到什么程度、哪些还没验过 |
-| [路线图](internal/roadmap.md) | 分批演进计划,以及排队的依据 |
-| [缺口与待定项](internal/open-questions.md) | 还有哪些缺口、哪些需要拍板 |
-| [管理 UI 方案](internal/ui-rfc.md) | `mpx ui` 为什么是本机转发、页面以什么为界、怎么防跨站与 DNS rebinding |
-| [节点命名方案](internal/node-naming-rfc.md) | 节点展示名「🇺🇸 洛杉矶 A」、地区识别,以及 CLI 用名字指定对象 |
-| [自动升级方案](internal/update-rfc.md) | 三部分的升级、校验、回退与 `mpx update`;发布件校验和(M0) |
-| [能力检测验证](internal/capability-validation.md)、[一键体检验证](internal/diagnostic-validation.md)、[QUIC 验证](internal/quic-validation.md) | 这几块功能的真实证据与限制 |
-
-安装与日常操作看[用户文档导航](user/index.md)。
+设计、契约、模型、决策、RFC 和验证记录各回答什么、在哪，统一列在 [atlas 的文档地图](atlas/README.md#文档地图)。安装与日常操作看[用户文档站](https://RovenEverward.github.io/my-proxy/)。

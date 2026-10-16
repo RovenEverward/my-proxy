@@ -1,6 +1,6 @@
 # RFC:MPX 桌面程序与「UI 优先」
 
-> 状态:**已批准**(2026-10-16:框架定 MyGo;Linux 桌面包要做;.deb + tar.gz;所有安装包都不签名;Q4 只做普通窗口;Q6 钥匙串另开 RFC;Q7 恢复留在终端;Q8 桌面自更新用 SHA256SUMS) · 起草基于 my-proxy main `787c0f1`,定稿对照 `1d0884c`(v0.6.4)与 [egoist/mygo](https://github.com/egoist/mygo) v0.5.5 · magpie 对照 /workspace/magpie-src
+> 状态:**已批准**(2026-10-16:框架定 MyGo;Linux 桌面包要做;.deb + tar.gz;所有安装包都不签名;Q4 只做普通窗口;Q6 钥匙串另开 RFC;Q7 恢复留在终端;Q8 桌面自更新用 SHA256SUMS) · 起草基于 my-proxy main `787c0f1`,定稿对照 `1d0884c`(v0.6.4)与 [egoist/mygo](https://github.com/egoist/mygo) v0.5.5
 > 这份 RFC 推翻了 `ui-rfc.md`「原生桌面壳不做」那条 Non-goal(见 §4.1);页面仍以 `mpx ui` 为准,壳只换显示窗口。
 
 ## 结论(先看这里)

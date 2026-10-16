@@ -215,7 +215,7 @@ go build -o mpx ./cmd/mpx
 - **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [在多台设备上管理](https://RovenEverward.github.io/my-proxy/guides/devices) ｜ [用 mpx ui 在浏览器里管理](https://RovenEverward.github.io/my-proxy/guides/web-ui) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [用 mpx doctor 排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
 - **参考**：[命令行](https://RovenEverward.github.io/my-proxy/reference/cli) ｜ [订阅设置](https://RovenEverward.github.io/my-proxy/reference/settings) ｜ [订阅接口](https://RovenEverward.github.io/my-proxy/reference/subscription)
 - **原理**：[控制面与节点](https://RovenEverward.github.io/my-proxy/concepts/architecture)
-- **设计与内部决策**（只在仓库里）：[设计文档](docs/design.md) ｜ [内部文档索引](docs/internal/index.md) ｜ [对外契约](docs/internal/contracts.md) ｜ [数据模型](docs/internal/model.md) ｜ [架构决策记录](docs/internal/decisions.md) ｜ [路线图](docs/internal/roadmap.md) ｜ [验证记录](docs/internal/status.md)
+- **开发者入口**（只在仓库里）：[docs/atlas](docs/atlas/README.md)：MPX 由哪几块组成、怎么配合，以及设计、决策、RFC 等全部内部文档的地图。
 
 文档站由 `docs/` 下的 markdown 经 [VitePress](https://vitepress.dev/) 生成，推 `main` 后由 [docs.yml](.github/workflows/docs.yml) 发布。本地预览：`npm install && npm run docs:dev`。
 
