@@ -97,7 +97,7 @@ func (u userRow) planText() string {
 //
 // 单独把 plan_id 拎出来,是因为 model.User 的 *int64 + omitempty 分不出
 // 「没带这个字段」和「带了 null」—— 而控制面需要区分:没带保持原套餐,null
-// 摘掉。PlanID 非空是数字,plan_idJSON(nil) 是显式 null,零值(省略)则不带。
+// 会被拒绝(不能把用户移出套餐)。PlanID 非空是数字,plan_idJSON(nil) 是显式 null,零值(省略)则不带。
 type userWriteBody struct {
 	model.User
 	PlanID json.RawMessage `json:"plan_id,omitempty"`
@@ -483,12 +483,12 @@ var userEditCmd = &cobra.Command{
 		if changed("note") {
 			u.Note = userEditFlags.note
 		}
-		// 套餐三态:没给 --plan 就完全不带这个字段(保持原套餐);--plan "" 显式
-		// 发 null(摘掉);给了名字/id 就改挂。
+		// 没给 --plan 就完全不带这个字段(保持原套餐);给了名字/id 就改挂。
+		// --plan "" 直接拒绝:不能把用户移出套餐,否则会回落到全部入站。
 		body := userWriteBody{User: u}
 		if changed("plan") {
 			if strings.TrimSpace(userEditFlags.plan) == "" {
-				body.PlanID = planIDJSON(nil)
+				return errors.New(`--plan 不能为空:不能把用户移出套餐,请指定一个具体套餐(可以是默认套餐)`)
 			} else {
 				id, err := resolvePlanID(c, userEditFlags.plan, false)
 				if err != nil {
@@ -700,7 +700,7 @@ func init() {
 	userEditCmd.Flags().StringVar(&userEditFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD;给空串表示永不过期")
 	userEditCmd.Flags().StringVar(&userEditFlags.resetStrategy, "reset-strategy", "", "新的重置策略:none / daily / weekly / monthly")
 	userEditCmd.Flags().StringVar(&userEditFlags.inbounds, "inbounds", "", "新的可用入站 id,逗号分隔;给空串表示全部")
-	userEditCmd.Flags().StringVar(&userEditFlags.plan, "plan", "", "改挂到某个套餐(套餐名或 id);给空串表示摘掉套餐")
+	userEditCmd.Flags().StringVar(&userEditFlags.plan, "plan", "", "改挂到某个套餐(套餐名或 id,可以是默认套餐);不能为空")
 	userEditCmd.Flags().StringVar(&userEditFlags.note, "note", "", "新的备注;给空串表示清掉")
 }
 

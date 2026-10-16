@@ -852,7 +852,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 // 留空的 Key / SubToken 会沿用原值,这样 CLI 不必把它们回传。
 //
 // 套餐归属单独处理:请求体里没带 plan_id 就保持原值(老客户端整体 PUT 不会
-// 丢套餐);带了 null 摘掉;带了 id 改挂。改挂只在确实发生变化时才调用
+// 丢套餐);带了 null 拒绝(不能把用户移出套餐);带了 id 改挂。改挂只在确实发生变化时才调用
 // SetUserPlan,这样 all_nodes 套餐被写入非空 inbound_ids 时 store 的摘除规则
 // 仍然生效 —— 客户端原样回传同一个套餐时不会把它又挂回去。
 func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {

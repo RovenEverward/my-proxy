@@ -30,7 +30,7 @@ var (
 type PlanInUseError struct{ Users int }
 
 func (e *PlanInUseError) Error() string {
-	return fmt.Sprintf("还有 %d 个用户在用这个套餐,不能删除", e.Users)
+	return fmt.Sprintf("还有 %d 个用户在用这个套餐,不能删除:请用 reassign 指定一个具体套餐(可以是默认套餐),先把这些用户改挂过去再删", e.Users)
 }
 
 // migratePlans 建套餐相关的四张表,并跑一次升级迁移(幂等)。
@@ -610,8 +610,9 @@ func (s *Store) DeletePlan(id int64) error {
 // DeletePlanReassign 删除套餐,并与用户的改挂/摘除在同一个事务里完成:
 //
 //   - reassignTo 非空:先把挂着该套餐的用户整体改挂到 reassignTo;
-//   - detach 为真:先摘掉这些用户的套餐(回到旧语义);
-//   - 两者都没有且还有用户挂着:返回 *PlanInUseError,什么都不动。
+//   - 没有 reassignTo(不论 detach)且还有用户挂着:返回 *PlanInUseError,
+//     什么都不动。不允许摘掉套餐后再删:没挂套餐、也没单独勾入站的用户会按旧
+//     语义回落到全部入站,权限被悄悄放大。detach 只为兼容签名保留,不再生效。
 //
 // 默认套餐不能删。删除与改挂必须原子:先改挂再删,中途失败整体回滚,不会出现
 // 「用户改挂了、套餐还在」或「套餐删了、用户指向不存在的套餐」这两种中间态。
@@ -644,10 +645,6 @@ func (s *Store) DeletePlanReassign(id int64, reassignTo *int64, detach bool) err
 		}
 		if _, err := tx.Exec(`UPDATE user_plans SET plan_id = ? WHERE plan_id = ?`, *reassignTo, id); err != nil {
 			return fmt.Errorf("把用户从套餐 %d 改挂到 %d: %w", id, *reassignTo, err)
-		}
-	case detach:
-		if _, err := tx.Exec(`DELETE FROM user_plans WHERE plan_id = ?`, id); err != nil {
-			return fmt.Errorf("摘掉套餐 %d 的用户: %w", id, err)
 		}
 	default:
 		var n int

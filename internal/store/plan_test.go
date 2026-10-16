@@ -753,3 +753,32 @@ func TestPlanCRUD(t *testing.T) {
 		t.Fatalf("删除后 GetPlan 应报 ErrNotFound,实际 %v", err)
 	}
 }
+
+// 删除还有用户的套餐时,不论 detach 与否都必须指定改挂去向:摘掉套餐会让没单独
+// 勾入站的用户回落到全部入站。
+func TestDeletePlanNeverDetachesUsers(t *testing.T) {
+	s := newTestStore(t)
+	p := &model.Plan{Name: "基础"}
+	if err := s.CreatePlan(p); err != nil {
+		t.Fatal(err)
+	}
+	u := newTestUser(t, s, "alice")
+	if _, err := s.SetUserPlan(u.Username, &p.ID); err != nil {
+		t.Fatal(err)
+	}
+	var inUse *PlanInUseError
+	if err := s.DeletePlanReassign(p.ID, nil, true); !errors.As(err, &inUse) || inUse.Users != 1 {
+		t.Fatalf("detach 删除应当被拒绝, err=%v", err)
+	}
+	got, err := s.GetUser("alice")
+	if err != nil || got.PlanID == nil || *got.PlanID != p.ID {
+		t.Fatalf("被拒绝的删除动了归属: %+v, err=%v", got, err)
+	}
+	def, _ := s.DefaultPlanID()
+	if err := s.DeletePlanReassign(p.ID, &def, false); err != nil {
+		t.Fatalf("改挂到默认套餐后删除: %v", err)
+	}
+	if got, _ := s.GetUser("alice"); got.PlanID == nil || *got.PlanID != def {
+		t.Fatalf("没改挂到默认套餐: %+v", got.PlanID)
+	}
+}

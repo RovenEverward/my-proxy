@@ -118,8 +118,9 @@ func (s *Server) handleUpdatePlan(w http.ResponseWriter, r *http.Request) {
 // handleDeletePlan 删除套餐。
 //
 // 默认套餐 409;还有用户挂着时 409 并带上用户数;给了 ?reassign=<id> 先把用户
-// 改挂到那个套餐,给了空的 ?reassign= 先把用户摘掉,改挂与删除在 store 的同一
-// 个事务里完成。
+// 改挂到那个套餐,改挂与删除在 store 的同一个事务里完成。?reassign 没填或为空
+// 时,只有套餐里已经没有用户才能删 —— 不允许把用户摘出套餐,否则他们会回落到
+// 全部入站。
 func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
@@ -127,21 +128,18 @@ func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	var reassignTo *int64
-	detach := false
 	if q.Has("reassign") {
 		raw := strings.TrimSpace(q.Get("reassign"))
-		if raw == "" {
-			detach = true
-		} else {
+		if raw != "" {
 			target, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil || target <= 0 {
-				writeError(w, http.StatusBadRequest, "reassign 必须是正整数,或者留空表示摘掉套餐")
+				writeError(w, http.StatusBadRequest, "reassign 必须是一个具体套餐的 id(可以是默认套餐)")
 				return
 			}
 			reassignTo = &target
 		}
 	}
-	if err := s.store.DeletePlanReassign(id, reassignTo, detach); err != nil {
+	if err := s.store.DeletePlanReassign(id, reassignTo, false); err != nil {
 		s.planError(w, err, "套餐")
 		return
 	}

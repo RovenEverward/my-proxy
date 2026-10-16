@@ -73,7 +73,7 @@ func userViews(users []model.User) []userView {
 // 比 model.User 只多两件事:Enabled 是 *bool,为了分得清「没说」和「说了
 // false」;PlanID 是 json.RawMessage,为了分得清「没带 plan_id」「带了 null」
 // 和「带了一个 id」。model.User 里 PlanID 是指针,恰恰分不出前两者 —— 而不带
-// 时保持原套餐、带 null 时摘掉,是两个必须区分开的语义(见 RFC「新用户与旧
+// 时保持原套餐、带 null 时报错拒绝,是两个必须区分开的语义(见 RFC「新用户与旧
 // 客户端」)。
 //
 // 嵌入的 model.User 里那两个同名字段会被外层遮住(JSON 里同名的取浅的那个),
@@ -99,7 +99,7 @@ func (req *userRequest) takeEnabled(old bool, creating bool) bool {
 // takePlanID 把请求体里的 plan_id 收成三态:
 //
 //	(false, nil)  没带这个字段,调用方应保持原来的套餐;
-//	(true, nil)   显式带了 null,调用方应摘掉套餐;
+//	(true, err)   显式带了 null:拒绝,不能把用户移出套餐;
 //	(true, &id)   带了具体 id,调用方应改挂到该套餐。
 func (req *userRequest) takePlanID() (*int64, bool, error) {
 	if req.PlanID == nil {
@@ -107,7 +107,8 @@ func (req *userRequest) takePlanID() (*int64, bool, error) {
 	}
 	text := strings.TrimSpace(string(req.PlanID))
 	if text == "null" {
-		return nil, true, nil
+		// 不允许摘掉套餐:没挂套餐、又没单独勾入站的用户会回落到全部入站。
+		return nil, true, errors.New("plan_id 不能为 null:不能把用户移出套餐,请指定一个具体套餐(可以是默认套餐)")
 	}
 	var id int64
 	if err := json.Unmarshal(req.PlanID, &id); err != nil {
