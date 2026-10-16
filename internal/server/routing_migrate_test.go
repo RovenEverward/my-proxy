@@ -50,7 +50,7 @@ func TestMigrateDefaultAndPurposes(t *testing.T) {
 	if code, _ := e.api("PUT", "/api/routing", map[string]string{"mode": "rules"}); code != 409 {
 		t.Fatal("规则表为空时不能切到 rules")
 	}
-	_, _, before := e.sub(path+"?purpose=media", "")
+	_, _, before := e.sub(path, "")
 
 	e.s.AutoMigrateRouting()
 	st, _ := e.st.GetRoutingState()
@@ -93,22 +93,19 @@ func TestMigrateDefaultAndPurposes(t *testing.T) {
 		t.Fatalf("已有规则表时应跳过: %+v", r)
 	}
 
-	// ?purpose= 返回普通订阅 + Deprecation
-	code, h, after := e.sub(path+"?purpose=media", "")
+	// ?purpose= 已删除:查询参数被忽略,返回普通订阅。
+	code, _, after := e.sub(path+"?purpose=media", "")
 	_, _, plain := e.sub(path, "")
-	if code != 200 || h.Get("Deprecation") != "true" || string(after) != string(plain) || string(after) == string(before) {
-		t.Fatalf("purpose 兼容: %d %v", code, h)
-	}
-	if code, _, _ := e.sub(path+"?purpose=gone", ""); code != 200 {
-		t.Fatal("rules 模式下不存在的用途也返回普通订阅")
+	if code != 200 || string(after) != string(plain) || string(after) == string(before) {
+		t.Fatalf("purpose 兼容: %d", code)
 	}
 
 	// 回滚开关
 	if c, b := e.api("PUT", "/api/routing", map[string]string{"mode": "template"}); c != 200 || !strings.Contains(string(b), "template") {
 		t.Fatalf("%d %s", c, b)
 	}
-	if _, h, b := e.sub(path+"?purpose=media", ""); h.Get("Deprecation") != "true" || string(b) != string(before) {
-		t.Fatal("切回 template 后用途订阅应恢复原样")
+	if _, _, b := e.sub(path+"?purpose=media", ""); string(b) != string(before) {
+		t.Fatal("切回 template 后订阅应恢复原样")
 	}
 	if r := migrateAPI(t, e, map[string]bool{"replace": true}); r.Status != MigrateDone {
 		t.Fatalf("replace: %+v", r)
@@ -150,13 +147,5 @@ func TestMigrateCustomTemplates(t *testing.T) {
 	set(model.FormatClashMeta, "proxy-groups:\n  - {name: PROXY, type: select, include-all-proxies: true}\nrules:\n  - DOMAIN-SUFFIX,a.com,PROXY\n  - MATCH,DIRECT\n")
 	if r := migrateAPI(t, e, nil); r.Status != MigrateDone || r.Source != "自定义 clash-meta 模板" || r.Rules != 1 || r.Final != "直连" {
 		t.Fatalf("%+v", r)
-	}
-}
-
-func TestPurposeDeprecationHeaders(t *testing.T) {
-	e := newEnv(t)
-	u := e.createUser("alice")
-	if _, h, _ := e.sub("/sub/"+u.SubToken+"/clash-meta?purpose=gone", ""); h.Get("Deprecation") != "true" {
-		t.Fatal("?purpose= 要带废弃头")
 	}
 }
