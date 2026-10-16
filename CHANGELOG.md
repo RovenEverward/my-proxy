@@ -2,6 +2,13 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.6.6 (2026-10-16)
+
+### 变更
+- `mpx ui` 去掉「用途」页与相关写操作放行（issue #49 / R6 第一刀）。分流请用「分流」页（`mpx rule` / `mpx group`）；节点地区仍可在节点编辑里改。控制面 `/api/purposes*` 与 `mpx purpose` 命令仍在，计划 v0.7.0 删除。
+
+包含：#81。
+
 ## v0.6.5 (2026-10-16)
 
 本版主题：`mpx ui` 顶部「更新」pill。
