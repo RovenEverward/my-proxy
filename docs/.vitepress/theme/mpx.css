@@ -98,3 +98,4 @@ pre::-webkit-scrollbar, .md div[class*="language-"]::-webkit-scrollbar, .md div[
 pre::-webkit-scrollbar-track, .md div[class*="language-"] pre::-webkit-scrollbar-track { background:transparent; }
 pre::-webkit-scrollbar-thumb, .md div[class*="language-"] pre::-webkit-scrollbar-thumb { background:var(--line); border-radius:3px; }
 pre:hover::-webkit-scrollbar-thumb, .md div[class*="language-"] pre:hover::-webkit-scrollbar-thumb { background:var(--faint); }
+.VPNavBarTitle .logo.dark{display:none}[data-theme=dark] .VPNavBarTitle .logo.light{display:none}[data-theme=dark] .VPNavBarTitle .logo.dark{display:inline-block}

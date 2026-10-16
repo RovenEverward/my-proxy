@@ -41,7 +41,7 @@ async function noLeak(page) {
 
 test("a. 没配置控制面时进入首次安装", async ({ page }) => {
   await openSetup(page);
-  await expect(page.locator(".welcome h2")).toHaveText("在你的 VPS 上装好 mpx");
+  await expect(page.locator(".welcome h2")).toHaveText("在你的 VPS 上装好 MPX");
   await page.locator("#s-start").click();
   await expect(page.locator("#s-host")).toBeVisible();
   await expect(page.locator("#s-check")).toBeVisible();

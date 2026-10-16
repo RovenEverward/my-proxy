@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/public/logo.svg" width="96" alt="mpx">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/public/lockup-dark.svg"><img src="docs/public/lockup-light.svg" height="48" alt="MPX"></picture>
 
 # mpx
 

@@ -12,14 +12,16 @@ export default defineConfig({
   title: 'MPX',
   description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，本地命令行是全部入口。',
   head: [
-    ['link', { rel: 'icon', href: '/my-proxy/logo.svg' }],
+    ['link', { rel: 'icon', href: '/my-proxy/favicon.svg', type: 'image/svg+xml' }],
+    ['link', { rel: 'icon', href: '/my-proxy/favicon.ico', sizes: 'any' }],
+    ['link', { rel: 'apple-touch-icon', href: '/my-proxy/apple-touch-icon.png' }],
     ['meta', { name: 'color-scheme', content: 'light dark' }],
     ['script', {}, '(() => {\n  let mode = "system"; try { mode = localStorage.getItem("theme") || "system"; } catch {}\n  const q = matchMedia("(prefers-color-scheme: dark)");\n  const apply = () => { document.documentElement.dataset.theme = mode === "system" ? (q.matches ? "dark" : "light") : mode; };\n  q.addEventListener("change", () => mode === "system" && apply());\n  window.cycleTheme = () => { mode = { system: "light", light: "dark", dark: "system" }[mode];\n    try { mode === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", mode); } catch {} apply(); };\n  apply();\n})();']
   ],
   appearance: false,
 
   themeConfig: {
-    logo: '/logo.svg',
+    logo: { light: '/mark-light.svg', dark: '/mark-dark.svg' },
     siteTitle: 'MPX',
 
     nav: [

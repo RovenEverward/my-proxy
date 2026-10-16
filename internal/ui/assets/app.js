@@ -229,7 +229,7 @@ function shell(page, body, crumb) {
     nav += H`<a class="nav ${route[0] === k ? "on" : ""}" href="#${k}">${ic(p.nav[1])}${p.title}${p.count ? H`<span class="ct">${p.count()}</span>` : ""}</a>`;
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
-  return H`<div class="app"><aside class="side"><div class="brand"><img src="/logo.svg" alt="">mpx<small>${STATUS?.version || ""}</small></div>
+  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${STATUS?.version || ""}</small></div>
   <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span class="ro">${ic("term")} 由 <code>mpx ui</code> 提供</span><span>仅本机可访问 · token 不出本进程</span></div></aside>

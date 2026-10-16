@@ -41,7 +41,7 @@
 .banner{display:flex;gap:10px;align-items:center;padding:10px 14px;border-radius:10px;background:var(--stone);font-size:12.5px;color:var(--ink2);margin-bottom:14px}.banner svg{width:16px;height:16px;flex:none;color:var(--muted)}
 /* 向导 B:全屏居中卡片 */
 .setup{position:fixed;inset:0;z-index:40;background:var(--base);overflow:auto;display:flex;flex-direction:column;align-items:center;padding:28px 16px 40px}
-.setup .sbrand{display:flex;align-items:center;gap:8px;font-weight:620;font-size:15px;margin-bottom:18px;align-self:stretch;max-width:640px;width:100%;margin-inline:auto}.setup .sbrand img{width:22px;height:22px}.setup .sbrand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
+.setup .sbrand{display:flex;align-items:center;gap:8px;font-weight:620;font-size:15px;margin-bottom:18px;align-self:stretch;max-width:640px;width:100%;margin-inline:auto}.setup .sbrand img.lk{height:22px;width:auto}.setup .sbrand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .setup .scard{width:100%;max-width:640px;background:var(--canvas);border-radius:14px;padding:6px 0 0}
 .setup .scard .db{padding:4px 22px 18px}.setup .scard .df{display:flex;gap:8px;justify-content:flex-end;padding:12px 22px 18px}
 .setup .scard .df .sp{flex:1}

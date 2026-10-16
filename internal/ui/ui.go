@@ -315,7 +315,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-const loginPage = `<!doctype html><meta charset="utf-8"><title>mpx ui</title>
+const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
 <body style="font:14px/1.6 system-ui;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
 <h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
