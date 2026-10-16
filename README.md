@@ -1,75 +1,71 @@
+<div align="center">
+
+<img src="docs/public/logo.svg" width="96" alt="mpx">
+
 # mpx
 
-轻量的自建多节点代理控制面：一台控制面 + 若干 Xray / sing-box 节点 + 一个本地 CLI 工具。
+### 自建多节点代理，在自己电脑上管完。
 
-用户流量直连各节点，节点配置通过 SSH 声明式下发。Xray 用户通过 gRPC 动态维护；Hysteria2 / TUIC 使用独立 sing-box 服务，两核心流量计入同一用户配额。用途订阅可以按手动标签和实际入口能力选择候选。
+**一台控制面，若干 Xray / sing-box 节点，一个本地命令行 `mpx`。**<br>
+加节点、开账号、改分流、发订阅，都在你自己的电脑上做，装好之后不用再登录 VPS。
 
----
+[![Release](https://img.shields.io/github/v/release/RovenEverward/my-proxy?label=release&color=111111)](https://github.com/RovenEverward/my-proxy/releases/latest) [![Go](https://img.shields.io/github/go-mod/go-version/RovenEverward/my-proxy?color=111111)](go.mod) [![License](https://img.shields.io/badge/license-MIT-111111)](LICENSE)<br>
+![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)
 
-## 30 秒看懂
+**[文档](https://RovenEverward.github.io/my-proxy/)** &nbsp;·&nbsp; **[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)** &nbsp;·&nbsp; **[命令行参考](https://RovenEverward.github.io/my-proxy/reference/cli)** &nbsp;·&nbsp; **[更新记录](CHANGELOG.md)**
 
-```
-  mpx CLI (本机管理)                          终端客户端 (mihomo / sing-box / v2rayN)
-         │                                               │
-         │ /api (管理鉴权)                               │ /sub/<token> (无鉴权订阅)
-         ▼                                               ▼
-    ┌─────────────────────────── 控制面 ───────────────────────────┐
-    │  SQLite: 节点 / 入站 / 对外入口 / 用户 / 订阅分流规则 / 设置  │
-    │  订阅分发: links / clash-meta / sing-box / xray / HTML 仪表盘 │
-    │  后台循环: 流量采样 → 周期重置 → 人员收敛 → 节点探活         │
-    └──────────────────────────────┬───────────────────────────────┘
-                                   │ SSH + 各核心统计 API
-                 ┌─────────────────┼─────────────────┐
-                 ▼                 ▼                 ▼
-              节点 A            节点 B            节点 C    (Xray / sing-box)
-```
+<br>
 
-- **免证书防探测**：原生支持 VLESS REALITY，零配置借用主流域名 TLS 指纹。
-- **用户与统一配额**：Xray 用户通过 gRPC 热更新；Hysteria2 / TUIC 使用独立凭据和逐用户计量，名单变化会重启该节点全部 QUIC 连接。
-- **用途订阅**：按日常、流媒体、下载和游戏用途选择候选与路由策略，保留原有直连、拦截规则。
-- **真实入口能力**：通过指定代理入口检测出口 IP、地区、YouTube 连通性和 Netflix 页面证据，按有效结果筛选用途候选。
-- **一键体检**：`mpx node diagnose ID` 或 `--all` 默认运行官方 Go ECS 融合怪 v0.2.12，汇总节点健康、配置漂移、全部获授权的真实代理入口与上游测评。测速默认开启，CPU、内存与磁盘压测需显式启用；有流量上限的原有体检可用 `--engine light`。
-- **多协议与客户端**：按 `User-Agent` 下发 Clash Meta、sing-box 或 Base64 订阅；浏览器呈现用量与能力结果。Hysteria2 / TUIC 支持现代客户端及分享链接。
-- **节点平滑维护**：支持 `drain` 优雅排空模式，维护时不强踢活跃连接，新订阅平滑切走。
-- **高韧性运维**：下发前自动运行 `xray -test`，失败秒级回滚；节点掉线指数退避重试；内置 SQLite 在线热备与暂存换入。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/rules-dark.png">
+  <img src="docs/assets/readme/rules-light.png" width="900" alt="mpx ui 的分流规则页：规则从上往下匹配，每条指向直连、拦截或一个策略组，右侧可以测试一个网址会走哪里">
+</picture>
 
----
+</div>
 
-## 快速上手 (Quick Start)
+<br>
 
-### 懒人路径：一条命令
+## 适合你吗？
 
-只有**一台** VPS，想同时当控制面和节点？先在你的笔记本上装好命令行，然后一条命令搞定：
+手上有几台 VPS，想给自己和几个朋友用，又不想每次加人、换节点都 SSH 上去改 JSON。mpx 把这些事收进一个控制面，你在自己电脑上用 `mpx` 或 `mpx ui` 操作：
+
+- **一条命令起步**：`mpx init` 把一台新 VPS 装成控制面加节点，最后打印一条能直接用的订阅地址。
+- **人和流量分开管**：每个人有自己的订阅、流量上限、重置周期和到期日；改完 30 秒内同步到节点，不重启。
+- **订阅自动适配客户端**：同一条地址，Clash Meta、sing-box、v2rayN 各自拿到认识的格式，浏览器打开是用量页。
+
+只有一台机器、只有你一个人用、也不打算加人的话，手写一份配置就够了。
+
+## 快速开始
+
+准备一台能用 root SSH 登录的 Linux VPS，和你自己的电脑（macOS、Linux 或 Windows）。
+
+**1 · 装命令行。**
 
 ```bash
-# 1. 装命令行（macOS / Linux，装到 ~/.local/bin/mpx）
 curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
-
-# 2. 一条命令装完控制面 + 节点 + 订阅
-mpx init --host <VPS 公网 IP> --ssh-password
 ```
 
-第 2 步会提示你输一次 VPS 的 SSH 密码，然后替你把所有事做完：
+<sub>装到 `~/.local/bin/mpx`。Windows 用 PowerShell：`irm https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.ps1 | iex`。两个脚本都按同一个顺序找二进制：手边的 → 发布件 → 用本机 Go 从源码编。</sub>
 
-| 步 | 动作 |
-| :--- | :--- |
-| 1 | 把你的公钥装到 VPS（只用密码这一次，之后全程密钥） |
-| 2 | 在 VPS 上装控制面（systemd 服务，监听 `0.0.0.0:8080`） |
-| 3 | 把控制面自己的公钥写进它的 `authorized_keys` |
-| 4 | 建节点 `default`、入站 `vless-443`（VLESS + TCP + REALITY）、对外入口 |
-| 5 | 把订阅前缀指向 `http://<IP>:8080` |
-| 6 | 建用户 `user1`，装 xray 核心并下发配置 |
-| 7 | 打印订阅链接和一条 `mpx login` |
+**2 · 装控制面和第一个节点。** 把 `203.0.113.10` 换成你的 VPS 公网 IP：
 
-跑完屏幕上就有一条订阅地址，填进客户端即可（Clash / sing-box / v2rayN / Shadowrocket 都认，选 `auto` 那条会按 User-Agent 自动选格式）：
-
-```
-  http://203.0.113.10:8080/sub/xxxxxxxx
+```bash
+mpx init --host 203.0.113.10 --ssh-password
 ```
 
-重复跑是安全的：已有的节点、入站、入口、用户和订阅前缀都会被复用，不会建出第二份。
+它先请你设一个**设备密码**（以后别的设备接入时用，不是 VPS 密码），再要一次 SSH 密码，之后全程改用密钥。接着装好控制面（systemd 服务，监听 `0.0.0.0:8080`）、建节点 `default` 和一个 VLESS + REALITY 入站、建用户 `user1`、装 xray 并下发配置。最后打印订阅地址，以及一行给其他设备用的接入命令：
 
-常用参数：
+```text
+别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:
+  mpx connect 203.0.113.10:8080 --fp SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg
+```
+
+**3 · 填进客户端。** 把输出里 `auto` 那条订阅地址导入 Clash Verge、sing-box、v2rayN 或 Shadowrocket。
+
+重复跑 `mpx init` 是安全的，已有的节点、入站、用户都会复用。
+
+<details>
+<summary><code>mpx init</code> 的常用参数</summary>
 
 | 参数 | 默认 | 说明 |
 | :--- | :--- | :--- |
@@ -81,105 +77,101 @@ mpx init --host <VPS 公网 IP> --ssh-password
 | `--addr` | `0.0.0.0:8080` | 控制面监听地址 |
 | `--username` / `--name` | `user1` / `default` | 默认用户与节点名 |
 | `--sni` / `--reality-dest` | `www.cloudflare.com` | REALITY 借用的目标站点 |
-| `--sub-prefix` | `http://<host>:8080` | 订阅地址前缀，换了域名要改它 |
+| `--sub-prefix` | `http://<host>:8080` | 订阅地址前缀，换了域名要改它（不要带 `/sub`） |
 
-装完之后日常管理用普通命令（`mpx login` 那行的 token 就是凭据）：
+非交互运行时用环境变量 `MPX_DEVICE_PASSWORD` 给出设备密码。`mpx init` 只做单机全包（控制面和节点在同一台）；要分开部署或加更多节点，看 `mpx node add`、`mpx inbound add`、`mpx host add` 的 `--help`，里面有能直接跑的例子。
+
+</details>
+
+之后的日常操作：
 
 ```bash
-mpx login --server http://<VPS IP>:8080 --token '<跑完打印的 token>'
-
-mpx node list      # 看节点状态
-mpx user add bob   # 加人
-mpx user links bob # 拿他的订阅
-mpx status         # 总览
+mpx status                                     # 总览：控制面、节点、版本、有没有新发布
+mpx node add tyo-1 --address 198.51.100.7      # 再加一台节点，控制面按 IP 自动起显示名
+mpx user add bob --limit 100GB --reset-strategy monthly --expire 2026-12-31
+mpx user links bob                             # 拿他的订阅地址
+mpx node drain la-1                            # 维护前排空：不踢活跃连接，新订阅不再给它
+mpx doctor                                     # 只读自检：控制面、每台节点、各种订阅格式
+mpx ui                                         # 在本机浏览器里打开管理界面
 ```
 
-> **只支持单机全包**（控制面与节点同一台机器）。要分开部署、或多节点，走下面的完整步骤。
->
-> **明文 HTTP 的警告**：`--addr` 默认 `0.0.0.0:8080` 意味着管理接口和订阅都暴露在公网明文 HTTP 上，token 是唯一凭据。长期使用请在前面放一个 TLS 反向代理，再用 `--sub-prefix https://你的域名` 把订阅前缀换成 https（**前缀里不要带 `/sub`**，它是自动接上的）。
->
-> `mpx init` 做的就是下面的第 1~5 步，只是替你在 VPS 上跑完了。想看清每一步、或要配 TLS 反代，各命令组的 `--help`（`mpx node add`、`mpx inbound add`、`mpx host add`）带可运行的例子。
+## 能做什么
 
-### 装控制面
+### 在浏览器里管，和命令行一一对应
 
-在要当控制面的那台 Linux 机器上跑一行（有 systemd 即可，不用先装 Go）：
+`mpx ui` 在本机起一个只给自己用的管理界面。每个按钮都对应一条 `mpx` 命令，表单底部实时显示等价命令；token 不进浏览器，删除这类危险操作要逐字输入名字确认。
+
+<table>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/nodes-dark.png">
+  <img src="docs/assets/readme/nodes-light.png" alt="节点页：每台节点以旗帜加城市加字母命名，显示状态、核心和 SSH">
+</picture>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/users-dark.png">
+  <img src="docs/assets/readme/users-light.png" alt="用户页：每个人的用量、到期日、重置周期和可用入站">
+</picture>
+</td>
+</tr>
+</table>
+
+### 节点和账号
+
+- **免证书防探测**：原生支持 VLESS REALITY，借用主流站点的 TLS 指纹，不用域名和证书。
+- **多协议**：Xray 用户通过 gRPC 热更新；Hysteria2 / TUIC 跑在独立的 sing-box 服务上，两种核心的流量计入同一个用户配额（QUIC 名单变化会重启该节点的 QUIC 连接）。
+- **节点自动起名**：新节点按 IP 查 ipwho.is，起成 `🇺🇸 洛杉矶 A` 这样的显示名，订阅里也用它。关掉用 `mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0`；手动改用 `mpx node edit la-1 --region US --city 洛杉矶`，老节点批量起名用 `mpx node relabel --all --dry-run` 先看对照表。
+- **用名字指定对象**：要写 id 的地方都能写名字（不区分大小写）、显示名或唯一前缀，入站写成 `节点/tag`，例如 `mpx inbound show la/reality`。命中多个时列出候选，不会猜。
+
+### 订阅和分流
+
+- **按客户端下发**：按 `User-Agent` 返回 Clash Meta、sing-box 或 Base64 订阅，浏览器打开是用量和能力页。
+- **分流规则** *（在 main 上，下一版发布）*：一张从上往下匹配的规则表，每条指向直连、拦截或策略组；内置常用规则组，可以给某个用户单独加规则，也能测试一个网址会走哪里。对应 `mpx rule`、`mpx group`。旧的「用途」会在升级时自动迁移成规则，计划在 v0.7.0 删除。
+- **套餐** *（在 main 上，下一版发布）*：按节点给一组人授权，每个用户挂一个套餐；自带包含全部节点的「默认套餐」。对应 `mpx plan`、`mpx user add --plan`。
+
+### 运维
+
+- **多设备接入**：别的电脑用 `mpx connect` 加设备密码接入，每台设备一枚自己的 token，丢了用 `mpx device` 吊销。
+- **一键体检**：`mpx node diagnose ID` 或 `--all` 汇总节点健康、配置漂移、真实代理入口和上游测评（默认运行 Go ECS 融合怪 v0.2.12；有流量上限的节点用 `--engine light`）。
+- **下发不怕写坏**：下发前自动跑 `xray -test`，失败秒级回滚；节点掉线按指数退避重试。
+- **备份**：内置 SQLite 在线热备，`mpx backup` 下载，`mpx restore` 暂存换入。
+
+## 它怎么连起来
+
+```
+  mpx CLI / mpx ui (你的电脑)                 客户端 (mihomo / sing-box / v2rayN)
+         │                                               │
+         │ /api (设备 token, HTTPS)                      │ /sub/<token> (订阅)
+         ▼                                               ▼
+    ┌─────────────────────────── 控制面 ───────────────────────────┐
+    │  SQLite: 节点 / 入站 / 对外入口 / 用户 / 分流规则 / 设置      │
+    │  订阅分发: links / clash-meta / sing-box / xray / HTML 用量页 │
+    │  后台循环: 流量采样 → 周期重置 → 人员收敛 → 节点探活         │
+    └──────────────────────────────┬───────────────────────────────┘
+                                   │ SSH 声明式下发 + 各核心统计 API
+                 ┌─────────────────┼─────────────────┐
+                 ▼                 ▼                 ▼
+              节点 A            节点 B            节点 C    (Xray / sing-box)
+```
+
+用户流量直连各节点，不经过控制面。控制面在 `8080` 一个端口上同时提供订阅（HTTP）和管理接口（HTTPS，用安装时生成的证书，命令行按指纹认它）。订阅地址是明文 HTTP，长期使用可以在前面放一个 TLS 反向代理，再用 `--sub-prefix https://你的域名` 换前缀。
+
+## 升级
+
+在控制面那台机器上再跑一遍安装命令。装和更新是同一条命令，不会动已有的 token、数据库和密钥：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash
 ```
 
-它会装好二进制、建好 `mpx` 系统用户、随机生成管理 token 与 SSH 密钥、写好 systemd
-单元并启动服务，跑完把 token 和公钥打印出来。**装和更新是同一条命令，重复跑不会
-动已有的 token、数据库和密钥。**
+`mpx status` 会显示现在装的版本和有没有更新的发布。控制面只提醒，不会自己替换二进制。每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
 
-想升级就是再跑一遍同一条命令。`mpx status` 会告诉你现在装的是哪一版、有没有更新的发布：
+<details>
+<summary>Tab 补全、本地试用</summary>
 
-```
-版本       v0.2.0
-更新       落后 1 个发布 → v0.3.0,见 https://github.com/RovenEverward/my-proxy/releases/tag/v0.3.0
-```
-
-控制面**只提醒，不会自己替换二进制** —— 换掉的正是控制面自己，换来一个起不来的版本就连
-「查一下现在什么状态」都没了。升级始终由你跑上面那条命令完成。**每次改了什么、要注意什么，
-写在 [Releases 页](https://github.com/RovenEverward/my-proxy/releases) 上**（仓库里没有单独的
-CHANGELOG.md）。
-
-没有发布件、也不方便联网时，脚本会退回本机编译。也可以把二进制直接递给它：
-
-```bash
-sudo ./deploy/install.sh /tmp/mpx
-```
-
-### 装命令行
-
-在你自己日常用的机器上（macOS / Linux），上面懒人路径第 1 步用的就是这条：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
-```
-
-Windows 上用 PowerShell：
-
-```powershell
-irm https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.ps1 | iex
-```
-
-两个脚本都按同一个顺序找二进制：手边的 → 发布件 → 用本机 Go 从源码编。
-
-### 接上并跑通
-
-```bash
-mpx login --server http://127.0.0.1:8080 --token '<管理 token>'
-mpx user add alice --limit 100GB --reset-strategy monthly
-mpx user links alice
-```
-
-控制面只监听回环地址。要从别的机器连，先拉一条隧道：
-
-```bash
-ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
-```
-
-### 用名字指定对象，Tab 补全
-
-要指定节点或入站的地方，可以写 id，也可以写名字（不区分大小写）、唯一前缀；入站还可以写成 `节点/tag`。命中多个时会列出候选让你写具体些：
-
-```bash
-mpx node online la-1          # 等价于 mpx node online 1
-mpx inbound show la/reality   # 节点 la-… 上 tag 为 reality… 的入站
-```
-
-给节点起显示名(列表第一列、也能直接拿来指定节点)。新建节点时控制面会按 IP 问 ipwho.is 自动设好(失败只提示,不影响建节点;`mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0` 关闭),也可以手动:
-
-```bash
-mpx node locate la-1                           # 按 IP 问 ipwho.is 给建议,不写入
-mpx node edit la-1 --region US --city 洛杉矶    # → 🇺🇸 洛杉矶 A,字母自动分配
-mpx node relabel --all --dry-run               # 老节点批量起名:先看「旧名 → 新名」对照表
-```
-
-订阅里节点的默认名就是显示名;同一节点有多个入口时自动加 ` · Reality`、` · Hy2` 这类协议后缀。入口上手写的 remark 不受影响,remark 里可用 `{NODE_DISPLAY}`。
-
-开启 shell 补全，节点名、入站、用户名都能按 Tab 补全：
+节点名、入站、用户名都能按 Tab 补全：
 
 ```bash
 source <(mpx completion bash)                  # bash，写进 ~/.bashrc 长期生效
@@ -187,58 +179,40 @@ mpx completion zsh > "${fpath[1]}/_mpx"        # zsh
 mpx completion fish > ~/.config/fish/completions/mpx.fish
 ```
 
-> **想先本地试一把？** 不装服务，直接跑前台进程：
-> ```bash
-> go build -o mpx ./cmd/mpx
-> ./mpx serve --db ~/mpx.db
-> ```
-
-> **生产环境部署？** 见文档站的[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)，长期使用前在控制面前放 TLS 反向代理。
-
----
-
-## 文档站
-
-在线文档：**https://RovenEverward.github.io/my-proxy/**
-
-`docs/` 下的 markdown 由 [VitePress](https://vitepress.dev/) 渲染成一个站点，按教程、指南、参考、原理四类组织。推 `main` 后由 [.github/workflows/docs.yml](.github/workflows/docs.yml) 自动发布到 GitHub Pages；本地这样跑：
+不装服务，直接在本机跑一个前台控制面试试：
 
 ```bash
-npm install        # 装一次即可
-npm run docs:dev   # 本地预览，改文件自动刷新，终端会打印访问地址
-npm run docs:build # 构建静态站到 docs/.vitepress/dist/
+go build -o mpx ./cmd/mpx
+./mpx serve --db ~/mpx.db
 ```
 
-markdown 原文在 `docs/` 下：`tutorial/`、`guides/`、`reference/`、`concepts/` 是用户文档；[设计文档](docs/design.md) 和 [docs/internal/](docs/internal/) 是工程文档，只留在仓库里，不进站点。
+完整步骤见[在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)。
 
-### 📖 用户文档
+</details>
+
+## 文档
+
 - **教程**：[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart) ｜ [在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)
-- **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [用 mpx doctor 排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
+- **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [在多台设备上管理](https://RovenEverward.github.io/my-proxy/guides/devices) ｜ [用 mpx ui 在浏览器里管理](https://RovenEverward.github.io/my-proxy/guides/web-ui) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [用 mpx doctor 排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
 - **参考**：[命令行](https://RovenEverward.github.io/my-proxy/reference/cli) ｜ [订阅设置](https://RovenEverward.github.io/my-proxy/reference/settings) ｜ [订阅接口](https://RovenEverward.github.io/my-proxy/reference/subscription)
 - **原理**：[控制面与节点](https://RovenEverward.github.io/my-proxy/concepts/architecture)
+- **设计与内部决策**（只在仓库里）：[设计文档](docs/design.md) ｜ [内部文档索引](docs/internal/index.md) ｜ [对外契约](docs/internal/contracts.md) ｜ [数据模型](docs/internal/model.md) ｜ [架构决策记录](docs/internal/decisions.md) ｜ [路线图](docs/internal/roadmap.md) ｜ [验证记录](docs/internal/status.md)
 
-### 🛠 架构设计与内部决策
-- **设计**：[它为什么要有、基本形态是什么、哪些事不做](docs/design.md)
-- **索引**：[mpx 是怎么搭起来的](docs/internal/index.md)
-- [对外契约 (CLI、API、订阅、节点)](docs/internal/contracts.md)
-- [核心领域数据模型](docs/internal/model.md)
-- [架构决策记录 (37 条关键 ADR)](docs/internal/decisions.md)
-- [版本批次与演进路线](docs/internal/roadmap.md)
-- [验证矩阵与测试记录](docs/internal/status.md)
+文档站由 `docs/` 下的 markdown 经 [VitePress](https://vitepress.dev/) 生成，推 `main` 后由 [docs.yml](.github/workflows/docs.yml) 发布。本地预览：`npm install && npm run docs:dev`。
 
----
+## 参与开发
 
-## 参与贡献与开发
-
-详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。提交前跑：
 
 ```bash
 go test ./... -count=1 -race
 gofmt -l .
 ```
 
----
+## 致谢
 
-## 开源协议
+README 的排版参考了 [magpie](https://github.com/yetone/magpie)。
+
+## 许可证
 
 [MIT](LICENSE)
