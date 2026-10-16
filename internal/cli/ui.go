@@ -48,6 +48,8 @@ var uiAllow = []string{
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",
 	"POST /api/settings/test-webhook",
+	// 设备:device revoke
+	"DELETE /api/devices",
 	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate;
 	// group add / edit / rm / preview
 	"PUT /api/rules",
