@@ -1,0 +1,12 @@
+stdout:
+stderr:
+注意:非交互运行且没给 MPX_DEVICE_PASSWORD,这次不设设备密码。
+==> 看清这台机器
+err: 要用 root 登录(root 现在的 uid 是 1000):装 systemd 服务、写 /etc/mpx 都要 root
+calls:
+printf 'os=%s\n' "$(uname -s)"
+printf 'arch=%s\n' "$(uname -m)"
+printf 'uid=%s\n' "$(id -u)"
+printf 'fetch=%s\n' "$(command -v curl || command -v wget || echo)"
+printf 'mpx=%s\n' "$(command -v mpx || echo)"
+---
