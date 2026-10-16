@@ -28,7 +28,8 @@ test("添加节点:与 mpx node add 一致", async ({ page }) => {
   await env.cli("node", "add", "cli-new", "--address", "198.51.100.7", "--ssh-port", "2222", "--ssh-user", "ubuntu");
   const fromCLI = take(names);
   await page.goto(env.origin + "/#nodes");
-  await page.click("[data-act=node-new]");
+  await page.click("[data-act=node-wizard]");
+  await page.click("#drawer .wlnk");
   await page.fill("#n-name", "ui-new");
   await page.fill("#n-address", "198.51.100.7");
   await page.fill("#n-ssh-port", "2222");

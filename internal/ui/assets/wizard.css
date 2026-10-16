@@ -1,0 +1,40 @@
+/* 向导原型:只新增向导组件,外壳全部沿用 app.css + borderless.css */
+.drawer.wiz{width:min(640px,calc(100vw - 16px))}
+.wsteps{display:flex;align-items:center;gap:6px;padding:2px 18px 14px}
+.wsteps .s{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--faint);white-space:nowrap}
+.wsteps .s i{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--stone);color:var(--muted);font:600 11px var(--mono);font-style:normal}
+.wsteps .s i svg{width:12px;height:12px;stroke-width:2.4}
+.wsteps .s.cur{color:var(--ink);font-weight:560}.wsteps .s.cur i{background:var(--ink);color:var(--canvas)}
+.wsteps .s.done{color:var(--ink2)}.wsteps .s.done i{color:var(--ink)}
+.wsteps .s.fail{color:var(--bad);font-weight:560}.wsteps .s.fail i{background:var(--bad-bg);color:var(--bad)}
+.wsteps .ln{flex:1;min-width:12px;height:2px;border-radius:2px;background:var(--stone)}.wsteps .ln.done{background:var(--ink2);opacity:.35}
+.lead{margin:0 0 16px;color:var(--muted);font-size:13px}
+.fe{font-size:12px;color:var(--bad)}
+.pw{position:relative}.pw .in{width:100%;padding-right:40px}.pw .ib{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:28px;height:28px}
+.opts{display:grid;gap:8px;margin-bottom:14px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:var(--panel);cursor:pointer}
+.drawer .opt,.setup .opt{background:var(--stone)}
+.opt .rd{flex:none;width:16px;height:16px;border-radius:50%;margin-top:2px;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.opt.on .rd{box-shadow:inset 0 0 0 5px var(--ink)}
+.opt b{font-weight:560}.opt .h{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.plist{display:grid;gap:2px;margin:0 0 16px;padding:0;list-style:none}
+.plist li{display:grid;grid-template-columns:20px 1fr auto;gap:10px;align-items:start;padding:9px 10px;border-radius:9px}
+.plist .pi{width:18px;height:18px;display:grid;place-items:center;margin-top:1px}.plist .pi svg{width:16px;height:16px}
+.plist .t{color:var(--ink2)}.plist .du{font:12px var(--mono);color:var(--faint)}
+.plist li.wait .t{color:var(--faint)}.plist li.wait .pi i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.plist li.run{background:var(--panel)}.drawer .plist li.run,.setup .plist li.run{background:var(--stone)}.plist li.run .t{color:var(--ink);font-weight:560}
+.plist li.done .pi{color:var(--ink)}
+.plist li.fail{background:var(--bad-bg)}.plist li.fail .pi,.plist li.fail .t{color:var(--bad)}.plist li.fail .t{font-weight:560}
+.plist li.skip .t{color:var(--faint);text-decoration:line-through}.plist li.skip .pi{color:var(--faint)}
+.plist .sub2{grid-column:2/4;font-size:12px;color:var(--muted)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid color-mix(in srgb,var(--ink) 18%,transparent);border-top-color:var(--ink);animation:spin .8s linear infinite}
+.logt{grid-column:2/4;margin:6px 0 2px;padding:10px 12px;border-radius:8px;background:var(--canvas);font:11.5px/1.6 var(--mono);color:var(--muted);white-space:pre;overflow:auto;max-height:150px}
+.setup .logt,.drawer .logt{background:var(--canvas)}
+.plist li.run .logt{background:var(--canvas)}
+.tog{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer}.tog svg{width:12px;height:12px;transform:rotate(90deg)}
+.raw{margin:8px 0 0;padding:9px 12px;border-radius:8px;background:color-mix(in srgb,var(--bad) 8%,transparent);font:12px/1.55 var(--mono);color:var(--ink2);white-space:pre-wrap}
+.kvw{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;margin:0 0 16px;font-size:13px}.kvw dt{color:var(--muted)}.kvw dd{margin:0}
+.done-hd{display:flex;gap:12px;align-items:center;margin:4px 0 18px}.done-hd .ok{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--stone);color:var(--ink)}.done-hd .ok svg{width:18px;height:18px;stroke-width:2.2}
+.in.bad{box-shadow:inset 0 0 0 1px var(--bad);background:var(--bad-bg)}
+.field{align-content:start}
+.wlnk{display:inline-block;margin-left:6px;font-size:12.5px;color:var(--ink2);text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:3px;cursor:pointer}.empty .wlnk{margin:0}

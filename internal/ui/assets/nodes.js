@@ -58,12 +58,12 @@ function nodeList(d) {
   const head = H`<tr><th>节点</th><th>状态</th><th class="hide-m">核心</th><th class="hide-m">配置</th><th class="hide-m">SSH</th><th class="num hide-m">检查于</th></tr>`;
   let inner;
   if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(5, 6)}</tbody></table>`;
-  else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器,再在上面装核心。节点上不装任何 mpx 组件。", "mpx node add hk --address 203.0.113.10", W ? H`<button class="btn pri sm" data-act="node-new">${ic("plus")}添加节点</button>` : "");
+  else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "填 VPS 的地址和 SSH 密码，自动装好并加进订阅", "mpx node add hk --address 203.0.113.10", W ? H`<div style="display:grid;gap:10px;justify-items:center"><button class="btn pri sm" data-act="node-wizard">${ic("plus")}添加节点</button><a class="lnk wlnk" data-act="node-new" href="#">已能免密 SSH，直接登记</a></div>` : "");
   else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${n.display || n.name}</b> ${n.display ? H`<span class="sub mono">${n.name}</span> ` : ""}<span class="sub">#${n.id}</span><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
     <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : H`<span class="sub">—</span>`}</td>
     <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
   return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存 · 对应 <code>mpx node list</code></p></div><div class="sp"></div>
-    ${W ? H`<button class="btn pri" data-act="node-new">${ic("plus")}添加节点</button>` : ""}</div><div class="card">${inner}</div>`;
+    ${W ? H`<button class="btn pri" data-act="node-wizard">${ic("plus")}添加节点</button>` : ""}</div><div class="card">${inner}</div>`;
 }
 // 配置:节点上读回的哈希与控制面最后一次下发的比对(同 mpx node list 的漂移判定)。
 function driftCell(n) {
@@ -126,7 +126,7 @@ async function nodeEditor(id) {
     <div class="two"><div class="field"><label for="n-api-port">xray API 端口</label><input class="in mono" id="n-api-port" name="api_port" value="${num(n.api_port)}" placeholder="默认" inputmode="numeric"></div>
     <div class="field"><label for="n-service">服务名</label><input class="in mono" id="n-service" name="service_name" value="${n.service_name}" placeholder="mpx-xray"></div></div>
     <div class="field"><label for="n-config">配置路径</label><input class="in mono" id="n-config" name="config_path" value="${n.config_path}" placeholder="/etc/mpx/xray/config.json"></div></details>
-    ${isNew ? H`<p class="sub">要用密码把控制面的公钥装上去,请在终端用 <code>--ssh-password</code>:密码不经过浏览器。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
+    ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
     <div class="field mt"><label>等价命令</label><div class="cmd" id="n-cmd"></div></div>
     <div class="err" id="n-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="n-save">${isNew ? "创建" : "保存"}</button></div></form>`);
@@ -222,6 +222,7 @@ async function busy(btn, fn) {
 
 Object.assign(ACTS, {
   "node-new": () => nodeEditor(null),
+  "node-wizard": () => openNodeWizard(),
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("已现场检查,状态已更新"); await load(true, true); }),
