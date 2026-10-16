@@ -1,0 +1,32 @@
+# nfpm 配置:把「未打包的 linux 二进制」打成 .deb 和 .rpm。
+# 由 .github/workflows/release.yml 的 pkg-linux job 使用:
+#
+#   NFPM_ARCH=amd64 NFPM_VERSION=0.7.2 NFPM_BIN=./mpx \
+#     nfpm package -f deploy/nfpm.yaml -p deb -t mpx_0.7.2_linux_amd64.deb
+#   NFPM_ARCH=amd64 NFPM_VERSION=0.7.2 NFPM_BIN=./mpx \
+#     nfpm package -f deploy/nfpm.yaml -p rpm -t mpx_0.7.2_linux_amd64.rpm
+#
+# nfpm 会把 ${NFPM_*} 这些占位符按环境变量展开。二进制装到 /usr/bin/mpx
+# (与 install.sh 的 /usr/local/bin/mpx 不是一个位置,但两者都是 PATH 上的普通可
+# 执行文件,不冲突)。内容只含一个二进制:不装 systemd 单元、不改配置目录 ——
+# 安装包是「先把 mpx 拿到手」的轻量入口,要装成控制面仍走 deploy/install.sh。
+# 没签名。
+name: mpx
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+section: utils
+priority: optional
+maintainer: RovenEverward <roveneverward@users.noreply.github.com>
+description: |
+  Self-hosted multi-node proxy control plane.
+  One control plane, a few Xray / sing-box nodes, and a local `mpx` CLI.
+homepage: https://github.com/RovenEverward/my-proxy
+license: MIT
+
+contents:
+  # expand: true 让 nfpm 展开 src/dst 里的 ${NFPM_*};不写的话 contents 里的
+  # 占位符不会被替换,会当成字面路径去找文件。
+  - src: ${NFPM_BIN}
+    dst: /usr/bin/mpx
+    expand: true

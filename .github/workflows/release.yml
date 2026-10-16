@@ -9,6 +9,12 @@ name: release
 # 发布说明(changelog)就放在 GitHub 的 Releases 页上,没有单独的 CHANGELOG.md:
 # 正文取自注解式 tag 的消息(-a 加 -m),所以请把 tag 消息当成发布说明来写。
 # 轻量 tag(git tag v0.2.0,没消息)会退回让 GitHub 按提交标题凑一份。
+#
+# 除压缩包外,还出各平台安装包:Linux 的 .deb / .rpm(deploy/nfpm.yaml 经 nfpm
+# 打包)、Windows 的 setup.exe(deploy/windows/mpx.nsi 经 NSIS 打包)、macOS 的
+# 通用 .pkg(两个架构 lipo 合成后由 pkgbuild 打包)。安装包文件名里的版本号是
+# tag 去掉 v(mpx_0.7.2_...)。都没有签名,安装包和压缩包一样只是同一份二进制换
+# 了个外壳,更新器和 install*.sh 仍然只认压缩包。
 
 on:
   push:
@@ -57,13 +63,156 @@ jobs:
             tar -czf "mpx_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" mpx
           fi
 
+      # 未打包的二进制单独留一份给下面三个打包 job 用。名字以 bin_ 开头,
+      # publish 的 pattern 会把它排除,所以它不会进 release 附件。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: mpx${{ matrix.goos == 'windows' && '.exe' || '' }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: mpx_${{ matrix.goos }}_${{ matrix.goarch }}
           path: mpx_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}
 
-  publish:
+  # Linux 安装包:同一份二进制分别打成 .deb 和 .rpm。deploy/nfpm.yaml 描述内容,
+  # 这里只负责给 nfpm 传进 架构 / 版本 / 二进制路径。
+  pkg-linux:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin_linux_*
+          path: bin
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 安装 nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+
+      - name: 打 .deb / .rpm
+        run: |
+          set -eu
+          ver="${{ steps.ver.outputs.ver }}"
+          for arch in amd64 arm64; do
+            chmod +x "bin/bin_linux_${arch}/mpx"
+            for packager in deb rpm; do
+              NFPM_ARCH="$arch" NFPM_VERSION="$ver" NFPM_BIN="$PWD/bin/bin_linux_${arch}/mpx" \
+                "$(go env GOPATH)/bin/nfpm" package \
+                  -f deploy/nfpm.yaml -p "$packager" \
+                  -t "mpx_${ver}_linux_${arch}.${packager}"
+            done
+          done
+          ls -l mpx_*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_linux
+          path: |
+            mpx_${{ steps.ver.outputs.ver }}_linux_*.deb
+            mpx_${{ steps.ver.outputs.ver }}_linux_*.rpm
+          if-no-files-found: error
+
+  # Windows 安装包:装到 $PROGRAMFILES64\mpx,并把这个目录加进当前用户 PATH。
+  # 细节(注册表、WM_SETTINGCHANGE、卸载)都在 deploy/windows/mpx.nsi 里。
+  pkg-windows:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bin_windows_amd64
+          path: bin
+
+      - name: 安装 NSIS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+
+      - name: 打 setup.exe
+        run: |
+          set -eu
+          makensis -INPUTCHARSET UTF8 \
+            -DVERSION="${{ steps.ver.outputs.ver }}" \
+            -DSRCEXE="$PWD/bin/mpx.exe" \
+            -DOUTFILE="$PWD/mpx_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe" \
+            deploy/windows/mpx.nsi
+          ls -l mpx_*setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_windows
+          path: mpx_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe
+          if-no-files-found: error
+
+  # macOS 安装包:两个架构 lipo 成一个通用二进制,再 pkgbuild 成 .pkg。
+  pkg-macos:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bin_darwin_*
+          path: bin
+
+      - name: 合成通用二进制并打 .pkg
+        run: |
+          set -eu
+          ver="${{ steps.ver.outputs.ver }}"
+          chmod +x bin/bin_darwin_amd64/mpx bin/bin_darwin_arm64/mpx
+          lipo -create \
+            -output mpx \
+            bin/bin_darwin_amd64/mpx bin/bin_darwin_arm64/mpx
+          lipo -info mpx
+          rm -rf root
+          mkdir -p root
+          cp mpx root/mpx
+          pkgbuild \
+            --identifier io.github.roveneverward.mpx \
+            --version "$ver" \
+            --install-location /usr/local/bin \
+            --root root \
+            "mpx_${ver}_darwin_universal.pkg"
+          ls -l mpx_*.pkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_macos
+          path: mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg
+          if-no-files-found: error
+
+  publish:
+    needs: [build, pkg-linux, pkg-windows, pkg-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,9 +221,20 @@ jobs:
           # 保留 0 只是让 checkout 仍落在一个确定的 ref 上。
           fetch-depth: 0
 
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      # 只要发布件:mpx_* 是压缩包,pkg_* 是安装包,bin_* 是给打包 job 用的中间
+      # 产物,排除掉。merge-multiple 把所有文件摊平进 dist/,供 SHA256SUMS 和
+      # 上传使用。
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: '{mpx_,pkg_}*'
           merge-multiple: true
 
       # SHA256SUMS 覆盖全部发布件,安装脚本按它核对下载的文件。不做签名:决定与理由见
@@ -117,6 +277,45 @@ jobs:
             echo "annotated=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # 下载区接在 tag 消息后面。只在有 tag 消息时拼:轻量 tag 走自动生成正文那
+      # 条路,不掺这一节。文件名里的版本号与三个打包 job 一致(去掉 v)。
+      - name: 追加「下载」一节
+        if: steps.notes.outputs.annotated == 'true'
+        run: |
+          set -eu
+          cat >> NOTES.md <<'EOF'
+
+          ## 下载
+
+          ### 安装包
+
+          - **macOS(通用,Intel 与 Apple 芯片)**:`mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg`
+            —— 双击安装,二进制落在 `/usr/local/bin/mpx`(未签名,首次打开若被拦,可在
+            「系统设置 → 隐私与安全性」里放行)。
+          - **Windows(64 位)**:`mpx_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
+            —— 装到 `%ProgramFiles%\mpx`,并把这个目录加进当前用户 `PATH`,自带卸载程序
+            (未签名,SmartScreen 提示时选「仍要运行」)。
+          - **Linux(Debian / Ubuntu,amd64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_amd64.deb`
+            —— `sudo dpkg -i` 或双击安装,二进制落在 `/usr/bin/mpx`。
+          - **Linux(Debian / Ubuntu,arm64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_arm64.deb`
+          - **Linux(RHEL / Fedora 系,amd64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_amd64.rpm`
+            —— `sudo rpm -i` 或 `sudo dnf install`,二进制落在 `/usr/bin/mpx`。
+          - **Linux(RHEL / Fedora 系,arm64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_arm64.rpm`
+
+          ### 压缩包
+
+          - **macOS(Intel)**:`mpx_darwin_amd64.tar.gz`
+          - **macOS(Apple 芯片)**:`mpx_darwin_arm64.tar.gz`
+          - **Linux(amd64)**:`mpx_linux_amd64.tar.gz`
+          - **Linux(arm64)**:`mpx_linux_arm64.tar.gz`
+          - **Windows(64 位)**:`mpx_windows_amd64.zip`
+
+          `deploy/install.sh` 与 `deploy/install-cli.sh` 用的就是上面这些压缩包。
+          所有文件的 `SHA256SUMS` 在同一发布里,可按它核对下载内容。
+          EOF
+          echo "拼接后的正文:"
+          cat NOTES.md
+
       # 两个步骤二选一,而不是把 body_path 与 generate_release_notes 一起给:
       # 同时给时后者会把自动生成的那份**追加**到正文后面,于是人工写的话和凑
       # 出来的提交列表混在一起。分开写,谁生效一目了然。
@@ -130,6 +329,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
+          prerelease: ${{ contains(github.ref_name, '-') }}
           body_path: NOTES.md
 
       - name: 确保正文就是 tag 消息
@@ -148,4 +349,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
