@@ -20,7 +20,6 @@ test.beforeAll(async () => {
   await env.seed("host", "add", "--inbound", "1", "--remark", "待删入口", "--port", "9443");
   for (const u of ["r-rm", "r-toggle", "r-keep"]) await env.seed("user", "add", u);
   await env.seed("user", "add", "r-renew", "--expire", "2026-12-01");
-  await env.seed("purpose", "create", "r-purpose", "-f", file("p.json", JSON.stringify({ name: "待删用途", kind: "media", regions: ["HK"] })));
   const tpl = await (await cp("/api/settings/templates/xray")).text();
   await env.seed("settings", "template", "set", "xray", "-f", file("tpl.json", tpl));
 });
@@ -68,18 +67,6 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
   await expect(page.locator(".toast")).toContainText("到期日");
   await page.keyboard.press("Escape");
   await expect(userRow(page, "r-renew")).not.toHaveText(before, NOW);
-});
-
-test("删除用途:列表里立刻没了", async ({ page }) => {
-  await login(page, env);
-  await page.goto(env.origin + "/#purposes");
-  const row = page.locator('tr[data-href="#purposes/r-purpose"]');
-  await row.click();
-  await page.click("[data-act=purpose-rm]");
-  await page.fill("#typed", "r-purpose");
-  await page.click("#okb");
-  await expect(page).toHaveURL(/#purposes$/);
-  await expect(row).toHaveCount(0, NOW);
 });
 
 test("删除入口与入站:入站页立刻更新", async ({ page }) => {

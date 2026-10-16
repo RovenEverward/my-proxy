@@ -1,4 +1,4 @@
-// 设置与用途页的写操作:和 mpx settings / mpx purpose 对照;设置是整体替换,改一处
+// 设置页的写操作:和 mpx settings 对照;设置是整体替换,改一处
 // 不能把别处(规则、模板、其他字段)丢掉。设置只有一份,所以 CLI 做完先把它恢复成原样,
 // 再让页面做同一件事。
 import { test, expect } from "@playwright/test";
@@ -156,42 +156,4 @@ test("备份:点一下就下载归档,内容是 gzip", async ({ page }) => {
   expect(dl.suggestedFilename()).toMatch(/\.tar\.gz$|\.tgz$|\.gz$/);
   const buf = readFileSync(await dl.path());
   expect([buf[0], buf[1]]).toEqual([0x1f, 0x8b]);
-});
-
-test("用途:create / set / del 与 mpx purpose 一致;节点标签 metadata set 一致", async ({ page }) => {
-  await login(page, env);
-  const json = { name: "流媒体", kind: "media", regions: ["HK"] };
-  env.takeLog();
-  await env.cli("purpose", "create", "cli-media", "-f", file("p.json", JSON.stringify(json)));
-  await env.cli("purpose", "set", "cli-media", "-f", file("p2.json", JSON.stringify({ ...json, interval: 600 })));
-  const fromCLI = normalize(env.takeLog(), []).map(r => JSON.parse(JSON.stringify(r).replaceAll("cli-media", "<s>")));
-  await page.goto(env.origin + "/#purposes");
-  await page.click("[data-act=purpose-new]");
-  await page.fill("#pp-slug", "ui-media");
-  await page.fill("#pp-json", JSON.stringify(json));
-  await page.click("#pp-save");
-  await expect(page.locator("#drawer.open .sub.mono")).toHaveText("ui-media");
-  await page.fill("#pp-json", JSON.stringify({ ...json, interval: 600 }));
-  await page.click("#pp-save");
-  await expect(page.locator(".toast")).toContainText("用途 ui-media 已保存");
-  expect(normalize(env.takeLog(), []).map(r => JSON.parse(JSON.stringify(r).replaceAll("ui-media", "<s>")))).toEqual(fromCLI);
-
-  await env.cli("purpose", "del", "cli-media");
-  const delCLI = normalize(env.takeLog(), []).map(r => JSON.parse(JSON.stringify(r).replaceAll("cli-media", "<s>")));
-  await page.click("[data-act=purpose-rm]");
-  await expect(page.locator("#okb")).toBeDisabled();
-  await page.fill("#typed", "ui-media");
-  await page.click("#okb");
-  await expect(page).toHaveURL(/#purposes$/);
-  expect(normalize(env.takeLog(), []).map(r => JSON.parse(JSON.stringify(r).replaceAll("ui-media", "<s>")))).toEqual(delCLI);
-
-  await env.cli("purpose", "metadata", "set", "nodes", "1", "-f", file("m.json", JSON.stringify({ region: "HK", line: "cn2", purposes: ["media"] })));
-  const mdCLI = normalize(env.takeLog(), []);
-  await page.fill("#md-id", "1");
-  await page.click("[data-act=md-load]");
-  await expect(page.locator("#md-region")).toHaveValue("HK");
-  await page.fill("#md-line", "cn2");
-  await page.click("#md-save");
-  await expect(page.locator(".toast")).toContainText("已保存 节点 1 的标签");
-  expect(normalize(env.takeLog(), [])).toEqual(mdCLI);
 });
