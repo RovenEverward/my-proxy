@@ -1,7 +1,12 @@
 # 编译产物
 /mpx
+/mpxbin/
 /dist/
 *.exe
+
+# S1 桌面冒烟的输出(截图与日志,由 CI 当 artifact 上传)
+/s1-*.png
+/s1-*.log
 
 # 文档站依赖与构建产物(vitepress 的输出)
 /node_modules

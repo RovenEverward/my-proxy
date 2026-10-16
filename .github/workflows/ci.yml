@@ -1,0 +1,77 @@
+name: ci
+
+# PR(任意分支)与 push 到 main 都跑。release.yml 和 docs.yml 各管各的,不动。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      # -race 只在 ubuntu 上开:Windows 的 race detector 需要 cgo,setup-go
+      # 默认的 MSYS/MinGW 环境跑不稳;macOS 上纯粹是慢,没必要。
+      - name: go test
+        if: matrix.os != 'ubuntu-latest'
+        run: go test ./...
+
+      - name: go test -race
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+
+  # 桌面端 S1 冒烟:在三个平台上开 WebView 载入 mpx ui,等主界面出现后截图。
+  desktop-s1:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # WebKitGTK 4.1 是 Linux 上 mygo 的 webview 后端;Xvfb 给无头 runner
+      # 一块虚拟屏。macOS/Windows 用系统自带的 WKWebView/WebView2,不用装。
+      - name: 安装 Linux 依赖
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
+
+      - name: 编译 mpx 与 s1
+        run: |
+          set -eu
+          ext=""
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then ext=".exe"; fi
+          go build -o "mpxbin/mpx$ext" ./cmd/mpx
+          (cd desktop/s1 && go build -o "../../mpxbin/s1$ext" .)
+          ls -l mpxbin
+
+      - name: S1 冒烟
+        run: bash desktop/s1/ci-smoke.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s1-${{ matrix.os }}
+          path: |
+            s1-*.png
+            s1-*.log
