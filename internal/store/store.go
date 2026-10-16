@@ -317,7 +317,11 @@ func (s *Store) migrate() error {
 	if err := s.migrateDevicePassword(); err != nil {
 		return err
 	}
-	return s.migrateDiagnostics()
+	if err := s.migrateDiagnostics(); err != nil {
+		return err
+	}
+	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
+	return s.migratePlans()
 }
 
 // addedColumns 是建表语句之后补加的列。CREATE TABLE IF NOT EXISTS 对已存在的表

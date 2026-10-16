@@ -279,22 +279,19 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 	}
 
 	// 各入站此刻"占用着"几个名额:只数对该入站授权且当前处于可用状态的用户。
-	// 授权为空 = 全部入站都能用,所以它要给每个入站都记一笔 —— 否则不限授权的
-	// 用户会被漏算,满了的入站还会继续把名额让给他们。
+	// 授权判定唯一走 AllowsInbound —— 没挂套餐且没限定入站的用户能用全部入站,
+	// 挂了套餐的用户按套餐范围算,两处都不能各自解释,否则满员计数会和订阅
+	// 实际发出去的入口对不上。
 	now := time.Now()
 	occupancy := make(map[int64]int, len(inbounds))
 	for _, u := range users {
 		if u.Status(now) != model.StatusActive {
 			continue
 		}
-		if len(u.InboundIDs) == 0 {
-			for _, in := range inbounds {
+		for _, in := range inbounds {
+			if u.AllowsInbound(in.ID) {
 				occupancy[in.ID]++
 			}
-			continue
-		}
-		for _, id := range u.InboundIDs {
-			occupancy[id]++
 		}
 	}
 

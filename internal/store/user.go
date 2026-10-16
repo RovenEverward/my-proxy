@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,10 +11,11 @@ import (
 )
 
 // userColumns 是 users 表的列顺序,扫描时按同一顺序取值。
-// key 是 SQL 关键字,加引号。
+// key 是 SQL 关键字,加引号。最后一项是套餐归属:子查询保证 user_id 是主键时
+// 最多一行,读回来是 NULL 表示没挂套餐。
 const userColumns = `id, username, "key", sub_token, enabled, data_limit, used_traffic,
 	lifetime_used_traffic, expire_at, reset_strategy, traffic_reset_at, inbound_ids,
-	note, created_at`
+	note, created_at, (SELECT plan_id FROM user_plans WHERE user_id = users.id)`
 
 func scanUser(sc rowScanner) (*model.User, error) {
 	var (
@@ -23,10 +25,11 @@ func scanUser(sc rowScanner) (*model.User, error) {
 		resetAt    sql.NullInt64
 		inboundIDs string
 		createdAt  int64
+		planID     sql.NullInt64
 	)
 	if err := sc.Scan(&u.ID, &u.Username, &u.Key, &u.SubToken, &enabled,
 		&u.DataLimit, &u.UsedTraffic, &u.LifetimeUsedTraffic, &expireAt,
-		&u.ResetStrategy, &resetAt, &inboundIDs, &u.Note, &createdAt); err != nil {
+		&u.ResetStrategy, &resetAt, &inboundIDs, &u.Note, &createdAt, &planID); err != nil {
 		return nil, err
 	}
 
@@ -44,8 +47,45 @@ func scanUser(sc rowScanner) (*model.User, error) {
 		return nil, fmt.Errorf("用户 %q 的 inbound_ids: %w", u.Username, err)
 	}
 	u.InboundIDs = ids
+	if planID.Valid {
+		id := planID.Int64
+		u.PlanID = &id
+	}
 	u.CreatedAt = time.Unix(createdAt, 0).UTC()
 	return &u, nil
+}
+
+// attachUserPlanAuth 给一个刚从库里读出来的用户挂上解析后的套餐授权。没挂套餐的
+// 用户也会被标记为「已解析」(授权为空),这样判定只认「解析没解析」,不再看
+// plan_id 是否为空。
+func (s *Store) attachUserPlanAuth(u *model.User) error {
+	auth, err := s.loadPlanAuth()
+	if err != nil {
+		return err
+	}
+	attachPlanAuth(u, auth)
+	return nil
+}
+
+// resolveUserPlanAuth 在写操作提交后重新解析用户的套餐授权,并同步 PlanID:
+// UpdateUser 本身不改套餐归属(摘 all_nodes 套餐除外),所以以库里的现值为准,
+// 不依赖调用方对象上带的 plan_id。这样 CreateUser / UpdateUser 返回/修改的对象
+// 马上就能直接调 AllowsInbound。
+func (s *Store) resolveUserPlanAuth(u *model.User) error {
+	var planID sql.NullInt64
+	err := s.db.QueryRow(
+		`SELECT up.plan_id FROM users LEFT JOIN user_plans up ON up.user_id = users.id
+		 WHERE users.username = ?`, u.Username).Scan(&planID)
+	if err != nil {
+		return fmt.Errorf("读取用户 %q 的套餐: %w", u.Username, err)
+	}
+	if planID.Valid {
+		id := planID.Int64
+		u.PlanID = &id
+	} else {
+		u.PlanID = nil
+	}
+	return s.attachUserPlanAuth(u)
 }
 
 // normalizeTime 把时间对齐到数据库能存下的精度(秒),并统一成 UTC,
@@ -71,10 +111,13 @@ func expireAtArg(t *time.Time) any {
 	return t.Unix()
 }
 
-// CreateUser 新建用户,成功后回填 u.ID 与 u.CreatedAt。
+// CreateUser 新建用户,成功后回填 u.ID 与 u.CreatedAt,并按规则决定套餐归属:
+// 显式带了 PlanID 就用它;没带且 InboundIDs 为空归默认套餐;没带但 InboundIDs
+// 非空则不挂套餐(旧客户端/脚本的写法,避免和默认套餐取并集后变成全部)。
 //
 // CreatedAt 为零值时取当前时间;用户自己指定了就沿用,方便导入既有数据。
 // 时间字段只存到秒,回填与写库的值都截断到秒。username 重复会因 UNIQUE 报错。
+// 用户行与套餐归属在同一个事务里写,不会出现建了用户却没挂上套餐的中间状态。
 func (s *Store) CreateUser(u *model.User) error {
 	if u.CreatedAt.IsZero() {
 		u.CreatedAt = time.Now()
@@ -88,7 +131,13 @@ func (s *Store) CreateUser(u *model.User) error {
 		return fmt.Errorf("序列化用户 %q 的 inbound_ids: %w", u.Username, err)
 	}
 
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("创建用户 %q: %w", u.Username, err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`INSERT INTO users (username, "key", sub_token, enabled, data_limit, used_traffic,
 			lifetime_used_traffic, expire_at, reset_strategy, traffic_reset_at,
 			inbound_ids, note, created_at)
@@ -105,14 +154,45 @@ func (s *Store) CreateUser(u *model.User) error {
 		return fmt.Errorf("读取新建用户 %q 的 id: %w", u.Username, err)
 	}
 	u.ID = id
-	return nil
+
+	planID := u.PlanID
+	if planID == nil && len(u.InboundIDs) == 0 {
+		defID, err := defaultPlanID(tx)
+		switch {
+		case err == nil:
+			planID = &defID
+		case errors.Is(err, ErrPlanNotFound):
+			// 库还没有默认套餐(只可能出现在迁移完成前的极早期),不挂任何套餐。
+		default:
+			return fmt.Errorf("读取默认套餐: %w", err)
+		}
+	}
+	if planID != nil {
+		if err := planExists(tx, *planID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO user_plans(user_id, plan_id) VALUES(?, ?)`, u.ID, *planID); err != nil {
+			return fmt.Errorf("给用户 %q 挂套餐 %d: %w", u.Username, *planID, err)
+		}
+	}
+	u.PlanID = planID
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// 事务提交后按库中现况重新解析一次:调用方拿到的同一个对象直接调
+	// AllowsInbound 也要和随后 GetUser 读出来的一致。
+	return s.resolveUserPlanAuth(u)
 }
 
 // GetUser 按用户名取用户。不存在时返回包装了 ErrNotFound 的错误。
+// 读出来的用户已经挂上解析后的套餐授权。
 func (s *Store) GetUser(username string) (*model.User, error) {
 	u, err := scanUser(s.db.QueryRow(`SELECT `+userColumns+` FROM users WHERE username = ?`, username))
 	if err != nil {
 		return nil, wrapNotFound(err, fmt.Sprintf("用户 %q", username))
+	}
+	if err := s.attachUserPlanAuth(u); err != nil {
+		return nil, err
 	}
 	return u, nil
 }
@@ -120,7 +200,7 @@ func (s *Store) GetUser(username string) (*model.User, error) {
 // GetUserBySubToken 按订阅 token 取用户,走 users.sub_token 上的索引。
 //
 // 空 token 直接当作找不到:没设 token 的用户都存空串,拿空串去查会撞上第一个
-// 这样的用户,而订阅链接里不可能出现空 token。
+// 这样的用户,而订阅链接里不可能出现空 token。返回值同样带上套餐授权。
 func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 	if token == "" {
 		return nil, fmt.Errorf("未找到订阅 token 为空的用户: %w", ErrNotFound)
@@ -128,6 +208,9 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 	u, err := scanUser(s.db.QueryRow(`SELECT `+userColumns+` FROM users WHERE sub_token = ?`, token))
 	if err != nil {
 		return nil, wrapNotFound(err, fmt.Sprintf("订阅 token %q 对应的用户", token))
+	}
+	if err := s.attachUserPlanAuth(u); err != nil {
+		return nil, err
 	}
 	return u, nil
 }
@@ -156,21 +239,42 @@ type UserQuery struct {
 // ListUsersPage 返回筛选后的一页用户,以及匹配的用户总数(不是本页条数)。
 //
 // 总数在筛选之后数,客户端才能说"还有 N 个"。
+//
+// 先把全部用户读进内存、挂上解析后的套餐授权,再做筛选:按 InboundID 筛必须走
+// User.AllowsInbound,而套餐授权得在那之前解析出来。
 func (s *Store) ListUsersPage(q UserQuery) ([]model.User, int, error) {
 	rows, err := s.db.Query(`SELECT ` + userColumns + ` FROM users ORDER BY id`)
 	if err != nil {
 		return nil, 0, fmt.Errorf("查询用户列表: %w", err)
 	}
-	defer rows.Close()
+	var all []model.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			rows.Close()
+			return nil, 0, fmt.Errorf("读取用户记录: %w", err)
+		}
+		all = append(all, *u)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, 0, fmt.Errorf("遍历用户列表: %w", err)
+	}
+	// 下面要查套餐表,必须先放掉这条连接(本包只有一条)。
+	rows.Close()
+
+	auth, err := s.loadPlanAuth()
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range all {
+		attachPlanAuth(&all[i], auth)
+	}
 
 	now := time.Now()
 	search := strings.ToLower(strings.TrimSpace(q.Search))
 	var matched []model.User
-	for rows.Next() {
-		u, err := scanUser(rows)
-		if err != nil {
-			return nil, 0, fmt.Errorf("读取用户记录: %w", err)
-		}
+	for _, u := range all {
 		if search != "" && !strings.Contains(strings.ToLower(u.Username), search) {
 			continue
 		}
@@ -180,10 +284,7 @@ func (s *Store) ListUsersPage(q UserQuery) ([]model.User, int, error) {
 		if q.InboundID > 0 && !u.AllowsInbound(q.InboundID) {
 			continue
 		}
-		matched = append(matched, *u)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("遍历用户列表: %w", err)
+		matched = append(matched, u)
 	}
 
 	total := len(matched)
@@ -210,6 +311,11 @@ func (s *Store) ListUsers() ([]model.User, error) {
 //
 // created_at 只在创建时写,这里不动它;其余字段(含 used_traffic)按 u 的值覆盖。
 // 只改流量请用 AddUserTraffic,那是原子的累加。用户名不存在时返回 ErrNotFound。
+//
+// 套餐归属不由这里改(改归属用 SetUserPlan),只有一条例外:当前挂在 all_nodes
+// 套餐下的用户被写入了非空的 inbound_ids —— 在 all_nodes 下这只可能是调用方想
+// 限制这个用户,取并集没有意义,于是摘掉套餐,按旧语义生效。这条规则放在存储层,
+// API、CLI、CSV 导入走的是同一条路径(见 RFC「新用户与旧客户端」)。
 func (s *Store) UpdateUser(u *model.User) error {
 	u.ExpireAt = normalizeExpireAt(u.ExpireAt)
 	u.TrafficResetAt = normalizeExpireAt(u.TrafficResetAt)
@@ -219,7 +325,13 @@ func (s *Store) UpdateUser(u *model.User) error {
 		return fmt.Errorf("序列化用户 %q 的 inbound_ids: %w", u.Username, err)
 	}
 
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("更新用户 %q: %w", u.Username, err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`UPDATE users
 		 SET "key" = ?, sub_token = ?, enabled = ?, data_limit = ?, used_traffic = ?,
 		     lifetime_used_traffic = ?, expire_at = ?, reset_strategy = ?,
@@ -232,7 +344,33 @@ func (s *Store) UpdateUser(u *model.User) error {
 	if err != nil {
 		return fmt.Errorf("更新用户 %q: %w", u.Username, err)
 	}
-	return affectedOrNotFound(res, fmt.Sprintf("用户 %q", u.Username))
+	if err := affectedOrNotFound(res, fmt.Sprintf("用户 %q", u.Username)); err != nil {
+		return err
+	}
+
+	if len(u.InboundIDs) > 0 {
+		var allNodes int
+		err := tx.QueryRow(
+			`SELECT p.all_nodes FROM user_plans up JOIN plans p ON p.id = up.plan_id
+			 WHERE up.user_id = (SELECT id FROM users WHERE username = ?)`,
+			u.Username).Scan(&allNodes)
+		switch {
+		case err == nil && allNodes != 0:
+			if _, err := tx.Exec(
+				`DELETE FROM user_plans WHERE user_id = (SELECT id FROM users WHERE username = ?)`,
+				u.Username); err != nil {
+				return fmt.Errorf("摘掉用户 %q 的全节点套餐: %w", u.Username, err)
+			}
+			u.PlanID = nil
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return fmt.Errorf("读取用户 %q 的套餐: %w", u.Username, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// 更新不改套餐归属,以库里现值重新解析;被摘掉套餐时 PlanID 会被清空。
+	return s.resolveUserPlanAuth(u)
 }
 
 // DeleteUser 按用户名删除用户。
