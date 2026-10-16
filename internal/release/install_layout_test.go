@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -66,6 +67,9 @@ func linkTarget(t *testing.T, prefix string) string {
 
 // TestInstallReleaseLayout 验证版本目录 + 链接切换 + 只留两版(含老布局迁移与重复安装)。
 func TestInstallReleaseLayout(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("install.sh 只支持 Linux")
+	}
 	prefix := t.TempDir()
 	binDir := t.TempDir()
 
@@ -126,6 +130,9 @@ func TestInstallReleaseLayout(t *testing.T) {
 // TestInstallReleaseLayoutLocalVersion 验证源码编出来的二进制(没有 v 开头版本)
 // 会落进 local-<时间戳> 目录,而不是拿一个奇怪的目录名。
 func TestInstallReleaseLayoutLocalVersion(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("install.sh 只支持 Linux")
+	}
 	prefix := t.TempDir()
 	binDir := t.TempDir()
 	bin := filepath.Join(binDir, "mpx-local")
