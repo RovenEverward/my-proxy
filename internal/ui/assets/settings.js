@@ -1,5 +1,5 @@
 // 设置页:通用(先读后写、整体回写)、UA 识别规则(add / rm / move / reset)、
-// 客户端模板(get / set / del)、备份下载。PUT /api/settings 是整体替换:每次写都先读回
+// 客户端模板(get / set / del)、设备(list / revoke)、备份下载。PUT /api/settings 是整体替换:每次写都先读回
 // 最新一份,只改这次动的地方,与 mpx settings 各子命令一样。
 "use strict";
 
@@ -15,13 +15,14 @@ async function modifySettings(change) {
 }
 const GENERAL = [["sub_url_prefix", "订阅地址前缀", "s", "发给用户的链接以它开头,前面通常是 TLS 反代"], ["profile_title", "订阅标题", "s", "客户端里显示的订阅名,支持 {USERNAME} 等变量"], ["update_interval", "客户端刷新间隔(小时)", "i", ""],
   ["support_link", "支持链接", "s", ""], ["webhook_url", "Webhook", "s", "到期、超限等通知发到这里;留空不发"], ["notify_days_left", "到期前提醒(天)", "i", "0 表示关闭"], ["notify_usage_percent", "用量提醒(%)", "i", "0 表示关闭"]];
-const SET_TABS = [["general", "通用"], ["rules", "识别规则"], ["templates", "模板"], ["backup", "备份"]];
+const SET_TABS = [["general", "通用"], ["rules", "识别规则"], ["templates", "模板"], ["devices", "设备"], ["backup", "备份"]];
 
 PAGES.settings = {
   title: "设置", nav: ["配置", "set", 50],
   crumb: r => H`<a href="#settings">设置</a><i>/</i><b>${(SET_TABS.find(t => t[0] === r[1]) || SET_TABS[0])[1]}</b>`,
   async load(r) {
     const settings = await api("/api/settings");
+    if (r[1] === "devices") return { settings, devices: await api("/api/devices") };
     if (r[1] !== "templates") return { settings };
     // 列表要显示大小与行数,所以把三份生效正文都取回来(GET 没自定义时返回内置默认)。
     const tpl = Object.fromEntries(await Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])));
@@ -50,6 +51,14 @@ PAGES.settings = {
         <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。想看某个 UA 会拿到什么:<code>mpx settings rules test '&lt;UA&gt;'</code></div></div>`;
     }
     if (t === "templates") return templatesTab(head, s, d.tpl || {});
+    if (t === "devices") {
+      const D = d.devices || [], X = can("DELETE", "/api/devices");
+      return H`${head}<div class="card"><div class="ch">接入的设备<small>· 共 ${D.length} 台 · 对应 <code>mpx device list</code></small></div>
+        ${D.length ? D.map(x => H`<div class="row"><span class="sub mono w18">${x.id}</span><b class="ell grow">${x.name}</b>${x.current ? H`<span class="pill on">这台</span>` : ""}
+          <span class="sub">${x.last_used_at ? "上次 " + sinceText(x.last_used_at) : "未用过"}${x.last_ip ? " · " + x.last_ip : ""}</span>
+          ${X && !x.current ? H`<button class="btn sm danger" data-act="dev-revoke" data-id="${x.id}" data-name="${x.name}">吊销</button>` : ""}</div>`) : H`<div class="row sub">还没有设备用 <code>mpx connect</code> 接入。</div>`}
+        <div class="row sub">「这台」就是 mpx ui 正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销请在终端 <code>mpx device revoke &lt;id&gt;</code>。</div></div>`;
+    }
     return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。等价于 <code>mpx backup</code>。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
       <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">恢复会整库替换、要重启控制面,只在终端里做,界面里不提供。</p><div class="cmd">mpx restore mpx-backup.tar.gz</div></div></div>`;
   },
@@ -185,6 +194,8 @@ async function templateDrawer(f) {
 Object.assign(ACTS, {
   "set-revert": () => load(true, true),
   "set-test": (d, b) => busy(b, async () => { await write("POST", "/api/settings/test-webhook", undefined, "测试通知已送到"); }),
+  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效,要再用得在那台机器上重新 mpx connect。", cmd: `mpx device revoke ${d.id}`, ok: "吊销", danger: true,
+    run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
   "rule-add": () => confirmBox({ title: "加一条识别规则", text: "PATTERN 是 Go 正则,不区分大小写就以 (?i) 开头。顺序即优先级:宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
     extra: H`<div class="field"><label for="r-pat">User-Agent 正则</label><input class="in mono" id="r-pat" placeholder="(?i)karing" autocomplete="off"></div>
       <div class="two"><div class="field"><label for="r-res">命中后返回</label><select class="in" id="r-res">${RULE_RESULTS.map(x => H`<option>${x}</option>`)}</select></div>
