@@ -235,11 +235,22 @@ func TestUserPlanCLI(t *testing.T) {
 		t.Fatalf("user edit --plan 没改挂: %+v, err=%v", global, err)
 	}
 
-	// edit --plan "":摘掉。
-	runUser(t, "edit", "bob", "--plan", "")
+	// edit --plan "":拒绝,不能把用户移出套餐;归属不变。
+	resetUserCLIFlags()
+	if err := runRootErr(t, "user", "edit", "bob", "--plan", ""); err == nil || !strings.Contains(err.Error(), "具体套餐") {
+		t.Fatalf("--plan \"\" 应当被拒绝: %v", err)
+	}
+	resetUserCLIFlags()
 	bob, _ = st.GetUser("bob")
-	if bob.PlanID != nil {
-		t.Fatalf("--plan \"\" 没摘掉: %+v", bob.PlanID)
+	if bob.PlanID == nil || *bob.PlanID != global.ID {
+		t.Fatalf("被拒绝的 --plan \"\" 动了归属: %+v", bob.PlanID)
+	}
+	// plan rm --reassign "":同样拒绝。
+	if err := runRootErr(t, "plan", "rm", "全球", "--reassign", ""); err == nil || !strings.Contains(err.Error(), "具体套餐") {
+		t.Fatalf("--reassign \"\" 应当被拒绝: %v", err)
+	}
+	if _, err := st.GetPlan(global.ID); err != nil {
+		t.Fatalf("被拒绝的删除把套餐删了: %v", err)
 	}
 
 	// list --plan:只看挂该套餐的用户。

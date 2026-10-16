@@ -26,7 +26,10 @@
 ### 新用户与旧客户端
 
 - 新建用户时：没带 `plan_id` 且 `inbound_ids` 为空，归入默认套餐；带了 `plan_id`，按指定的套餐；**没带 `plan_id` 但带了 `inbound_ids`**（旧客户端或脚本），不挂套餐，按旧语义只能用这些入站，避免和默认套餐取并集后变成全部。
-- 用户可以不挂套餐（`plan_id` 为空），这时完全沿用旧语义。只有显式摘掉套餐，或者上面这种旧写法，才会出现这种状态。
+- 用户可以不挂套餐（`plan_id` 为空），这时完全沿用旧语义。只有上面这种旧写法（以及下一条的旧客户端例外）会产生这种状态，而这两种情况都带着非空的 `inbound_ids`，只会收窄权限。
+- **不能把用户移出套餐**（2026-10-16 定案）：没挂套餐、`inbound_ids` 又为空的用户按旧语义能用全部入站，所以「移出套餐」会让权限悄悄回落到全部节点。因此：
+  - `PUT/POST /api/users` 带 `plan_id: null` 返回 400；`mpx user edit --plan ""` 在本地就拒绝。要「放宽到全部」，请明确改挂到默认套餐。
+  - 删除套餐时，如果套餐里还有用户，`reassign` 没填或为空都返回 409，提示用 `reassign` 指定一个具体套餐（可以是默认套餐）；`mpx plan rm --reassign ""` 在本地就拒绝。套餐里没有用户时照常删除。
 - 旧客户端整体 `PUT` 用户、不带 `plan_id` 时，保持原来的套餐。例外：`all_nodes` 套餐下的用户被写入了非空的 `inbound_ids`，在 `all_nodes` 下这只可能是调用方想限制这个用户（取并集没有意义），这时摘掉套餐，按旧语义生效。这条规则放在 store 的用户更新里，API、CLI、CSV 导入走同一条路径。
 
 ## 1. 问题陈述
@@ -116,7 +119,7 @@ user_plans(user_id PK → users ON DELETE CASCADE, plan_id → plans)   -- 不�
 
 | 新增 | 说明 |
 | --- | --- |
-| `GET/POST /api/plans`、`GET/PUT/DELETE /api/plans/{id}` | 删除时如果还有用户挂在这个套餐上，返回 409 并附上用户数；加 `?reassign=<id>` 或 `?reassign=` 表示先把这些用户改挂或摘掉 |
+| `GET/POST /api/plans`、`GET/PUT/DELETE /api/plans/{id}` | 删除时如果还有用户挂在这个套餐上，返回 409 并附上用户数；加 `?reassign=<id>` 表示先把这些用户改挂到该套餐（可以是默认套餐）；不支持摘掉 |
 | `GET /api/plans/{id}/preview` | 列出这个套餐此刻能用的节点、入站、入口（用显示名），以及因为排水中或满员而暂时不在订阅里的 |
 | 用户 JSON 增加 `plan_id`（omitempty） | 老客户端不带这个字段时，`PUT` 保持原值，不清空。这一点需要专门测试，因为现在 `PUT` 是整体回写 |
 | `GET /api/users?plan=<id>` | 按套餐筛选用户 |
@@ -130,10 +133,10 @@ mpx plan add 全球 --node "🇺🇸 洛杉矶 A" --node 洛杉矶B --node 东�
 mpx plan add 基础 --node 洛杉矶A --inbound la-1/reality
 mpx plan edit 全球 --add-node 新加坡A --rm-inbound la-1/ws --name 全球 Pro
 mpx plan show 全球            # 节点、入站、挂了多少用户、各策略组的成员数
-mpx plan rm 基础 [--reassign 全球|--reassign ""]
+mpx plan rm 基础 [--reassign 全球]
 mpx plan suggest [--apply]
 mpx user add bob --plan 全球
-mpx user edit alice --plan 基础 | --plan ""
+mpx user edit alice --plan 基础      # 不能用 --plan "" 移出套餐
 mpx user list --plan 全球
 ```
 
@@ -204,7 +207,7 @@ mpx user list --plan 全球
   - 保存中，按钮显示 busy；
   - 控制面拒绝时，错误显示在抽屉底部，抽屉不关；
   - 一个节点都没勾、也没开「全部节点」时，保存按钮仍然可用，但上方出现黄色提示「空套餐：挂着的用户将无法使用任何节点」。
-- **删除**：抽屉底部的危险区。没有用户时，删除只需要确认；有用户时，确认框要求选择「改挂到 [下拉选择套餐]」或「摘掉套餐（回到单独授权）」。
+- **删除**：抽屉底部的危险区。没有用户时，删除只需要确认；有用户时，确认框要求选择「改挂到 [下拉选择套餐，含默认套餐]」，没有「摘掉套餐」选项。
 - **等价命令**：随表单实时更新，例如 `mpx plan add 全球 --node "🇺🇸 洛杉矶 A" …` 或 `mpx plan edit …`。
 
 ### 7.4 用户页

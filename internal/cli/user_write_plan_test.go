@@ -88,13 +88,10 @@ func TestUserEditPlanFlagSendsExplicitPlanID(t *testing.T) {
 		t.Fatalf("plan_id = %s, want 7", raw)
 	}
 
-	runUser(t, "edit", "alice", "--plan", "")
-	body = lastPutBody(t, f, "alice")
-	raw, present = body["plan_id"]
-	if !present {
-		t.Fatal("--plan \"\" 应当显式带 plan_id:null")
+	// --plan "" 在本地就拒绝,不发请求。
+	resetUserCLIFlags()
+	if err := runRootErr(t, "user", "edit", "alice", "--plan", ""); err == nil {
+		t.Fatal("--plan \"\" 应当被拒绝")
 	}
-	if strings.TrimSpace(string(raw)) != "null" {
-		t.Fatalf("plan_id = %s, want null", raw)
-	}
+	resetUserCLIFlags()
 }

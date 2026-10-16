@@ -596,9 +596,8 @@ func planRmCmd() *cobra.Command {
 		Long: `删除一个套餐。默认套餐不能删;还有用户挂着时会被拒绝并给出用户数。
 
   --reassign 全球   先把这些用户改挂到「全球」再删
-  --reassign ""     先摘掉这些用户的套餐(回到单独授权)再删
 
-改挂或摘除与删除在控制面的同一个事务里完成,不会出现用户指向被删套餐的中间态。`,
+改挂与删除在控制面的同一个事务里完成,不会出现用户指向被删套餐的中间态。`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newClient()
@@ -613,7 +612,7 @@ func planRmCmd() *cobra.Command {
 			if cmd.Flags().Changed("reassign") {
 				q := url.Values{}
 				if strings.TrimSpace(planRmFlags.reassign) == "" {
-					q.Set("reassign", "")
+					return errors.New(`--reassign 不能为空:请指定一个具体套餐(可以是默认套餐),不能把用户移出套餐`)
 				} else {
 					target, err := resolvePlanID(c, planRmFlags.reassign, false)
 					if err != nil {
@@ -633,7 +632,7 @@ func planRmCmd() *cobra.Command {
 			return report(raw, "已删除套餐 %s", p.Name)
 		},
 	}
-	cmd.Flags().StringVar(&planRmFlags.reassign, "reassign", "", "先把用户改挂到指定套餐;给空串表示摘掉套餐")
+	cmd.Flags().StringVar(&planRmFlags.reassign, "reassign", "", "先把用户改挂到指定套餐(可以是默认套餐)")
 	return cmd
 }
 

@@ -6,8 +6,8 @@
 
 ### 套餐（API 与 CLI）
 - 新增套餐（权限组）：`mpx plan list/add/edit/show/rm/suggest`，以及 `GET/POST /api/plans`、`GET/PUT/DELETE /api/plans/{id}`、`GET /api/plans/{id}/preview`。按节点授权为主（含以后新加的入站），入站可选；空套餐表示什么都不能用，「全部」用 `all_nodes` 表达。
-- 用户新增 `plan_id`（省略即保持原套餐，显式 `null` 表示摘掉）；`POST /api/users` 支持 `plan_id`，`GET /api/users?plan=<id>` 按套餐筛选；`POST /api/proxy-groups/preview?plan=<id>` 只看套餐范围内的成员。CLI 增加 `mpx user add/edit --plan`、`mpx user list --plan`，CSV 导出/导入增加「套餐」列（导入时空列不改归属）。
-- 系统自带「默认套餐」（`all_nodes`，可编辑不可删除）。升级时自动创建，原有「全部入站」的用户自动归入；`inbound_ids` 非空的用户按相同集合自动建迁移套餐，并且不清空原有 `inbound_ids`，保证升级前后每个用户能用的入站完全一致。删除还有用户挂着的套餐会被拒绝（返回用户数），可用 `?reassign=<id>` 改挂或 `?reassign=` 摘掉后删除；改挂与删除在同一个事务里完成。
+- 用户新增 `plan_id`（省略即保持原套餐；不能用 `null` 或 `--plan ""` 把用户移出套餐，以免权限悄悄回落到全部节点，要放宽请改挂到默认套餐）；`POST /api/users` 支持 `plan_id`，`GET /api/users?plan=<id>` 按套餐筛选；`POST /api/proxy-groups/preview?plan=<id>` 只看套餐范围内的成员。CLI 增加 `mpx user add/edit --plan`、`mpx user list --plan`，CSV 导出/导入增加「套餐」列（导入时空列不改归属）。
+- 系统自带「默认套餐」（`all_nodes`，可编辑不可删除）。升级时自动创建，原有「全部入站」的用户自动归入；`inbound_ids` 非空的用户按相同集合自动建迁移套餐，并且不清空原有 `inbound_ids`，保证升级前后每个用户能用的入站完全一致。删除还有用户挂着的套餐会被拒绝（返回用户数），需用 `?reassign=<id>`（`mpx plan rm --reassign`）改挂到一个具体套餐（可以是默认套餐）后再删，`reassign` 为空同样被拒绝；改挂与删除在同一个事务里完成。
 - 套餐或用户归属变化后，订阅缓存与节点收敛沿用改用户时的同一条路径，xray 下发的用户名单随之更新。
 
 ### 用途废弃，计划在 v0.7.0 删除

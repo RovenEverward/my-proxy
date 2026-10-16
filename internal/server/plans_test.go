@@ -178,13 +178,20 @@ func TestPlanDeleteRules(t *testing.T) {
 	if code, data := e.requestRaw("POST", "/api/users", []byte(fmt.Sprintf(`{"username":"bob","plan_id":%d}`, p2.ID))); code != http.StatusCreated {
 		t.Fatalf("建 bob: %d %s", code, data)
 	}
-	if code, data := e.api("DELETE", fmt.Sprintf("/api/plans/%d?reassign=", p2.ID), nil); code != http.StatusOK {
-		t.Fatalf("摘掉后删: %d %s", code, data)
+	// 空的 reassign 不能把用户摘出套餐(否则会回落到全部入站):409,归属不变。
+	if code, data := e.api("DELETE", fmt.Sprintf("/api/plans/%d?reassign=", p2.ID), nil); code != http.StatusConflict ||
+		!strings.Contains(string(data), "reassign") {
+		t.Fatalf("空 reassign 删有用户的套餐: %d %s", code, data)
 	}
 	for _, name := range []string{"alice", "bob"} {
-		if got := userOf(t, e, name); got.PlanID != nil {
-			t.Fatalf("%s 的套餐应被摘掉: %+v", name, got)
+		if got := userOf(t, e, name); got.PlanID == nil || *got.PlanID != p2.ID {
+			t.Fatalf("%s 的套餐被动了: %+v", name, got)
 		}
+	}
+	// 套餐里没有用户时,空 reassign 照常删除。
+	empty := e.createPlan(model.Plan{Name: "空套餐"})
+	if code, data := e.api("DELETE", fmt.Sprintf("/api/plans/%d?reassign=", empty.ID), nil); code != http.StatusOK {
+		t.Fatalf("空 reassign 删无用户套餐: %d %s", code, data)
 	}
 
 	// 把用户改挂到正在删除的套餐应当被拒绝。
@@ -316,17 +323,19 @@ func TestUserPlanOwnership(t *testing.T) {
 		t.Fatalf("老客户端 PUT 丢了套餐: %+v", got)
 	}
 
-	// PUT 带 null → 摘掉。
-	// 注意先删掉 inbound_ids:别让 all_nodes 摘除规则参与(这里 p1 不是 all_nodes,
-	// 但显式 null 的语义应当一站到位)。
+	// PUT 带 null → 400:不能把用户移出套餐(否则会回落到全部入站),归属不变。
 	if code := putUserRaw(t, e, "chosen", func(m map[string]any) {
 		delete(m, "inbound_ids")
 		m["plan_id"] = nil
-	}); code != http.StatusOK {
-		t.Fatalf("带 null 的 PUT = %d", code)
+	}); code != http.StatusBadRequest {
+		t.Fatalf("带 null 的 PUT = %d, want 400", code)
 	}
-	if got := userOf(t, e, "chosen"); got.PlanID != nil {
-		t.Fatalf("null 没摘掉套餐: %+v", got)
+	if got := userOf(t, e, "chosen"); got.PlanID == nil || *got.PlanID != p1.ID {
+		t.Fatalf("被拒绝的 null 动了归属: %+v", got)
+	}
+	// POST 带 null 同样拒绝。
+	if code, _ := e.requestRaw("POST", "/api/users", []byte(`{"username":"nullplan","plan_id":null}`)); code != http.StatusBadRequest {
+		t.Fatalf("POST 带 null = %d, want 400", code)
 	}
 
 	// PUT 带 id → 改挂。
