@@ -13,8 +13,7 @@ import (
 )
 
 func routingEndpoints() []Endpoint {
-	eps := purposeEndpoints()
-	return eps
+	return []Endpoint{{NodeID: 1, InboundID: 1, HostID: 1, Remark: "Daily", Protocol: model.ProtocolVLESS, Address: "daily.example.com", Port: 443, UUID: "11111111-1111-4111-8111-111111111111", Network: model.NetworkTCP}, {NodeID: 2, InboundID: 2, HostID: 2, Remark: "Media", Protocol: model.ProtocolVLESS, Address: "media.example.com", Port: 443, UUID: "11111111-1111-4111-8111-111111111111", Network: model.NetworkTCP}}
 }
 
 func seedPlan(t *testing.T, eps []Endpoint) RoutingPlan {

@@ -31,14 +31,9 @@ type subPageData struct {
 	Token      string
 	// Rotated 非空表示刚换过地址,页面上要把新地址亮出来 —— 这一次渲染是用户
 	// 保存新地址的唯一机会。
-	Capabilities       []subCapability
-	Rotated            string
-	Links              []subPageLink
-	Purposes           []model.Purpose
-	SelectedPurpose    string
-	PurposeDescription string
-	DefaultURL         string
-	PurposeError       string
+	Capabilities []subCapability
+	Rotated      string
+	Links        []subPageLink
 	// QRSVG 是 Links 第一条地址的二维码,在服务端画成内联 SVG,页面不依赖外部脚本。
 	QRSVG  template.HTML
 	QRName string
@@ -84,28 +79,6 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 	if err != nil {
 		s.writeStoreError(w, err, "节点能力")
 		return
-	}
-	data.DefaultURL = sub
-	purposes, err := s.store.ListPurposes()
-	if err != nil {
-		s.writeStoreError(w, err, "用途")
-		return
-	}
-	data.Purposes = purposes
-	data.SelectedPurpose = r.URL.Query().Get("purpose")
-	if data.SelectedPurpose != "" {
-		for _, p := range purposes {
-			if p.Slug == data.SelectedPurpose {
-				data.PurposeDescription = p.Description
-				if _, err := s.renderPurposeSubscription(user, p, model.FormatClashMeta); err != nil {
-					data.PurposeError = err.Error()
-				}
-			}
-		}
-		data.Links = []subPageLink{
-			{Name: "clash-meta", URL: sub + "/clash-meta?purpose=" + data.SelectedPurpose},
-			{Name: "sing-box", URL: sub + "/sing-box?purpose=" + data.SelectedPurpose},
-		}
 	}
 
 	if len(data.Links) > 0 {
@@ -300,9 +273,6 @@ button { font: inherit; font-size: 13px; font-weight: 500; height: 30px; padding
 button:hover { background: var(--line); }
 button:active { transform: scale(.97); }
 button.primary { background: var(--ink); color: var(--canvas); box-shadow: none; }
-form.purpose { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-form.purpose label { font-size: 12px; color: var(--muted); }
-select { font: inherit; font-size: 13px; height: 30px; padding: 0 8px; border-radius: 8px; border: 0; background: var(--stone); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
 ul.links { list-style: none; margin: 0 -8px; padding: 0; }
 ul.links li { display: grid; grid-template-columns: 6.5rem minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 8px; border-radius: 8px; }
 ul.links li + li { box-shadow: 0 -1px 0 var(--line); }
@@ -353,21 +323,6 @@ button.warn:hover { background: var(--bad); color: #fff; }
 <div class="stat"><span class="k">到期</span><span class="v">{{.ExpireText}}</span></div>
 </div>
 </section>
-
-{{if .Purposes}}<section class="card">
-<h2>选择用途</h2>
-<form class="purpose" method="get" action="/sub/{{.Token}}">
-<label for="purpose">用途</label> <select id="purpose" name="purpose">
-<option value="">默认订阅</option>
-{{range .Purposes}}<option value="{{.Slug}}" {{if eq $.SelectedPurpose .Slug}}selected{{end}}>{{.Name}}</option>{{end}}
-</select> <button type="submit" class="primary">查看订阅</button>
-</form>
-{{if .PurposeDescription}}<p>{{.PurposeDescription}}</p>{{end}}
-<p class="muted">用途订阅支持 clash-meta 与 sing-box。流媒体、下载和游戏的指定域名走用途组，其余流量沿用日常路由。客户端 url-test 测量 HTTP 延迟；下载吞吐、游戏 RTT、抖动与丢包需在本地实际观察。</p>
-{{if .SelectedPurpose}}<p class="muted"><a href="{{.DefaultURL}}">返回默认订阅</a></p>{{end}}
-</section>
-{{else if .SelectedPurpose}}<p><a href="{{.DefaultURL}}">返回默认订阅</a></p>{{end}}
-{{if .PurposeError}}<p class="notice alert" role="alert">{{.PurposeError}}。<a href="{{.DefaultURL}}">使用默认订阅</a></p>{{end}}
 
 <section class="card">
 <h2>分享链接</h2>
