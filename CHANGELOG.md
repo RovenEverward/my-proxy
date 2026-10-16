@@ -2,6 +2,22 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.7.2 (2026-10-16)
+
+本版主题：`mpx ui` 补上三个 CLI 有而界面没有的功能。
+
+### 新增
+- **切换配置档**：点左上角的配置档卡片，列出本机的 profile，点一下就切过去（对应 `--profile`）。只影响这个 `mpx ui` 进程，不改配置文件里的 current；页面拿不到 token 和证书指纹。
+- **自检页**（对应 `mpx doctor`）：进页面不自动跑，点「开始自检」才逐台检查，结果按正常 / 警告 / 失败汇总。
+- **批量识别显示名**（对应 `mpx node relabel`）：节点页里先生成「旧名 → 新名」对照表（会把节点 IP 发给 ipwho.is），确认后才写入；写入的就是对照表里那一份，不会重新识别。写入前如果节点已经被人改过，就跳过。
+
+### 兼容性
+- 控制面 API 无变更，控制面不用升级。
+- 新增本机接口 `/local/profiles`、`/local/profiles/use`、`/local/relabel/plan`、`/local/relabel/apply`：只在 `mpx ui` 进程里，只接受 POST，要求带会话。自检直接走已放行的 `GET /api/doctor`。
+- `mpx node relabel` 命令行为和输出不变（计算部分抽出来，和界面共用）。
+
+包含：#89、#90 与本 PR。
+
 ## v0.7.1 (2026-10-16)
 
 ### 新增

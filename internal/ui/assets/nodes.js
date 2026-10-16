@@ -62,7 +62,10 @@ function nodeList(d) {
   else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${n.display || n.name}</b> ${n.display ? H`<span class="sub mono">${n.name}</span> ` : ""}<span class="sub">#${n.id}</span><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
     <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : H`<span class="sub">—</span>`}</td>
     <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
+  // 「批量识别显示名」只在有实现、且确实还有没显示名的节点时出现。
+  const needRelabel = d && META.relabel && d.nodes.some(n => !n.display);
   return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存 · 对应 <code>mpx node list</code></p></div><div class="sp"></div>
+    ${needRelabel ? H`<button class="btn" data-act="relabel-open">${ic("globe")}批量识别显示名</button>` : ""}
     ${W ? H`<button class="btn pri" data-act="node-wizard">${ic("plus")}添加节点</button>` : ""}</div><div class="card">${inner}</div>`;
 }
 // 配置:节点上读回的哈希与控制面最后一次下发的比对(同 mpx node list 的漂移判定)。
@@ -211,6 +214,43 @@ async function nodeEditor(id) {
   });
 }
 
+/* ---- 批量识别显示名:plan 先出对照表,确认后 apply 只写这份 ---- */
+// 页面把 plan 返回的 plans 原样留着;apply 时原样回传,不重新识别、不重新拼名字。
+function relabelModal() {
+  const m = $("#modal");
+  let plans = null;
+  m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
+  <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>),先出「旧名 → 新名」对照表。已经有显示名的节点会跳过,用户写过的值不会被覆盖。</p>
+  <div class="field"><label>等价命令</label>
+    <div class="cmd">mpx node relabel --all --dry-run</div>
+    <div class="cmd mt2">mpx node relabel --all --yes</div></div>
+  <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
+  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>
+  <button class="btn" id="rl-plan">${ic("globe")}生成对照表</button>
+  <button class="btn pri" id="rl-apply" style="display:none"></button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  $("#rl-plan").addEventListener("click", () => busy($("#rl-plan"), async () => {
+    const r = await api("/local/relabel/plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+    plans = r.plans || [];
+    const rows = r.rows || [];
+    $("#rl-table").innerHTML = val(rows.length
+      ? H`<div class="field"><label>对照表</label><div class="tw"><table><thead><tr><th class="num">ID</th><th>内部名</th><th>旧名</th><th>新名</th><th>依据</th></tr></thead><tbody>${rows.map(x => H`<tr><td class="num mono">${x.id}</td><td class="mono">${x.name}</td><td>${x.old || "—"}</td><td><b class="bold">${x.new}</b></td><td class="sub">${x.note}</td></tr>`)}</tbody></table></div></div>`
+      : H`<p class="sub">没有要处理的节点。</p>`);
+    const btn = $("#rl-apply");
+    btn.style.display = plans.length ? "" : "none";
+    btn.textContent = `写入这 ${plans.length} 个节点`;
+  }));
+  $("#rl-apply").addEventListener("click", () => busy($("#rl-apply"), async () => {
+    // 原样回传 plan 的结果:确认看到什么就写什么。
+    const r = await api("/local/relabel/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plans }) });
+    const res = r.results || [];
+    const skipped = res.filter(x => x.skipped).length;
+    const ok = res.length - skipped;
+    toast(`已写入 ${ok} 个节点${skipped ? `,${skipped} 个已被改过、跳过` : ""}`);
+    closeOverlays(); load(true, true);
+  }));
+}
+
 /* ---- 结果抽屉:在线、配置预览 ---- */
 function infoDrawer(title, sub, body) {
   openDrawer(H`<div class="dh"><div style="min-width:0"><h2 class="ell">${title}</h2><div class="sub">${sub}</div></div><span class="sp" style="flex:1"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${body}</div>`);
@@ -223,6 +263,7 @@ async function busy(btn, fn) {
 Object.assign(ACTS, {
   "node-new": () => nodeEditor(null),
   "node-wizard": () => openNodeWizard(),
+  "relabel-open": () => relabelModal(),
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("已现场检查,状态已更新"); await load(true, true); }),

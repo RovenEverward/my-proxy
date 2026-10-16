@@ -48,6 +48,8 @@ type Options struct {
 	// Profiles 非空时启用 /local/profiles(列出)与 /local/profiles/use(切换)。
 	// 为 nil 时两个接口都 404。
 	Profiles ProfileSource
+	// Relabel 非空时启用 /local/relabel/plan 与 /local/relabel/apply。为 nil 时 404。
+	Relabel RelabelRunner
 }
 
 // Server 是一个已经绑定好端口的页面服务。
@@ -190,6 +192,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveProfiles(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/local/relabel") {
+		s.serveRelabel(w, r)
+		return
+	}
 	if r.URL.Path == "/local/qr.svg" {
 		s.serveQR(w, r)
 		return
@@ -228,6 +234,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"allow":       s.opts.Allow,
 			"setup":       s.opts.Setup != nil,
 			"profiles":    s.opts.Profiles != nil,
+			"relabel":     s.opts.Relabel != nil,
 			"mode":        mode,
 			"cli_version": buildinfo.Version(),
 		})

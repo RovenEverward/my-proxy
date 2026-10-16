@@ -15,6 +15,136 @@ var nodeRelabelFlags struct {
 	all, dryRun, yes bool
 }
 
+// doer 是 relabelPlan / relabelApply 要用到的最小客户端接口:*Client 满足它,
+// page 那边的运行器也能拿一个临时 client 进来 —— 计算逻辑 CLI 与页面共用一份。
+type doer interface {
+	do(method, path string, body any) ([]byte, error)
+}
+
+// relabelRow 是对照表的一行。JSON 标签给页面用(ui 包自己有同形的类型,
+// 不 import cli)。
+type relabelRow struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"` // 内部名
+	Old  string `json:"old"`  // 旧名(没有显示名时就是内部名)
+	New  string `json:"new"`  // 新显示名;"-" 表示这行不写入
+	Note string `json:"note"` // 依据或跳过原因
+}
+
+// relabelPlanItem 是一条待写入计划:apply 只写这份 metadata,绝不重新 locate。
+type relabelPlanItem struct {
+	ID       int64                 `json:"id"`
+	Name     string                `json:"name"`
+	Metadata model.PurposeMetadata `json:"metadata"`
+}
+
+// relabelResult 是 apply 里一个节点的结果。Skipped 为真时 Reason 说明原因。
+type relabelResult struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Display string `json:"display,omitempty"`
+	Skipped bool   `json:"skipped,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// relabelPlan 是 CLI 与页面共用的对照表计算:对每个目标节点做一次 locate
+// (ipwho.is),字母按节点 ID 顺序分配;已经有显示名的跳过。返回对照表与要写入
+// 的那份 metadata。
+func relabelPlan(c doer, views, targets []model.NodeView) ([]relabelRow, []relabelPlanItem, error) {
+	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
+
+	// 字母要和控制面分配的一致:先收齐各组已用的字母,再按 ID 顺序模拟。
+	meta := map[int64]model.PurposeMetadata{}
+	used := map[string]map[string]bool{}
+	for _, v := range views {
+		raw, err := c.do("GET", nodePath(v.ID)+"/metadata", nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		m, err := decode[model.PurposeMetadata](raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		meta[v.ID] = m
+		if m.Letter != "" && strings.TrimSpace(m.Region) != "" {
+			g := model.LetterGroup(m)
+			if used[g] == nil {
+				used[g] = map[string]bool{}
+			}
+			used[g][m.Letter] = true
+		}
+	}
+
+	var rows []relabelRow
+	var plans []relabelPlanItem
+	seen := map[int64]bool{}
+	for _, v := range targets {
+		if seen[v.ID] {
+			continue
+		}
+		seen[v.ID] = true
+		if v.Display != "" {
+			rows = append(rows, relabelRow{ID: v.ID, Name: v.Name, Old: v.Display, New: "-", Note: "已有显示名,跳过"})
+			continue
+		}
+		raw, err := c.do("POST", nodePath(v.ID)+"/locate", nil)
+		if err != nil {
+			rows = append(rows, relabelRow{ID: v.ID, Name: v.Name, Old: v.Name, New: "-", Note: "识别失败:" + err.Error()})
+			continue
+		}
+		sg, err := decode[locateSuggestion](raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		m := meta[v.ID]
+		m.Region, m.City = sg.Region, sg.City
+		g := model.LetterGroup(m)
+		if used[g] == nil {
+			used[g] = map[string]bool{}
+		}
+		m.Letter = model.NextLetter(used[g])
+		used[g][m.Letter] = true
+		note := "ipwho.is " + sg.IP
+		if sg.City == "" && sg.CityEn != "" {
+			note += "(" + sg.CityEn + " 不在对照表,只给国家)"
+		}
+		rows = append(rows, relabelRow{ID: v.ID, Name: v.Name, Old: v.Name, New: model.NodeDisplay(m), Note: note})
+		plans = append(plans, relabelPlanItem{ID: v.ID, Name: v.Name, Metadata: m})
+	}
+	return rows, plans, nil
+}
+
+// relabelApply 写回计划里的那份 metadata。写之前对每个 id 重新读一次:该节点
+// 此时已经有显示名(或地区跟计划不一样)就跳过 —— 页面看到的和现在写的必须一致,
+// 别人中途改过的值不能被覆盖。
+func relabelApply(c doer, plans []relabelPlanItem) ([]relabelResult, error) {
+	results := make([]relabelResult, 0, len(plans))
+	for _, p := range plans {
+		raw, err := c.do("GET", nodePath(p.ID)+"/metadata", nil)
+		if err != nil {
+			return results, err
+		}
+		cur, err := decode[model.PurposeMetadata](raw)
+		if err != nil {
+			return results, err
+		}
+		if model.NodeDisplay(cur) != "" || (strings.TrimSpace(cur.Region) != "" && cur.Region != p.Metadata.Region) {
+			results = append(results, relabelResult{ID: p.ID, Name: p.Name, Skipped: true, Reason: "已被改过,跳过"})
+			continue
+		}
+		raw, err = c.do("PUT", nodePath(p.ID)+"/metadata", explicitMetadata(p.Metadata))
+		if err != nil {
+			return results, fmt.Errorf("节点 %d(%s)写入失败: %w", p.ID, p.Name, err)
+		}
+		saved, err := decode[model.PurposeMetadata](raw)
+		if err != nil {
+			return results, err
+		}
+		results = append(results, relabelResult{ID: p.ID, Name: p.Name, Display: model.NodeDisplay(saved)})
+	}
+	return results, nil
+}
+
 var nodeRelabelCmd = &cobra.Command{
 	Use:   "relabel [节点...]",
 	Short: "给还没有显示名的节点批量识别地区/城市,先出对照表再确认写入",
@@ -58,71 +188,16 @@ var nodeRelabelCmd = &cobra.Command{
 				targets = append(targets, byID[cand.ID])
 			}
 		}
-		sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
 
-		// 字母要和控制面分配的一致:先收齐各组已用的字母,再按 ID 顺序模拟。
-		meta := map[int64]model.PurposeMetadata{}
-		used := map[string]map[string]bool{}
-		for _, v := range views {
-			raw, err := c.do("GET", nodePath(v.ID)+"/metadata", nil)
-			if err != nil {
-				return err
-			}
-			m, err := decode[model.PurposeMetadata](raw)
-			if err != nil {
-				return err
-			}
-			meta[v.ID] = m
-			if m.Letter != "" && strings.TrimSpace(m.Region) != "" {
-				g := model.LetterGroup(m)
-				if used[g] == nil {
-					used[g] = map[string]bool{}
-				}
-				used[g][m.Letter] = true
-			}
+		rows, plans, err := relabelPlan(c, views, targets)
+		if err != nil {
+			return err
 		}
-
-		type plan struct {
-			v model.NodeView
-			m model.PurposeMetadata
+		tableRows := make([][]string, 0, len(rows))
+		for _, r := range rows {
+			tableRows = append(tableRows, []string{strconv.FormatInt(r.ID, 10), r.Name, r.Old, r.New, r.Note})
 		}
-		var plans []plan
-		var rows [][]string
-		seen := map[int64]bool{}
-		for _, v := range targets {
-			if seen[v.ID] {
-				continue
-			}
-			seen[v.ID] = true
-			if v.Display != "" {
-				rows = append(rows, []string{strconv.FormatInt(v.ID, 10), v.Name, v.Display, "-", "已有显示名,跳过"})
-				continue
-			}
-			raw, err := c.do("POST", nodePath(v.ID)+"/locate", nil)
-			if err != nil {
-				rows = append(rows, []string{strconv.FormatInt(v.ID, 10), v.Name, v.Name, "-", "识别失败:" + err.Error()})
-				continue
-			}
-			sg, err := decode[locateSuggestion](raw)
-			if err != nil {
-				return err
-			}
-			m := meta[v.ID]
-			m.Region, m.City = sg.Region, sg.City
-			g := model.LetterGroup(m)
-			if used[g] == nil {
-				used[g] = map[string]bool{}
-			}
-			m.Letter = model.NextLetter(used[g])
-			used[g][m.Letter] = true
-			note := "ipwho.is " + sg.IP
-			if sg.City == "" && sg.CityEn != "" {
-				note += "(" + sg.CityEn + " 不在对照表,只给国家)"
-			}
-			rows = append(rows, []string{strconv.FormatInt(v.ID, 10), v.Name, v.Name, model.NodeDisplay(m), note})
-			plans = append(plans, plan{v, m})
-		}
-		if err := writeTable([]string{"ID", "内部名", "旧名", "新名", "依据"}, rows); err != nil {
+		if err := writeTable([]string{"ID", "内部名", "旧名", "新名", "依据"}, tableRows); err != nil {
 			return err
 		}
 		if len(plans) == 0 {
@@ -144,16 +219,16 @@ var nodeRelabelCmd = &cobra.Command{
 				return nil
 			}
 		}
-		for _, p := range plans {
-			raw, err := c.do("PUT", nodePath(p.v.ID)+"/metadata", explicitMetadata(p.m))
-			if err != nil {
-				return fmt.Errorf("节点 %d(%s)写入失败: %w", p.v.ID, p.v.Name, err)
+		results, err := relabelApply(c, plans)
+		if err != nil {
+			return err
+		}
+		for _, r := range results {
+			if r.Skipped {
+				fmt.Printf("节点 %d(%s)%s\n", r.ID, r.Name, r.Reason)
+				continue
 			}
-			saved, err := decode[model.PurposeMetadata](raw)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("节点 %d(%s)→ %s\n", p.v.ID, p.v.Name, model.NodeDisplay(saved))
+			fmt.Printf("节点 %d(%s)→ %s\n", r.ID, r.Name, r.Display)
 		}
 		return nil
 	},
