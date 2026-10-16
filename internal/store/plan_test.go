@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -680,6 +681,55 @@ func TestPlanUserStats(t *testing.T) {
 	if got, ok := stats[empty.ID]; !ok || got.Users != 0 || got.ExtraAuth != 0 {
 		t.Fatalf("没有用户挂着的套餐也应当以零值出现: %+v", got)
 	}
+}
+
+// TestPlanActiveUsers 覆盖套餐响应里的 active_users:只数挂在该套餐、且按
+// model.User.Status 判定为可用的用户(停用/过期/超限都不算),没挂套餐的不算。
+func TestPlanActiveUsers(t *testing.T) {
+	s := newTestStore(t)
+	p := &model.Plan{Name: "基础"}
+	if err := s.CreatePlan(p); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	past := time.Now().Add(-time.Hour)
+	users := []*model.User{
+		{Username: "active", Key: "k1", SubToken: "t1", Enabled: true, PlanID: &p.ID},
+		{Username: "disabled", Key: "k2", SubToken: "t2", Enabled: false, PlanID: &p.ID},
+		{Username: "expired", Key: "k3", SubToken: "t3", Enabled: true, ExpireAt: &past, PlanID: &p.ID},
+		{Username: "limited", Key: "k4", SubToken: "t4", Enabled: true, DataLimit: 100, UsedTraffic: 100, PlanID: &p.ID},
+	}
+	for _, u := range users {
+		if err := s.CreateUser(u); err != nil {
+			t.Fatalf("CreateUser(%s): %v", u.Username, err)
+		}
+	}
+	// 没挂套餐的用户不参与统计。
+	if err := s.CreateUser(&model.User{Username: "loose", Key: "k5", SubToken: "t5", Enabled: true}); err != nil {
+		t.Fatalf("CreateUser(loose): %v", err)
+	}
+
+	got, err := s.GetPlan(p.ID)
+	if err != nil {
+		t.Fatalf("GetPlan: %v", err)
+	}
+	if got.Users != 4 || got.ActiveUsers != 1 {
+		t.Fatalf("GetPlan 统计 = users %d active %d, want 4/1", got.Users, got.ActiveUsers)
+	}
+	plans, err := s.ListPlans()
+	if err != nil {
+		t.Fatalf("ListPlans: %v", err)
+	}
+	for _, x := range plans {
+		if x.ID != p.ID {
+			continue
+		}
+		if x.Users != 4 || x.ActiveUsers != 1 {
+			t.Fatalf("ListPlans 统计 = users %d active %d, want 4/1", x.Users, x.ActiveUsers)
+		}
+		return
+	}
+	t.Fatalf("列表里没有套餐 %d", p.ID)
 }
 
 // TestPlanCRUD 覆盖套餐的增删改查、去重排序、重名与非法引用。

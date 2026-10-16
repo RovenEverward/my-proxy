@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -458,30 +459,47 @@ func (s *Store) attachPlanDetails(plans []model.Plan) error {
 	}
 	rows.Close()
 
+	// 用户数、活跃数与额外授权数按套餐统计。活跃数必须走 model.User.Status 的
+	// 同一份判定(停用 > 过期 > 超限 > 可用),所以把状态相关的几列读回来在内存里
+	// 算,而不是在 SQL 里把状态优先级再抄一遍。
 	rows, err = s.db.Query(`
-		SELECT p.id,
-		       COUNT(u.id),
-		       COALESCE(SUM(CASE WHEN TRIM(u.inbound_ids) NOT IN ('', '[]', 'null') THEN 1 ELSE 0 END), 0)
-		FROM plans p
-		LEFT JOIN user_plans up ON up.plan_id = p.id
-		LEFT JOIN users u ON u.id = up.user_id
-		GROUP BY p.id`)
+		SELECT up.plan_id, u.enabled, u.expire_at, u.data_limit, u.used_traffic, u.inbound_ids
+		FROM user_plans up JOIN users u ON u.id = up.user_id`)
 	if err != nil {
 		return fmt.Errorf("统计套餐用户数: %w", err)
 	}
 	defer rows.Close()
+	now := time.Now()
 	for rows.Next() {
 		var (
-			planID int64
-			n      int
-			extra  int
+			planID      int64
+			enabled     int
+			expireAt    sql.NullInt64
+			limit, used int64
+			inboundIDs  string
 		)
-		if err := rows.Scan(&planID, &n, &extra); err != nil {
+		if err := rows.Scan(&planID, &enabled, &expireAt, &limit, &used, &inboundIDs); err != nil {
 			return fmt.Errorf("读取套餐用户数: %w", err)
 		}
-		if i, ok := idx[planID]; ok {
-			plans[i].Users = n
-			plans[i].ExtraAuth = extra
+		i, ok := idx[planID]
+		if !ok {
+			continue
+		}
+		u := model.User{Enabled: enabled != 0, DataLimit: limit, UsedTraffic: used}
+		if expireAt.Valid {
+			t := time.Unix(expireAt.Int64, 0).UTC()
+			u.ExpireAt = &t
+		}
+		plans[i].Users++
+		if u.Status(now) == model.StatusActive {
+			plans[i].ActiveUsers++
+		}
+		ids, err := decodeSlice[int64](inboundIDs)
+		if err != nil {
+			return fmt.Errorf("解析套餐 %d 用户的额外授权: %w", planID, err)
+		}
+		if len(ids) > 0 {
+			plans[i].ExtraAuth++
 		}
 	}
 	return rows.Err()

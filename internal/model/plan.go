@@ -27,6 +27,9 @@ type Plan struct {
 	InboundIDs []int64 `json:"inbound_ids,omitempty"`
 	// Users 是挂在这个套餐上的用户数,存储层读取时填充,写入时忽略。
 	Users int `json:"users"`
+	// ActiveUsers 是挂在这个套餐、且当前处于可用(model.StatusActive)状态的
+	// 用户数。与 Users 一样只在读取时填充,由存储层按 User.Status 的判定统计。
+	ActiveUsers int `json:"active_users"`
 	// ExtraAuth 是挂在这个套餐、同时还有额外授权(inbound_ids 非空)的用户数。
 	// 与 Users 一样只在读取时填充,用来提示「套餐的设置没有完全生效」。
 	ExtraAuth int `json:"extra_auth"`

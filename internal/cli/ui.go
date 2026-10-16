@@ -28,6 +28,10 @@ var uiAllow = []string{
 	"POST /api/users",
 	"PUT /api/users",
 	"DELETE /api/users",
+	// 套餐:add(POST /api/plans)/ edit(整体 PUT)/ rm(有用户时带 ?reassign=<id>)
+	"POST /api/plans",
+	"PUT /api/plans",
+	"DELETE /api/plans",
 	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose / locate;metadata set
 	"POST /api/nodes",
 	"PUT /api/nodes",

@@ -252,8 +252,10 @@ func TestPlanFieldLimits(t *testing.T) {
 	}
 }
 
-// TestPlanResponseCountsExtraAuth 断言套餐响应里带着「用户数」和「有额外授权的
-// 用户数」:前者是列表页的人数,后者提示这个套餐的设置没有对这些用户完全生效。
+// TestPlanResponseCountsExtraAuth 断言套餐响应里带着「用户数」「活跃数」和
+// 「有额外授权的用户数」:用户数是列表页的人数,活跃数按 User.Status 判定
+// (停用/过期/超限不算,由 store 统计),额外授权数提示这个套餐的设置没有对这些
+// 用户完全生效。
 func TestPlanResponseCountsExtraAuth(t *testing.T) {
 	e := newEnv(t)
 	n := e.createNode("la-1", "la.example.com")
@@ -266,10 +268,13 @@ func TestPlanResponseCountsExtraAuth(t *testing.T) {
 	if code, data := e.requestRaw("POST", "/api/users", []byte(fmt.Sprintf(`{"username":"extra","plan_id":%d,"inbound_ids":[%d]}`, p.ID, in.ID))); code != http.StatusCreated {
 		t.Fatalf("建 extra: %d %s", code, data)
 	}
+	if code, data := e.requestRaw("POST", "/api/users", []byte(fmt.Sprintf(`{"username":"off","plan_id":%d,"enabled":false}`, p.ID))); code != http.StatusCreated {
+		t.Fatalf("建 off: %d %s", code, data)
+	}
 
 	got := planByID(t, e, p.ID)
-	if got.Users != 2 || got.ExtraAuth != 1 {
-		t.Fatalf("套餐统计 = users %d extra %d, want 2/1", got.Users, got.ExtraAuth)
+	if got.Users != 3 || got.ActiveUsers != 2 || got.ExtraAuth != 1 {
+		t.Fatalf("套餐统计 = users %d active %d extra %d, want 3/2/1", got.Users, got.ActiveUsers, got.ExtraAuth)
 	}
 }
 
