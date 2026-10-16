@@ -2,18 +2,44 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
-## Unreleased
+## v0.6.0 (2026-10-16)
 
-### 套餐（API 与 CLI）
+### 分流规则（替代用途）
+- 新增「分流规则」：从上到下匹配，第一条命中的生效，都没命中走「其他全部」。规则类型有域名后缀、关键词、内置规则组（`mpx rule catalog`）、GeoIP、CIDR；去向可以是直连、拦截或策略组。每个用户还可以有自己的规则，排在全局规则前面。
+- 策略组按地区、协议、能力检测、标签自动收进入口，新加的节点符合条件会自动进组；可选自动测速（auto）或手动选择（manual）。
+- 由规则表生成 Clash Meta 与 sing-box 的分流部分。
+- 命令：`mpx rule list/add/rm/move/toggle/test/final/catalog/migrate/mode`、`mpx group list/add/edit/rm/preview`；对应新增 `/api/rules`、`/api/proxy-groups` 等管理接口（只新增）。
+- 管理界面新增「分流规则」页。
+- **升级时自动迁移**：首次启动时，旧模板和用途自动转换成规则表，只迁移一次；`mpx rule migrate --report` 查看迁移报告。如需临时退回旧模板，可用 `mpx rule mode template`（该回退开关同样会在 v0.7.0 删除，见下）。
+
+### 套餐（权限组）
 - 新增套餐（权限组）：`mpx plan list/add/edit/show/rm/suggest`，以及 `GET/POST /api/plans`、`GET/PUT/DELETE /api/plans/{id}`、`GET /api/plans/{id}/preview`。按节点授权为主（含以后新加的入站），入站可选；空套餐表示什么都不能用，「全部」用 `all_nodes` 表达。
 - 用户新增 `plan_id`（省略即保持原套餐；不能用 `null` 或 `--plan ""` 把用户移出套餐，以免权限悄悄回落到全部节点，要放宽请改挂到默认套餐）；`POST /api/users` 支持 `plan_id`，`GET /api/users?plan=<id>` 按套餐筛选；`POST /api/proxy-groups/preview?plan=<id>` 只看套餐范围内的成员。CLI 增加 `mpx user add/edit --plan`、`mpx user list --plan`，CSV 导出/导入增加「套餐」列（导入时空列不改归属）。
 - 系统自带「默认套餐」（`all_nodes`，可编辑不可删除）。升级时自动创建，原有「全部入站」的用户自动归入；`inbound_ids` 非空的用户按相同集合自动建迁移套餐，并且不清空原有 `inbound_ids`，保证升级前后每个用户能用的入站完全一致。删除还有用户挂着的套餐会被拒绝（返回用户数），需用 `?reassign=<id>`（`mpx plan rm --reassign`）改挂到一个具体套餐（可以是默认套餐）后再删，`reassign` 为空同样被拒绝；改挂与删除在同一个事务里完成。
 - 套餐或用户归属变化后，订阅缓存与节点收敛沿用改用户时的同一条路径，xray 下发的用户名单随之更新。
+- 管理界面新增「套餐」页：默认套餐固定在第一行；用户页可以按套餐筛选，编辑用户时必须选择套餐；删除套餐时必须指定把用户转到哪个套餐。套餐已包含全部节点的用户，不能再单独加入站。
 
-### 用途废弃，计划在 v0.7.0 删除
+### 管理界面
+- 全局改为无框风格：去掉按钮、输入框、卡片、列表、表格上的描边，改用浅底色、留白和圆角区分层次；深色模式用明度台阶区分层次。
+
+### 文档
+- README 改版：居中首屏、管理界面截图（亮色 / 深色），以及「适不适合用 → 三步快速开始 → 常用命令 → 功能介绍」的结构。
+
+### 废弃项，v0.7.0 删除（见 #49）
 - 分流改由「分流规则」管理（`mpx rule`、`mpx group`、UI 的分流规则页）。升级后首次启动时，旧模板和用途会自动迁移成规则表；`mpx rule migrate --report` 可以查看迁移报告。
 - 从 v0.6.0 起，`/api/purposes*` 和 `?purpose=` 的响应带 `Deprecation: true` 头，`mpx purpose` 每次运行都会打警告。它们仍然可用，但改动不再影响 rules 模式下的订阅。
-- **v0.7.0 会删除**用途的接口、`mpx purpose` 命令、`purposes` 表和 `?purpose=` 兼容。请在此之前改用分流规则。
+- **v0.7.0 会删除**以下内容，请在此之前改用分流规则：
+  - 接口 `/api/purposes`、`/api/purposes/{slug}`、`/api/purposes/{slug}/preview/{username}/{format}`；
+  - `mpx purpose` 全部子命令；
+  - 订阅地址的 `?purpose=` 兼容，以及 `purposes` 表；
+  - 旧模板回退：`routing_mode=template`、`PUT /api/routing`（`mpx rule mode` 只保留查看）；
+  - `/api/nodes|hosts/{id}/metadata` 中的 `line`、`purposes` 字段（地区、城市保留）。
+
+### 兼容性
+- 控制面 API 只新增、不修改；用途相关接口在本版本仍然可用。
+- 升级时自动完成两项迁移（分流规则、默认套餐），每个用户能用的入站与升级前一致。
+
+包含：#43–#55。
 
 ## v0.5.1 (2026-10-15)
 
