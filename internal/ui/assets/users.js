@@ -60,9 +60,42 @@ async function readModify(name, change) {
   return res;
 }
 
+/* ---- 用户列表的「套餐」列 ---- */
+// userPlanCell 显示用户挂的套餐名,并在有额外授权时加 +N —— 只数用户自己的
+// inbound_ids 里不在套餐范围内的入站;套餐是 all_nodes 时没有「额外」可言。
+// 没挂套餐时显示「全部入站」或「单独授权 · N 个入站」(旧语义)。
+function userPlanCell(u, d) {
+  const plans = d.plans || [], inbounds = d.inbounds || [];
+  const p = plans.find(x => x.id === u.plan_id);
+  if (!p) {
+    const n = (u.inbound_ids || []).length;
+    return n ? H`<span class="pl-ptag"><span class="tag g" title="单独授权的 ${n} 个入站">单独授权 · ${n} 个入站</span></span>`
+             : H`<span class="sub">全部入站</span>`;
+  }
+  const extra = extrasOf(u, p, inbounds);
+  return H`<span class="pl-ptag"><span class="tag ${p.is_default ? "g" : ""}">${p.name}</span>${extra.length ? H`<span class="sub" title="额外授权:${extra.map(i => planInboundLabel(i)).join("、")}">+${extra.length}</span>` : ""}</span>`;
+}
+
+// extrasOf 返回用户额外授权里不在套餐范围内的入站对象;all_nodes 套餐固定为空。
+function extrasOf(u, p, inbounds) {
+  if (p.all_nodes) return [];
+  const set = planEffectiveSet(p, inbounds);
+  return (u.inbound_ids || []).filter(id => !set.has(id)).map(id => inbounds.find(i => i.id === id)).filter(Boolean);
+}
+
+// inboundDisplay 把入站 id 摆成入站标签;找不到时退回 #id。
+function inboundDisplay(id) { return planInboundLabel((PLAN_CACHE.inbounds || []).find(i => i.id === id) || { id }); }
+
+// userPlanDetail 是用户详情里的套餐描述。
+function userPlanDetail(u) {
+  const p = (PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
+  if (!p) return (u.inbound_ids || []).length ? H`单独授权 · ${u.inbound_ids.length} 个入站` : H`全部入站`;
+  return p.all_nodes ? H`${p.name} · 全部节点` : H`${p.name} · ${(p.node_ids || []).length} 个节点`;
+}
+
 /* ---- 列表状态 ---- */
 const PAGE_SIZE = 50;
-const US = { status: "", search: "", offset: 0 };
+const US = { status: "", search: "", plan: "", offset: 0 };
 const STATUS_TABS = [["", "全部"], ["active", "正常"], ["limited", "已超限"], ["expired", "已过期"], ["disabled", "已停用"]];
 
 PAGES.users = {
@@ -73,6 +106,7 @@ PAGES.users = {
     const q = new URLSearchParams({ limit: PAGE_SIZE, offset: US.offset });
     if (US.status) q.set("status", US.status);
     if (US.search) q.set("search", US.search);
+    if (US.plan) q.set("plan", US.plan);
     // 各状态的人数:一次取回(≤1000 人)按控制面给的 status 数,不再为每个标签各打一次
     // 请求 —— /api 按 IP 限流,一页五六个请求很容易撞上。人更多时不显示数字。
     const counts = api("/api/users?limit=1000").then(p => {
@@ -80,13 +114,18 @@ PAGES.users = {
       if (p.total <= p.users.length) for (const [s] of STATUS_TABS.slice(1)) c[s] = p.users.filter(u => u.status === s).length;
       return c;
     });
+    const plans = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.plans) : api("/api/plans");
+    const inbounds = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.inbounds) : api("/api/inbounds");
     const detail = r[1] ? Promise.all([api(userPath(r[1])), api(userPath(r[1]) + "/links")]) : null;
-    const [page, cs, d] = await Promise.all([api("/api/users?" + q), counts, detail]);
+    const [page, cs, pl, ib, d] = await Promise.all([api("/api/users?" + q), counts, plans, inbounds, detail]);
     USERS_TOTAL = cs[""];
-    return { page, counts: cs, user: d && d[0], links: d && d[1] };
+    PLAN_CACHE.plans = pl || [];
+    PLAN_CACHE.inbounds = ib || [];
+    PLAN_CACHE.loaded = true;
+    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, user: d && d[0], links: d && d[1] };
   },
   render(d) {
-    const head = H`<tr><th>用户</th><th>状态</th><th>本期用量</th><th class="hide-m">到期</th><th class="hide-m">重置</th><th class="hide-m">入站</th></tr>`;
+    const head = H`<tr><th>用户</th><th>状态</th><th>套餐</th><th>本期用量</th><th class="hide-m">到期</th><th class="hide-m">重置</th></tr>`;
     let inner;
     if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 6)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
@@ -95,20 +134,23 @@ PAGES.users = {
     else {
       const P = d.page, end = P.offset + P.users.length;
       inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${P.users.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0"><td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
-        <td>${userSt(u.status)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m sub">${RESET[u.reset_strategy] || u.reset_strategy}</td>
-        <td class="hide-m">${u.inbound_ids?.length ? u.inbound_ids.map(i => H`<span class="tag">#${i}</span> `) : H`<span class="sub">全部</span>`}</td></tr>`)}</tbody></table></div>
+        <td>${userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
         <div class="pager">显示 ${P.offset + 1}–${end},共 ${P.total} 个<span class="sp"></span><button class="btn sm" data-act="user-page" data-dir="-1" ${P.offset ? "" : raw("disabled")}>上一页</button><button class="btn sm" data-act="user-page" data-dir="1" ${end < P.total ? "" : raw("disabled")}>下一页</button></div>`;
     }
     const c = d ? d.counts : {};
+    const planOpts = d ? d.plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id)) : [];
     return H`<div class="ph"><div><h1>用户</h1><p>对应 <code>mpx user list</code> · 状态由控制面判定</p></div><div class="sp"></div>
       <button class="btn hide-m" data-act="user-export">${ic("dl")}导出 CSV</button>
       ${can("POST", "/api/users") ? H`<button class="btn pri" data-act="user-new">${ic("plus")}添加用户</button>` : ""}</div>
       <div class="card"><div class="tb"><div class="seg" role="tablist">${STATUS_TABS.map(([k, t]) => H`<button role="tab" class="${US.status === k ? "on" : ""}" data-act="user-filter" data-status="${k}">${t}<em>${c[k] ?? ""}</em></button>`)}</div>
-      <span class="sp" style="flex:1"></span><label class="search in-card">${ic("search")}<input type="search" id="user-search" placeholder="搜索用户名" value="${US.search}" autocomplete="off"></label></div>${inner}</div>`;
+      <span class="sp" style="flex:1"></span><select class="in w180" id="uf-plan" aria-label="按套餐筛选"><option value="">全部套餐</option>${planOpts.map(p => H`<option value="${p.id}" ${raw(US.plan == p.id ? "selected" : "")}>${p.name}</option>`)}</select>
+      <label class="search in-card">${ic("search")}<input type="search" id="user-search" placeholder="搜索用户名" value="${US.search}" autocomplete="off"></label></div>${inner}</div>`;
   },
   after(d, r) {
     const s = $("#user-search");
     if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
+    const pf = $("#uf-plan");
+    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
     if (d && r[1] && d.user) userDrawer(d.user, d.links);
   },
 };
@@ -123,7 +165,8 @@ function userDrawer(u, links) {
     <div class="card mb" style="padding:14px"><div class="sub">本期用量</div><div class="f22">${fmtBytes(u.used_traffic)} <span class="sub">/ ${u.data_limit ? fmtBytes(u.data_limit) : "不限"}</span></div>
       ${u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div>` : ""}<div class="sub mt8">累计 ${fmtBytes(u.lifetime_used_traffic)}</div></div>
     <dl class="kv flat"><dt>到期</dt><dd>${expireCell(u)}</dd><dt>重置</dt><dd>${RESET[u.reset_strategy] || u.reset_strategy}</dd>
-      <dt>可用入站</dt><dd>${u.inbound_ids?.length ? u.inbound_ids.map(i => H`<span class="tag">#${i}</span> `) : "全部"}</dd><dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd></dl>
+      <dt>套餐</dt><dd>${userPlanDetail(u)}</dd>
+      <dt>额外授权</dt><dd>${u.inbound_ids?.length ? u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `) : H`<span class="sub">无</span>`}</dd><dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd></dl>
     <div class="sub mb8">订阅地址 · <code>mpx user links ${name}</code></div>
     <div class="links mb">${links ? fmtOrder.filter(([k]) => links[k]).map(([k, t]) => H`<div class="lk"><span>${t}</span><code title="${links[k]}">${links[k]}</code><button class="ib sm" data-act="copy" data-text="${links[k]}" aria-label="复制${t}地址">${ic("copy", "sm")}</button></div>`) : ""}</div>
     ${W ? H`<div class="sub mb8">操作</div><div class="stack8">
@@ -144,32 +187,50 @@ async function refreshDrawer(name) {
 
 /* ---- 编辑器 ---- */
 async function userEditor(name) {
-  let u = null, inbounds = [], nodes = [];
-  try { [u, inbounds, nodes] = await Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes")]); }
+  let u = null, inbounds = [], nodes = [], plans = [];
+  try { [u, inbounds, nodes, plans] = await Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes"), api("/api/plans")]); }
   catch (e) { toast(e.message, true); return; }
-  const isNew = !u; u = u || { username: "", data_limit: 0, expire_at: null, reset_strategy: "none", inbound_ids: [], note: "", enabled: true };
-  const nodeName = id => nodes.find(n => n.id === id)?.name || "#" + id;
+  const isNew = !u;
+  u = u || { username: "", data_limit: 0, expire_at: null, reset_strategy: "none", inbound_ids: [], note: "", enabled: true, plan_id: null };
+  const nodeName = id => { const n = nodes.find(x => x.id === id); return n ? (n.display || n.name) : "#" + id; };
+  const planList = plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id));
+  const defPlan = planList.find(p => p.is_default);
+  const currentPlan = u.plan_id != null ? String(u.plan_id) : "";
+  let plan = isNew ? (defPlan ? String(defPlan.id) : "") : currentPlan;
   const sel = new Set(u.inbound_ids || []);
   const limitText = u.data_limit ? (u.data_limit % 2 ** 30 === 0 ? u.data_limit / 2 ** 30 + "GB" : u.data_limit + "B") : "";
   openDrawer(H`<form id="user-form" novalidate><div class="dh"><h2>${isNew ? "添加用户" : "编辑 " + u.username}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     <div class="field"><label for="f-name">用户名</label><input class="in" id="f-name" name="username" value="${u.username}" ${isNew ? raw("autofocus") : raw("disabled")} placeholder="alice" autocomplete="off"><span class="h">字母、数字、下划线、点和减号,1–64 位${isNew ? "" : ";建好后不能改"}</span></div>
+    <div class="field"><label for="f-plan">套餐</label><select class="in" id="f-plan" name="plan">
+      ${!isNew && u.plan_id == null ? H`<option value="" selected disabled>未挂套餐(单独授权)</option>` : ""}
+      ${planList.map(p => H`<option value="${p.id}" ${raw(plan === String(p.id) ? "selected" : "")}>${p.name}</option>`)}</select>
+      <span class="h">必选。要把权限放宽到全部节点,挂「默认套餐」;不能把用户移出套餐</span></div>
     <div class="two"><div class="field"><label for="f-limit">流量上限</label><input class="in" id="f-limit" name="limit" value="${limitText}" placeholder="100GB,留空不限"><span class="h">B / KB / MB / GB / TB,按 1024 进位</span></div>
     <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD,留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
     <div class="field"><label>流量重置</label><div class="chips">${Object.entries(RESET).map(([k, t]) => H`<label class="chip"><input type="radio" name="reset" value="${k}" ${(u.reset_strategy || "none") === k ? raw("checked") : ""}>${t}</label>`)}</div></div>
-    <div class="field"><label>可用入站</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>#${i.id} ${nodeName(i.node_id)} · ${i.tag}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h">一个都不选 = 全部入站,含以后新加的</span></div>
+    <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${i.tag || i.protocol}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
     <div class="field"><label for="f-note">备注</label><input class="in" id="f-note" name="note" value="${u.note || ""}" placeholder="可选"></div>
     ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 建好后先停用</label>` : ""}
     <div class="field mt"><label>等价命令</label><div class="cmd" id="f-cmd"></div></div>
     <div class="err" id="f-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="f-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#user-form");
-  // 表单 → { flags, apply }:flags 是等价命令,apply 把改动落到 model.User 上。
+  // 表单 → { flags, ... }:flags 是等价命令;collect 同时把套餐三态收出来 ——
+  // 没变就不发 plan_id(和 CLI 不带 --plan 一样),变了才发具体 id。
+  // 挂的是 all_nodes 套餐时额外授权没有意义:勾了和它一起提交会被控制面摘掉
+  // 套餐(store.UpdateUser 的规则),于是固定按空处理 —— 新建不带 inbound_ids,
+  // 编辑清空,命令里也不出现 --inbounds(编辑时原本有授权才用 --inbounds "" 清掉)。
   const collect = () => {
     const f = new FormData(form), flags = [], err = [];
     const username = isNew ? String(f.get("username") || "").trim() : u.username;
     const limitS = String(f.get("limit") || "").trim(), expS = String(f.get("expire") || "").trim();
-    const reset = String(f.get("reset") || "none"), inb = f.getAll("inb").map(Number), note = String(f.get("note") || "");
+    const reset = String(f.get("reset") || "none"), note = String(f.get("note") || "");
+    const planVal = String(f.get("plan") || "");
+    const allNodes = !!planList.find(p => String(p.id) === planVal)?.all_nodes;
+    const inb = allNodes ? [] : f.getAll("inb").map(Number);
+    const planChanged = isNew ? planVal !== "" : (planVal !== "" && planVal !== currentPlan);
+    const planName = planList.find(p => String(p.id) === planVal)?.name || "";
     let limit = 0, exp = null;
     if (isNew && !USERNAME_RE.test(username)) err.push("用户名只能用字母、数字、下划线、点和减号,长度 1-64");
     try { limit = limitS ? parseBytes(limitS) : 0; } catch (e) { err.push(e.message); }
@@ -179,13 +240,33 @@ async function userEditor(name) {
       if (reset !== "none") flags.push("--reset-strategy", reset);
       if (expS) flags.push("--expire", expS);
       if (inb.length) flags.push("--inbounds", inb.join(","));
+      if (planChanged && planName) flags.push("--plan", planName);
       if (note) flags.push("--note", note);
       if (f.get("disabled")) flags.push("--disabled");
-    } else flags.push("--limit", limitS || "0", "--expire", expS || '""', "--reset-strategy", reset, "--inbounds", inb.length ? inb.join(",") : '""', "--note", note || '""');
+    } else {
+      flags.push("--limit", limitS || "0", "--expire", expS || '""', "--reset-strategy", reset);
+      if (allNodes) { if ((u.inbound_ids || []).length) flags.push("--inbounds", '""'); }
+      else flags.push("--inbounds", inb.length ? inb.join(",") : '""');
+      if (planChanged && planName) flags.push("--plan", planName);
+      flags.push("--note", note || '""');
+    }
     const cmd = `mpx user ${isNew ? "add" : "edit"} ${shq(username || "<用户名>")} ` + flags.map(x => x.startsWith("--") || x === '""' ? x : shq(x)).join(" ");
-    return { err, cmd, username, limit, exp, reset, inb, note, disabled: !!f.get("disabled") };
+    return { err, cmd, username, limit, exp, reset, inb, note, disabled: !!f.get("disabled"), planVal, planChanged };
   };
-  const sync = () => { const c = collect(); $("#f-cmd").textContent = c.cmd; };
+  const sync = () => {
+    const c = collect();
+    $("#f-cmd").textContent = c.cmd;
+    const p = planList.find(x => String(x.id) === c.planVal);
+    const allNodes = !!p && !!p.all_nodes;
+    // all_nodes 套餐下额外授权不可选(见 collect),切回普通套餐恢复。
+    document.querySelectorAll('#user-form input[name="inb"]').forEach(el => { el.disabled = allNodes; });
+    const label = $("#f-inb-label"), hint = $("#f-inb-h");
+    if (label && hint) {
+      if (!p) { label.textContent = "可用入站"; hint.textContent = "一个都不选 = 全部入站,含以后新加的"; }
+      else if (allNodes) { label.textContent = "额外授权"; hint.textContent = "全部节点套餐不需要额外授权"; }
+      else { label.textContent = "额外授权(可选)"; hint.textContent = "在套餐之外再给这个用户开放的入站"; }
+    }
+  };
   form.addEventListener("input", sync); form.addEventListener("change", sync); sync();
   form.addEventListener("submit", async e => {
     e.preventDefault();
@@ -195,8 +276,10 @@ async function userEditor(name) {
     btn.disabled = true; btn.classList.add("busy");
     try {
       if (isNew) {
-        // 与 user add 一致:没给的字段保持零值,model.User 整体序列化。
+        // 与 user add 一致:没给的字段保持零值,model.User 整体序列化;选中的套餐
+        // 显式带上 plan_id。
         const body = asModelUser({ username: c.username, enabled: !c.disabled, reset_strategy: c.reset, note: c.note, data_limit: c.limit, expire_at: c.exp, inbound_ids: c.inb });
+        if (c.planChanged) body.plan_id = +c.planVal;
         await write("POST", "/api/users", body, `已创建用户 ${c.username}`);
         closeOverlays(); location.hash = "users/" + encodeURIComponent(c.username);
       } else {
@@ -206,6 +289,7 @@ async function userEditor(name) {
           m.reset_strategy = c.reset;
           if (c.inb.length) m.inbound_ids = c.inb; else delete m.inbound_ids;
           if (c.note) m.note = c.note; else delete m.note;
+          if (c.planChanged) m.plan_id = +c.planVal;
         });
         toast(`已更新用户 ${u.username}`);
         await refreshDrawer(u.username);

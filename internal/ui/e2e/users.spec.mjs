@@ -27,20 +27,29 @@ async function openUser(page, name) {
 test("新建用户:与 mpx user add 一致", async ({ page }) => {
   await login(page, env);
   const names = ["cli-new", "ui-new"];
+  // 默认套餐是 all_nodes,额外授权和它组合会被控制面摘掉套餐:先建一个只含
+  // hk 的套餐,CLI 与 UI 都挂它,--inbounds 2(jp 的入站)才是真正的额外授权。
+  await env.cli("plan", "add", "测试套餐", "--node", "hk");
   env.takeLog();
-  await env.cli("user", "add", "cli-new", "--limit", "1.5TB", "--reset-strategy", "weekly", "--expire", "2027-02-03", "--inbounds", "2", "--note", "新同事");
+  await env.cli("user", "add", "cli-new", "--limit", "1.5TB", "--reset-strategy", "weekly", "--expire", "2027-02-03", "--inbounds", "2", "--plan", "测试套餐", "--note", "新同事");
   const fromCLI = normalize(env.takeLog(), names);
   expect(fromCLI).toHaveLength(1);
 
   await page.goto(env.origin + "/#users");
   await page.click("[data-act=user-new]");
+  // 新用户默认挂默认套餐(all_nodes):额外授权不可选;切到普通套餐恢复。
+  const inb = page.locator('#user-form input[name="inb"]');
+  await expect(inb.first()).toBeDisabled();
+  await expect(page.locator("#f-inb-h")).toHaveText("全部节点套餐不需要额外授权");
+  await page.selectOption("#f-plan", { label: "测试套餐" });
+  await expect(inb.first()).toBeEnabled();
   await page.fill("#f-name", "ui-new");
   await page.fill("#f-limit", "1.5TB");
   await page.fill("#f-expire", "2027-02-03");
   await page.locator("label.chip", { hasText: "每周" }).click();
-  await page.locator("label.chip", { hasText: "#2 " }).click();
+  await page.locator('label.chip:has(input[name="inb"][value="2"])').click();
   await page.fill("#f-note", "新同事");
-  await expect(page.locator("#f-cmd")).toHaveText("mpx user add ui-new --limit 1.5TB --reset-strategy weekly --expire 2027-02-03 --inbounds 2 --note \"新同事\"");
+  await expect(page.locator("#f-cmd")).toHaveText("mpx user add ui-new --limit 1.5TB --reset-strategy weekly --expire 2027-02-03 --inbounds 2 --plan \"测试套餐\" --note \"新同事\"");
   await page.click("#f-save");
   await expect(page.locator("#drawer.open h2")).toHaveText("ui-new");
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
@@ -62,6 +71,10 @@ test("新建用户:控制面拒绝时原话报出来,不关表单", async ({ pag
 
 test("编辑用户:与 mpx user edit 一致", async ({ page }) => {
   await login(page, env);
+  // 两个 twin 建好时都在默认套餐(all_nodes,额外授权不可选),先挂到上面建的
+  // 测试套餐再对照 --inbounds。
+  await env.seed("user", "edit", "cli-edit", "--plan", "测试套餐");
+  await env.seed("user", "edit", "ui-edit", "--plan", "测试套餐");
   const names = ["cli-edit", "ui-edit"];
   env.takeLog();
   await env.cli("user", "edit", "cli-edit", "--limit", "200GB", "--expire", "", "--reset-strategy", "monthly", "--inbounds", "1,2", "--note", "改过");
@@ -73,8 +86,8 @@ test("编辑用户:与 mpx user edit 一致", async ({ page }) => {
   await page.fill("#f-limit", "200GB");
   await page.fill("#f-expire", "");
   await page.locator("label.chip", { hasText: "每月" }).click();
-  await page.locator("label.chip", { hasText: "#1 " }).click();
-  await page.locator("label.chip", { hasText: "#2 " }).click();
+  await page.locator('label.chip:has(input[name="inb"][value="1"])').click();
+  await page.locator('label.chip:has(input[name="inb"][value="2"])').click();
   await page.fill("#f-note", "改过");
   await page.click("#f-save");
   await expect(page.locator(".toast")).toContainText("已更新用户 ui-edit");
