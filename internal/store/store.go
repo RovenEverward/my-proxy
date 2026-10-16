@@ -308,6 +308,10 @@ func (s *Store) migrate() error {
 	if err := s.migrateRouting(); err != nil {
 		return err
 	}
+	// 删 purposes 表必须在 migrateRouting 之后:它要读 routing_state 的模式。
+	if err := s.dropPurposes(); err != nil {
+		return err
+	}
 	if err := s.migrateIdentity(); err != nil {
 		return err
 	}

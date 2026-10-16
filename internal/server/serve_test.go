@@ -2,10 +2,12 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/backup"
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -148,5 +150,47 @@ func TestApplyStagedRestoreWithoutLiveDB(t *testing.T) {
 	}
 	if got := nodeNames(t, dbPath); len(got) != 1 || got[0] != "fresh" {
 		t.Errorf("主库不是快照的数据: %v", got)
+	}
+}
+
+// template 模式的老库(存过自定义 sing-box 模板、自动迁移只到 needs_confirm)不
+// 能被 serve 拉起:启动直接报错并给出升级步骤。
+func TestServeRejectsTemplateMode(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mpx.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("打开库: %v", err)
+	}
+	s, _ := st.GetSettings()
+	s.Templates = map[string]string{string(model.FormatSingBox): `{"outbounds":[]}`}
+	if err := st.SaveSettings(s); err != nil {
+		t.Fatalf("存模板: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err = Serve(ctx, ServeOptions{Addr: "127.0.0.1:0", DBPath: dbPath, Token: "t"})
+	if err == nil || !strings.Contains(err.Error(), "v0.7.0 起不再支持 template 分流模式") {
+		t.Fatalf("template 模式应拒绝启动: %v", err)
+	}
+}
+
+// 全新库默认 template,但 serve 会先跑 AutoMigrateRouting 切到 rules,所以启动
+// 检查放行;这里验证的就是那一步之后的模式。
+func TestRequireRoutingRulesAfterAutoMigrate(t *testing.T) {
+	e := newEnv(t)
+	stt, err := e.st.GetRoutingState()
+	if err != nil || stt.Mode != model.RoutingTemplate {
+		t.Fatalf("新库默认应是 template: %+v %v", stt, err)
+	}
+	e.s.AutoMigrateRouting()
+	if stt, _ := e.st.GetRoutingState(); stt.Mode != model.RoutingRules {
+		t.Fatalf("新库应已自动迁移到 rules: %+v", stt)
+	}
+	if err := requireRoutingRules(e.st); err != nil {
+		t.Fatalf("rules 模式不应报错: %v", err)
 	}
 }
