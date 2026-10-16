@@ -48,10 +48,6 @@ var uiAllow = []string{
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",
 	"POST /api/settings/test-webhook",
-	// 用途:purpose create / set / del;metadata set 走上面的 PUT /api/nodes、/api/hosts
-	"POST /api/purposes",
-	"PUT /api/purposes",
-	"DELETE /api/purposes",
 	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate / mode;
 	// group add / edit / rm / preview
 	"PUT /api/rules",

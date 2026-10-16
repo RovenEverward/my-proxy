@@ -52,6 +52,5 @@ for (const theme of ["light", "dark"]) {
     await page.click("[data-act=node-install]"); await check("安装核心确认框");
     await go("inbounds"); await page.click("[data-act=inb-new] >> nth=0"); await check("新建入站抽屉");
     await go("inbounds"); await page.click("[data-act=host-new] >> nth=0"); await check("新建入口抽屉");
-    await go("purposes"); await check("用途页");
   });
 }
