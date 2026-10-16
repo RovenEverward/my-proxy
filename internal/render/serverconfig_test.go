@@ -524,13 +524,63 @@ func TestServerConfig_Skeleton(t *testing.T) {
 		"statsInboundUplink": true, "statsInboundDownlink": true,
 	}, "policy", "system")
 	scDigEqual(t, cfg, []any{
-		map[string]any{"protocol": "freedom", "tag": "direct"},
+		map[string]any{
+			"protocol": "freedom", "tag": "direct",
+			"settings": map[string]any{"domainStrategy": "UseIPv4v6"},
+		},
 		map[string]any{"protocol": "blackhole", "tag": "block"},
 	}, "outbounds")
 	scDigEqual(t, cfg, []any{
 		map[string]any{"type": "field", "inboundTag": []any{"api"}, "outboundTag": "api"},
 		map[string]any{"type": "field", "ip": []any{"geoip:private"}, "outboundTag": "block"},
 	}, "routing", "rules")
+}
+
+// TestServerConfig_OutboundIP 覆盖 direct 出站的 IP 版本偏好:每个取值翻成对应
+// 的 domainStrategy;"asis" 不写 settings 键;blackhole 出站永远不带 settings。
+func TestServerConfig_OutboundIP(t *testing.T) {
+	cases := []struct {
+		pref string
+		want any // nil 表示 freedom 出站不带 settings 键
+	}{
+		{pref: "", want: "UseIPv4v6"},
+		{pref: "v4v6", want: "UseIPv4v6"},
+		{pref: "v4", want: "UseIPv4"},
+		{pref: "v6", want: "UseIPv6"},
+		{pref: "asis", want: nil},
+	}
+	for _, tc := range cases {
+		t.Run("pref="+tc.pref, func(t *testing.T) {
+			raw, err := ServerConfig(model.Node{ID: 1, APIPort: 10085, OutboundIP: tc.pref}, nil, nil, scNow)
+			if err != nil {
+				t.Fatalf("ServerConfig 返回错误: %v", err)
+			}
+			cfg := scDecode(t, raw)
+			outbounds := scDig(t, cfg, "outbounds").([]any)
+			direct, ok := outbounds[0].(map[string]any)
+			if !ok {
+				t.Fatalf("direct 出站不是对象: %T", outbounds[0])
+			}
+			if direct["protocol"] != "freedom" || direct["tag"] != "direct" {
+				t.Fatalf("第一条出站不是 freedom/direct: %#v", direct)
+			}
+			if tc.want == nil {
+				if _, ok := direct["settings"]; ok {
+					t.Errorf("asis 不该写 settings,实际 %#v", direct["settings"])
+				}
+			} else {
+				scDigEqual(t, cfg, tc.want, "outbounds", 0, "settings", "domainStrategy")
+			}
+			// blackhole 出站不能多出 settings。
+			block, ok := outbounds[1].(map[string]any)
+			if !ok {
+				t.Fatalf("block 出站不是对象: %T", outbounds[1])
+			}
+			if _, ok := block["settings"]; ok {
+				t.Errorf("blackhole 出站不该有 settings: %#v", block)
+			}
+		})
+	}
 }
 
 // TestServerConfig_UnsupportedInput 断言不支持的协议 / 传输 / 安全层直接报错。

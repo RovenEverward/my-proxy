@@ -214,6 +214,32 @@ type serverWGSettings struct {
 type serverOutbound struct {
 	Protocol string `json:"protocol"`
 	Tag      string `json:"tag"`
+	// Settings 只有 freedom 出站在需要指定 domainStrategy 时才写;blackhole
+	// 与 asis 的 freedom 都不写,JSON 里不出现 settings 键。
+	Settings any `json:"settings,omitempty"`
+}
+
+// serverFreedomSettings 是 freedom 出站的 settings:domainStrategy 决定出站
+// 解析域名时用哪个 IP 版本。
+type serverFreedomSettings struct {
+	DomainStrategy string `json:"domainStrategy"`
+}
+
+// serverDirectSettings 把节点的出口 IP 偏好翻成 freedom 出站的 settings。
+//
+// "asis" 返回 nil:不写 settings 键,保持 xray 原样。其余(含未知值)落到
+// UseIPv4v6,和 "" 的语义一致。
+func serverDirectSettings(pref string) any {
+	switch pref {
+	case "v4":
+		return serverFreedomSettings{DomainStrategy: "UseIPv4"}
+	case "v6":
+		return serverFreedomSettings{DomainStrategy: "UseIPv6"}
+	case "asis":
+		return nil
+	default:
+		return serverFreedomSettings{DomainStrategy: "UseIPv4v6"}
+	}
 }
 
 type serverRouting struct {
@@ -256,7 +282,7 @@ func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User,
 			Settings: serverAPISettings{Address: "127.0.0.1"},
 		}},
 		Outbounds: []serverOutbound{
-			{Protocol: "freedom", Tag: "direct"},
+			{Protocol: "freedom", Tag: "direct", Settings: serverDirectSettings(node.OutboundIP)},
 			{Protocol: "blackhole", Tag: "block"},
 		},
 		Routing: serverRouting{Rules: []serverRoutingRule{

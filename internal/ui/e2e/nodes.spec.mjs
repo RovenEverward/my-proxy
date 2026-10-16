@@ -56,6 +56,22 @@ test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
+test("出口 IP:与 mpx node edit --outbound-ip 一致", async ({ page }) => {
+  await login(page, env);
+  const names = ["cli-n", "ui-n"], opt = { ids: ["1", "2"] };
+  env.takeLog();
+  await env.cli("node", "edit", "1", "--outbound-ip", "v4");
+  const fromCLI = take(names, opt);
+  await openNode(page, 2);
+  await page.click("[data-act=node-edit]");
+  await page.click("details.adv summary");
+  await page.selectOption("#n-outbound-ip", "v4");
+  await expect(page.locator("#n-cmd")).toHaveText("mpx node edit 2 --outbound-ip v4");
+  await page.click("#n-save");
+  await expect(page.locator(".toast")).toContainText("已更新节点 2");
+  expect(take(names, opt)).toEqual(fromCLI);
+});
+
 test("显示名:与 mpx node edit --region / --city 一致,只发 metadata", async ({ page }) => {
   await login(page, env);
   const names = ["cli-n", "ui-n"], opt = { ids: ["1", "2"] };

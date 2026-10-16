@@ -171,6 +171,49 @@ func TestNodeNameUnique(t *testing.T) {
 	}
 }
 
+// 出口 IP 偏好要能原样往返;默认空串读回来也得是空串(不是 NULL / 别的默认值)。
+func TestNodeOutboundIPRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+
+	for _, pref := range []string{"", "v4v6", "v4", "v6", "asis"} {
+		t.Run("pref="+pref, func(t *testing.T) {
+			n := &model.Node{Name: "ip-" + pref, Address: "203.0.113.8", OutboundIP: pref}
+			if err := s.CreateNode(n); err != nil {
+				t.Fatalf("创建节点: %v", err)
+			}
+			got, err := s.GetNode(n.ID)
+			if err != nil {
+				t.Fatalf("GetNode: %v", err)
+			}
+			if got.OutboundIP != pref {
+				t.Fatalf("新节点 outbound_ip = %q,期望 %q", got.OutboundIP, pref)
+			}
+
+			got.OutboundIP = "v6"
+			if err := s.UpdateNode(got); err != nil {
+				t.Fatalf("UpdateNode: %v", err)
+			}
+			after, err := s.GetNode(n.ID)
+			if err != nil {
+				t.Fatalf("更新后 GetNode: %v", err)
+			}
+			if after.OutboundIP != "v6" {
+				t.Fatalf("更新后 outbound_ip = %q,期望 v6", after.OutboundIP)
+			}
+		})
+	}
+
+	list, err := s.ListNodes()
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
+	}
+	for _, n := range list {
+		if n.OutboundIP != "v6" {
+			t.Errorf("列表里节点 %q 的 outbound_ip = %q,期望 v6", n.Name, n.OutboundIP)
+		}
+	}
+}
+
 // ---- Inbound ----
 
 func TestInboundCRUD(t *testing.T) {

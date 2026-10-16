@@ -79,7 +79,8 @@ var schema = []string{
 		api_port     INTEGER NOT NULL DEFAULT 0,
 		config_path  TEXT    NOT NULL DEFAULT '',
 		service_name TEXT    NOT NULL DEFAULT '',
-		draining     INTEGER NOT NULL DEFAULT 0
+		draining     INTEGER NOT NULL DEFAULT 0,
+		outbound_ip  TEXT    NOT NULL DEFAULT ''
 	)`,
 
 	`CREATE TABLE IF NOT EXISTS inbounds (
@@ -380,6 +381,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE inbounds ADD COLUMN max_users INTEGER NOT NULL DEFAULT 0`},
 	{"nodes", "draining",
 		`ALTER TABLE nodes ADD COLUMN draining INTEGER NOT NULL DEFAULT 0`},
+	{"nodes", "outbound_ip",
+		`ALTER TABLE nodes ADD COLUMN outbound_ip TEXT NOT NULL DEFAULT ''`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

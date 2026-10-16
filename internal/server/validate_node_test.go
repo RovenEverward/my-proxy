@@ -40,3 +40,37 @@ func TestValidateNodeRejectsValuesThatBreakTheUnitFile(t *testing.T) {
 		}
 	}
 }
+
+// 出口 IP 偏好只认那几个取值:创建和更新都要在入口拦下来,并且返回中文错误。
+func TestNodeOutboundIPValidation(t *testing.T) {
+	ok := []string{"", "v4v6", "v4", "v6", "asis"}
+	for _, pref := range ok {
+		if got := validateNode(&model.Node{Name: "hk", Address: "1.2.3.4", OutboundIP: pref}); got != "" {
+			t.Errorf("outbound_ip=%q 该通过,却报了 %q", pref, got)
+		}
+	}
+	for _, pref := range []string{"ipv4", "V4", "v4v6 ", "both"} {
+		if got := validateNode(&model.Node{Name: "hk", Address: "1.2.3.4", OutboundIP: pref}); got == "" {
+			t.Errorf("outbound_ip=%q 该被拒,却通过了", pref)
+		}
+	}
+}
+
+// 非法 outbound_ip 从 HTTP 入口进来时必须是 400,创建和更新两条路都要拦。
+func TestNodeOutboundIPRejectedByAPI(t *testing.T) {
+	e := newEnv(t)
+
+	code, data := e.api("POST", "/api/nodes", model.Node{
+		Name: "hk", Address: "1.2.3.4", OutboundIP: "ipv4",
+	})
+	if code != 400 {
+		t.Fatalf("建节点非法 outbound_ip: got %d %s", code, data)
+	}
+
+	n := e.createNode("jp", "node.example.com")
+	n.OutboundIP = "ipv4"
+	code, data = e.api("PUT", pathf("/api/nodes/%d", n.ID), n)
+	if code != 400 {
+		t.Fatalf("改节点非法 outbound_ip: got %d %s", code, data)
+	}
+}

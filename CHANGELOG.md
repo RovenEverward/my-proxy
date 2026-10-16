@@ -2,6 +2,20 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.7.3 (2026-10-16)
+
+### 修复
+- 节点上 xray 的直连出口（`direct` freedom）以前没设 `domainStrategy`，按 AsIs 处理：访问双栈网站时优先走 IPv6，容易被目标站限流。现在默认渲染 `settings.domainStrategy: "UseIPv4v6"`（有 IPv4 先用 IPv4，没有才用 IPv6）。升级控制面后跑一次 `mpx node sync` 才会下发到节点。
+
+### 新增
+- 节点字段 `outbound_ip`（出口 IP 偏好）：`v4v6`（默认，留空同义）/ `v4`（`UseIPv4`）/ `v6`（`UseIPv6`）/ `asis`（不写 settings，保持旧行为）。
+  - CLI：`mpx node add|edit --outbound-ip v4v6|v4|v6|asis`；`mpx node list` 多一列「出口 IP」。
+  - `mpx ui`：节点编辑抽屉「高级」里加「出口 IP」选项。
+
+### 兼容性
+- 控制面 API 只加字段：节点 JSON 新增可选的 `outbound_ip`（空时不返回），非法值返回 400。数据库自动加列。
+- 旧版 CLI 整体 PUT 节点时不带这个字段，会把它重置成默认（`v4v6`）。
+
 ## v0.7.2 (2026-10-16)
 
 本版主题：`mpx ui` 补上三个 CLI 有而界面没有的功能。
