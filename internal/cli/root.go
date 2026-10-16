@@ -80,6 +80,8 @@ func init() {
 	// update 的子命令在 update.go 里定义,这里挂上去,让 root.go 保留"命令组
 	// 一览"这一个入口。
 	updateCmd.AddCommand(updateShowCmd)
+	updateCmd.AddCommand(updateApplyCmd)
+	updateCmd.AddCommand(updateRollbackCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。

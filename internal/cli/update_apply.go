@@ -1,0 +1,275 @@
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/RovenEverward/my-proxy/internal/buildinfo"
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
+)
+
+// 这些包级变量把几件"测试里不能真做"的事隔出来:真去问发布站、真替换当前
+// 二进制、真把 stdin 当终端。做成变量而不是直接调用,是为了让测试注入假实现。
+var (
+	// selfupdateSource 给出从哪儿取发布件,默认是本项目在 GitHub 上的仓库。
+	selfupdateSource = func() selfupdate.Source {
+		return selfupdate.Source{Repo: buildinfo.Repo()}
+	}
+	// selfExecutable 返回本机 mpx 的绝对路径,并解开符号链接 —— Install/Rollback
+	// 要在同一目录里做 rename,路径必须指向真实的那个文件。
+	selfExecutable = func() (string, error) {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("找不到本机可执行文件: %w", err)
+		}
+		resolved, err := filepath.EvalSymlinks(exe)
+		if err != nil {
+			return "", fmt.Errorf("解析本机可执行文件路径: %w", err)
+		}
+		return resolved, nil
+	}
+	// stdinIsTerminal 判断有没有人坐在终端前,没有就不能问 [y/N]。
+	stdinIsTerminal = func() bool {
+		return term.IsTerminal(int(os.Stdin.Fd()))
+	}
+	// cliStatePath 是自更新状态文件的路径,与配置同目录。做成函数是因为
+	// configFile 本身可能失败(没有用户配置目录)。
+	cliStatePath = func() (string, error) {
+		cfg, err := configFile()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(cfg), "update.json"), nil
+	}
+)
+
+// 部件名:三个可升级的对象。
+const (
+	updateComponentCLI     = "cli"
+	updateComponentControl = "control"
+	updateComponentNodes   = "nodes"
+)
+
+// updateComponentChoices 用于报错时列出可选值。
+const updateComponentChoices = "cli、control、nodes"
+
+// updateApplyCmd 是 mpx update apply <部件>。
+var updateApplyCmd = &cobra.Command{
+	Use:   "apply <cli|control|nodes>",
+	Short: "升级本机 CLI、控制面或节点核心",
+	Long: `升级指定部件。
+
+目前只支持本机 CLI:从发布站取回指定版本(默认最新),核对 SHA256SUMS 后替换
+当前可执行文件,旧文件留在 <mpx>.prev 供 mpx update rollback cli 回退。
+
+控制面远程升级与节点核心升级分别在 M3、M4 接上,这里先明确报"尚未支持",
+不做半套。`,
+	Example: `  mpx update apply cli --version v0.6.1 -y
+  mpx update apply cli -y`,
+	Args: cobra.ExactArgs(1),
+	RunE: runUpdateApply,
+}
+
+// updateRollbackCmd 是 mpx update rollback <部件>。
+var updateRollbackCmd = &cobra.Command{
+	Use:   "rollback <cli|control|nodes>",
+	Short: "回退到升级前的版本",
+	Long: `把本机 CLI 换回上一次 mpx update apply cli 留下的 <mpx>.prev。
+
+控制面与节点核心的回退尚未支持。`,
+	Args: cobra.ExactArgs(1),
+	RunE: runUpdateRollback,
+}
+
+func init() {
+	updateApplyCmd.Flags().String("version", "", "要升级到的版本,默认取最新发布")
+	updateApplyCmd.Flags().Bool("allow-downgrade", false, "允许 --version 指向比当前更旧的版本")
+	updateApplyCmd.Flags().BoolP("yes", "y", false, "跳过确认,直接升级")
+}
+
+// runUpdateApply 把部件名分派到各自的实现。
+func runUpdateApply(cmd *cobra.Command, args []string) error {
+	switch args[0] {
+	case updateComponentCLI:
+		return applyCLI(cmd)
+	case updateComponentControl:
+		return errors.New("控制面远程升级尚未支持（M3）")
+	case updateComponentNodes:
+		return errors.New("节点核心升级尚未支持（M4）")
+	default:
+		return fmt.Errorf("不认识的部件 %q，可选值：%s", args[0], updateComponentChoices)
+	}
+}
+
+// runUpdateRollback 把部件名分派到各自的回退实现。
+func runUpdateRollback(cmd *cobra.Command, args []string) error {
+	switch args[0] {
+	case updateComponentCLI:
+		return rollbackCLI()
+	case updateComponentControl:
+		return errors.New("控制面回退尚未支持（M3）")
+	case updateComponentNodes:
+		return errors.New("节点核心回退尚未支持（M4）")
+	default:
+		return fmt.Errorf("不认识的部件 %q，可选值：%s", args[0], updateComponentChoices)
+	}
+}
+
+// applyCLI 完成一次本机 CLI 自更新。
+func applyCLI(cmd *cobra.Command) error {
+	version, _ := cmd.Flags().GetString("version")
+	allowDowngrade, _ := cmd.Flags().GetBool("allow-downgrade")
+	yes, _ := cmd.Flags().GetBool("yes")
+
+	// --allow-downgrade 只对显式 --version 有意义:没有目标版本就没有"降级"可言。
+	if allowDowngrade && version == "" {
+		return errors.New("--allow-downgrade 必须和 --version 一起用")
+	}
+
+	ctx := cmd.Context()
+	src := selfupdateSource()
+	current := localVersion()
+
+	target := version
+	if target == "" {
+		latest, err := src.Latest(ctx)
+		if err != nil {
+			return err
+		}
+		target = latest
+	}
+
+	if err := selfupdate.Decide(current, target, version != "", allowDowngrade); err != nil {
+		if errors.Is(err, selfupdate.ErrUpToDate) {
+			fmt.Printf("本机 CLI 已是最新（%s）\n", current)
+			return nil
+		}
+		return err
+	}
+
+	exe, err := selfExecutable()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("本机 CLI %s → %s（文件 %s）\n", current, target, exe)
+
+	if !yes {
+		// 没有 -y 就必须能问到人:管道、重定向下 readLine 会立刻拿到 EOF,
+		// 那种"确认"等于没确认,直接要求显式加 -y。
+		if !stdinIsTerminal() {
+			return errors.New("非交互环境请加 -y")
+		}
+		fmt.Print("确认升级?[y/N] ")
+		ans, err := readLine(os.Stdin)
+		if err != nil {
+			return err
+		}
+		if a := strings.ToLower(strings.TrimSpace(ans)); a != "y" && a != "yes" {
+			fmt.Println("已取消,没有升级。")
+			return nil
+		}
+	}
+
+	started := time.Now()
+	bin, verified, err := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		saveCLIState(current, target, started, "failed", err)
+		return err
+	}
+	if !verified {
+		fmt.Fprintln(os.Stderr, "该版本没有 SHA256SUMS，未校验哈希")
+	}
+
+	if err := selfupdate.Install(exe, bin, target); err != nil {
+		saveCLIState(current, target, started, "failed", err)
+		// ErrNeedSudo 原样返回:调用方(以及人)要能一眼认出这是权限问题。
+		return err
+	}
+	saveCLIState(current, target, started, "ok", nil)
+
+	fmt.Printf("已升级到 %s；正在运行的 mpx ui 需重启后生效\n", target)
+	warnControlAfterUpdate(cmd)
+	return nil
+}
+
+// rollbackCLI 把本机 CLI 换回 .prev。
+func rollbackCLI() error {
+	exe, err := selfExecutable()
+	if err != nil {
+		return err
+	}
+	out, err := selfupdate.Rollback(exe)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("已回退，本机 CLI 现在是 %s\n", out)
+	saveRollbackState()
+	return nil
+}
+
+// saveCLIState 把一次自更新的结果写进 update.json。写失败只字不提:升级本身
+// 已经成功或失败,状态文件是附带信息,不该反过来把结果变成一个错误。
+func saveCLIState(from, to string, started time.Time, result string, cause error) {
+	path, err := cliStatePath()
+	if err != nil {
+		return
+	}
+	st := selfupdate.State{
+		Component:  updateComponentCLI,
+		State:      "idle",
+		From:       from,
+		To:         to,
+		StartedAt:  started,
+		FinishedAt: time.Now(),
+		Result:     result,
+		Trigger:    "manual",
+	}
+	if cause != nil {
+		st.Error = cause.Error()
+	}
+	_ = selfupdate.SaveState(path, st)
+}
+
+// saveRollbackState 记下这次回退。方向和上一次升级相反,所以尝试从旧状态里
+// 把 from/to 倒过来,拿不到就只写结果。
+func saveRollbackState() {
+	path, err := cliStatePath()
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	st := selfupdate.State{
+		Component:  updateComponentCLI,
+		State:      "idle",
+		Result:     "rolled-back",
+		Trigger:    "manual",
+		StartedAt:  now,
+		FinishedAt: now,
+	}
+	if prev, ok, err := selfupdate.LoadState(path); err == nil && ok {
+		st.From, st.To = prev.To, prev.From
+	}
+	_ = selfupdate.SaveState(path, st)
+}
+
+// warnControlAfterUpdate 升级完顺手问一下控制面还在不在。
+//
+// 只警告不报错:CLI 装好了就是装好了,控制面连不上是另一件事(可能本来就没配
+// 控制面)。没配置控制面时静默跳过,不拿一句"连不上"去吓人。
+func warnControlAfterUpdate(cmd *cobra.Command) {
+	c, err := newClient()
+	if err != nil {
+		return
+	}
+	if _, err := c.do("GET", "/api/status", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "注意：升级后联系控制面失败:%v\n", err)
+	}
+}

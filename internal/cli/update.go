@@ -11,8 +11,19 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 	"github.com/RovenEverward/my-proxy/internal/updatecheck"
 )
+
+// updateReport 是 mpx update -o json 的形状:model.UpdateReport 的原样三部分,
+// 外加本机 CLI 最近一次自更新的结果。
+//
+// CLILast 的类型是 selfupdate.State,而 model 包不能反过来依赖 selfupdate ——
+// 所以这一层拼在 cli 这边,而不是塞进 model.UpdateReport。
+type updateReport struct {
+	model.UpdateReport
+	CLILast *selfupdate.State `json:"cli_last,omitempty"`
+}
 
 // updateStaleControlNotice 是控制面还没有 /api/update 时补的那句话。
 //
@@ -92,9 +103,13 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		// 拿不到就如实空着,不能因为没有数据就当作"都是最新"。
 		nodes = []model.UpdateNodeCore{}
 	}
+	cliLast := loadCLILast()
 
 	if opts.output == outputJSON {
-		report := model.UpdateReport{CLI: cliPart, Control: snap.Control, Nodes: nodes}
+		report := updateReport{
+			UpdateReport: model.UpdateReport{CLI: cliPart, Control: snap.Control, Nodes: nodes},
+			CLILast:      cliLast,
+		}
 		if err := emitJSONValue(report); err != nil {
 			return err
 		}
@@ -103,7 +118,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(os.Stderr, updateStaleControlNotice)
 		}
 	} else {
-		if err := writeTable(updateHeaders, updateRows(cliPart, snap.Control, nodes)); err != nil {
+		if err := writeTable(updateHeaders, updateRows(cliPart, snap.Control, nodes, cliLast)); err != nil {
 			return err
 		}
 		// 表格模式下跟在表后面,和其他说明性文字一样:它说的是"这几行为什么没有",
@@ -134,9 +149,11 @@ func cliUpdatePart(control model.UpdatePart) model.UpdatePart {
 }
 
 // updateRows 把三部分摆成一张四列表。
-func updateRows(cli, control model.UpdatePart, nodes []model.UpdateNodeCore) [][]string {
+//
+// cli 那一行的状态后面追加最近一次自更新的结果。
+func updateRows(cli, control model.UpdatePart, nodes []model.UpdateNodeCore, cliLast *selfupdate.State) [][]string {
 	rows := [][]string{
-		{"本机 CLI", updateVersionText(cli.Current), dash(cli.Latest), updatePartStatus(cli)},
+		{"本机 CLI", updateVersionText(cli.Current), dash(cli.Latest), updatePartStatus(cli) + cliLastSuffix(cliLast)},
 		{"控制面", updateVersionText(control.Current), dash(control.Latest), updatePartStatus(control)},
 	}
 	for _, n := range nodes {
@@ -237,4 +254,38 @@ func warnVersionMismatch(cli, control string) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "注意：本机 CLI 是 %s，控制面是 %s，主/次版本不一致；有些接口可能对不上，建议把两者升到同一代\n", cli, control)
+}
+
+// loadCLILast 读本机 CLI 上一次自更新的状态。读不到就返回 nil —— 没升级过
+// 是正常状态,不该在版本表里多出一行错误。
+func loadCLILast() *selfupdate.State {
+	path, err := cliStatePath()
+	if err != nil {
+		return nil
+	}
+	st, ok, err := selfupdate.LoadState(path)
+	if err != nil || !ok {
+		return nil
+	}
+	return &st
+}
+
+// cliLastSuffix 把上一次自更新结果拼成一句话,附在本机 CLI 那行的状态后面。
+//
+// 失败要说失败:状态栏里"最新"说的是版本,不代表上一次装成了 —— 两者是两件事,
+// 不能因为版本对上了就把失败盖掉。
+func cliLastSuffix(st *selfupdate.State) string {
+	if st == nil || st.Result == "" {
+		return ""
+	}
+	word := map[string]string{
+		"ok":          "成功",
+		"failed":      "失败",
+		"rolled-back": "已回退",
+	}[st.Result]
+	if word == "" {
+		word = st.Result
+	}
+	when := st.FinishedAt.Local().Format("01-02 15:04")
+	return fmt.Sprintf(" · 上次 %s %s→%s %s", when, dash(st.From), dash(st.To), word)
 }
