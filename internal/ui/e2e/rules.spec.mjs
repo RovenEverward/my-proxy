@@ -1,16 +1,12 @@
 // 分流规则页:写操作与 mpx rule / mpx group 对照。CLI 做一次、记下请求、把数据恢复原样,
 // 再让页面做同一件事。整表 PUT 里的 version 两边各自取当时的值,对照时去掉。
 import { test, expect } from "@playwright/test";
-import { writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { startEnv, login, cpFetch } from "./env.mjs";
 
 let env;
 const cp = (p, init = {}) => cpFetch(env.cpURL + p, { ...init, headers: { Authorization: "Bearer " + env.token, "Content-Type": "application/json", ...(init.headers || {}) } });
 const getJSON = async p => (await cp(p)).json();
 const putRules = (rules, user) => cp("/api/rules" + (user ? "?user=" + user : ""), { method: "PUT", body: JSON.stringify({ rules }) });
-const file = (name, text) => { const f = path.join(tmpdir(), `mpx-e2e-${process.pid}-${name}`); writeFileSync(f, text); return f; };
 // 写请求摆成可比的样子:去掉 version,路径里的数字 id 换成占位。
 const norm = reqs => reqs.map(r => { let b = r.body ? JSON.parse(r.body) : null; if (b && typeof b === "object") delete b.version; return { method: r.method, path: r.path.replace(/\/\d+(?=$|\?)/, "/<id>"), body: b }; });
 const strip = rs => rs.map(({ type, value, target, enabled, note }) => ({ type, value, target, enabled, ...(note ? { note } : {}) }));
@@ -30,7 +26,7 @@ test.beforeAll(async () => {
   const nodes = [["tokyo-a", "JP", "东京", "A"], ["la-a", "US", "洛杉矶", "A"], ["la-b", "US", "洛杉矶", "B"]];
   for (const [i, [n, region, city, letter]] of nodes.entries()) {
     await env.seed("node", "add", n, "--address", `203.0.113.${10 + i}`, "--ssh-port", "1");
-    await env.seed("purpose", "metadata", "set", "nodes", String(i + 1), "-f", file(`md${i}.json`, JSON.stringify({ region, city, letter })));
+    await env.seed("node", "edit", n, "--region", region, "--city", city, "--letter", letter);
     await env.seed("inbound", "add", "--node", String(i + 1), "--protocol", "vless", "--port", "443", "--security", "reality", "--sni", "www.cloudflare.com", "--reality-dest", "www.cloudflare.com:443");
   }
   await env.seed("user", "add", "alice");
