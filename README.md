@@ -131,6 +131,11 @@ mpx ui                                         # 在本机浏览器里打开管�
 - **分流规则** *（在 main 上，下一版发布）*：一张从上往下匹配的规则表，每条指向直连、拦截或策略组；内置常用规则组，可以给某个用户单独加规则，也能测试一个网址会走哪里。对应 `mpx rule`、`mpx group`。旧的「用途」会在升级时自动迁移成规则，计划在 v0.7.0 删除。
 - **套餐** *（在 main 上，下一版发布）*：按节点给一组人授权，每个用户挂一个套餐；自带包含全部节点的「默认套餐」。对应 `mpx plan`、`mpx user add --plan`。
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/plans-dark.png">
+  <img src="docs/assets/readme/plans-light.png" width="900" alt="套餐页：默认套餐包含全部节点，另有按节点划分的套餐，每行显示包含的节点和人数">
+</picture>
+
 ### 运维
 
 - **多设备接入**：别的电脑用 `mpx connect` 加设备密码接入，每台设备一枚自己的 token，丢了用 `mpx device` 吊销。
