@@ -2,6 +2,14 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.7.1 (2026-10-16)
+
+### 新增
+- `mpx ui` 设置页加「设备」标签：列出接入控制面的设备（对应 `mpx device list`），可吊销其他设备（对应 `mpx device revoke`，要确认）。mpx ui 自己正在用的那台不给吊销，免得把自己踢下线。
+
+### 兼容性
+- 控制面 API 无变更；`mpx ui` 放行列表新增 `DELETE /api/devices`。
+
 ## v0.7.0 (2026-10-16)
 
 本版主题：「用途」与模板分流整体下线，分流模式固定为 `rules`。删除计划见 [routing-rules-rfc.md](docs/internal/routing-rules-rfc.md) 的「R6 用途下线计划」。
