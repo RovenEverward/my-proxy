@@ -23,6 +23,7 @@ import (
 const (
 	ruleSetTTL     = 12 * time.Hour
 	ruleSetMaxSize = 16 << 20
+	ruleSetRetry   = 10 * time.Minute // 拉取失败的,过一阵再试,别让每次测试都卡在超时上
 )
 
 type ruleSetEntry struct {
@@ -59,7 +60,7 @@ func (c *ruleSetCache) get(ctx context.Context, rs model.ClashRuleSet) *ruleSetE
 	if c.items == nil {
 		c.items = map[string]*ruleSetEntry{}
 	}
-	if e, ok := c.items[rs.URL]; ok && time.Since(e.at) < ruleSetTTL && e.err == nil {
+	if e, ok := c.items[rs.URL]; ok && (e.err == nil && time.Since(e.at) < ruleSetTTL || e.err != nil && time.Since(e.at) < ruleSetRetry) {
 		c.mu.Unlock()
 		return e
 	}
@@ -180,6 +181,8 @@ func (s *Server) matchRule(ctx context.Context, r model.RouteRule, d string) (ma
 		for _, c := range rs.Clash {
 			e := s.ruleSets.get(ctx, c)
 			switch {
+			case e.ipOnly && rs.PrivateIP:
+				// 局域网 IP 段:公网域名不会落进去,不值得每次都提示
 			case e.ipOnly:
 				why = append(why, c.Name+" 按 IP 匹配")
 			case e.err != nil:
@@ -228,6 +231,35 @@ func normDomain(s string) string {
 	return strings.TrimSuffix(s, ".")
 }
 
+// prefetch 并发拉齐这些规则组背后的上游规则集,整体最多等 10 秒;拉不下来的记为失败。
+func (c *ruleSetCache) prefetch(ctx context.Context, keys []string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	sem := make(chan struct{}, 16)
+	var wg sync.WaitGroup
+	seen := map[string]bool{}
+	for _, k := range keys {
+		rs, ok := model.RuleSetByKey(k)
+		if !ok {
+			continue
+		}
+		for _, cr := range rs.Clash {
+			if seen[cr.URL] {
+				continue
+			}
+			seen[cr.URL] = true
+			wg.Add(1)
+			go func(cr model.ClashRuleSet) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				c.get(ctx, cr)
+			}(cr)
+		}
+	}
+	wg.Wait()
+}
+
 func (s *Server) handleTestRule(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Domain string `json:"domain"`
@@ -264,12 +296,24 @@ func (s *Server) handleTestRule(w http.ResponseWriter, r *http.Request) {
 		id   int64
 	}{"global", 0})
 	final := ""
-	for _, sc := range scopes {
+	byScope := make([][]model.RouteRule, len(scopes))
+	var keys []string
+	for i, sc := range scopes {
 		rules, err := s.store.ListRules(sc.id)
 		if err != nil {
 			s.writeStoreError(w, err, "规则")
 			return
 		}
+		byScope[i] = rules
+		for _, r := range rules {
+			if r.Enabled && r.Type == model.RuleSetRef {
+				keys = append(keys, r.Value)
+			}
+		}
+	}
+	s.ruleSets.prefetch(r.Context(), keys)
+	for si, sc := range scopes {
+		rules := byScope[si]
 		if final == "" {
 			rs, err := s.store.GetRouteScope(sc.id)
 			if err != nil {
