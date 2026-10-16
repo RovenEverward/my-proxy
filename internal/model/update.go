@@ -25,6 +25,27 @@ type UpdatePart struct {
 	CheckedAt *time.Time `json:"checked_at"`
 	// Error 非空表示最近一次没问成,其余字段是上一次的结论。
 	Error string `json:"error"`
+	// Last 是控制面最近一次执行升级/回退的状态;从没执行过时为 nil。
+	//
+	// model 不能反过来依赖 selfupdate,所以这里单独定义一份同形状的 UpdateRun,
+	// 由 server 在拼响应时从 selfupdate.State 转过来。
+	Last *UpdateRun `json:"last,omitempty"`
+}
+
+// UpdateRun 是控制面一次升级/回退的执行状态,字段与 selfupdate.State 一一对应。
+//
+// 单独定义而不是复用 selfupdate.State:model 是被接口与 CLI 共同依赖的最底层,
+// 不能为了一个 JSON 形状就把它和改动系统二进制的 selfupdate 绑在一起。
+type UpdateRun struct {
+	Component  string    `json:"component"`
+	State      string    `json:"state"`
+	From       string    `json:"from"`
+	To         string    `json:"to"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	Result     string    `json:"result"`
+	Trigger    string    `json:"trigger"`
+	Error      string    `json:"error"`
 }
 
 // UpdateNodeCore 是一台节点上某个核心的版本行。

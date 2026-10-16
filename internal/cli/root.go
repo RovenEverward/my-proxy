@@ -82,6 +82,8 @@ func init() {
 	updateCmd.AddCommand(updateShowCmd)
 	updateCmd.AddCommand(updateApplyCmd)
 	updateCmd.AddCommand(updateRollbackCmd)
+	// root 侧的一次性执行器,由 mpx-update.service 调用,不出现在帮助里。
+	updateCmd.AddCommand(updateRunCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。

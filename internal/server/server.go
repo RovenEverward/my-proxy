@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -67,6 +68,9 @@ type Server struct {
 	status        StatusSource
 	updates       UpdateSource
 	dbPath        string
+	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
+	// 为空表示没配库路径,控制面升级接口据此返回 503。
+	updateDir string
 
 	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
 	// 由 serve.go 定在数据目录下(与 systemd StateDirectory 对齐);测试里没设的
@@ -111,6 +115,9 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
 	}
+	if s.dbPath != "" {
+		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
+	}
 	s.routes()
 	return s
 }
@@ -128,6 +135,10 @@ func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
 // 不接时那一行只有本机版本、说不了有没有新版 —— 这也是 /api/update 该有的
 // 退化样子:接口本身照常回 200,不因为后台任务没起来就整个失败。
 func (s *Server) SetUpdateSource(src UpdateSource) { s.updates = src }
+
+// SetUpdateDir 换掉控制面升级请求/状态文件的目录,供测试指定可写位置。
+// 传空串等于禁用控制面升级接口。
+func (s *Server) SetUpdateDir(dir string) { s.updateDir = dir }
 
 // Handler 返回可以直接交给 http.Server 的处理器。
 func (s *Server) Handler() http.Handler { return s.mux }
@@ -149,6 +160,9 @@ func (s *Server) routes() {
 	s.diagnosticRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/update", s.handleUpdate)
+	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的
+	// 一次性单元跑 `mpx update run control` 完成,见 selfupdate.ControlRunner。
+	api.HandleFunc("POST /api/update/control", s.handleUpdateControl)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	// GET /api/nodes/{id} 认一个 ?fresh=1:不带就读库里缓存的状态,带了就现场
