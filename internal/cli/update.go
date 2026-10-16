@@ -72,7 +72,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	raw, err := c.do("GET", "/api/update", nil)
+	// refresh=1 让控制面绕过后台检查的静默期,强制先向上游问一次:新版发布后
+	// `mpx update show` 能立刻看到,而不是等控制面那 6 小时一轮的后台检查。
+	// 旧控制面会忽略这个不认识的参数,回退逻辑不受影响。
+	raw, err := c.do("GET", "/api/update?refresh=1", nil)
 	var snap model.UpdateSnapshot
 	stale := false
 	if err != nil {

@@ -530,6 +530,21 @@ func (t *Task) ControlUpdate() model.UpdatePart {
 	return model.UpdatePartFrom(t.updateInfo())
 }
 
+// RefreshControlUpdate 强制向上游查一次,再给出与 ControlUpdate 同一套判据的结论。
+//
+// 给 GET /api/update?refresh=1 用:后台任务按静默期自己跑,但"刚发了新版想立刻
+// 看到"需要一个不等静默期的手动入口。查询失败不返回 error —— Checker 会把失败
+// 记进结论的 Error 字段,上一次的版本信息照常带回来。
+func (t *Task) RefreshControlUpdate(ctx context.Context) model.UpdatePart {
+	if t.updates != nil {
+		last := t.updates.Snapshot().CheckedAt
+		if last.IsZero() || time.Since(last) >= updatecheck.MinRefreshInterval {
+			t.updates.Check(ctx, true)
+		}
+	}
+	return t.ControlUpdate()
+}
+
 // updateInfo 把更新检查的结论翻成 API 的形状。
 //
 // 当前版本优先用编译进去的 buildinfo:定在二进制里的版本号不会因为运行环境换了
