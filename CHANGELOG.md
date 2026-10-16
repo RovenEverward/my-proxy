@@ -12,6 +12,8 @@
 - 新增 `mpx update apply control` 与 `mpx update rollback control`：先在控制面登记升级/回退请求（`--version` 选版本，默认最新；`-y/--yes` 跳过确认，非交互环境必须加），再轮询 `GET /api/update` 报告下载、校验、切换、健康检查各阶段，直到升级成功、失败或自动回退；控制面重启期间连不上不算失败，超时后提示用 `mpx update` 查看结果。旧控制面没有 `/api/update` 时提示先用 `install.sh` 升级一次，进行中会先拒绝。`mpx update` 会在控制面那行附上最近一次结果（进行中报阶段）。
 - 新增 `POST /api/update/control`（只新增）：登记一次控制面升级/回退请求（`version` 可留空表示最新，另有 `allow_downgrade`、`action`）；请求文件由 root 的一次性单元执行，`GET /api/update` 的 `control` 部分相应附带最近一次执行状态 `last`；新增隐藏命令 `mpx update run control`，由 `mpx-update.service` 调用。
 
+### 安装与升级
+- 安装脚本改为「版本目录 + 符号链接」布局：每版装在 `/usr/local/lib/mpx/releases/<版本>/mpx`，`/usr/local/bin/mpx` 改为指向当前版的符号链接，切换用 rename 原子完成，只保留当前版与上一版；旧布局（普通文件）会在升级时按自身版本收进版本目录当上一版，重复安装同一版本安全。`install.sh` 同时装上并启用 `mpx-update.service` 与 `mpx-update.path`（`.path` 监视 `/var/lib/mpx/update/request`），控制面装好后即可在本机用 `mpx update apply control` 升级，不必每次重跑 `install.sh`。
 ## v0.6.0 (2026-10-16)
 
 ### 分流规则（替代用途）

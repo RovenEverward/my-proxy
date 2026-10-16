@@ -454,3 +454,20 @@ func TestControlInterruptedBeforeSwitchKeepsDB(t *testing.T) {
 		t.Fatalf("状态 = %+v", st)
 	}
 }
+
+// 控制面以普通用户读 state.json,root 写出来的文件必须是可读的。
+func TestControlStateReadableByControlPlane(t *testing.T) {
+	h := newControlHarness(t)
+	h.request(ControlRequest{Action: "upgrade", To: "v0.6.1"})
+	h.healthVers = "v0.6.1"
+	if err := h.run.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(h.paths.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm()&0o044 != 0o044 {
+		t.Fatalf("state.json 权限 = %v,控制面读不了", fi.Mode().Perm())
+	}
+}

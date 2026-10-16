@@ -1,0 +1,14 @@
+[Unit]
+Description=监听控制面升级请求(/var/lib/mpx/update/request)
+
+[Path]
+# 控制面以 mpx 用户运行,只能把请求写进 /var/lib/mpx/update/request(root 之外碰不了
+# /usr/local)。这个文件一出现就拉起 mpx-update.service;单元跑完会自己清掉请求。
+PathExists=/var/lib/mpx/update/request
+Unit=mpx-update.service
+
+[Install]
+WantedBy=multi-user.target
+
+# 自动升级(定时检查并触发)留到 M5 再做:那个 timer 的间隔、窗口与冷却策略还没定,
+# 本单元目前只负责「本机有人点了升级」这一种触发。

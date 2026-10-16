@@ -1,0 +1,17 @@
+[Unit]
+Description=mpx 控制面升级(由 mpx-update.path 触发)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 为什么要 root:控制面本体以 mpx 用户 + ProtectSystem=strict 运行,它换不了自己的
+# 二进制,也写不了 /usr/local。如果为了让它自己升级而放宽这层沙箱,等于让对外服务的
+# 进程能改写自己。所以把「换二进制、重启控制面」这一步交给 root 的一次性单元,
+# 控制面进程始终不需要 root。
+User=root
+ExecStart=/usr/local/bin/mpx update run control --addr 127.0.0.1:8080 --db /var/lib/mpx/mpx.db --env-file /etc/mpx/env
+# 下载、校验、库快照、重启、健康检查加起来可能不止一两分钟,给足时间。
+TimeoutStartSec=600
+
+# 没有 [Install]:这个单元由 mpx-update.path 在请求文件出现时拉起,不靠 multi-user.target 直接启动。

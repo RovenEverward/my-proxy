@@ -607,6 +607,11 @@ func (r *ControlRunner) saveState(st State) error {
 	if err := SaveState(r.Paths.State, st); err != nil {
 		return fmt.Errorf("写入状态失败: %w", err)
 	}
+	// 控制面(mpx 用户)要通过 GET /api/update 读这份状态:放开读权限,属主
+	// 与库目录一致。另外顺手把库的附属文件属主拉回来(见 matchOwner)。
+	_ = os.Chmod(r.Paths.State, 0o644)
+	ref := filepath.Dir(r.Paths.DB)
+	matchOwner(ref, r.Paths.State, r.Paths.DB, r.Paths.DB+"-wal", r.Paths.DB+"-shm")
 	return nil
 }
 
