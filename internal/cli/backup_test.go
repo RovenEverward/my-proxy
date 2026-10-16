@@ -21,6 +21,7 @@ func runRoot(t *testing.T, args ...string) {
 		backupOut = ""
 		restoreForce = false
 		resetRulesFlags()
+		resetUpdateApplyFlags()
 	})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("mpx %v: %v", strings.Join(args, " "), err)
@@ -38,6 +39,7 @@ func runRootErr(t *testing.T, args ...string) error {
 	t.Cleanup(func() {
 		rootCmd.SetArgs(nil)
 		resetRulesFlags()
+		resetUpdateApplyFlags()
 	})
 	return rootCmd.Execute()
 }
