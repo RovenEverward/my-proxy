@@ -65,7 +65,7 @@
 | User-Agent 识别规则 | `mpx settings rules …` | ✅ 设置页「识别规则」标签(细项未逐一核对) |
 | 下载备份 | `mpx backup` | ✅ |
 | 从备份恢复 | `mpx restore` | ❌(有意不做) |
-| 用途(已废弃,v0.7.0 删) | `mpx purpose` | 有旧页面,随 #49 删 |
+| 用途(v0.7.0 已删除) | — | 已随 #49 移除 |
 | **首次安装** | `mpx init`(SSH 到新 VPS 装控制面+节点) | ✅ 向导 B(v0.6.4) |
 | 控制面本机建初始数据 | `mpx bootstrap`(在控制面上跑) | ❌,也不该进 UI |
 | 设备接入 / 设备密码 | `mpx connect`、`mpx connect password` | ❌(UI 启动本身依赖已接入的 profile) |

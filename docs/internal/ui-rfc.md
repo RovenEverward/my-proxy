@@ -91,7 +91,7 @@
 | 用户 | `GET /api/users?limit&offset&status&search&inbound_id`、`/users/{u}`、`/users/{u}/links` | add / edit / rm / enable / disable / renew / reset-traffic / revoke-sub；CSV 导入导出（`user import/export`） |
 | 节点 | `GET /api/nodes`、`/nodes/{id}`、`/online`、`/config`、`/capabilities`、`/diagnostics` | add / edit / rm / sync / install / drain / undrain / probe / diagnose；核心部署（`core edit`） |
 | 入站与入口 | `GET /api/inbounds`、`/inbounds/{id}/hosts` | inbound 和 host 的增删改 |
-| 用途 | `GET /api/purposes`、预览 | purpose 增删改、metadata |
+| 分流规则 | `GET /api/routing`、`/api/rules`、`/api/proxy-groups`、`/api/rule-catalog` | rule 增删改、final、test、migrate；group 增删改、preview |
 | 设置 | `GET /api/settings`、模板、UA 规则 | settings set（**整体替换**，界面必须先读后写）、template、rules、test-webhook |
 | 备份 | 无 | 下载 `GET /api/backup`；`restore` 只提示在终端执行 |
 
@@ -101,7 +101,7 @@
 
 - **威胁：** 同机其他用户或恶意网页访问到本地端口。缓解：只监听回环地址；一次性 key 换 HttpOnly + SameSite=Strict cookie；校验 `Host` 和 `Origin`，防 DNS rebinding；`Content-Security-Policy: default-src 'self'`，禁止 iframe 嵌入。
 - **不提供 `--lan`。** 要在其他设备上用，就走 SSH 隧道。以后真有需要，再仿照 magpie 的警告文案加上。
-- **token 永不下发到页面。** 页面里显示 `links` 和用途预览时，会出现订阅地址和凭证，这和 CLI 现有行为一致，在页面上注明即可。
+- **token 永不下发到页面。** 页面里显示 `links` 时，会出现订阅地址和凭证，这和 CLI 现有行为一致，在页面上注明即可。
 - 控制面的 API 限流（`ratelimit.go`）照常生效，UI 每隔一段时间刷新一次（不低于 10s），不搞实时推送。
 
 ## 7. 视觉风格
@@ -115,7 +115,7 @@
 | **M0 骨架与只读总览** | `mpx ui` 命令、转发、key 和 cookie、内嵌资源；总览页 | 本地控制面加种子数据能打开；没有 key 访问返回 401；非 `/api` 路径返回 404；`Origin` 不对时拒绝；`go test -race` 通过；附 3 张截图 |
 | **M1 用户只读到读写** | 用户列表（分页、筛选、搜索）、详情、链接；启用/停用/续期/重置/吊销/增删改 | 每个操作和对应 CLI 命令的请求体逐字节一致（测试断言）；1000 个用户时翻页流畅；附截图 |
 | **M2 节点与入站** | 节点状态、排水、下发、安装、体检；入站和入口的增删改 | 下发、安装失败时页面显示控制面原样的错误（含 501 未接节点通道）；附截图 |
-| **M3 用途、设置与收尾** | 用途和预览、设置（先读后写）、模板、UA 规则、备份下载；文档站增加 `mpx ui` 页面；修改 design.md 里 Non-goal 的措辞 | settings 改一个字段后其他字段不丢失（测试）；文档构建和死链检查通过 |
+| **M3 分流、设置与收尾** | 分流规则页与迁移、设置（先读后写）、模板、UA 规则、备份下载；文档站增加 `mpx ui` 页面；修改 design.md 里 Non-goal 的措辞 | settings 改一个字段后其他字段不丢失（测试）；文档构建和死链检查通过 |
 
 ## 9. 风险
 

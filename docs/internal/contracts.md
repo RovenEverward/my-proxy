@@ -33,8 +33,9 @@ host     list | add | edit | rm
 user     list | show | add | edit | rm | enable | disable | renew | export | import
          | links | reset-traffic | revoke-sub
 settings show | set | test | template get|set|del
-purpose  list | get SLUG | create SLUG -f FILE | set SLUG -f FILE | del SLUG
-         | metadata get|set nodes|hosts ID [-f FILE] | preview SLUG USER FORMAT
+rule     list | add | move | rm | toggle | final TARGET | test DOMAIN
+         | catalog | migrate [--dry-run|--confirm|--replace|--report] | mode
+group    list | add | edit | rm | preview
 ```
 
 `bootstrap` 是 **Hidden 子命令**(不在 `--help` 里),它是 `init` 在 VPS 上的另一半,由 `init` 调用而不是给人直接敲:
@@ -48,11 +49,15 @@ bootstrap --address <节点对外地址> [--name default] [--username user1] [--
 
 它假定控制面跑在本机(`127.0.0.1:8080`),token 从 `--env-file` 里读(不经过命令行,所以不进 `ps` 与 shell 历史),公钥从 `--key-file` 读并追加进 `~/.ssh/authorized_keys`。每一步都是**幂等**的:节点按名字复用、入站按「同协议+同安全层+同端口」复用、入口已有就不再加、订阅前缀非空就不动、用户存在就跳过,重复跑不会建出第二份。
 
-### 用途 API 与订阅
+### 元数据 API
 
-管理接口：`GET/POST /api/purposes`、`GET/PUT/DELETE /api/purposes/{slug}`、`GET /api/purposes/{slug}/preview/{username}/{format}`、`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。创建 201、重复 409、更新 200、删除 204、未知对象 404、无效字段或模板 400、预览不可用 422。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。节点元数据另有 `city`、`letter`（命名 RFC N3）：省略这两个键时保留原值（老客户端整份 PUT 不会冲掉）；有 `region` 而 `letter` 为空时由控制面按（地区, 城市）分配最小空闲字母，显式字母冲突 409；host 元数据带这两项 400。`GET /api/nodes`、`GET /api/nodes/{id}` 的节点视图多一个只读 `display`（旗帜 + 城市或国家中文名 + 字母，无地区时省略）。新建或改名为纯数字的节点名 400。`POST /api/nodes/{id}/locate`（N4）只返回建议不写入：`{region, city, city_en, ip, source:"ipwho.is", via:"control"|"node", display}`；地址是 IP 时控制面查 ipwho.is，是域名时 SSH 到节点 `curl https://ipwho.is/` 看出口；城市不在内置对照表里 `city` 为空；查不到 502。`POST /api/nodes` 建好节点后，控制面默认按 IP 自动 locate 并写入显示名（只在节点还没有地区时写；地址是域名时不自动探测），回答在节点字段之外多 `display` 与 `locate_note`（失败提示，不影响 201）；`mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0` 关闭。预览只支持 clash-meta / sing-box 且正文含凭证。
+管理接口：`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。节点元数据只认 `region`、`city`、`letter`（命名 RFC N3）：省略这两个键时保留原值（老客户端整份 PUT 不会冲掉）；有 `region` 而 `letter` 为空时由控制面按（地区, 城市）分配最小空闲字母，显式字母冲突 409；host 元数据带 `city`/`letter` 400。老客户端带来的 `line`/`purposes` 字段不再认识，写入时被忽略，读出时也不会出现（v0.7.0 删除）。`GET /api/nodes`、`GET /api/nodes/{id}` 的节点视图多一个只读 `display`（旗帜 + 城市或国家中文名 + 字母，无地区时省略）。新建或改名为纯数字的节点名 400。`POST /api/nodes/{id}/locate`（N4）只返回建议不写入：`{region, city, city_en, ip, source:"ipwho.is", via:"control"|"node", display}`；地址是 IP 时控制面查 ipwho.is，是域名时 SSH 到节点 `curl https://ipwho.is/` 看出口；城市不在内置对照表里 `city` 为空；查不到 502。`POST /api/nodes` 建好节点后，控制面默认按 IP 自动 locate 并写入显示名（只在节点还没有地区时写；地址是域名时不自动探测），回答在节点字段之外多 `display` 与 `locate_note`（失败提示，不影响 201）；`mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0` 关闭。
 
-`/sub/{token}[/{format}]?purpose={slug}` 保持 token 授权。未知/已删除用途 404，无可用候选、状态不可用、依赖 daily 不可用、要求能力但 hook 未接入、格式不支持均 422，并附默认订阅 URL，不静默回落。浏览器页面增加用途选择、描述、错误与复制链接。配置 `daily_purpose` 显式决定其他流量使用哪个日常候选组；留空沿用模板原有路由。全部用途重算候选，默认缓存键加入 purpose 与 gzip 协商，避免压缩变体混用。
+### 分流规则 API 与订阅
+
+`GET /api/routing`（只读，`mode` 恒为 `rules`）、`POST /api/routing/migrate`、`GET/PUT /api/rules`、`PATCH /api/rules/{id}`、`PUT /api/rules/final`、`POST /api/rules/test`、`GET /api/rule-catalog`，以及 `GET/POST /api/proxy-groups`、`GET/PUT/DELETE /api/proxy-groups/{id}`、`POST /api/proxy-groups/preview`。`PUT /api/routing`（旧的分流模式开关）与 `GET/POST /api/purposes*` 已在 v0.7.0 删除，旧版 CLI 或脚本调用得到 404。
+
+`/sub/{token}[/{format}]` 保持 token 授权。旧的 `?purpose={slug}` 查询参数被忽略，一律返回普通订阅（按规则表分流）。`clash-meta` 与 `sing-box` 的分流部分由规则表生成，原版 `clash`、`links`、`xray` 不变。
 
 ### 综合体检 API
 

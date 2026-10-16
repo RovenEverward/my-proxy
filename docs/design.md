@@ -173,6 +173,6 @@ CLI 那一行有一个例外:`mpx init` 会 SSH。它是**在控制面存在之�
 | [管理 UI 方案](internal/ui-rfc.md) | `mpx ui` 为什么是本机转发、页面以什么为界、怎么防跨站与 DNS rebinding |
 | [节点命名方案](internal/node-naming-rfc.md) | 节点展示名「🇺🇸 洛杉矶 A」、地区识别,以及 CLI 用名字指定对象 |
 | [自动升级方案](internal/update-rfc.md) | 三部分的升级、校验、回退与 `mpx update`;发布件校验和(M0) |
-| [用途订阅验证](internal/purpose-validation.md)、[能力检测验证](internal/capability-validation.md)、[一键体检验证](internal/diagnostic-validation.md)、[QUIC 验证](internal/quic-validation.md) | 这几块功能的真实证据与限制 |
+| [能力检测验证](internal/capability-validation.md)、[一键体检验证](internal/diagnostic-validation.md)、[QUIC 验证](internal/quic-validation.md) | 这几块功能的真实证据与限制 |
 
 安装与日常操作看[用户文档导航](user/index.md)。

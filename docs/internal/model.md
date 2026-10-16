@@ -28,9 +28,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
 | `user_notices` | `user_id`、`kind`、`sent_at`(主键 `(user_id, kind)`) | 只是「这条用户提醒已经发过了」的流水账,不承载业务数据:整张表删掉用户、流量、订阅照常工作,只是下一轮可能重发。所以备份校验的必需表清单里**刻意没有它** |
 
-用途另存三张表：`purposes(slug PRIMARY KEY, config JSON TEXT)`、`node_metadata(id REFERENCES nodes ON DELETE CASCADE, config JSON TEXT)`、`host_metadata(id REFERENCES hosts ON DELETE CASCADE, config JSON TEXT)`。不为历史数据库自动创建用途，删除后的 URL 不会被重新初始化。元数据字段为 `region`、`line`、`purposes`，host 非空字段覆盖 node 对应字段。用途条件 regions / lines 是 AND，tags 与元数据 purposes 的交集是 OR；空条件不限制。筛选只作用于已授权、非排水、容量允许的 Endpoint，identity 为 `(NodeID, InboundID, HostID)`，默认 exposure 的 HostID 为 0。
-
-用途要求 `required_capabilities` 时仅接受 egress / youtube / netflix；`capability_region` 可指定两位大写国家代码。能力 hook 未接入时明确拒绝。hook 结果与输入 identity 取交集且保留输入凭证，不能扩大授权。用途请求每次重算，避免能力 TTL、用户到期或实时配额产生过时结果。
+元数据另存两张表：`node_metadata(id REFERENCES nodes ON DELETE CASCADE, config JSON TEXT)`、`host_metadata(id REFERENCES hosts ON DELETE CASCADE, config JSON TEXT)`，字段只有 `region`、`city`、`letter`，host 非空字段覆盖 node 对应字段。`purposes` 表与元数据里的 `line`/`purposes` 字段已在 v0.7.0 删除：老库残留的 JSON 读出时自然丢弃，老客户端写入被忽略。分流改由规则表决定（见 [routing-rules-rfc.md](routing-rules-rfc.md)）。
 
 `diagnostic_reports(node_id REFERENCES nodes ON DELETE CASCADE, source, checked_at, report)` 主键为 `(node_id,source)`，source 仅 node/control。每节点最多两份最新报告，JSON 最多 256 KiB；删除节点级联清理。不积累诊断历史，不改变能力检测和用户配额。部分失败或取消保存已获得的证据，密钥不序列化。本地 `diagnose` 不落此表。
 
