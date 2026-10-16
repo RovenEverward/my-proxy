@@ -71,7 +71,12 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
 	srv.autoLocate = !opt.NoAutoLocate
-	srv.AutoMigrateRouting()
+	// 还有用途的 template 老库不能自动迁移(新迁移不读用途,会丢数据),直接拒绝。
+	if n, err := st.LegacyPurposeCount(); err != nil {
+		return err
+	} else if n == 0 {
+		srv.AutoMigrateRouting()
+	}
 	// 迁移后仍是 template,说明这是还没切到 rules 的老库:用途表和模板回退路径
 	// 都已在 v0.7.0 删除,拒绝启动而不是按旧行为出订阅。
 	if err := requireRoutingRules(st); err != nil {

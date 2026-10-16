@@ -136,3 +136,16 @@ func (s *Store) GetPurposeMetadata(kind string, id int64) (model.PurposeMetadata
 	err = json.Unmarshal([]byte(raw), &m)
 	return m, err
 }
+
+// LegacyPurposeCount 返回遗留 purposes 表里的行数;表不存在时为 0。控制面启动时
+// 用它挡住「template 模式 + 还有用途」的老库:v0.7.0 的迁移不再读用途,自动迁移
+// 会把用途悄悄丢掉。
+func (s *Store) LegacyPurposeCount() (int, error) {
+	has, err := s.tableExists("purposes")
+	if err != nil || !has {
+		return 0, err
+	}
+	var n int
+	err = s.db.QueryRow(`SELECT COUNT(*) FROM purposes`).Scan(&n)
+	return n, err
+}

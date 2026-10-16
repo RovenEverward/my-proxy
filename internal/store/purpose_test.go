@@ -103,3 +103,23 @@ func TestOpenDoesNotCreatePurposes(t *testing.T) {
 		t.Fatalf("新库不应建表: has=%v err=%v", has, err)
 	}
 }
+
+// template 老库保留用途行,LegacyPurposeCount 报出来;rules 老库删表后为 0。
+func TestLegacyPurposeCount(t *testing.T) {
+	s, err := Open(newOldPurposeDB(t, model.RoutingTemplate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.LegacyPurposeCount(); err != nil || n != 1 {
+		t.Fatalf("template: %d %v", n, err)
+	}
+	s.Close()
+	s, err = Open(newOldPurposeDB(t, model.RoutingRules))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if n, err := s.LegacyPurposeCount(); err != nil || n != 0 {
+		t.Fatalf("rules: %d %v", n, err)
+	}
+}
