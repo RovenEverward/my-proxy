@@ -42,6 +42,8 @@ func init() {
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.apiPort, "api-port", 0, "xray API 入站端口,0 表示 10085")
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.configPath, "config-path", "", "节点上的 config.json 路径,空表示 /etc/mpx/xray/config.json")
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serviceName, "service-name", "", "systemd 服务名,空表示 mpx-xray")
+	// 出口 IP 偏好进节点上的 xray direct 出站,要先建进记录、之后 sync 才下发。
+	nodeAddCmd.Flags().StringVar(&nodeAddFlags.outboundIP, "outbound-ip", "", "出口 IP 偏好:v4v6(默认)/ v4 / v6 / asis")
 	// 密码报到:非空时控制面先拿它登进去装公钥,装不上就当这次建节点没发生。
 	// 空表示节点上已经信任控制面的密钥(装过了 / 手工放过),直接落库。
 	nodeAddCmd.Flags().BoolVar(&nodeAddFlags.sshPassword, "ssh-password", false,
@@ -58,6 +60,7 @@ func init() {
 	nodeEditCmd.Flags().IntVar(&nodeEditFlags.apiPort, "api-port", 0, "新的 xray API 端口,0 表示 10085")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.configPath, "config-path", "", "节点上新的 config.json 路径")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.serviceName, "service-name", "", "新的 systemd 服务名")
+	nodeEditCmd.Flags().StringVar(&nodeEditFlags.outboundIP, "outbound-ip", "", "出口 IP 偏好:v4v6 / v4 / v6 / asis;空表示 v4v6")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.region, "region", "", "地区(两位国家码,如 US),显示名的旗帜与国家")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.city, "city", "", "城市,如 洛杉矶;空表示用国家名")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.letter, "letter", "", "字母(A、B…AA);空表示自动取最小空闲字母")
@@ -70,7 +73,7 @@ func init() {
 // 要等半分钟的命令了。想现场问一次用 node status。
 var nodeHeaders = []string{
 	"名称", "内部名", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
-	"状态", "版本", "漂移", "最后检查", "证书最短", "能力", "ID",
+	"出口 IP", "状态", "版本", "漂移", "最后检查", "证书最短", "能力", "ID",
 }
 
 // nodeRow 按表格要展示的顺序取字段;留空的一律显示成生效的默认值,
@@ -92,6 +95,7 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 		strconv.Itoa(n.APIPortOrDefault()),
 		n.ConfigPathOrDefault(),
 		n.ServiceNameOrDefault(),
+		outboundIPCell(n),
 		statusCell(v),
 		dash(versionOf(v)),
 		driftCell(v),
@@ -100,6 +104,14 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 		capabilitySummary(v.Capabilities),
 		strconv.FormatInt(n.ID, 10),
 	}
+}
+
+// outboundIPCell 把出口 IP 偏好显示成生效值:空串就是默认的 v4v6。
+func outboundIPCell(n model.Node) string {
+	if n.OutboundIP == "" {
+		return "v4v6"
+	}
+	return n.OutboundIP
 }
 
 // statusCell 把一份状态说成一个词。
@@ -459,6 +471,7 @@ var nodeAddFlags struct {
 	apiPort     int
 	configPath  string
 	serviceName string
+	outboundIP  string
 	sshPassword bool
 }
 
@@ -486,6 +499,7 @@ var nodeAddCmd = &cobra.Command{
 			APIPort:     nodeAddFlags.apiPort,
 			ConfigPath:  nodeAddFlags.configPath,
 			ServiceName: nodeAddFlags.serviceName,
+			OutboundIP:  nodeAddFlags.outboundIP,
 		}
 
 		var password string
@@ -597,6 +611,7 @@ var nodeEditFlags struct {
 	apiPort     int
 	configPath  string
 	serviceName string
+	outboundIP  string
 	region      string
 	city        string
 	letter      string
@@ -609,7 +624,11 @@ var nodeEditCmd = &cobra.Command{
 
   mpx node edit 2 --name jp-1
   mpx node edit 4 --ssh-port 2222 --ssh-user deploy
+  mpx node edit 2 --outbound-ip v4              # 出口只走 IPv4,改完跑 mpx node sync 2 才下发
   mpx node edit la --region US --city 洛杉矶      # 显示名 🇺🇸 洛杉矶 A,字母自动分配
+
+--outbound-ip 改的是节点上 xray direct 出站的 IP 版本偏好(v4v6 / v4 / v6 / asis),
+改完要先跑一次 mpx node sync 才会下发到节点。
 
 --region / --city / --letter 改的是显示名(存在节点元数据里),不碰名字和连接参数。字母在同一地区同一城市内不重复,删掉节点不会让
 别的节点重排。
@@ -650,7 +669,7 @@ var nodeEditCmd = &cobra.Command{
 		f := cmd.Flags()
 		metaChanged := f.Changed("region") || f.Changed("city") || f.Changed("letter")
 		nodeChanged := false
-		for _, name := range []string{"name", "address", "ssh-port", "ssh-user", "api-port", "config-path", "service-name"} {
+		for _, name := range []string{"name", "address", "ssh-port", "ssh-user", "api-port", "config-path", "service-name", "outbound-ip"} {
 			nodeChanged = nodeChanged || f.Changed(name)
 		}
 		if metaChanged {
@@ -682,6 +701,9 @@ var nodeEditCmd = &cobra.Command{
 		}
 		if cmd.Flags().Changed("service-name") {
 			n.ServiceName = nodeEditFlags.serviceName
+		}
+		if cmd.Flags().Changed("outbound-ip") {
+			n.OutboundIP = nodeEditFlags.outboundIP
 		}
 
 		// DeployedHash / DeployedAt 是"我们这边推过什么"的基准,换地址不改变

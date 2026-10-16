@@ -12,7 +12,7 @@ import (
 //
 // 后两列是批 3b 加的下发基准:deployed_at 可空,没下发过就是 NULL。
 const nodeColumns = `id, name, address, ssh_port, ssh_user, api_port, config_path, service_name,
-	deployed_hash, deployed_at, draining`
+	deployed_hash, deployed_at, draining, outbound_ip`
 
 func scanNode(sc rowScanner) (*model.Node, error) {
 	var (
@@ -21,7 +21,8 @@ func scanNode(sc rowScanner) (*model.Node, error) {
 		draining   int
 	)
 	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.SSHPort, &n.SSHUser,
-		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt, &draining); err != nil {
+		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt, &draining,
+		&n.OutboundIP); err != nil {
 		return nil, err
 	}
 	if deployedAt.Valid {
@@ -35,9 +36,9 @@ func scanNode(sc rowScanner) (*model.Node, error) {
 // CreateNode 新建节点,成功后把数据库分配的 id 回填到 n.ID。
 func (s *Store) CreateNode(n *model.Node) error {
 	res, err := s.db.Exec(
-		`INSERT INTO nodes (name, address, ssh_port, ssh_user, api_port, config_path, service_name)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName)
+		`INSERT INTO nodes (name, address, ssh_port, ssh_user, api_port, config_path, service_name, outbound_ip)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName, n.OutboundIP)
 	if err != nil {
 		return fmt.Errorf("创建节点 %q: %w", n.Name, err)
 	}
@@ -84,9 +85,9 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 func (s *Store) UpdateNode(n *model.Node) error {
 	res, err := s.db.Exec(
 		`UPDATE nodes
-		 SET name = ?, address = ?, ssh_port = ?, ssh_user = ?, api_port = ?, config_path = ?, service_name = ?, draining = ?
+		 SET name = ?, address = ?, ssh_port = ?, ssh_user = ?, api_port = ?, config_path = ?, service_name = ?, draining = ?, outbound_ip = ?
 		 WHERE id = ?`,
-		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName, boolToInt(n.Draining), n.ID)
+		n.Name, n.Address, n.SSHPort, n.SSHUser, n.APIPort, n.ConfigPath, n.ServiceName, boolToInt(n.Draining), n.OutboundIP, n.ID)
 	if err != nil {
 		return fmt.Errorf("更新节点 %d: %w", n.ID, err)
 	}

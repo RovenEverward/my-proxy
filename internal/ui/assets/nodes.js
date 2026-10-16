@@ -8,11 +8,17 @@ const nodePath = id => "/api/nodes/" + id;
 // 解出 v.Node 再整体 PUT;deployed_hash / deployed_at 原样带回)。
 function asModelNode(v) {
   const o = { id: v.id, name: v.name, address: v.address, ssh_port: v.ssh_port || 0, ssh_user: v.ssh_user || "", api_port: v.api_port || 0, config_path: v.config_path || "", service_name: v.service_name || "" };
+  // outbound_ip 在 Go 侧是 omitempty:空串时不能带这个键,非空才带,否则 PUT/POST 的
+  // JSON 与 CLI 逐字对不上(CLI 走 model.Node 的序列化)。
+  if (v.outbound_ip) o.outbound_ip = v.outbound_ip;
   if (v.deployed_hash) o.deployed_hash = v.deployed_hash;
   if (v.deployed_at) o.deployed_at = v.deployed_at;
   o.draining = !!v.draining;
   return o;
 }
+// dropEmptyOutbound:model.Node.OutboundIP 在 Go 侧是 omitempty,新建的 POST 体与编辑的
+// PUT 体都必须和 CLI 序列化逐字一致 —— 空串时删掉这个键,非空才留。
+function dropEmptyOutbound(o) { if (!o.outbound_ip) delete o.outbound_ip; return o; }
 // 核心:status.cores 有就逐个列;老控制面只给 version/active(那是 xray 的)。
 function coreText(s) {
   if (!s) return "还没检查过";
@@ -112,7 +118,7 @@ async function nodeEditor(id) {
   let v = null;
   let meta = null;
   if (id) { try { [v, meta] = await Promise.all([api(nodePath(id)), api(nodePath(id) + "/metadata")]); } catch (e) { toast(e.message, true); return; } }
-  const isNew = !v, n = v || { name: "", address: "", ssh_port: 0, ssh_user: "", api_port: 0, config_path: "", service_name: "" };
+  const isNew = !v, n = v || { name: "", address: "", ssh_port: 0, ssh_user: "", api_port: 0, config_path: "", service_name: "", outbound_ip: "" };
   const num = x => x ? String(x) : "";
   openDrawer(H`<form id="node-form" novalidate><div class="dh"><h2>${isNew ? "添加节点" : "编辑 " + n.name}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
@@ -128,13 +134,19 @@ async function nodeEditor(id) {
     <details class="adv"><summary>高级</summary>
     <div class="two"><div class="field"><label for="n-api-port">xray API 端口</label><input class="in mono" id="n-api-port" name="api_port" value="${num(n.api_port)}" placeholder="默认" inputmode="numeric"></div>
     <div class="field"><label for="n-service">服务名</label><input class="in mono" id="n-service" name="service_name" value="${n.service_name}" placeholder="mpx-xray"></div></div>
-    <div class="field"><label for="n-config">配置路径</label><input class="in mono" id="n-config" name="config_path" value="${n.config_path}" placeholder="/etc/mpx/xray/config.json"></div></details>
+    <div class="field"><label for="n-config">配置路径</label><input class="in mono" id="n-config" name="config_path" value="${n.config_path}" placeholder="/etc/mpx/xray/config.json"></div>
+    <div class="field"><label for="n-outbound-ip">出口 IP</label><select class="in" id="n-outbound-ip" name="outbound_ip">
+      <option value="" ${!n.outbound_ip || n.outbound_ip === "v4v6" ? "selected" : ""}>默认(先 IPv4)</option>
+      <option value="v4" ${n.outbound_ip === "v4" ? "selected" : ""}>仅 IPv4</option>
+      <option value="v6" ${n.outbound_ip === "v6" ? "selected" : ""}>仅 IPv6</option>
+      <option value="asis" ${n.outbound_ip === "asis" ? "selected" : ""}>不指定(AsIs)</option>
+    </select><span class="h">节点直连出口的 IP 版本;改完要下发配置(mpx node sync)才生效</span></div></details>
     ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
     <div class="field mt"><label>等价命令</label><div class="cmd" id="n-cmd"></div></div>
     <div class="err" id="n-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="n-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#node-form");
-  const FIELDS = [["name", "--name"], ["address", "--address"], ["ssh_port", "--ssh-port"], ["ssh_user", "--ssh-user"], ["api_port", "--api-port"], ["config_path", "--config-path"], ["service_name", "--service-name"]];
+  const FIELDS = [["name", "--name"], ["address", "--address"], ["ssh_port", "--ssh-port"], ["ssh_user", "--ssh-user"], ["api_port", "--api-port"], ["config_path", "--config-path"], ["service_name", "--service-name"], ["outbound_ip", "--outbound-ip"]];
   const INTS = new Set(["ssh_port", "api_port"]);
   const collect = () => {
     const f = new FormData(form), out = {}, err = [], flags = [];
@@ -186,8 +198,8 @@ async function nodeEditor(id) {
     btn.disabled = true; btn.classList.add("busy");
     try {
       if (isNew) {
-        // 与 node add 一致:model.Node 整体序列化,没有 ssh_password。
-        const created = await write("POST", "/api/nodes", { id: 0, ...c.out, draining: false });
+        // 与 node add 一致:model.Node 整体序列化,没有 ssh_password;outbound_ip 空串不带键。
+        const created = await write("POST", "/api/nodes", dropEmptyOutbound({ id: 0, ...c.out, draining: false }));
         toast(`已创建节点 ${created.id}(${created.name})`);
         closeOverlays(); location.hash = "nodes/" + created.id;
       } else {
@@ -206,7 +218,7 @@ async function nodeEditor(id) {
           if (!nodeChanged) { toast(`节点 ${id} 的显示名:${previewDisplay(saved) || "(没有地区,不显示)"}`); closeOverlays(); load(true, true); return; }
         }
         const fresh = asModelNode(await api(nodePath(id)));
-        const updated = await write("PUT", nodePath(id), { ...fresh, ...nodeOut });
+        const updated = await write("PUT", nodePath(id), dropEmptyOutbound({ ...fresh, ...nodeOut }));
         toast(`已更新节点 ${updated.id}(${updated.name})`);
         closeOverlays(); load(true, true);
       }

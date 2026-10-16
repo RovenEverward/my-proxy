@@ -222,6 +222,9 @@ func validateNode(n *model.Node) string {
 	if n.ConfigPath != "" && (!strings.HasPrefix(n.ConfigPath, "/") || strings.ContainsAny(n.ConfigPath, " \t\n\"")) {
 		return "配置路径要写成绝对路径,且不带空白和引号"
 	}
+	if !model.ValidOutboundIP(n.OutboundIP) {
+		return "出口 IP 只能是 v4v6 / v4 / v6 / asis 之一"
+	}
 	return ""
 }
 

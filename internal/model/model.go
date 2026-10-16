@@ -124,6 +124,23 @@ type Node struct {
 	// 排水要快摘掉订阅里的入口,但不该把正在用的人当场断掉;真要把人摘掉由
 	// 收敛或手动同步负责,那是有各自节奏的事。
 	Draining bool `json:"draining"`
+
+	// OutboundIP 是节点出站(直连)的 IP 版本偏好。
+	//
+	// "" 等同 "v4v6";取值见 ValidOutboundIP。它只影响节点上 xray 的 direct
+	// 出站(settings.domainStrategy),不碰订阅渲染。
+	OutboundIP string `json:"outbound_ip,omitempty"`
+}
+
+// ValidOutboundIP 报告取值是不是一个已知的出站 IP 偏好。
+//
+// "" 等同 "v4v6":留空表示用默认的 UseIPv4v6,不写进库也不影响判断。
+func ValidOutboundIP(s string) bool {
+	switch s {
+	case "", "v4v6", "v4", "v6", "asis":
+		return true
+	}
+	return false
 }
 
 // Inbound 是某个节点上 xray 的一个入站。

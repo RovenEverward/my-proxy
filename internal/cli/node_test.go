@@ -28,7 +28,7 @@ func TestNodeRowShowsCachedStatus(t *testing.T) {
 	got := nodeRow(v, now)
 	want := []string{
 		"hk", "hk", "1.2.3.4", "22", "root", "10085",
-		"/etc/mpx/xray/config.json", "mpx-xray",
+		"/etc/mpx/xray/config.json", "mpx-xray", "v4v6",
 		"active", "26.3.27", "否", "1 分前", "9 天",
 	}
 
@@ -155,4 +155,46 @@ func serveDoctor(t *testing.T, report model.DoctorReport) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 	})
+}
+
+// node edit --outbound-ip 要接线到 model.Node.OutboundIP,并把整份读回来的
+// 记录带回去(整体 PUT 不能漏字段)。
+func TestNodeEditOutboundIP(t *testing.T) {
+	resetEditFlags(t)
+	existing := model.Node{ID: 2, Name: "hk-1", Address: "203.0.113.45", OutboundIP: "v4v6"}
+	view := model.NodeView{Node: existing}
+
+	calls := recordEdit(t, func(method, path string) []byte {
+		if method == http.MethodGet {
+			return mustJSON(t, view)
+		}
+		return mustJSON(t, existing)
+	})
+
+	runRoot(t, "node", "edit", "2", "--outbound-ip", "v6")
+
+	put := (*calls)[len(*calls)-1]
+	if put.Method != http.MethodPut || put.Path != "/api/nodes/2" {
+		t.Fatalf("请求是 %s %s", put.Method, put.Path)
+	}
+	var got model.Node
+	if err := json.Unmarshal(put.Body, &got); err != nil {
+		t.Fatalf("解析 PUT body: %v", err)
+	}
+	if got.OutboundIP != "v6" {
+		t.Errorf("outbound_ip = %q,想要 v6", got.OutboundIP)
+	}
+	if got.Name != existing.Name || got.Address != existing.Address {
+		t.Errorf("没改的字段被动了: %+v", got)
+	}
+}
+
+// 表里空串的出口 IP 显示成默认的 v4v6,和它实际生效的值一致。
+func TestNodeRowNormalizesEmptyOutboundIP(t *testing.T) {
+	got := nodeRow(model.NodeView{Node: model.Node{ID: 5, Name: "us", Address: "5.6.7.8"}}, time.Now())
+	for i, h := range nodeHeaders {
+		if h == "出口 IP" && got[i] != "v4v6" {
+			t.Errorf("出口 IP = %q,想要 v4v6", got[i])
+		}
+	}
 }
