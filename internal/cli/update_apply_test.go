@@ -18,6 +18,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/selfupdate"
+	"github.com/spf13/cobra"
 )
 
 // makeTarGz 现场打一个只含 mpx 可执行文件的 tar.gz。
@@ -117,12 +118,14 @@ func selfUpdateFixture(t *testing.T, local, target string, archive, sums []byte)
 }
 
 // resetUpdateApplyFlags 清掉 apply 子命令 flag 的 Changed 位,免得一个用例的
-// --version 泄漏到下一个。
+// --version 泄漏到下一个。rollback 也带一个 -y,同样要清。
 func resetUpdateApplyFlags() {
-	for _, name := range []string{"version", "allow-downgrade", "yes"} {
-		if f := updateApplyCmd.Flags().Lookup(name); f != nil {
-			f.Changed = false
-			_ = f.Value.Set(f.DefValue)
+	for _, cmd := range []*cobra.Command{updateApplyCmd, updateRollbackCmd} {
+		for _, name := range []string{"version", "allow-downgrade", "yes"} {
+			if f := cmd.Flags().Lookup(name); f != nil {
+				f.Changed = false
+				_ = f.Value.Set(f.DefValue)
+			}
 		}
 	}
 }
@@ -252,18 +255,16 @@ func TestUpdateRollbackCLIRoundTrip(t *testing.T) {
 }
 
 func TestUpdateApplyUnsupportedComponents(t *testing.T) {
-	cases := []struct {
-		part string
-		want string
-	}{
-		{"control", "控制面远程升级尚未支持（M3）"},
-		{"nodes", "节点核心升级尚未支持（M4）"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.part, func(t *testing.T) {
-			err := runRootErr(t, "update", "apply", tc.part)
-			if err == nil || err.Error() != tc.want {
-				t.Fatalf("err = %v, 想要 %q", err, tc.want)
+	// control 已在 M3 接上,剩下的仍是明确报"尚未支持",不做半套。
+	for _, part := range []string{"nodes"} {
+		t.Run(part, func(t *testing.T) {
+			err := runRootErr(t, "update", "apply", part)
+			if err == nil || err.Error() != "节点核心升级尚未支持（M4）" {
+				t.Fatalf("err = %v, 想要节点核心尚未支持", err)
+			}
+			err = runRootErr(t, "update", "rollback", part)
+			if err == nil || err.Error() != "节点核心回退尚未支持（M4）" {
+				t.Fatalf("err = %v, 想要节点核心回退尚未支持", err)
 			}
 		})
 	}

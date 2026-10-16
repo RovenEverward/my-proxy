@@ -93,6 +93,7 @@ func init() {
 	updateApplyCmd.Flags().String("version", "", "要升级到的版本,默认取最新发布")
 	updateApplyCmd.Flags().Bool("allow-downgrade", false, "允许 --version 指向比当前更旧的版本")
 	updateApplyCmd.Flags().BoolP("yes", "y", false, "跳过确认,直接升级")
+	updateRollbackCmd.Flags().BoolP("yes", "y", false, "跳过确认,直接回退")
 }
 
 // runUpdateApply 把部件名分派到各自的实现。
@@ -101,7 +102,7 @@ func runUpdateApply(cmd *cobra.Command, args []string) error {
 	case updateComponentCLI:
 		return applyCLI(cmd)
 	case updateComponentControl:
-		return errors.New("控制面远程升级尚未支持（M3）")
+		return applyControl(cmd)
 	case updateComponentNodes:
 		return errors.New("节点核心升级尚未支持（M4）")
 	default:
@@ -115,7 +116,7 @@ func runUpdateRollback(cmd *cobra.Command, args []string) error {
 	case updateComponentCLI:
 		return rollbackCLI()
 	case updateComponentControl:
-		return errors.New("控制面回退尚未支持（M3）")
+		return rollbackControl(cmd)
 	case updateComponentNodes:
 		return errors.New("节点核心回退尚未支持（M4）")
 	default:
