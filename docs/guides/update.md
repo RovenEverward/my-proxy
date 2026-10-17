@@ -14,7 +14,7 @@ MPX 每分钟检查一次新版本。有可升级的部分时，窗口右上角�
   curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash -s -- --addr 0.0.0.0:8080
   ```
 
-  `--addr` 要和控制面现在的监听地址一致。首次安装向导默认是 `0.0.0.0:8080`；不写的话，脚本会把监听地址改回只听本机，客户端就拉不到订阅了。
+  `--addr` 要和控制面现在的监听地址一致，首次安装向导默认是 `0.0.0.0:8080`。机器上已经有 `mpx.service` 时不写 `--addr` 也行，脚本会沿用原来的监听地址；但 v0.9.1 以前的脚本会把它改回只听本机，客户端就拉不到订阅了，所以建议照上面带上。
 
 - **MPX 能改写自己的安装目录。** 用 `.deb` 安装的 MPX 在 `/opt/mpx`，普通用户没有写权限：控制面和节点照常升级，最后升级桌面程序这一步会报「没有写权限」。这时从[最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载新的 `mpx-desktop_` 安装包覆盖安装。
 - **以前用浏览器版 `mpx ui` 的话**：v0.8.0 以前的 `mpx ui` 没有这个按钮。先在终端运行 `mpx update apply cli` 和 `mpx update apply control` 升到 v0.8.0 以后，或者直接改用 MPX 桌面程序。
