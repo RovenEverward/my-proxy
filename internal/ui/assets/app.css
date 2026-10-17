@@ -181,6 +181,7 @@ a.row{color:inherit}
 .bar.tall{height:6px}.mt8{margin-top:8px}.mb8{margin-bottom:8px}.mt22{margin-top:22px}
 .kv.flat{padding:0 0 14px}.stack8{display:grid;gap:8px}.g8{gap:8px}
 .danger-zone{background:color-mix(in srgb,var(--bad) 5%,var(--panel))}
+.dis-tip{display:inline-flex}.dis-tip>button[disabled]{pointer-events:none;opacity:.45}
 .search.in-card{width:220px;height:30px}
 .chk{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink2)}
 tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}

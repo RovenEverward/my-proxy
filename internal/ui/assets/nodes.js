@@ -94,11 +94,15 @@ function nodeDetail(d) {
   // 控制面不记待应用,仍可以从「⋯」里手动应用,不会被藏起来。
   const sbOnly = (s?.cores || []).length > 0 && !(s.cores || []).some(c => c.core === "xray");
   const needApply = INB_PENDING.has(id) || (!!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash) || (!n.deployed_hash && !sbOnly);
+  // 连不上时主按钮改成「刷新状态」;要应用也推不动,按 needApply 的位置换成灰按钮/灰菜单项。
+  const down = !!s && !s.reachable;
+  const tip = "节点连不上，连上后再应用";
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    ${W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    ${W && down && needApply ? H`<span class="dis-tip" title="${tip}"><button class="btn" data-act="node-sync" disabled>应用到节点</button></span>` : ""}
+    ${W && down ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
-      <button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
-      ${W && !needApply ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>` : ""}
+      ${down ? "" : H`<button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>`}
+      ${W && !needApply ? (down ? H`<span class="dis-tip" title="${tip}"><button type="button" data-act="node-sync" disabled>${ic("upload")}应用到节点</button></span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
       ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
       ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
     </div></span></div>
@@ -107,18 +111,18 @@ function nodeDetail(d) {
   <div class="grid g3">
     <div class="card stat"><div class="l">核心</div><div class="v f18">${s?.version || "—"}</div><div class="s">${coreText(s)}</div></div>
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
-    <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有 TLS 入站"}</div></div>
+    <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有用到 TLS 的连接方式"}</div></div>
   </div>
   <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">体检</button>` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包，经 SSH 送到节点，应用当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装…</button></div>` : ""}
-    <div class="row"><div><b class="bold">在线用户</b><div class="sub">现场问节点此刻每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
+      ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
+    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">把核心装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
+    <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
-  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt danger-zone"><div class="ch c-bad">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除</button></div></div>` : ""}`;
+  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt node-danger"><div class="ch">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除节点</button></div></div>` : ""}`;
 }
 
 /* ---- 编辑器:add / edit ---- */

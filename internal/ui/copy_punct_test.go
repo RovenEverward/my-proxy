@@ -118,7 +118,19 @@ func copyPunctFragments(line string) []string {
 		return unicode.Is(unicode.Han, r) || (r >= 0x3000 && r <= 0x303f) || (r >= 0xff01 && r <= 0xff65)
 	}
 	var fragments []string
-	for i, r := range runes {
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		// 三个半角点是中文省略号写错了(「安装...」);JS 展开运算符(...x、[...a]、{...o})
+		// 两边都不是汉字,不会命中。一段连续的点只在开头判一次。
+		if r == '.' && i+2 < len(runes) && runes[i+1] == '.' && runes[i+2] == '.' {
+			if i > 0 && runes[i-1] == '.' {
+				continue
+			}
+			if (i > 0 && chinese(runes[i-1])) || (i+3 < len(runes) && chinese(runes[i+3])) {
+				fragments = append(fragments, string(runes[max(0, i-16):min(len(runes), i+17)]))
+			}
+			continue
+		}
 		if r != ',' && r != '?' && r != ':' {
 			continue
 		}
@@ -203,6 +215,10 @@ func TestCopyPunct(t *testing.T) {
 			{"afterInterpolationCopy", "toast(`第 ${i},共 ${n} 条`)", 1},
 			{"interpolationTernary", "H`${a ? H`甲` : \"乙\"}`", 0},
 			{"interpolationEnglish", "`${a}?x=1`", 0},
+			{"ellipsisAfterHan", `"安装..."`, 1},
+			{"ellipsisAfterHan2", `"加载中..."`, 1},
+			{"ellipsisSpread", `[...a, ...b]`, 0},
+			{"ellipsisEnglish", `"Loading..."`, 0},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				var got []string

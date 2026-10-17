@@ -315,6 +315,13 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
 // 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,详情头部可以重试。
 test("创建并应用到节点:应用失败时入站保留,详情头部可重试", async ({ page }) => {
   await login(page, env);
+  // 节点 1 的巡检状态取决于后台那一轮跑没跑到,这里固定成「连不上」,断言才稳。
+  await page.route("**/api/nodes/1", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.status = { ...(n.status || {}), node_id: 1, checked_at: new Date().toISOString(), reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
   await page.goto(env.origin + "/#nodes/1");
   await page.click(".conn-card [data-act=conn-new]");
   const dr = page.locator("#drawer.open");
@@ -326,10 +333,12 @@ test("创建并应用到节点:应用失败时入站保留,详情头部可重试
   await expect(page.locator(".toast")).toContainText("但应用到");
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
   await expect(page.locator(".conn-card [data-act=node-sync]")).toHaveCount(0);
-  await expect(page.locator(".ph [data-act=node-sync]")).toHaveText("应用到节点");
-  await page.click(".ph [data-act=node-sync]");
-  await expect(page.locator("#modal.open")).toContainText("把配置应用到");
-  await page.click("[data-act=modal-cancel]");
+  // 节点连不上:头部主按钮是「刷新状态」,「应用到节点」灰掉带提示。
+  await expect(page.locator(".ph .btn.pri")).toHaveText("刷新状态");
+  const dis = page.locator(".ph .dis-tip");
+  await expect(dis.locator("[data-act=node-sync]")).toBeDisabled();
+  await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
 });
 
 test("旧入站地址与子路径跳到节点列表", async ({ page }) => {
@@ -350,7 +359,7 @@ for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
       const response = await route.fetch();
       const n = await response.json();
       n.deployed_hash = state === "从未应用" ? "" : "deployed";
-      n.status = { ...n.status, observed_hash: state === "漂移" ? "changed" : "deployed" };
+      n.status = { ...n.status, observed_hash: state === "漂移" ? "changed" : "deployed", reachable: true, error: "" };
       await route.fulfill({ response, json: n });
     });
     await page.route("**/api/nodes/pending", route => route.fulfill({
@@ -393,7 +402,7 @@ test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此�
     const response = await route.fetch();
     const n = await response.json();
     n.deployed_hash = "";
-    n.status = { ...n.status, observed_hash: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
+    n.status = { ...n.status, observed_hash: "", reachable: true, error: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
     await route.fulfill({ response, json: n });
   });
   await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
@@ -403,3 +412,68 @@ test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此�
   await page.click("[data-act=node-menu]");
   await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveText("应用到节点");
 });
+
+test("节点详情文案:证书卡、在线用户、安装与体检按钮", async ({ page }) => {
+  await login(page, env);
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  const cert = page.locator(".card.stat").filter({ hasText: "证书" });
+  await expect(cert.locator(".s")).toHaveText("没有用到 TLS 的连接方式");
+  const online = page.locator(".row").filter({ hasText: "在线用户" });
+  await expect(online.locator(".sub")).toHaveText("实时查看每个用户连着几个 IP");
+  const install = page.locator(".row").filter({ hasText: "安装核心" });
+  await expect(install.locator(".sub")).toHaveText("把核心装到这台节点上并启动，会用当前配置");
+  await expect(install.locator("[data-act=node-install]")).toHaveText("安装");
+  await expect(page.locator("[data-act=node-diagnose]")).toHaveText("开始体检");
+});
+
+test("危险操作是灰卡,只有确认框里是红按钮", async ({ page }) => {
+  await login(page, env);
+  await openNode(page, 2);
+  const zone = page.locator(".node-danger");
+  await expect(zone).toHaveCount(1);
+  await expect(zone).not.toHaveClass(/danger-zone/);
+  await expect(zone.locator(".ch")).not.toHaveClass(/c-bad/);
+  const rm = zone.locator("[data-act=node-rm]");
+  await expect(rm).toHaveText("删除节点");
+  await expect(rm).not.toHaveClass(/c-bad/);
+  await rm.click();
+  await expect(page.locator("#modal.open #okb")).toHaveClass(/danger/);
+});
+
+test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", async ({ page }) => {
+  await login(page, env);
+  let pending = [{ node_id: 2, since: new Date().toISOString() }];
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...n.status, observed_hash: "deployed", reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: pending }));
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  // pending 非空:头部主按钮是「刷新状态」,灰的「应用到节点」在它左边,悬停提示落在父 span 上。
+  const primary = page.locator(".ph .btn.pri");
+  await expect(primary).toHaveText("刷新状态");
+  await expect(primary).toHaveAttribute("data-act", "node-check");
+  const dis = page.locator(".ph .dis-tip");
+  await expect(dis.locator("[data-act=node-sync]")).toBeDisabled();
+  await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(page.locator(".conn-card .tag.pend")).toHaveText("有改动未应用");
+
+  // pending 为空:没有未应用改动,禁用项落进「⋯」菜单,菜单里不再有「刷新状态」。
+  pending = [];
+  await page.reload();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator(".ph .btn.pri")).toHaveText("刷新状态");
+  await page.click("[data-act=node-menu]");
+  const menu = page.locator("#node-menu");
+  await expect(menu).toBeVisible();
+  const mdis = menu.locator(".dis-tip");
+  await expect(mdis.locator("[data-act=node-sync]")).toBeDisabled();
+  await expect(mdis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(menu.locator("[data-act=node-check]")).toHaveCount(0);
+});
+
