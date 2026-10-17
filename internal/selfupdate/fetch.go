@@ -74,26 +74,90 @@ func (s Source) client() *http.Client {
 }
 
 // Latest 问最新发布是哪一版,返回 tag_name。
+//
+// 接口不可用时不认输:未登录的 GitHub 接口每小时只有 60 次,共享出口很容易被
+// 用光,403/429 一出来,本机自更新和 mpx ui 的一键更新都会卡在这一步。这时退回
+// 不看接口的办法 —— 直接请求下载站的 /releases/latest,从它 302 的 Location 头
+// 里读出版本号。接口和退回都失败才报错,错误里两种都提到。
 func (s Source) Latest(ctx context.Context) (string, error) {
 	u := s.apiBase() + "/repos/" + s.Repo + "/releases/latest"
 	data, code, err := s.get(ctx, u, 1<<20)
+	if err == nil && code == http.StatusOK {
+		var body struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.Unmarshal(data, &body); err != nil {
+			return "", fmt.Errorf("解析 GitHub 的发布信息: %w", err)
+		}
+		if body.TagName == "" {
+			return "", fmt.Errorf("GitHub 没有给出最新版的版本号")
+		}
+		return body.TagName, nil
+	}
+
+	// 只有「接口这条路断了」才退回:200 但内容读不出来是另一回事,不该被掩盖。
+	apiErr := err
+	if apiErr == nil {
+		apiErr = fmt.Errorf("请求 GitHub 最新发布: HTTP %d", code)
+	}
+	fallback := s.downloadBase() + "/" + s.Repo + "/releases/latest"
+	tag, fbErr := s.latestFromRedirect(ctx)
+	if fbErr != nil {
+		return "", fmt.Errorf("%w;退回 %s 也失败: %v", apiErr, fallback, fbErr)
+	}
+	return tag, nil
+}
+
+// latestFromRedirect 不看接口,靠下载站 /releases/latest 的 302 取版本号。
+func (s Source) latestFromRedirect(ctx context.Context) (string, error) {
+	u := s.downloadBase() + "/" + s.Repo + "/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", err
 	}
-	if code != http.StatusOK {
-		return "", fmt.Errorf("请求 GitHub 最新发布: HTTP %d", code)
-	}
+	req.Header.Set("User-Agent", "mpx")
 
-	var body struct {
-		TagName string `json:"tag_name"`
+	resp, err := s.noRedirect().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求 %s: %w", u, err)
 	}
-	if err := json.Unmarshal(data, &body); err != nil {
-		return "", fmt.Errorf("解析 GitHub 的发布信息: %w", err)
+	defer resp.Body.Close()
+
+	tag, err := tagFromLocation(resp)
+	if err != nil {
+		return "", fmt.Errorf("从 %s 的重定向取版本: %w", u, err)
 	}
-	if body.TagName == "" {
-		return "", fmt.Errorf("GitHub 没有给出最新版的版本号")
+	return tag, nil
+}
+
+// noRedirect 返回一个不跟随重定向的客户端副本,保留原客户端的 Transport。
+//
+// 退回办法要的正是那个 302 本身:跟下去就变成发布页面,Location 也看不到了。
+func (s Source) noRedirect() *http.Client {
+	c := *s.client()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
 	}
-	return body.TagName, nil
+	return &c
+}
+
+// tagFromLocation 从重定向的 Location 头里取最后一段作为版本号。
+//
+// GitHub 的 Location 形如 .../releases/tag/v0.8.0,最后一段就是 tag_name。
+func tagFromLocation(resp *http.Response) (string, error) {
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return "", fmt.Errorf("HTTP %d 没有 Location 头", resp.StatusCode)
+	}
+	u, err := resp.Request.URL.Parse(loc)
+	if err != nil {
+		return "", fmt.Errorf("解析 Location %q: %w", loc, err)
+	}
+	tag := path.Base(strings.TrimRight(u.Path, "/"))
+	if tag == "" || tag == "." || tag == "/" {
+		return "", fmt.Errorf("Location %q 里没有版本号", loc)
+	}
+	return tag, nil
 }
 
 // ArchiveName 给出某个平台上发布件的文件名。

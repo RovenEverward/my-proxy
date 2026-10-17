@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -148,10 +149,18 @@ func Fetch(ctx context.Context, req Request) (Files, error) {
 //
 // 只有「不指定版本」才需要问接口:指定了版本的话下载地址能直接拼出来,少一次
 // 请求,也不会被接口的限流挡住。
+//
+// 接口不可用(未登录限额 60 次/小时,共享出口常被用光,返回 403/429)时退回不看
+// 接口的办法:从下载站 /releases/latest 的 302 Location 取版本号,再用 releaseURL
+// 把该平台资产的地址拼出来。接口和退回都失败才报错。
 func resolveLatest(ctx context.Context, asset string) (version, url string, err error) {
 	resp, err := get(ctx, apiBase+"/repos/"+repo+"/releases/latest")
 	if err != nil {
-		return "", "", err
+		tag, fbErr := latestFromRedirect(ctx)
+		if fbErr != nil {
+			return "", "", fmt.Errorf("%w;退回 %s 也失败: %v", err, latestURL(), fbErr)
+		}
+		return tag, releaseURL(tag, asset), nil
 	}
 	defer resp.Body.Close()
 
@@ -181,10 +190,16 @@ func resolveLatest(ctx context.Context, asset string) (version, url string, err 
 // 只回答「最新是哪个版本」:要下载哪个平台的包由调用方用 AssetName 决定,下载
 // 地址用 releaseURL 拼。升级流程往往要先知道版本号才能算资产名和摘要地址,所以
 // 它比 resolveLatest 窄 —— 后者还要在资产列表里挑出该平台那一个。
+//
+// 和 resolveLatest 一样,接口被限流时退回下载站的重定向。
 func Latest(ctx context.Context) (string, error) {
 	resp, err := get(ctx, apiBase+"/repos/"+repo+"/releases/latest")
 	if err != nil {
-		return "", err
+		tag, fbErr := latestFromRedirect(ctx)
+		if fbErr != nil {
+			return "", fmt.Errorf("%w;退回 %s 也失败: %v", err, latestURL(), fbErr)
+		}
+		return tag, nil
 	}
 	defer resp.Body.Close()
 
@@ -198,6 +213,63 @@ func Latest(ctx context.Context) (string, error) {
 		return "", errors.New("GitHub 没有给出最新版的版本号")
 	}
 	return body.TagName, nil
+}
+
+// latestURL 是不走接口时问最新版用的地址。
+func latestURL() string {
+	return downloadBase + "/" + repo + "/releases/latest"
+}
+
+// latestFromRedirect 不看接口,靠下载站 /releases/latest 的 302 取版本号。
+func latestFromRedirect(ctx context.Context) (string, error) {
+	u := latestURL()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "mpx")
+
+	resp, err := noRedirect().Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求 %s: %w", u, err)
+	}
+	defer resp.Body.Close()
+
+	tag, err := tagFromLocation(resp)
+	if err != nil {
+		return "", fmt.Errorf("从 %s 的重定向取版本: %w", u, err)
+	}
+	return tag, nil
+}
+
+// noRedirect 返回一个不跟随重定向的客户端副本,保留原客户端的 Transport。
+//
+// 退回办法要的正是那个 302 本身:跟下去就变成发布页面,Location 也看不到了。
+func noRedirect() *http.Client {
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &c
+}
+
+// tagFromLocation 从重定向的 Location 头里取最后一段作为版本号。
+//
+// GitHub 的 Location 形如 .../releases/tag/v0.8.0,最后一段就是 tag_name。
+func tagFromLocation(resp *http.Response) (string, error) {
+	loc := resp.Header.Get("Location")
+	if loc == "" {
+		return "", fmt.Errorf("HTTP %d 没有 Location 头", resp.StatusCode)
+	}
+	u, err := resp.Request.URL.Parse(loc)
+	if err != nil {
+		return "", fmt.Errorf("解析 Location %q: %w", loc, err)
+	}
+	tag := path.Base(strings.TrimRight(u.Path, "/"))
+	if tag == "" || tag == "." || tag == "/" {
+		return "", fmt.Errorf("Location %q 里没有版本号", loc)
+	}
+	return tag, nil
 }
 
 // Digest 取某个发布资产的官方摘要(.dgst),返回小写的 sha256。

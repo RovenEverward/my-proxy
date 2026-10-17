@@ -232,6 +232,90 @@ func TestLatest(t *testing.T) {
 	}
 }
 
+// 接口被限流时 Latest 退回下载站的重定向。
+func TestLatestFallsBackToRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/"+repo+"/releases/latest":
+			w.WriteHeader(http.StatusForbidden)
+		case r.URL.Path == "/"+repo+"/releases/latest":
+			http.Redirect(w, r, "/"+repo+"/releases/tag/v1.2.3", http.StatusFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldAPI, oldDL := apiBase, downloadBase
+	apiBase, downloadBase = srv.URL, srv.URL
+	t.Cleanup(func() { apiBase, downloadBase = oldAPI, oldDL })
+
+	got, err := Latest(t.Context())
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if got != "v1.2.3" {
+		t.Fatalf("Latest = %q, want v1.2.3", got)
+	}
+}
+
+// 接口和退回都失败时,错误里两种都要提到。
+func TestLatestBothWaysFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "没有", http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+
+	oldAPI, oldDL := apiBase, downloadBase
+	apiBase, downloadBase = srv.URL, srv.URL
+	t.Cleanup(func() { apiBase, downloadBase = oldAPI, oldDL })
+
+	_, err := Latest(t.Context())
+	if err == nil {
+		t.Fatal("两条路都失败时应该报错")
+	}
+	for _, want := range []string{"403", "/releases/latest"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("错误里应提到 %q,得到: %v", want, err)
+		}
+	}
+}
+
+// resolveLatest(通过 Fetch 不指定版本走到)被限流时,版本号从重定向取,
+// 下载地址用 releaseURL 拼。
+func TestFetchFallsBackToRedirect(t *testing.T) {
+	asset := "Xray-linux-64.zip"
+	zipBytes := makeZip(t, fileXray, fileGeoIP, fileGeoSite)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/"+repo+"/releases/latest":
+			w.WriteHeader(http.StatusForbidden)
+		case r.URL.Path == "/"+repo+"/releases/latest":
+			http.Redirect(w, r, "/"+repo+"/releases/tag/v7.7.7", http.StatusFound)
+		case r.URL.Path == "/"+repo+"/releases/download/v7.7.7/"+asset:
+			_, _ = w.Write(zipBytes)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	oldAPI, oldDL := apiBase, downloadBase
+	apiBase, downloadBase = srv.URL, srv.URL
+	t.Cleanup(func() { apiBase, downloadBase = oldAPI, oldDL })
+
+	files, err := Fetch(t.Context(), Request{OS: "linux", Arch: "amd64", Dir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if files.Version != "v7.7.7" {
+		t.Fatalf("版本应当是重定向里的 v7.7.7,实际 %q", files.Version)
+	}
+	if _, err := os.Stat(files.Xray); err != nil {
+		t.Fatalf("退回下载的核心没落地: %v", err)
+	}
+}
+
 // Digest 从 .dgst 里挑出 SHA2-256 那一行,并统一成小写。
 func TestDigest(t *testing.T) {
 	const asset = "Xray-linux-64.zip"
