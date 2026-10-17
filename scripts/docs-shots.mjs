@@ -231,6 +231,7 @@ const SHOTS = [
     },
   },
   { name: "rules", run: async (page, env) => { await page.goto(env.origin + "/#rules"); } },
+  { name: "inbounds", run: async (page, env) => { await page.goto(env.origin + "/#inbounds"); await page.waitForSelector(".cx-row"); } },
   {
     // 添加节点向导第 1 步「连接」:填好地址,停在提交前(内部名自动生成,不用填)。
     name: "node-wizard", crop: "#drawer",

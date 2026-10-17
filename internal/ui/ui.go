@@ -62,6 +62,9 @@ type Options struct {
 	// 后调用一次。ui 包不能引用 cli 包(cli 依赖 ui),update.json 由 cli 侧在这个
 	// 回调里写;为 nil 时什么也不记。
 	CLIUpdated func(from, to string, started time.Time, err error)
+	// SetTheme 非空时启用 POST /local/app/theme:页面切主题时把 light/dark/system
+	// 交给桌面窗口(mygo.Theme.SetSource)。浏览器模式为 nil,接口 404,页面忽略。
+	SetTheme func(theme string) error
 }
 
 // Server 是一个已经绑定好端口的页面服务。
@@ -77,6 +80,8 @@ type Server struct {
 	allow   []rule
 	job     *setupJob
 	all     updateAllState
+	// prefetch 是桌面端后台预下载的状态;懒建,见 prefetch.go。
+	prefetch *prefetcher
 }
 
 type rule struct{ method, prefix string }
@@ -185,6 +190,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.login(w, r, k)
 		return
 	}
+	// 国旗来自内嵌 zip,不碰控制面、也不需要会话:首次安装向导和登录转场里也会
+	// 先画旗帜。名字限制在 /flags/<xx>.svg,其余一律 404。
+	if strings.HasPrefix(r.URL.Path, "/flags/") {
+		s.serveFlag(w, r)
+		return
+	}
 	if !s.sessionOK(r) {
 		if r.URL.Path == "/" {
 			h.Set("Content-Type", "text/html; charset=utf-8")
@@ -213,6 +224,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/local/relabel") {
 		s.serveRelabel(w, r)
+		return
+	}
+	if r.URL.Path == "/local/app/theme" {
+		s.serveTheme(w, r)
 		return
 	}
 	if r.URL.Path == "/local/qr.svg" {
@@ -340,6 +355,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 
 const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
 <body style="font:14px/1.6 'PingFang SC','Microsoft YaHei UI','Microsoft YaHei','Noto Sans CJK SC',system-ui,sans-serif;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
+<div style="position:fixed;top:0;left:0;right:0;height:var(--mygo-titlebar-height,0px);--app-region:drag"></div>
 <h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
 

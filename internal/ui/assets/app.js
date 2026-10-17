@@ -4,6 +4,10 @@
 "use strict";
 
 /* ---------- 基础 ---------- */
+// 区域指示符国旗的识别与本地 SVG 名字,替换逻辑见文件末尾的「国旗」一节。
+const RI = /[\u{1F1E6}-\u{1F1FF}]/u;
+const RI_PAIR = /([\u{1F1E6}-\u{1F1FF}])([\u{1F1E6}-\u{1F1FF}])/gu;
+const riCode = (a, b) => String.fromCharCode(97 + a.codePointAt(0) - 0x1F1E6, 97 + b.codePointAt(0) - 0x1F1E6);
 const $ = (s, el = document) => el.querySelector(s);
 class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
 const raw = s => new Raw(s);
@@ -182,7 +186,7 @@ async function refreshUpdatePill(force) {
   const b = $("#upd-pill");
   if (b) b.hidden = !showUpdatePill(u);
 }
-function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -214,10 +218,58 @@ function openUpdateModal() {
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
   <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
-  <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
+  ${updFooter(u, false)}`);
   $("#scrim").classList.add("open"); m.classList.add("open");
-  setTimeout(() => $("#upd-ok")?.focus(), 50);
+  updPollStop();
+  updPollStart();
+  if (!(u.prefetch && u.prefetch.state === "downloading")) setTimeout(() => $("#upd-ok")?.focus(), 50);
 }
+// 弹窗脚下那一排:有 prefetch 字段时主按钮跟着后台下载状态走;没有这个字段
+// (老 mpx ui)保持原来的「重启以更新」。kept 为真时省略「稍后」(轮询只换按钮排)。
+function updFooter(u, kept) {
+  const p = u && u.prefetch;
+  const skip = kept ? "" : H`<button class="btn" data-act="update-skip">稍后</button>`;
+  if (!p) return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`;
+  if (p.state === "downloading") {
+    const pct = p.total > 0 ? " " + Math.min(100, Math.floor((p.bytes || 0) * 100 / p.total)) + "%" : "";
+    return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply" disabled>正在后台下载…${pct}</button></div>`;
+  }
+  if (p.state === "failed") {
+    return H`<div class="mf">${skip}${H`<span class="sub">下载失败，稍后自动重试</span><button class="btn ghost sm" id="upd-retry" data-act="update-prefetch-retry">立即重试</button>`}<button class="btn pri" id="upd-ok" data-act="update-apply" disabled>重启以更新</button></div>`;
+  }
+  return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`;
+}
+// 弹窗开着时每 2 秒问一次 /local/update,只更新按钮那一排,不打断正文滚动。
+// 进入下载中以外的状态就停;关掉弹窗也停。
+let updPollTimer = 0;
+function updPollStop() { clearTimeout(updPollTimer); updPollTimer = 0; }
+function updPollStart() {
+  updPollStop();
+  const p = UPDATE && UPDATE.prefetch;
+  if (!p || p.state !== "downloading") return;
+  updPollTimer = setTimeout(updPollTick, 2000);
+}
+async function updPollTick() {
+  updPollTimer = 0;
+  if (!$("#modal.open") || updAll) return;
+  let u;
+  try { u = await api("/local/update"); } catch { updPollTimer = setTimeout(updPollTick, 2000); return; }
+  UPDATE = u; updAt = Date.now();
+  const p = u.prefetch;
+  if (p && p.state === "downloading") updAdjustDownloading(p);
+  else { const mf = $("#modal .mf"); if (mf) mf.replaceWith(dom(updFooter(u, true))); }
+  if (p && p.state === "downloading") updPollTimer = setTimeout(updPollTick, 2000);
+}
+// 下载中只改文字,不重画整排按钮,免得每 2 秒把焦点/布局抖一下。
+function updAdjustDownloading(p) {
+  const b = $("#upd-ok");
+  if (!b) return;
+  const pct = p.total > 0 ? " " + Math.min(100, Math.floor((p.bytes || 0) * 100 / p.total)) + "%" : "";
+  b.textContent = "正在后台下载…" + pct;
+  b.disabled = true;
+}
+// dom 把 H 片段变成可以 replaceWith 的节点。
+function dom(html) { const t = document.createElement("template"); t.innerHTML = val(html).trim(); return t.content.firstElementChild; }
 // 一键更新:POST /local/update/all 启动编排,GET ?since= 增量拉进度直到
 // done / failed / restarting。409 表示已有一轮在跑,直接进轮询。
 let updAll = null;
@@ -336,7 +388,7 @@ function shell(page, body, crumb) {
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
-  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
+  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server) === cpAddr(META.server) ? META.server : cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -433,9 +485,14 @@ function inlineMd(t) {
 }
 
 /* ---------- 抽屉、确认框、提示 ---------- */
-function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
+// 抽屉在下一帧才加 open(让过渡动画生效)。期间如果已经关掉了,这一帧不能再把它和
+// 遮罩打开,否则会留下一层没有抽屉的遮罩挡住整页。
+let DRAWER_RAF = 0;
+function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
+  cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
   $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
+  updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
 }
 function toast(text, bad) { document.querySelector(".toast")?.remove(); const e = document.createElement("div"); e.className = "toast" + (bad ? " bad" : ""); e.setAttribute("role", "status"); e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`); document.body.append(e); setTimeout(() => e.remove(), bad ? 6000 : 2600); }
@@ -560,9 +617,23 @@ async function load(soft, force) {
   if (!current.error) refreshUpdatePill();
 }
 
+// reportTheme 把页面当前主题交给桌面窗口(标题栏、窗口底色一起换)。浏览器里
+// 没有这个本地接口,404 就算了,不能影响页面。
+async function reportTheme(theme) {
+  theme = theme === "dark" ? "dark" : theme === "system" ? "system" : "light";
+  try {
+    await fetch("/local/app/theme", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme }) });
+  } catch {}
+}
+// 页面加载时报一次:存过 light/dark 就报那个,没存过表示跟随系统。
+function savedTheme() {
+  try { const t = localStorage.getItem("mpx-theme"); if (t === "light" || t === "dark") return t; } catch {}
+  return "system";
+}
+
 const ACTS = {
   reload: () => load(true),
-  theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} paint(); },
+  theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
@@ -570,6 +641,15 @@ const ACTS = {
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
+  // 「立即重试」:让后台立刻再下一次,不等退避;随后接着每 2 秒看进度。
+  "update-prefetch-retry": async () => {
+    try { await api("/local/update/prefetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
+    catch (e) { const box = $("#upd-err"); if (box) box.textContent = e.message; return; }
+    if (UPDATE && UPDATE.prefetch) UPDATE.prefetch.state = "downloading";
+    const mf = $("#modal .mf");
+    if (mf) mf.replaceWith(dom(updFooter(UPDATE, true)));
+    updPollStart();
+  },
   "profile-open": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
@@ -600,7 +680,84 @@ setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) loa
 // 更新检查慢一些:60 秒一次,同样避开抽屉/模态与后台标签页。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) refreshUpdatePill(true); }, 60000);
 
+/* ---------- 国旗 ---------- */
+// 区域指示符国旗(🇯🇵 = 两个 U+1F1E6–U+1F1FF)在 Windows 上会显示成两个字母。
+// 这里把文本里的成对指示符换成本地 /flags/<xx>.svg;服务端 model 里的 emoji 不动。
+// 自己插入的 <img class="flag"> 没有文本子节点,再次扫描也不会再动它;文本被拆成
+// 「普通文本 + img」后普通文本里已没有指示符,所以替换是幂等的,不会来回触发。
+// flagHost 判断文本所在的位置:drop = 放不了图片,直接删掉旗帜(连同后面一个空格);
+// skip = 根本不碰;"" = 正常替换。
+function flagHost(el) {
+  for (; el; el = el.parentElement) {
+    const tag = el.tagName;
+    if (tag === "SCRIPT" || tag === "STYLE" || tag === "TEXTAREA" || tag === "INPUT") return "skip";
+    if (tag === "OPTION" || tag === "TITLE") return "drop";
+    if (el.isContentEditable) return "skip";
+  }
+  return "";
+}
+function flagText(node) {
+  const text = node.nodeValue;
+  if (!text || !RI.test(text)) return;
+  const mode = flagHost(node.parentElement);
+  if (mode === "skip") return;
+  if (mode === "drop") {
+    // <option>/<title> 里只能是纯文本:旗帜连着后面一个空格一起删。
+    node.nodeValue = text.replace(/([\u{1F1E6}-\u{1F1FF}]{2}) ?/gu, "");
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  let last = 0, found = false, m;
+  RI_PAIR.lastIndex = 0;
+  while ((m = RI_PAIR.exec(text))) {
+    found = true;
+    if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+    const img = document.createElement("img");
+    img.className = "flag";
+    img.src = "/flags/" + riCode(m[1], m[2]) + ".svg";
+    img.alt = m[0];
+    img.draggable = false;
+    img.dataset.flag = "1"; // 自己插入的节点,再遇到时不再处理
+    frag.append(img);
+    last = RI_PAIR.lastIndex;
+  }
+  if (!found) return;
+  if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
+  node.parentNode.replaceChild(frag, node);
+}
+function walkFlags(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { flagText(root); return; }
+  if (root.nodeType !== 1 && root.nodeType !== 11) return;
+  // 先收齐再换:换掉一个文本节点会让 TreeWalker 的当前节点脱离文档,后面的就遍历不到了。
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) nodes.push(n);
+  for (const n of nodes) flagText(n);
+}
+function stripTitle() {
+  if (RI.test(document.title)) document.title = document.title.replace(/([\u{1F1E6}-\u{1F1FF}]{2}) ?/gu, "");
+}
+// 监听 body 的新增节点与文本变化。childList 覆盖 innerHTML 整块重画,characterData
+// 覆盖页面里改了文字的少数地方。自己插入的 img 是元素,walkFlags 只找文本节点,
+// 不会再触发替换;重画时新文本里已没有指示符,也不会再来一轮。
+const flagObserver = new MutationObserver(ms => {
+  let changed = false;
+  for (const m of ms) {
+    if (m.type === "characterData") { if (RI.test(m.target.nodeValue || "")) { flagText(m.target); changed = true; } }
+    else for (const n of m.addedNodes) { if (n.nodeType === 3 ? RI.test(n.nodeValue || "") : n.nodeType === 1 || n.nodeType === 11) { walkFlags(n); changed = true; } }
+  }
+  if (changed) stripTitle();
+});
+flagObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
+// <title> 在 head 里:document.title 被改时也要把旗帜删掉(它放不了图片)。
+// 改 title 是换一个文本节点(childList);新节点里没有旗帜就什么都不做,不会成环。
+flagObserver.observe(document.head, { childList: true, characterData: true, subtree: true });
+walkFlags(document.body);
+stripTitle();
+
 document.addEventListener("DOMContentLoaded", async () => {
+  reportTheme(savedTheme());
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }
   if (META && META.mode === "setup") { openSetup(); return; }
   load(false);

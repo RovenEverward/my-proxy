@@ -83,7 +83,7 @@ var uiCmd = &cobra.Command{
   mpx ui --profile prod --addr 127.0.0.1:7480 --no-open`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		l, err := startUI(uiFlags.addr, uiFlags.setup)
+		l, err := startUI(uiFlags.addr, uiFlags.setup, nil)
 		if err != nil {
 			return err
 		}
@@ -123,7 +123,7 @@ type uiLaunch struct {
 // startUI 完成两种界面共用的启动:读重启交接、解析控制面、绑回环端口、建页面
 // 服务。它不打印、不开浏览器,也不决定谁来 Serve —— mpx ui 交给浏览器,mpx app
 // 交给窗口,各自的收尾不同。
-func startUI(addr string, forceSetup bool) (*uiLaunch, error) {
+func startUI(addr string, forceSetup bool, setTheme func(string) error) (*uiLaunch, error) {
 	// 一键更新的重启会把监听地址与会话放进交接文件,用 MPX_UI_RESTART 指过来:
 	// 接着上次的地址与会话跑,浏览器里已打开的页面不用重新登录。
 	session, restarted := "", false
@@ -151,7 +151,7 @@ func startUI(addr string, forceSetup bool) (*uiLaunch, error) {
 
 	setupMode := server == "" || forceSetup
 	pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Connect: connectRunner{},
-		Profiles: profilesRunner{}, Relabel: relabelRunner{}, Session: session,
+		Profiles: profilesRunner{}, Relabel: relabelRunner{}, Session: session, SetTheme: setTheme,
 		// 页面里的本机升级走 ui 包的同一套实现,但 ui 不能引用 cli;把结果
 		// 交回来落 update.json,mpx update show 才看得到这次升级。
 		CLIUpdated: saveCLIStateFromUI}

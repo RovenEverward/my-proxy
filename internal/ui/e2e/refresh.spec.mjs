@@ -71,19 +71,23 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
 test("删除入口与入站:入站页立刻更新", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#inbounds");
-  await expect(page.locator("[data-act=host-edit][data-id='1']")).toHaveCount(1);
-  await page.click("[data-act=host-edit][data-id='1']");
-  await page.click("[data-act=host-rm]");
+  // 只有一个入口时行上没有展开按钮;编辑连接抽屉的「高级」里能编辑这个入口。
+  await page.click(".cx-row[data-act=conn-edit][data-id='1']");
+  await page.click("#conn-form details.adv2 > summary");
+  await expect(page.locator("[data-act=conn-host-edit][data-id='1']")).toHaveCount(1);
+  await page.click("[data-act=conn-host-edit][data-id='1']");
+  await page.click("[data-act=conn-host-rm]");
   await page.click("#okb");
-  await expect(page.locator("[data-act=host-edit][data-id='1']")).toHaveCount(0, NOW);
+  await expect(page.locator("[data-act=conn-host-edit][data-id='1']")).toHaveCount(0, NOW);
 
-  await page.click("[data-act=inb-edit][data-id='2']");
-  const tag = await page.locator("[data-act=inb-rm]").getAttribute("data-tag");
-  await page.click("[data-act=inb-rm]");
+  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
+  await page.click("#conn-form details.adv2 > summary");
+  const tag = await page.locator("[data-act=conn-rm]").getAttribute("data-tag");
+  await page.click("[data-act=conn-rm]");
   await page.fill("#typed", tag);
   await page.click("#okb");
-  await expect(page.locator("[data-act=inb-edit][data-id='2']")).toHaveCount(0, NOW);
-  await expect(page.locator("[data-act=inb-edit][data-id='1']")).toHaveCount(1);
+  await expect(page.locator(".cx-row[data-act=conn-edit][data-id='2']")).toHaveCount(0, NOW);
+  await expect(page.locator(".cx-row[data-act=conn-edit][data-id='1']")).toHaveCount(1);
 });
 
 test("删除节点:节点列表立刻更新", async ({ page }) => {
