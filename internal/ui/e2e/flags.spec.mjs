@@ -32,3 +32,45 @@ test("节点页国旗是加载成功的 SVG,文本里不留 emoji", async ({ pag
   expect(await page.evaluate(() => document.body.innerText)).not.toMatch(RI_PAIR);
   expect(await page.title()).not.toMatch(RI_PAIR);
 });
+
+test("国旗是圆角矩形,亮暗主题都有覆盖在图片上的 1px 内描边", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#nodes/1");
+  const wrap = page.locator(".ph h1 .flag-w").first();
+  await expect(wrap).toBeVisible();
+  await expect(wrap).toHaveAttribute("data-flag", "1");
+  const flag = wrap.locator("img.flag");
+  await expect.poll(() => flag.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
+  await expect(flag).toHaveCSS("border-radius", "2px");
+  await expect(flag).toHaveAttribute("draggable", "false");
+  const size = await flag.boundingBox();
+  expect(size.width).toBeGreaterThan(size.height);
+  expect(size.width / size.height).toBeCloseTo(4 / 3, 1);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
+    const edge = await wrap.evaluate(el => getComputedStyle(el, "::after").boxShadow);
+    expect(edge).toContain("inset");
+    expect(edge).toContain("1px");
+    expect(edge).toContain(theme === "dark" ? "rgba(255, 255, 255, 0.22)" : "rgba(0, 0, 0, 0.14)");
+  }
+});
+
+test("国旗加载失败后用灰底地区代码替换,不留下破损图片", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/flags/jp.svg", r => r.fulfill({ status: 404 }));
+  await page.goto(env.origin + "/#nodes/1");
+  const fallback = page.locator(".ph h1 .flag-code");
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toHaveText("JP");
+  await expect(fallback).toHaveAttribute("title", "地区 JP");
+  await expect(fallback).toHaveCSS("border-radius", "2px");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
+    const background = await fallback.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(background).not.toBe("transparent");
+    expect(background).not.toBe("rgba(0, 0, 0, 0)");
+  }
+  await expect(page.locator("img.flag")).toHaveCount(0);
+  await expect(page.locator(".flag-w")).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.innerText)).not.toMatch(RI_PAIR);
+});
