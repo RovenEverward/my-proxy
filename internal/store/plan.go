@@ -140,7 +140,7 @@ func (s *Store) MigratePlans() (*PlanMigrationReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, err := listPurposeMetadata(tx, "nodes")
+	meta, err := listLocationMetadata(tx, "nodes")
 	if err != nil {
 		return nil, fmt.Errorf("读取节点元数据: %w", err)
 	}

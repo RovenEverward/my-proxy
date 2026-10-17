@@ -37,7 +37,7 @@ type ProfileSource interface {
 // 一律 404。
 func (s *Server) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Profiles == nil {
-		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持切换配置档")
+		writeError(w, http.StatusNotFound, "这里不支持切换配置档")
 		return
 	}
 	if r.Method != http.MethodPost {

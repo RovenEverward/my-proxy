@@ -65,6 +65,9 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   await expect(page.locator(".setup")).toContainText(FP);
   await expect(page.locator("#s-cp-pw")).toBeVisible();
   await expect(page.locator(".setup")).not.toContainText("mpx ");
+  // 指纹框不是命令,前面不能有 shell 提示符 `$`(以前 .cmd::before 会加一个)。
+  const before = await page.locator(".setup .cmd").first().evaluate(el => getComputedStyle(el, "::before").content);
+  expect(["none", "normal", ""]).toContain(before);
 });
 
 test("只有一个配置档:也弹窗,好从这加新的", async ({ page }) => {

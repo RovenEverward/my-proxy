@@ -229,7 +229,7 @@ func (s *Server) updateNodes() ([]model.UpdateNodeCore, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, err := s.store.ListPurposeMetadata("nodes")
+	meta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return nil, err
 	}

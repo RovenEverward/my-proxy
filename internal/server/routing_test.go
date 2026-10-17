@@ -18,7 +18,7 @@ func TestSubscriptionRoutingMode(t *testing.T) {
 	e.createHost(in2.ID, "", "jp.example.com")
 	u := e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID, in2.ID} })
-	if code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n2.ID), model.PurposeMetadata{Region: "JP"}); code != 200 {
+	if code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n2.ID), model.LocationMetadata{Region: "JP"}); code != 200 {
 		t.Fatalf("metadata %d %s", code, b)
 	}
 	path := "/sub/" + u.SubToken + "/clash-meta"

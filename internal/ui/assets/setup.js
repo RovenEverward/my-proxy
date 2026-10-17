@@ -93,7 +93,7 @@ function renderConnectCP() {
   ${CN.err ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>接入失败</b><div class="raw">${CN.err}</div></div></div>` : ""}
   ${CN.fpErr ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>取指纹失败</b><div class="raw">${CN.fpErr}</div></div></div>` : ""}
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
-  ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
+  ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
   <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
   ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「设置 → 设备」里重设")}` : ""}
   <p class="sub">接入时会核对证书指纹，设备密码只用于这一次接入。</p>`,
@@ -450,7 +450,7 @@ async function renderDone(res) {
     : H`<div class="field"><label>订阅链接</label><span class="h">到用户页查看订阅链接</span></div>`)
   : H`<div class="callout stone mb">${ic("info")}<div><b>本机没有自动接入</b><div class="mt2">在这台电脑的 MPX 里选「接入已有控制面」，输入下面的地址和设备密码。</div></div></div>`}
   <div class="field"><label>在另一台设备上接入</label>${addrBox}<span class="h">在 MPX 里选「接入已有控制面」，输入这个地址，核对证书指纹后输入设备密码。</span></div>
-  <div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${fp || "（未知）"}</div></div>
+  <div class="field"><label>证书指纹</label><div class="cmd">${fp || "（未知）"}</div></div>
   <p class="sub">本机用了 <code>~/.ssh</code> 里的一把密钥；VPS 上追加了这把公钥和控制面自己的公钥。</p>`,
   H`<span class="sp"></span>${btn("进入管理界面", "pri", "arrow", "s-enter")}`);
   $("#s-enter").addEventListener("click", () => location.reload());

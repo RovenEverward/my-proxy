@@ -58,7 +58,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 				return
 			}
 		}
-		writeError(w, http.StatusUnauthorized, "token 不正确或这台设备已被吊销;重新 mpx connect")
+		writeErrorHint(w, http.StatusUnauthorized, "token 不正确或这台设备已被吊销;重新 mpx connect",
+			"这台设备的登录已失效或被吊销:请在 MPX 里重新「接入已有控制面」")
 	})
 }
 

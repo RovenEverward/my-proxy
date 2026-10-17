@@ -178,7 +178,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
-	s.purposeRoutes(api)
+	s.metadataRoutes(api)
 	s.routingRoutes(api)
 	s.planRoutes(api)
 	s.diagnosticRoutes(api)
@@ -274,6 +274,16 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+// writeErrorHint 在 writeError 的回答里多带一个 ui_hint:同一件事的界面版说法,
+// 界面拿它替换 error 里的命令行提示;uiHint 为空时回答与 writeError 完全一样。
+func writeErrorHint(w http.ResponseWriter, code int, msg, uiHint string) {
+	if uiHint == "" {
+		writeError(w, code, msg)
+		return
+	}
+	writeJSON(w, code, map[string]string{"error": msg, "ui_hint": uiHint})
 }
 
 // writeStoreError 把存储层的错误翻成合适的状态码。

@@ -8,9 +8,9 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// migratePurposes 只建元数据表(节点/入口的 region、city、letter);purposes 表
+// migrateMetadata 只建元数据表(节点/入口的 region、city、letter);purposes 表
 // 从 v0.7.0 起不再创建,老库的表由 migrate() 末尾的 dropPurposes 按分流模式处理。
-func (s *Store) migratePurposes() error {
+func (s *Store) migrateMetadata() error {
 	for _, ddl := range []string{
 		`CREATE TABLE IF NOT EXISTS node_metadata (id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE, config TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS host_metadata (id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE, config TEXT NOT NULL)`,
@@ -59,7 +59,7 @@ func metadataTable(kind string) (string, error) {
 		return "", fmt.Errorf("元数据只支持 nodes / hosts")
 	}
 }
-func (s *Store) SavePurposeMetadata(kind string, id int64, m model.PurposeMetadata) error {
+func (s *Store) SaveLocationMetadata(kind string, id int64, m model.LocationMetadata) error {
 	table, err := metadataTable(kind)
 	if err != nil {
 		return err
@@ -81,13 +81,13 @@ func (s *Store) SavePurposeMetadata(kind string, id int64, m model.PurposeMetada
 	_, err = s.db.Exec(`INSERT INTO `+table+`(id,config) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config`, id, string(b))
 	return err
 }
-func (s *Store) ListPurposeMetadata(kind string) (map[int64]model.PurposeMetadata, error) {
-	return listPurposeMetadata(s.db, kind)
+func (s *Store) ListLocationMetadata(kind string) (map[int64]model.LocationMetadata, error) {
+	return listLocationMetadata(s.db, kind)
 }
 
-// listPurposeMetadata 与 ListPurposeMetadata 同义,但接受任意 querier,好让迁移
+// listLocationMetadata 与 ListLocationMetadata 同义,但接受任意 querier,好让迁移
 // 事务内部也能读到节点元数据(*sql.Tx 与 *sql.DB 都满足 querier)。
-func listPurposeMetadata(q querier, kind string) (map[int64]model.PurposeMetadata, error) {
+func listLocationMetadata(q querier, kind string) (map[int64]model.LocationMetadata, error) {
 	table, err := metadataTable(kind)
 	if err != nil {
 		return nil, err
@@ -97,14 +97,14 @@ func listPurposeMetadata(q querier, kind string) (map[int64]model.PurposeMetadat
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[int64]model.PurposeMetadata{}
+	out := map[int64]model.LocationMetadata{}
 	for rows.Next() {
 		var id int64
 		var raw string
 		if err := rows.Scan(&id, &raw); err != nil {
 			return nil, err
 		}
-		var m model.PurposeMetadata
+		var m model.LocationMetadata
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			return nil, err
 		}
@@ -112,27 +112,27 @@ func listPurposeMetadata(q querier, kind string) (map[int64]model.PurposeMetadat
 	}
 	return out, rows.Err()
 }
-func (s *Store) GetPurposeMetadata(kind string, id int64) (model.PurposeMetadata, error) {
+func (s *Store) GetLocationMetadata(kind string, id int64) (model.LocationMetadata, error) {
 	table, err := metadataTable(kind)
 	if err != nil {
-		return model.PurposeMetadata{}, err
+		return model.LocationMetadata{}, err
 	}
 	var exists int
 	if err = s.db.QueryRow(`SELECT 1 FROM `+kind+` WHERE id=?`, id).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
-		return model.PurposeMetadata{}, ErrNotFound
+		return model.LocationMetadata{}, ErrNotFound
 	}
 	if err != nil {
-		return model.PurposeMetadata{}, err
+		return model.LocationMetadata{}, err
 	}
 	var raw string
 	err = s.db.QueryRow(`SELECT config FROM `+table+` WHERE id=?`, id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return model.PurposeMetadata{}, nil
+		return model.LocationMetadata{}, nil
 	}
 	if err != nil {
-		return model.PurposeMetadata{}, err
+		return model.LocationMetadata{}, err
 	}
-	var m model.PurposeMetadata
+	var m model.LocationMetadata
 	err = json.Unmarshal([]byte(raw), &m)
 	return m, err
 }

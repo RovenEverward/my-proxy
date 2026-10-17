@@ -10,10 +10,10 @@ import (
 
 func TestNodeDisplayLetters(t *testing.T) {
 	e := newEnv(t)
-	put := func(id int64, body any) (int, model.PurposeMetadata) {
+	put := func(id int64, body any) (int, model.LocationMetadata) {
 		t.Helper()
 		code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", id), body)
-		var m model.PurposeMetadata
+		var m model.LocationMetadata
 		json.Unmarshal(b, &m)
 		return code, m
 	}

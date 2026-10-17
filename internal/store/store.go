@@ -303,7 +303,7 @@ func (s *Store) migrate() error {
 	if err := s.migrateCapabilities(); err != nil {
 		return err
 	}
-	if err := s.migratePurposes(); err != nil {
+	if err := s.migrateMetadata(); err != nil {
 		return err
 	}
 	if err := s.migrateRouting(); err != nil {

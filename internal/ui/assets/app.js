@@ -25,7 +25,8 @@ async function api(path, init = {}) {
     if (init.asText && res.ok) return text;
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-    if (!res.ok) throw new APIError(res.status, (body && body.error) || text || res.statusText);
+    // 控制面给界面的说法(ui_hint,不提命令)优先;没有才用 error 原话。
+    if (!res.ok) throw new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText);
     return body;
   }
 }
@@ -321,8 +322,8 @@ function shell(page, body, crumb) {
     nav += H`<a class="nav ${route[0] === k ? "on" : ""}" href="#${k}">${ic(p.nav[1])}${p.title}${p.count ? H`<span class="ct">${p.count()}</span>` : ""}</a>`;
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
-  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${STATUS?.version || ""}</small></div>
-  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
+  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
+  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -335,6 +336,8 @@ function shell(page, body, crumb) {
 
 /* ---------- 总览 ---------- */
 let STATUS = null;
+// 最近一次读控制面成没成:侧栏配置档圆点的颜色(未知时灰)。
+let CP_OK = null;
 PAGES.overview = {
   title: "总览", nav: ["", "home", 0],
   async load() {
@@ -428,7 +431,7 @@ function confirmBox({ title, text, ok, danger, typed, run, extra }) {
 /* ---------- 配置档切换 ---------- */
 // 点左上角的配置档卡片:拉一次列表。有多个档,或者能在页面里接入新控制面时,
 // 弹窗列出全部(当前档打勾,每项带指纹前 16 位);点别的就 POST 切换,成功后整页
-// reload。只有一个档又接不了新控制面时,不弹,直接提示去登录加一个。
+// reload。只有一个档又接不了新控制面时,不弹,只提示一句。
 async function openProfiles() {
   if (!META.profiles) return;
   let list;
@@ -437,7 +440,7 @@ async function openProfiles() {
   if (!Array.isArray(list)) list = [];
   const canAdd = !!META.connect && typeof window.openConnectForm === "function";
   if (list.length <= 1 && !canAdd) {
-    toast(H`只有一个配置档 ${list[0]?.name || "default"};要加新的配置档,请先在终端登录另一个控制面`);
+    toast(H`只有一个配置档 ${list[0]?.name || "default"};这里不能添加新的控制面`);
     return;
   }
   // 指纹只摆前 16 位(核对用的那几位),完整的在设置页「当前控制面」里。
@@ -489,9 +492,12 @@ async function load(soft, force) {
     const data = await p.load(route);
     if (seq !== loadSeq) return;
     current = { page: p, data, error: null, loading: false, at: new Date() };
+    CP_OK = true;
   } catch (e) {
     if (seq !== loadSeq) return;
     current = { ...current, error: e, loading: false };
+    // 连不上控制面(本地服务没了或网关 5xx)时,侧栏配置档的绿点不能还亮着。
+    if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
     if (current.data) toast("刷新失败:" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();

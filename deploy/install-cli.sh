@@ -52,7 +52,10 @@ verify_release() {
 	local file="$1" name="$2" base sums="$TMP/SHA256SUMS" want got
 	if [[ "$VERSION" == latest ]]; then base="$DOWNLOAD_BASE/latest/download"; else base="$DOWNLOAD_BASE/download/$VERSION"; fi
 	if ! $FETCH "$base/SHA256SUMS" > "$sums" 2>/dev/null; then
-		note "这个版本发布时还没有 SHA256SUMS,没法校验,照常安装"
+		# 最新版一定带 SHA256SUMS:取不到只能是网络或被拦,不能就这样不校验装上去。
+		# 只有点名的老版本(发布时还没有校验文件)才放行。
+		[[ "$VERSION" != latest ]] || die "取不到最新版的 SHA256SUMS,没法校验发布件,拒绝安装(检查网络后重试)"
+		note "$VERSION 发布时还没有 SHA256SUMS,没法校验,照常安装"
 		return 0
 	fi
 	want="$(awk -v n="$name" '$2==n || $2=="*"n {print $1; exit}' "$sums")"
@@ -86,11 +89,21 @@ VERSION=latest
 PREFIX="${MPX_PREFIX:-$HOME/.local/bin}"
 UNINSTALL=
 
+# need_value OPT VALUE:带值的参数缺了值就明说,别让 `shift 2` 在 set -e 下悄悄退出。
+need_value() {
+	[[ -n "${2:-}" && "${2:-}" != -* ]] || die "$1 后面要跟一个值(试试 --help)"
+}
+
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-		--from) FROM="${2:-}"; shift 2 ;;
-		--version) VERSION="${2:-}"; shift 2 ;;
-		--prefix) PREFIX="${2:-}"; shift 2 ;;
+		--from|--version|--prefix)
+			need_value "$1" "${2:-}"
+			case "$1" in --from) FROM="$2" ;; --version) VERSION="$2" ;; --prefix) PREFIX="$2" ;; esac
+			shift 2 ;;
+		--from=*|--version=*|--prefix=*)
+			v="${1#*=}"; need_value "${1%%=*}" "$v"
+			case "$1" in --from=*) FROM="$v" ;; --version=*) VERSION="$v" ;; --prefix=*) PREFIX="$v" ;; esac
+			shift ;;
 		--uninstall) UNINSTALL=1; shift ;;
 		-h|--help) usage ;;
 		-*) die "不认识的参数:$1(试试 --help)" ;;

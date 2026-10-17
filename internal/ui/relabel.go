@@ -26,9 +26,9 @@ type RelabelRow struct {
 // RelabelPlanItem 是一条待写入计划。页面把 plan 返回的这份原样回传,apply 只写它,
 // 绝不重新 locate。
 type RelabelPlanItem struct {
-	ID       int64                 `json:"id"`
-	Name     string                `json:"name"`
-	Metadata model.PurposeMetadata `json:"metadata"`
+	ID       int64                  `json:"id"`
+	Name     string                 `json:"name"`
+	Metadata model.LocationMetadata `json:"metadata"`
 }
 
 // RelabelResult 是 apply 里一个节点的结果。Skipped 为真时 Reason 说明原因。
@@ -61,7 +61,7 @@ type RelabelRequest struct {
 // RelabelRunner 时一律 404。
 func (s *Server) serveRelabel(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Relabel == nil {
-		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持批量识别显示名")
+		writeError(w, http.StatusNotFound, "这里不支持批量识别显示名")
 		return
 	}
 	if r.Method != http.MethodPost {

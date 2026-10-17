@@ -41,7 +41,7 @@ func RegionNameZh(region string) string {
 }
 
 // NodeDisplay 拼节点显示名:旗帜 + 城市(缺省为国家中文名) + 字母。没有地区时返回空串。
-func NodeDisplay(m PurposeMetadata) string {
+func NodeDisplay(m LocationMetadata) string {
 	region := strings.TrimSpace(m.Region)
 	if region == "" {
 		return ""
@@ -62,7 +62,7 @@ func NodeDisplay(m PurposeMetadata) string {
 }
 
 // LetterGroup 是分配字母的分组键:同一地区同一城市内字母不重复。
-func LetterGroup(m PurposeMetadata) string {
+func LetterGroup(m LocationMetadata) string {
 	return strings.ToUpper(strings.TrimSpace(m.Region)) + "\x00" + strings.TrimSpace(m.City)
 }
 

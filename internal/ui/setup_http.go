@@ -198,7 +198,7 @@ func readSetupParams(w http.ResponseWriter, r *http.Request) (SetupParams, bool)
 // setupMode 说「现在能不能走接入」:已经连着控制面(正常模式)时这两个接口都 409。
 func (s *Server) setupConnectOK(w http.ResponseWriter) bool {
 	if s.opts.Connect == nil {
-		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持接入控制面")
+		writeError(w, http.StatusNotFound, "这里不支持接入控制面")
 		return false
 	}
 	s.mu.Lock()

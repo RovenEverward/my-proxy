@@ -17,7 +17,7 @@ func TestRoutingAPI(t *testing.T) {
 	e.createHost(in.ID, "", "jp.example.com")
 	e.createUser("alice")
 	e.updateUser("alice", func(u *model.User) { u.InboundIDs = []int64{in.ID} })
-	e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), model.PurposeMetadata{Region: "JP"})
+	e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), model.LocationMetadata{Region: "JP"})
 
 	code, b := e.api("POST", "/api/proxy-groups", model.ProxyGroup{Name: "日本", Regions: []string{"JP"}, Mode: model.GroupAuto})
 	if code != 201 {

@@ -106,7 +106,8 @@ func (s *Server) checkHeartbeat(now time.Time) model.DoctorCheck {
 			Name: "后台任务", Status: model.DoctorFail,
 			Detail: fmt.Sprintf("距上一轮已经 %s(周期 %s),后台任务多半停了",
 				age.Round(time.Second), interval),
-			Hint: "看控制面的日志有没有 panic 或数据库锁;也可看 mpx status 的 ticks 还在不在涨",
+			Hint:   "看控制面的日志有没有 panic 或数据库锁;也可看 mpx status 的 ticks 还在不在涨",
+			UIHint: "看控制面的日志有没有 panic 或数据库锁;也可看总览的「上一轮」时间还在不在走",
 		}
 	}
 
@@ -142,6 +143,7 @@ func (s *Server) checkNodes(ctx context.Context, now time.Time) []model.DoctorCh
 			Name: "节点", Status: model.DoctorWarn,
 			Detail: "还没有任何节点",
 			Hint:   "mpx node add 加一台,再加一个入站才会有订阅",
+			UIHint: "到「节点」页点「添加节点」,再加一个入站才会有订阅",
 		}}
 	}
 
@@ -185,18 +187,22 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 	var problems []string
 	status := model.DoctorOK
 	worstHint := ""
+	worstUIHint := ""
 
 	raise := func(s model.DoctorCheck) {
 		problems = append(problems, s.Detail)
 		if doctorRank(s.Status) > doctorRank(status) {
 			status = s.Status
 			worstHint = s.Hint
+			worstUIHint = s.UIHint
 			return
 		}
 		// 同等严重的问题里,谁先给了提示就用谁的;最重的那条自己没提示时,
-		// 一条次重问题的提示也比没有强。
+		// 一条次重问题的提示也比没有强。UIHint 跟着同一条的 Hint 走,保证
+		// 两句话说的是同一件事。
 		if worstHint == "" {
 			worstHint = s.Hint
+			worstUIHint = s.UIHint
 		}
 	}
 
@@ -216,10 +222,11 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 	xrayRequired := len(model.InboundsForCore(inbounds, model.CoreXray)) > 0 || n.DeployedHash != "" || (len(inbounds) == 0 && !quicRequired)
 	if xrayRequired && !n.Deployed() {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "从没下发过配置",
-			Hint: "mpx node sync " + n.Name + " 推一次"})
+			Hint: "mpx node sync " + n.Name + " 推一次", UIHint: "到「节点」页打开 " + n.Name + ",点「下发配置」"})
 	} else if xrayRequired && st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "配置和下发的不一致(节点上被改过)",
-			Hint: "可能是你自己改的,也可能是别人改的;确认后 mpx node sync " + n.Name + " 覆盖回去"})
+			Hint:   "可能是你自己改的,也可能是别人改的;确认后 mpx node sync " + n.Name + " 覆盖回去",
+			UIHint: "可能是你自己改的,也可能是别人改的;确认后到「节点」页打开 " + n.Name + ",点「下发配置」覆盖回去"})
 	}
 
 	quicObserved := false
@@ -232,7 +239,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 服务没在跑"})
 		}
 		if !core.StatsAvailable {
-			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 单用户统计不可用: " + core.Error, Hint: "mpx node install " + n.Name + " --core sing-box; 需 with_v2ray_api 构建与 SSH 转发"})
+			raise(model.DoctorCheck{Status: model.DoctorFail, Detail: "sing-box 单用户统计不可用: " + core.Error, Hint: "mpx node install " + n.Name + " --core sing-box; 需 with_v2ray_api 构建与 SSH 转发", UIHint: "到「节点」页打开 " + n.Name + ",点「安装核心」选 sing-box(需 with_v2ray_api 构建与 SSH 转发)"})
 		}
 		d, err := s.store.GetCoreDeployment(n.ID, model.CoreSingBox)
 		if err != nil {
@@ -259,7 +266,8 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		case c.DaysLeft <= model.CertFailDays:
 			raise(model.DoctorCheck{Status: model.DoctorFail,
 				Detail: fmt.Sprintf("证书 %s 还有 %d 天到期", c.Path, c.DaysLeft),
-				Hint:   "这一批不做自动续期,需要手工换证书;换完记得 mpx node sync"})
+				Hint:   "这一批不做自动续期,需要手工换证书;换完记得 mpx node sync",
+				UIHint: "这一批不做自动续期,需要手工换证书;换完到「节点」页打开 " + n.Name + ",点「下发配置」"})
 		case c.DaysLeft <= model.CertWarnDays:
 			raise(model.DoctorCheck{Status: model.DoctorWarn,
 				Detail: fmt.Sprintf("证书 %s 还有 %d 天到期", c.Path, c.DaysLeft),
@@ -279,6 +287,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		Status: status,
 		Detail: strings.Join(problems, ";"),
 		Hint:   worstHint,
+		UIHint: worstUIHint,
 	}
 }
 
@@ -308,6 +317,7 @@ func (s *Server) checkSubscriptions(now time.Time) []model.DoctorCheck {
 			Name: "订阅渲染", Status: model.DoctorWarn,
 			Detail: "没有用户可渲染",
 			Hint:   "mpx user add 加一个用户,六种订阅格式才会被真正产出一次",
+			UIHint: "到「用户」页点「添加用户」,六种订阅格式才会被真正产出一次",
 		}}
 	}
 

@@ -41,7 +41,7 @@ func (connectRunner) Connect(ctx context.Context, server, fingerprint, password,
 	}
 	res, profile, err := connectAndSaveQuiet(server, fingerprint, password, name)
 	if err != nil {
-		return nil, err
+		return nil, uiError(err)
 	}
 	up, err := url.Parse(server)
 	if err != nil || up.Host == "" {
@@ -71,7 +71,7 @@ func (connectRunner) ConnectProfile(ctx context.Context, server, fingerprint, pa
 	}
 	res, err := connectAndSaveProfile(server, fingerprint, password, name, profile)
 	if err != nil {
-		return nil, err
+		return nil, uiError(err)
 	}
 	up, err := url.Parse(server)
 	if err != nil || up.Host == "" {

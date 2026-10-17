@@ -24,6 +24,9 @@ type initParams struct {
 	APIPort                                             int
 	Name, Username, SNI, RealityDest, Remark, SubPrefix string
 	DevicePassword                                      string
+	// FromUI:由窗口里的首次安装向导发起。报错与收尾提示改说界面操作,不提命令
+	// (窗口里显示的就是这些文字)。
+	FromUI bool
 }
 
 // initProgress 接收进度。CLI 实现原样写终端;向导实现把它记进任务。
@@ -180,7 +183,11 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	switch {
 	case fp == "":
 		fmt.Fprintln(prog.Stdout(), "没读到控制面的证书指纹(/var/lib/mpx/tls-fingerprint),本机没有自动接入。")
-		fmt.Fprintf(prog.Stdout(), "稍后在本机跑:mpx connect %s(它会显示指纹让你确认)\n", hostport)
+		if p.FromUI {
+			fmt.Fprintf(prog.Stdout(), "稍后在 MPX 里选「接入已有控制面」,地址 %s(会显示指纹让你确认)\n", hostport)
+		} else {
+			fmt.Fprintf(prog.Stdout(), "稍后在本机跑:mpx connect %s(它会显示指纹让你确认)\n", hostport)
+		}
 		return &initResult{HostPort: hostport, Server: server}, nil
 	case p.DevicePassword == "":
 		fmt.Fprintln(prog.Stdout(), "没设设备密码,本机没有自动接入。")
@@ -193,17 +200,27 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	pwCtx, cancel := context.WithTimeout(ctx, initProbeTimeout)
 	defer cancel()
 	if out, err := initSSH.RunWithInput(pwCtx, n, auth, setPW, []byte(p.DevicePassword+"\n")); err != nil {
+		if p.FromUI {
+			return nil, fmt.Errorf("设置设备密码失败(VPS 上装的 MPX 可能比这个功能旧):%v %s", err, strings.TrimSpace(out))
+		}
 		return nil, fmt.Errorf("设置设备密码失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):%v %s", err, strings.TrimSpace(out))
 	}
 
 	prog.Step("把这台电脑接入控制面")
 	if _, err := initConnect(server, fp, p.DevicePassword, defaultDeviceName()); err != nil {
+		if p.FromUI {
+			return nil, fmt.Errorf("本机接入失败: %w;控制面已经装好,稍后在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s", uiError(err), hostport, fp)
+		}
 		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s", err, hostport, fp)
 	}
 
 	fmt.Fprintln(prog.Stdout())
-	fmt.Fprintln(prog.Stdout(), "别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:")
-	fmt.Fprintf(prog.Stdout(), "  mpx connect %s --fp %s\n", hostport, fp)
+	if p.FromUI {
+		fmt.Fprintf(prog.Stdout(), "别的设备接入这个控制面:在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s,再输入刚设的设备密码。\n", hostport, fp)
+	} else {
+		fmt.Fprintln(prog.Stdout(), "别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:")
+		fmt.Fprintf(prog.Stdout(), "  mpx connect %s --fp %s\n", hostport, fp)
+	}
 	fmt.Fprintln(prog.Stdout())
 	fmt.Fprintln(prog.Stdout(), "同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。")
 	return &initResult{HostPort: hostport, Server: server, Fingerprint: fp, Connected: true}, nil

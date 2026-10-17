@@ -205,7 +205,7 @@ func (g ProxyGroup) Validate() error {
 		}
 	}
 	for _, p := range g.Protocols {
-		if !containsPurpose(ProtocolShortNames, p) {
+		if !containsString(ProtocolShortNames, p) {
 			return fmt.Errorf("未知协议 %q(可选 %s)", p, strings.Join(ProtocolShortNames, " / "))
 		}
 	}
@@ -215,7 +215,7 @@ func (g ProxyGroup) Validate() error {
 		}
 	}
 	for _, t := range g.Tags {
-		if !purposeSlug.MatchString(t) {
+		if !tagSlug.MatchString(t) {
 			return fmt.Errorf("无效标签 %q", t)
 		}
 	}
@@ -241,10 +241,10 @@ type GroupCandidate struct {
 
 // Admits 判断一个入口是否进组:各类条件之间同时满足,类内任一(能力为全部)。
 func (g ProxyGroup) Admits(c GroupCandidate) bool {
-	if len(g.Regions) > 0 && !containsPurpose(g.Regions, c.Region) {
+	if len(g.Regions) > 0 && !containsString(g.Regions, c.Region) {
 		return false
 	}
-	if len(g.Protocols) > 0 && !containsPurpose(g.Protocols, c.Protocol) {
+	if len(g.Protocols) > 0 && !containsString(g.Protocols, c.Protocol) {
 		return false
 	}
 	for _, cap := range g.Capabilities {
@@ -256,7 +256,7 @@ func (g ProxyGroup) Admits(c GroupCandidate) bool {
 		return true
 	}
 	for _, t := range c.Tags {
-		if containsPurpose(g.Tags, t) {
+		if containsString(g.Tags, t) {
 			return true
 		}
 	}

@@ -192,7 +192,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(loginPage))
 			return
 		}
-		writeError(w, http.StatusUnauthorized, "这个页面的会话无效:在终端重新运行 mpx ui,用它打印的链接打开")
+		writeError(w, http.StatusUnauthorized, sessionInvalidMsg())
 		return
 	}
 	if !originOK(r) {
@@ -228,7 +228,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.allowed(r.Method, r.URL.Path) {
-			writeError(w, http.StatusMethodNotAllowed, "mpx ui 不放行 "+r.Method+" "+r.URL.Path)
+			writeError(w, http.StatusMethodNotAllowed, "管理界面不放行 "+r.Method+" "+r.URL.Path)
 			return
 		}
 		proxy.ServeHTTP(w, r)
@@ -283,7 +283,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request, k string) {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		writeError(w, http.StatusUnauthorized, "登录链接无效或已经用过:重新运行 mpx ui 拿一条新的")
+		writeError(w, http.StatusUnauthorized, loginLinkInvalidMsg())
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: s.session, Path: "/",
@@ -342,3 +342,19 @@ const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
 <body style="font:14px/1.6 system-ui;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
 <h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
+
+// 会话 / 登录链接失效时的提示:桌面窗口里没有「重新运行 mpx ui」这回事,
+// 说界面上能做的;浏览器版 mpx ui 才提命令。
+func sessionInvalidMsg() string {
+	if updateDesktop() {
+		return "这个窗口的会话已失效:关掉 MPX 再重新打开"
+	}
+	return "这个页面的会话无效:在终端重新运行 mpx ui,用它打印的链接打开"
+}
+
+func loginLinkInvalidMsg() string {
+	if updateDesktop() {
+		return "登录已失效:关掉 MPX 再重新打开"
+	}
+	return "登录链接无效或已经用过:重新运行 mpx ui 拿一条新的"
+}

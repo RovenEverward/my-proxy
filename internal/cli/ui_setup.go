@@ -187,6 +187,7 @@ func setupInitParams(p ui.SetupParams) (*initParams, error) {
 	}
 
 	return &initParams{
+		FromUI:         true,
 		Host:           host,
 		SSHUser:        sshUser,
 		SSHPort:        sshPort,
