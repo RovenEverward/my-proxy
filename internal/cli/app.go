@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -22,6 +24,14 @@ const appSmokeEnv = "MPX_APP_SMOKE"
 // 还要等到内置 SVG 国旗真的画出来(页面上有 🇯🇵 这类旗帜换成的 img.flag),证明
 // Windows 上国旗能显示。
 const appSmokeRouteEnv = "MPX_APP_SMOKE_ROUTE"
+
+// appSmokeThemeEnv 让冒烟在截图前切到指定主题并等一秒:light 或 dark。
+// mygo 的页面主题与窗口底色一起换,Windows 的标题栏截图才能同时看到两套配色。
+const appSmokeThemeEnv = "MPX_APP_SMOKE_THEME"
+
+// appBackgroundColor 是窗口在页面绘制前先填的底色,避免打开时闪一下别的颜色;
+// 浅/深两套跟页面 --base 一起换。
+const appBackgroundColor = "light-dark(#f6f5f2, #161615)"
 
 // appSmokeRouteSelector:目标页标题已出现、且至少一张 SVG 国旗已经加载完成
 // (complete 且 naturalWidth > 0)时返回非空。只看 DOM 不够:图片可能还在加载。
@@ -76,7 +86,7 @@ webkit2gtk4.1);Windows 需要 WebView2 Runtime。`,
 			reportNoWebView()
 			return errAppNoWebView
 		}
-		l, err := startUI(appFlags.addr, false)
+		l, err := startUI(appFlags.addr, false, appSetTheme)
 		if err != nil {
 			return err
 		}
@@ -96,12 +106,7 @@ webkit2gtk4.1);Windows 需要 WebView2 Runtime。`,
 		}()
 
 		mygo.App.WhenReady(func() {
-			win := mygo.NewWindow(mygo.WindowOptions{
-				Title:  "MPX",
-				URL:    link,
-				Width:  1280,
-				Height: 820,
-			})
+			win := mygo.NewWindow(appWindowOptions(runtime.GOOS, link))
 			if out := os.Getenv(appSmokeEnv); out != "" {
 				go runAppSmoke(win, out)
 			}
@@ -120,6 +125,41 @@ webkit2gtk4.1);Windows 需要 WebView2 Runtime。`,
 			return nil
 		}
 	},
+}
+
+// appWindowOptions 把桌面窗口的选项拼成一个纯函数,方便按平台做测试。
+//
+// Windows 与 macOS 让页面一直铺到窗口顶部:标题栏由 mygo 的隐藏样式保留
+// 最小化/最大化/关闭(Windows 是 MyGo 自绘的 Win11 风格按钮,支持 Snap 布局;
+// macOS 是左上角的红绿灯),高度和页面 .top 顶栏一样是 52。Linux 保持原生
+// 标题栏,不设 TitleBarStyle。
+func appWindowOptions(goos, link string) mygo.WindowOptions {
+	o := mygo.WindowOptions{
+		Title:           "MPX",
+		URL:             link,
+		Width:           1280,
+		Height:          820,
+		BackgroundColor: appBackgroundColor,
+	}
+	if goos != "linux" {
+		o.TitleBarStyle = mygo.TitleBarHidden
+		o.TitleBarHeight = 52
+	}
+	return o
+}
+
+// appSetTheme 把页面报来的主题交给 mygo:light/dark 强制对应外观,其余
+// (system)跟随系统。页面在浏览器模式里没有这个接口,但回调照样是安全的。
+func appSetTheme(theme string) error {
+	switch theme {
+	case "light":
+		mygo.Theme.SetSource(mygo.ThemeLight)
+	case "dark":
+		mygo.Theme.SetSource(mygo.ThemeDark)
+	default:
+		mygo.Theme.SetSource(mygo.ThemeSystem)
+	}
+	return nil
 }
 
 // reportNoWebView 说清楚缺什么、怎么补,以及还能用什么。
@@ -168,8 +208,10 @@ func runAppSmoke(win *mygo.Window, out string) {
 						break
 					}
 				}
+				applySmokeTheme(win)
 				time.Sleep(appSmokeSettle)
 				if saveAppShot(win, out) {
+					saveAppWindowShot(win, out)
 					fmt.Printf("APP_SMOKE_OK %s\n", state)
 					mygo.App.Exit(0)
 					return
@@ -182,7 +224,9 @@ func runAppSmoke(win *mygo.Window, out string) {
 		time.Sleep(appSmokeEvery)
 	}
 	// 超时:仍尽力截一张,方便排查是白屏、登录页还是别的。
-	saveAppShot(win, out)
+	if saveAppShot(win, out) {
+		saveAppWindowShot(win, out)
+	}
 	fmt.Printf("APP_SMOKE_FAIL last=%v err=%v\n", last, lastErr)
 	mygo.App.Exit(1)
 }
@@ -232,6 +276,65 @@ func smokeRoute(win *mygo.Window, route string, deadline time.Time) string {
 		time.Sleep(appSmokeEvery)
 	}
 	return ""
+}
+
+// applySmokeTheme 在截图前把页面和 mygo 的外观一起切到 MPX_APP_SMOKE_THEME,
+// 然后留一秒让页面重绘。没设或值不对时什么也不做。
+func applySmokeTheme(win *mygo.Window) {
+	theme := os.Getenv(appSmokeThemeEnv)
+	if theme != "light" && theme != "dark" {
+		return
+	}
+	q, _ := json.Marshal(theme)
+	_, _ = win.Page().Eval(fmt.Sprintf(`(() => { try { localStorage.setItem("mpx-theme", %s); } catch {} document.documentElement.dataset.theme = %s; return ""; })()`, q, q))
+	switch theme {
+	case "light":
+		mygo.Theme.SetSource(mygo.ThemeLight)
+	case "dark":
+		mygo.Theme.SetSource(mygo.ThemeDark)
+	}
+	time.Sleep(time.Second)
+}
+
+// saveAppWindowShot 在 Windows 上额外抓整个窗口的屏幕像素(含 MyGo 自绘的
+// 标题栏按钮),写到 out 的 -window.png。CapturePage 只有页面,不含这些按钮。
+// 失败只打警告:窗口截图是辅助证据,不影响冒烟结果。
+func saveAppWindowShot(win *mygo.Window, out string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	b := win.Bounds()
+	if b.Width <= 0 || b.Height <= 0 {
+		fmt.Fprintln(os.Stderr, "mpx app: 跳过窗口截图:窗口大小无效", b)
+		return
+	}
+	scale := 1.0
+	for _, d := range mygo.Screen.Displays() {
+		wa := d.WorkArea
+		cx, cy := b.X+b.Width/2, b.Y+b.Height/2
+		if cx >= wa.X && cx < wa.X+wa.Width && cy >= wa.Y && cy < wa.Y+wa.Height {
+			if d.ScaleFactor > 0 {
+				scale = d.ScaleFactor
+			}
+			break
+		}
+	}
+	px := func(v int) int { return int(float64(v)*scale + 0.5) }
+	x, y, w, h := px(b.X), px(b.Y), px(b.Width), px(b.Height)
+	path := strings.TrimSuffix(out, ".png") + "-window.png"
+	script := fmt.Sprintf(`Add-Type -AssemblyName System.Drawing
+$bmp = [System.Drawing.Bitmap]::new(%d, %d)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen(%d, %d, 0, 0, $bmp.Size)
+$bmp.Save('%s', [System.Drawing.Imaging.ImageFormat]::Png)
+$g.Dispose()
+$bmp.Dispose()`, w, h, x, y, strings.ReplaceAll(path, "'", "''"))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	if msg, err := cmd.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "mpx app: 窗口截图失败(不影响冒烟): %v %s\n", err, strings.TrimSpace(string(msg)))
+	}
 }
 
 // saveAppShot 截当前窗口并写到 out,报告是否成功。

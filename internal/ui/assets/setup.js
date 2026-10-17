@@ -46,7 +46,7 @@ function setup(st, bodyRaw, footRaw) {
   document.querySelector(".setup")?.remove();
   const d = document.createElement("div");
   d.className = "setup";
-  d.innerHTML = val(H`<div class="sbrand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"> · 首次安装${META?.version ? H`<small>${META.version}</small>` : ""}</div><div class="scard">${st ? steps(st) : ""}<div class="db">${bodyRaw}</div><div class="df">${footRaw}</div></div>`);
+  d.innerHTML = val(H`<div class="tb-drag"></div><div class="sbrand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"> · 首次安装${META?.version ? H`<small>${META.version}</small>` : ""}</div><div class="scard">${st ? steps(st) : ""}<div class="db">${bodyRaw}</div><div class="df">${footRaw}</div></div>`);
   document.body.append(d);
 }
 function bindInput(sel, key) {

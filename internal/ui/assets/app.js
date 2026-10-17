@@ -564,9 +564,23 @@ async function load(soft, force) {
   if (!current.error) refreshUpdatePill();
 }
 
+// reportTheme 把页面当前主题交给桌面窗口(标题栏、窗口底色一起换)。浏览器里
+// 没有这个本地接口,404 就算了,不能影响页面。
+async function reportTheme(theme) {
+  theme = theme === "dark" ? "dark" : theme === "system" ? "system" : "light";
+  try {
+    await fetch("/local/app/theme", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme }) });
+  } catch {}
+}
+// 页面加载时报一次:存过 light/dark 就报那个,没存过表示跟随系统。
+function savedTheme() {
+  try { const t = localStorage.getItem("mpx-theme"); if (t === "light" || t === "dark") return t; } catch {}
+  return "system";
+}
+
 const ACTS = {
   reload: () => load(true),
-  theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} paint(); },
+  theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
@@ -681,6 +695,7 @@ walkFlags(document.body);
 stripTitle();
 
 document.addEventListener("DOMContentLoaded", async () => {
+  reportTheme(savedTheme());
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }
   if (META && META.mode === "setup") { openSetup(); return; }
   load(false);
