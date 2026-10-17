@@ -56,9 +56,10 @@ var selfExecutable = func() (string, error) {
 
 // updateViewBody 是 GET /local/update 的形状。
 type updateViewBody struct {
-	CLI     model.UpdatePart `json:"cli"`
-	Control model.UpdatePart `json:"control"`
-	Notes   string           `json:"notes"`
+	CLI     model.UpdatePart       `json:"cli"`
+	Control model.UpdatePart       `json:"control"`
+	Nodes   []model.UpdateNodeCore `json:"nodes"`
+	Notes   string                 `json:"notes"`
 }
 
 // serveUpdate 处理 /local/update*。调用前会话与来源已经校验过(与 setup 相同)。
@@ -85,6 +86,16 @@ func (s *Server) serveUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.updateControl(w, r)
+	case "/local/update/all":
+		// POST 启动一键更新,GET 拉进度;同一个路径按方法分(见 update_all.go)。
+		switch r.Method {
+		case http.MethodPost:
+			s.updateAllStart(w, r)
+		case http.MethodGet:
+			s.updateAllProgress(w, r)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "这个接口只接受 GET 或 POST")
+		}
 	default:
 		writeError(w, http.StatusNotFound, "没有这个升级接口")
 	}
@@ -99,7 +110,10 @@ func (s *Server) updateView(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), updateViewTimeout)
 	defer cancel()
 
-	view := updateViewBody{CLI: model.UpdatePart{Current: updateLocalVersion()}}
+	view := updateViewBody{
+		CLI:   model.UpdatePart{Current: updateLocalVersion()},
+		Nodes: []model.UpdateNodeCore{},
+	}
 
 	raw, code, err := s.controlCall(ctx, http.MethodGet, "/api/update?refresh=1", nil)
 	if err != nil {
@@ -120,6 +134,11 @@ func (s *Server) updateView(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view.Control = snap.Control
+	// 节点核心的版本行原样带给页面:一键更新的弹窗要列 xray / sing-box 从哪版到哪版。
+	view.Nodes = snap.Nodes
+	if view.Nodes == nil {
+		view.Nodes = []model.UpdateNodeCore{}
+	}
 	view.CLI.Latest = snap.Control.Latest
 	view.CLI.ReleaseURL = snap.Control.ReleaseURL
 	// 落后几次发布对 CLI 与控制面是同一个数:用的是同一份最新版本。
@@ -156,54 +175,66 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "请求体不是合法的 JSON")
 		return
 	}
-	target := strings.TrimSpace(body.Version)
-	explicit := target != ""
-	current := updateLocalVersion()
-	src := updateSource()
 
 	ctx, cancel := context.WithTimeout(r.Context(), updateInstallTimeout)
 	defer cancel()
 
+	from, to, changed, code, err := applyCLIUpdate(ctx, body.Version)
+	if err != nil {
+		writeError(w, code, err.Error())
+		return
+	}
+	if !changed {
+		writeJSON(w, map[string]any{"ok": true, "from": from, "to": to, "message": "本机 CLI 已是最新"})
+		return
+	}
+	// 不 os.Exit:页面自己会提示重启 mpx ui 后生效。
+	writeJSON(w, map[string]any{"ok": true, "from": from, "to": to,
+		"message": fmt.Sprintf("已升级到 %s；正在运行的 mpx ui 需重启后生效", to)})
+}
+
+// applyCLIUpdate 是 updateCLI 与一键更新(update_all.go)共用的本机升级实现:把
+// 本机二进制升到 version(空表示最新)。
+//
+// changed 报告二进制是否真的被换掉 —— 一键更新只在这个值为真时重启 mpx ui。出错时
+// code 是该回给页面的 HTTP 状态码,与 updateCLI 原来的口径一一对应。
+func applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, code int, err error) {
+	current := updateLocalVersion()
+	target := strings.TrimSpace(version)
+	explicit := target != ""
+	src := updateSource()
+
 	if target == "" {
-		latest, err := src.Latest(ctx)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, err.Error())
-			return
+		latest, lerr := src.Latest(ctx)
+		if lerr != nil {
+			return current, "", false, http.StatusBadGateway, lerr
 		}
 		target = latest
 	}
 
-	if err := selfupdate.Decide(current, target, explicit, false); err != nil {
-		if errors.Is(err, selfupdate.ErrUpToDate) {
-			writeJSON(w, map[string]any{"ok": true, "from": current, "to": current, "message": "本机 CLI 已是最新"})
-			return
+	if derr := selfupdate.Decide(current, target, explicit, false); derr != nil {
+		if errors.Is(derr, selfupdate.ErrUpToDate) {
+			return current, current, false, 0, nil
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return current, target, false, http.StatusBadRequest, derr
 	}
 
-	exe, err := selfExecutable()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	exe, eerr := selfExecutable()
+	if eerr != nil {
+		return current, target, false, http.StatusInternalServerError, eerr
 	}
-	bin, _, err := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+	bin, _, ferr := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
+	if ferr != nil {
+		return current, target, false, http.StatusBadGateway, ferr
 	}
-	if err := selfupdate.Install(exe, bin, target); err != nil {
-		code := http.StatusInternalServerError
-		if errors.Is(err, selfupdate.ErrNeedSudo) {
-			code = http.StatusForbidden
+	if ierr := selfupdate.Install(exe, bin, target); ierr != nil {
+		ic := http.StatusInternalServerError
+		if errors.Is(ierr, selfupdate.ErrNeedSudo) {
+			ic = http.StatusForbidden
 		}
-		writeError(w, code, err.Error())
-		return
+		return current, target, false, ic, ierr
 	}
-
-	// 不 os.Exit:页面自己会提示重启 mpx ui 后生效。
-	writeJSON(w, map[string]any{"ok": true, "from": current, "to": target,
-		"message": fmt.Sprintf("已升级到 %s；正在运行的 mpx ui 需重启后生效", target)})
+	return current, target, true, 0, nil
 }
 
 // updateControl:POST /local/update/control,把请求原样转给控制面。

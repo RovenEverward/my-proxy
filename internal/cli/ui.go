@@ -81,6 +81,17 @@ var uiCmd = &cobra.Command{
   mpx ui --profile prod --addr 127.0.0.1:7480 --no-open`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// 一键更新的重启会把监听地址与会话放进交接文件,用 MPX_UI_RESTART 指过来:
+		// 接着上次的地址与会话跑,浏览器里已打开的页面不用重新登录。
+		addr, session, restarted := uiFlags.addr, "", false
+		if p := os.Getenv(ui.RestartEnv); p != "" {
+			st, rerr := ui.ReadRestartState(p)
+			if rerr != nil {
+				return fmt.Errorf("接续升级前的 mpx ui 失败: %w", rerr)
+			}
+			_ = os.Unsetenv(ui.RestartEnv)
+			addr, session, restarted = st.Addr, st.Session, true
+		}
 		server, token, err := resolve()
 		if err != nil {
 			// 没配置控制面是正常状态(首次安装),不是错误;只有配置存在却读不出
@@ -91,12 +102,13 @@ var uiCmd = &cobra.Command{
 			}
 			server, token = "", ""
 		}
-		if !isLoopback(uiFlags.addr) {
-			return fmt.Errorf("mpx ui 只监听回环地址,%s 不是;要在别的设备上看,用 SSH 隧道", uiFlags.addr)
+		if !isLoopback(addr) {
+			return fmt.Errorf("mpx ui 只监听回环地址,%s 不是;要在别的设备上看,用 SSH 隧道", addr)
 		}
 
 		setupMode := server == "" || uiFlags.setup
-		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{}, Relabel: relabelRunner{}}
+		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{},
+			Relabel: relabelRunner{}, Session: session}
 		if !setupMode {
 			up, err := url.Parse(server)
 			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
@@ -118,7 +130,7 @@ var uiCmd = &cobra.Command{
 			pageOpts.Transport = tr
 		}
 
-		ln, err := net.Listen("tcp", uiFlags.addr)
+		ln, err := listenUI(addr, restarted)
 		if err != nil {
 			return err
 		}
@@ -127,19 +139,24 @@ var uiCmd = &cobra.Command{
 			ln.Close()
 			return err
 		}
-		link := "http://" + ln.Addr().String() + "/?k=" + s.Key()
-		switch {
-		case uiFlags.setup:
-			fmt.Println("首次安装模式")
-		case setupMode:
-			fmt.Println("还没有配置控制面:在打开的页面里完成首次安装")
-		default:
-			fmt.Printf("mpx ui 已启动,连的是 %s\n", pageOpts.Upstream.Redacted())
-		}
-		fmt.Println(link)
-		fmt.Println("这条链接只能打开一次;Ctrl-C 结束。")
-		if !uiFlags.noOpen {
-			openBrowser(link)
+		if restarted {
+			// 页面还开着,老会话继续用:不再发一次性链接、不再开新标签。
+			fmt.Printf("mpx ui 已用新版本重启: http://%s/\n", ln.Addr().String())
+		} else {
+			link := "http://" + ln.Addr().String() + "/?k=" + s.Key()
+			switch {
+			case uiFlags.setup:
+				fmt.Println("首次安装模式")
+			case setupMode:
+				fmt.Println("还没有配置控制面:在打开的页面里完成首次安装")
+			default:
+				fmt.Printf("mpx ui 已启动,连的是 %s\n", pageOpts.Upstream.Redacted())
+			}
+			fmt.Println(link)
+			fmt.Println("这条链接只能打开一次;Ctrl-C 结束。")
+			if !uiFlags.noOpen {
+				openBrowser(link)
+			}
 		}
 
 		srv := &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}
@@ -156,6 +173,24 @@ var uiCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// listenUI 绑定页面端口。重启接续时多试几秒:Windows 上是先起新进程再退出旧
+// 进程,旧进程放端口有个小空档,立刻绑会失败;正常启动一次不成直接报错。
+func listenUI(addr string, retry bool) (net.Listener, error) {
+	if !retry {
+		return net.Listen("tcp", addr)
+	}
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		lastErr = err
+		time.Sleep(250 * time.Millisecond)
+	}
+	return nil, lastErr
 }
 
 // openBrowser 尽力在系统浏览器里打开 link;打不开就算了,链接已经打印出来。
