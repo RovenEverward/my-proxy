@@ -315,7 +315,7 @@ test("总览控制面:有新版本是黑白灰底标签;开发版不比较", asy
   const card = cpStat(page);
   await expect(card.locator(".tag.lab")).toHaveText("有新版本 v0.9.7");
   await expect(card.locator(".c-warn")).toHaveCount(0);
-  await expect(card.locator(".l .dot")).toHaveClass(/\bok\b/);
+  await expect(card.locator(".l .dot")).toHaveClass(/\bink\b/); // 圆点也是黑白的
   // 灰底标签:背景和 .tag 一样是 --stone,不是橙色。
   const bg = await card.locator(".tag.lab").evaluate(el => getComputedStyle(el).backgroundColor);
   const stone = await page.evaluate(() => { const d = document.createElement("span"); d.className = "tag"; document.body.append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
