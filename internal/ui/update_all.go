@@ -388,9 +388,30 @@ func (s *Server) updateAllNodes(ctx context.Context) error {
 	}
 }
 
-// nodeEventMsg 把一条节点事件压成一句话,页面按时间顺序列出来。
+// nodeEventMsg 把一条节点事件压成一句话,页面按时间顺序列出来。说法与
+// mpx update 的逐行输出一致;失败时带上控制面给的原因,不能只剩一个状态词。
 func nodeEventMsg(ev model.UpdateNodeEvent) string {
-	return fmt.Sprintf("%s %s %s → %s %s", ev.Node, ev.Core, ev.From, ev.To, ev.Status)
+	head := fmt.Sprintf("%s %s", ev.Node, ev.Core)
+	v := func(s string) string {
+		if s == "" {
+			return "-"
+		}
+		return s
+	}
+	switch ev.Status {
+	case "start":
+		return fmt.Sprintf("%s:%s → %s 开始", head, v(ev.From), v(ev.To))
+	case "skip":
+		return fmt.Sprintf("%s:已是 %s,跳过", head, v(ev.To))
+	case "ok":
+		return fmt.Sprintf("%s:%s → %s 完成", head, v(ev.From), v(ev.To))
+	case "rolled_back":
+		return fmt.Sprintf("%s:升级失败,已回滚(%s)", head, ev.Msg)
+	case "failed":
+		return fmt.Sprintf("%s:升级失败(%s)", head, ev.Msg)
+	default:
+		return head + ":" + ev.Status
+	}
 }
 
 // updateAllCLI 升级本机 CLI(复用 updateCLI 的实现),返回二进制是否真的被换掉,

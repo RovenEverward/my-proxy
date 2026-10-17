@@ -319,8 +319,8 @@ func TestUpdateAllHappyPath(t *testing.T) {
 	}
 	want := []updateAllEvent{
 		{Seq: 1, Step: "control", Status: "ok", Msg: "控制面 v0.6.4 → v0.6.5"},
-		{Seq: 2, Step: "nodes", Status: "start", Msg: "la-1 xray 26.3.27 → 26.4.1 start"},
-		{Seq: 3, Step: "nodes", Status: "ok", Msg: "la-1 xray 26.3.27 → 26.4.1 ok"},
+		{Seq: 2, Step: "nodes", Status: "start", Msg: "la-1 xray:26.3.27 → 26.4.1 开始"},
+		{Seq: 3, Step: "nodes", Status: "ok", Msg: "la-1 xray:26.3.27 → 26.4.1 完成"},
 		{Seq: 4, Step: "cli", Status: "ok", Msg: "本机 CLI v0.6.4 → v0.6.5"},
 		{Seq: 5, Step: "restart", Status: "start", Msg: "重启 mpx ui 启用新版本"},
 	}
@@ -766,5 +766,24 @@ func TestUpdateViewCarriesNodes(t *testing.T) {
 	n := view.Nodes[0]
 	if n.Name != "la-1" || n.Core != model.CoreXray || n.Current != "26.3.27" || n.Target != "26.4.1" {
 		t.Fatalf("节点版本行不对: %+v", n)
+	}
+}
+
+// 节点事件在窗口里要是一句中文,失败时带上原因(以前只拼了状态词,原因丢了)。
+func TestNodeEventMsg(t *testing.T) {
+	cases := []struct {
+		ev   model.UpdateNodeEvent
+		want string
+	}{
+		{model.UpdateNodeEvent{Node: "jp-1", Core: "xray", From: "26.3.27", To: "v26.3.27", Status: "skip"}, "jp-1 xray:已是 v26.3.27,跳过"},
+		{model.UpdateNodeEvent{Node: "jp-1", Core: "xray", From: "25.1.1", To: "v26.3.27", Status: "start"}, "jp-1 xray:25.1.1 → v26.3.27 开始"},
+		{model.UpdateNodeEvent{Node: "jp-1", Core: "xray", From: "", To: "v26.3.27", Status: "ok"}, "jp-1 xray:- → v26.3.27 完成"},
+		{model.UpdateNodeEvent{Node: "jp-1", Core: "xray", Status: "rolled_back", Msg: "校验失败"}, "jp-1 xray:升级失败,已回滚(校验失败)"},
+		{model.UpdateNodeEvent{Node: "jp-1", Core: "xray", Status: "failed", Msg: "ssh: 连接被拒"}, "jp-1 xray:升级失败(ssh: 连接被拒)"},
+	}
+	for _, c := range cases {
+		if got := nodeEventMsg(c.ev); got != c.want {
+			t.Errorf("%+v: got %q want %q", c.ev, got, c.want)
+		}
 	}
 }
