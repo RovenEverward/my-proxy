@@ -409,7 +409,10 @@ async function saveSub() {
   try {
     await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
     // 不清空 SUB:重载回来前页面上的按钮仍要能用;草稿记成已保存,重载时换成控制面的最新值。
-    SUB.saving = false; SUB.err = ""; SUB.fieldErrors = {}; SUB.orig = clone(SUB.draft); refresh();
+    SUB.saving = false; SUB.err = ""; SUB.fieldErrors = {}; SUB.orig = clone(SUB.draft);
+    // 地址改了:控制面给的旧链接作废,预览改用令牌按新地址拼。
+    if (ks.includes("sub_url_prefix") && SUB.preview) SUB.preview.auto = "";
+    refresh();
     toast(`已保存 ${n} 处改动`); await load(true, true);
     return true;
   } catch (e) {
@@ -564,7 +567,7 @@ Object.assign(ACTS, {
   "s5-save": () => saveSub(),
   // 离开确认的三个选择:留下(地址已由 hashchange 守卫换回)、不保存直接走、保存成功再走。
   "sub-leave-stay": () => subCloseModal(),
-  "sub-leave-drop": () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; subLeave(t); },
+  "sub-leave-drop": () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; if (typeof t === "function") paint(); subLeave(t); },
   "sub-leave-save": async () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; if (await saveSub()) subLeave(t); },
   "rd-mv": d => { const i = +d.i, to = +d.to; const [x] = RD.rules.splice(i, 1); RD.rules.splice(to, 0, x); rdPaint(); },
   "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },

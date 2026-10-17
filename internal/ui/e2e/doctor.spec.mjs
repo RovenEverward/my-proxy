@@ -206,3 +206,17 @@ for (const [name, detail, wants, forbids] of [
     await expect(row.locator("[data-act=doc-apply]")).toHaveCount(1);
   });
 }
+
+// 控制面的提示里还用旧叫法(入站、入口、下发、排水、巡检)时,界面换成新说法再显示。
+test("控制面提示里的旧叫法换成界面用语", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+    { name: "订阅", status: "warn", detail: "还没有可发的节点", hint: "再加一个入站才会有订阅;入口、下发、排水、巡检" },
+  ] }) }));
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  const row = page.locator("main").getByText("再加一个连接方式才会有订阅");
+  await expect(row).toBeVisible();
+  await expect(row).toContainText("对外地址、应用到节点、暂停分配、体检");
+  await expect(page.locator("main")).not.toContainText(/入站|入口|下发|排水|巡检/);
+});

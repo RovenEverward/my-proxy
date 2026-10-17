@@ -267,7 +267,7 @@ function plPreview(users) {
   const nodeSet = [...new Set(auth.map(i => i.node_id))];
   const why = i => { const n = PLAN_CACHE.nodes.find(x => x.id === i.node_id); if (n && n.draining) return "暂停分配"; if (i.max_users && occ[i.id] >= i.max_users) return "满员"; return ""; };
   const ulist = users.length ? H`<div class="pl-sub"><div class="pl-sec">在用的用户</div><div class="pl-users">${users.slice(0, 12).map(u => H`<span class="tag">${u.username}</span>`)}${users.length > 12 ? H`<span class="tag g">+${users.length - 12}</span>` : ""}</div></div>` : "";
-  return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${auth.length} 个节点` : ""}</small></h5>
+  return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${nodeSet.length} 个节点、${auth.length} 个连接方式` : ""}</small></h5>
     ${auth.length ? nodeSet.map(nid => { const n = PLAN_CACHE.nodes.find(x => x.id === nid); return H`<div class="pl-g"><b>${planNodeName(n) || "节点"}</b>${auth.filter(i => i.node_id === nid).map(i => { const w = why(i); return H`<div class="pl-e ${w ? "dim" : ""}"><span class="pp-mk ${w ? "" : "ok"}">${ic(w ? "ban" : "check")}</span>${planInflightName(n, i)}<span class="sp"></span><span class="why">${w}</span></div>`; })}</div>`; })
       : H`<div class="pl-none"><span class="ill">${ic("ban")}</span><b>无可用节点</b><span>${users.length ? `${planCountText(users.length, users.filter(u => u.status === "active").length)} 个用户将断开` : "挂上的用户什么都用不了"}</span></div>`}
     ${ulist}</div>`;

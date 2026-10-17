@@ -259,7 +259,7 @@ async function nodeEditor(id) {
 function relabelModal() {
   const m = $("#modal");
   let plans = null;
-  m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
   <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>)，先出「旧名 → 新名」对照表。已经有显示名的节点会跳过，用户写过的值不会被覆盖。</p>
   <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>

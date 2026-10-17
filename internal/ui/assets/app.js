@@ -206,6 +206,8 @@ async function refreshUpdatePill(force) {
   if (b) b.hidden = !showUpdatePill(u);
 }
 let modalCleanup = null;
+// 换一个弹窗内容前先收掉上一个弹窗留下的焦点陷阱等(离页确认会设)。
+function modalTake() { const c = modalCleanup; modalCleanup = null; c?.(); }
 function closeModal() { const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
@@ -232,7 +234,7 @@ function openUpdateModal() {
   const c = u.control || {}, l = u.cli || {};
   const nodes = Array.isArray(u.nodes) ? u.nodes : [];
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
   ${releaseHighlights(u.notes).length ? H`<div class="upd-notes"><div class="upd-hl-t">这次更新</div><ul class="upd-hl">${releaseHighlights(u.notes).map(t => H`<li>${raw(inlineMd(t))}</li>`)}</ul></div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
@@ -365,7 +367,7 @@ function renderUpdAll() {
   const done = a.state === "done";
   const title = failed ? "更新失败" : done ? "已是最新" : "正在更新";
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
   <div class="upd-steps">${groups.map(g => H`<div class="upd-step">${updStepName(g.step)}</div>${g.evs.map(ev => H`<div class="upd-ev ${ev.status}">${ev.msg}</div>`)}`)}</div>
   ${failed ? H`<div class="err" role="alert">${failed.msg}</div>` : ""}</div>
   ${(failed || done) ? H`<div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>` : ""}`);
@@ -379,14 +381,14 @@ function updRestartWait() {
   if (updAll) { clearTimeout(updAll.timer); updAll = null; }
   const title = updProgName() + " 正在重启";
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
   <p class="sub">新版本起来后本页会自动刷新，会话沿用，无需重新登录。</p></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const deadline = Date.now() + 60000;
   const tick = async () => {
     try { await api("/ui/meta"); location.reload(); return; } catch {}
     if (Date.now() >= deadline) {
-      m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
+      modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
       <p class="sub">等了一分钟还没起来，请手动刷新本页确认状态。</p></div>
       <div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>`);
       $("#scrim").classList.add("open"); m.classList.add("open");
@@ -675,7 +677,7 @@ function afterWrite() { setTimeout(() => load(true, true), 0); }
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
 function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
@@ -710,7 +712,7 @@ async function openProfiles() {
   }
   // 每项只摆名称和地址;证书指纹在侧栏控制面卡片的展开面板里看。
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
   <p>切换后会记住，下次打开仍连你选的这个。</p>
   <div class="pflist">${list.map(p => { const addr = cpAddr(p.server), name = cpName(p.name, p.server);
     return H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
@@ -839,7 +841,7 @@ const ACTS = {
   "cp-switch": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
-  "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
+  "profile-add": () => { closeModal(); window.openConnectForm(); },
   "cl-skip": () => { clSet("skip-sub", true); toast("先用服务器 IP;之后在「订阅」里随时能改"); paint(); },
   "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
   "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },

@@ -443,3 +443,62 @@ test("规则修改后 Tab 的目标格式控件保留焦点，格式修改也保
   await page.selectOption('[data-rf="0"]', "sing-box");
   await expect(page.locator('[data-rf="0"]')).toBeFocused();
 });
+
+// 保存了新地址、页面还没重载回来时,预览和复制已经是新地址的链接,不再沿用旧链接。
+test("保存新订阅地址后，重载回来前预览就换成新链接", async ({ page }) => {
+  await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto: "http://127.0.0.1:1/sub/tok-1" } }));
+  let saved = false, hold;
+  const held = new Promise(r => { hold = r; });
+  // PUT 发出后拖住重载要取的内置规则,好看重载回来前的预览。
+  page.on("request", r => { if (r.method() === "PUT" && /\/api\/settings$/.test(r.url())) saved = true; });
+  await page.route("**/api/settings/builtin-rules", async r => { if (saved) await held; await r.continue(); });
+  await open(page);
+  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", "http://127.0.0.1:1/sub/tok-1");
+  await page.fill("#f-prefix", "https://sub.example.com");
+  await save(page);
+  await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
+  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", "https://sub.example.com/sub/tok-1");
+  hold();
+});
+
+// 选「不保存」后先把页面画回已保存的值;切换控制面失败时,页面不留着已丢掉的草稿和保存条。
+test("切换控制面选不保存但切换失败：页面已画回保存的值", async ({ page }) => {
+  await page.route("**/local/profiles", r => r.fulfill({ json: [
+    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
+  ] }));
+  await page.route("**/local/profiles/use", r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "连不上" }) }));
+  await open(page);
+  await page.fill("#f-title", "要丢掉的草稿");
+  await page.click(".profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=cp-switch]");
+  await page.click('.pfitem[data-name="other"]');
+  await page.getByRole("button", { name: "不保存", exact: true }).click();
+  await expect(page.locator("#f-title")).toHaveValue("{USERNAME}");
+  await expect(page.locator("#sb")).toBeEmpty();
+});
+
+// 离页对话框开着时,慢回来的「切换控制面」弹窗换掉它,要先收掉它的焦点陷阱;再点「添加控制面」后 Tab 不被拦回弹窗。
+test("弹窗被换掉时先收掉离页对话框的焦点陷阱", async ({ page }) => {
+  let release;
+  const held = new Promise(r => { release = r; });
+  await page.route("**/local/profiles", async r => { await held; await r.fulfill({ json: [
+    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
+  ] }); });
+  await open(page);
+  await page.fill("#f-title", "陷阱测试");
+  await page.click(".profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=cp-switch]");
+  await page.locator('.side a.nav[href="#nodes"]').click();
+  await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
+  release();
+  await expect(page.locator("#modal.open h2")).toHaveText("切换控制面");
+  await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
+  await expect(page.locator("#modal")).toHaveAttribute("role", "alertdialog");
+  const btn = page.locator("[data-act=profile-add]");
+  if (await btn.count()) {
+    await btn.click();
+    await expect(page.locator("#modal.open")).toHaveCount(0);
+    await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.getElementById("modal").contains(document.activeElement))).toBe(false);
+  }
+});

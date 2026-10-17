@@ -63,7 +63,7 @@ function doctorPage() {
     // 控制面按内部名给检查项起名(「节点 la-1」);界面上换成显示名,data-check 保留原名。
     const nm = /^节点 (.+)$/.exec(c.name)?.[1], lb = nm ? labelOfName(nm) : "";
     // 控制面给的提示里还是旧按钮名;界面上已改叫「应用到节点」「暂停分配」(控制面接口不改)。
-    const hint = (c.ui_hint || c.hint || "").replace(/下发配置/g, "应用到节点").replace(/排水/g, "暂停分配");
+    const hint = (c.ui_hint || c.hint || "").replace(/下发配置/g, "应用到节点").replace(/下发/g, "应用到节点").replace(/排水/g, "暂停分配").replace(/入站/g, "连接方式").replace(/入口/g, "对外地址").replace(/巡检/g, "体检");
     const shown = nm && lb !== nm ? hint.split(`打开 ${nm}`).join(`打开 ${lb}`) : hint;
     // 漂移警告:文案换成界面说法,后面跟一个行内「应用到节点」按钮。按钮本身不在这里
     // 下发,只是跳到节点详情并记下要自动触发的节点(nodes.js 画好后打开确认弹窗)。
