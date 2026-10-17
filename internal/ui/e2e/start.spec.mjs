@@ -21,7 +21,7 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   await login(page, env);
   await page.goto(env.origin + "/#overview");
   const start = page.locator("#start");
-  await expect(page.locator(".ph p")).toHaveText("欢迎用 MPX。跟着下面几步,把第一条订阅发出去。");
+  await expect(page.locator(".ph p")).toHaveText("欢迎用 MPX。跟着下面几步，把第一条订阅发出去。");
   await expect(page.locator("main")).not.toContainText("后台循环每");
   await expect(page.locator("main")).not.toContainText("入口决定订阅里发什么地址");
   await expect(start.locator(".cl-n")).toHaveText("1 / 4");
@@ -35,7 +35,7 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   await expect(ck.nth(1).locator(".ck-a .btn")).toHaveText(["先用 IP", "去设置"]);
   await expect(ck.nth(2).locator(".ck-a .btn")).toHaveCount(0);
   await expect(ck.nth(2).locator(".ck-i")).toHaveText("3");
-  await expect(start.locator(".ck.opt")).toContainText("可选:让它更好用");
+  await expect(start.locator(".ck.opt")).toContainText("可选：让它更好用");
   await expect(start.locator(".cl-bar i.on")).toHaveCount(1);
   await expect(page.locator(".card", { hasText: "需要处理的用户" })).toContainText("还没有用户");
 
@@ -52,7 +52,7 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   await page.reload();
   await expect(ck.nth(2)).toHaveClass(/done/);
   await expect(ck.nth(3)).toHaveClass(/cur/);
-  await expect(ck.nth(3)).toContainText("他的客户端第一次拉取订阅后,这一步自动完成");
+  await expect(ck.nth(3)).toContainText("他的客户端第一次拉取订阅后，这一步自动完成");
   await expect(ck.nth(3).locator("a.btn")).toHaveText("发给 frank");
   await expect(ck.nth(3).locator("a.btn")).toHaveAttribute("href", "#users/frank");
 

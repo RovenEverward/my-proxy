@@ -63,6 +63,7 @@ test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
   await env.cli("node", "edit", "1", "--address", "127.0.0.9", "--ssh-user", "deploy");
   const fromCLI = take(names, opt);
   await openNode(page, 2);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-edit]");
   await page.fill("#n-address", "127.0.0.9");
   await page.fill("#n-ssh-user", "deploy");
@@ -79,6 +80,7 @@ test("出口 IP:与 mpx node edit --outbound-ip 一致", async ({ page }) => {
   await env.cli("node", "edit", "1", "--outbound-ip", "v4");
   const fromCLI = take(names, opt);
   await openNode(page, 2);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-edit]");
   await page.click("details.adv summary");
   await page.selectOption("#n-outbound-ip", "v4");
@@ -96,6 +98,7 @@ test("显示名:与 mpx node edit --region / --city 一致,只发 metadata", asy
   const fromCLI = take(names, opt);
   expect(fromCLI.map(r => r.method + " " + r.path)).toEqual(["PUT /api/nodes/<id>/metadata"]);
   await openNode(page, 2);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-edit]");
   await page.fill("#n-region", "us");
   await page.fill("#n-city", "洛杉矶");
@@ -129,13 +132,16 @@ test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致",
   await env.cli("node", "undrain", "1");
   const undrainCLI = take([], opt);
   await openNode(page, 2);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-drain]");
   await page.click("[data-act=modal-cancel]");
   expect(env.takeLog()).toEqual([]);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-drain]");
   await page.click("#okb");
   await expect(page.locator("h1")).toContainText("已暂停分配");
   expect(take([], opt)).toEqual(drainCLI);
+  await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-drain]"); // 恢复分配不用确认
   await expect(page.locator("[data-act=node-drain]")).toHaveText("暂停分配");
   expect(take([], opt)).toEqual(undrainCLI);
@@ -210,7 +216,7 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   env.takeLog();
   await env.cli("inbound", "edit", "1", "--port", "9443", "--sni", "www.example.com", "--max-users", "10", "--mux");
   const fromCLI = take(names, opt);
-  await page.goto(env.origin + "/#inbounds");
+  await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='2']");
   // 入站字段收在编辑连接抽屉的「高级」里。
   await page.click("#conn-form details.adv2 > summary");
@@ -238,7 +244,7 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await env.cli("host", "rm", "1");
   const rmCLI = take([], opt);
 
-  await page.goto(env.origin + "/#inbounds");
+  await page.goto(env.origin + "/#nodes/2");
   // 入口按钮在编辑连接抽屉的「高级」里。
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-new][data-inb='2']");
@@ -278,7 +284,7 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   env.takeLog();
   await env.cli("inbound", "rm", "3");
   const inbCLI = take([], opt);
-  await page.goto(env.origin + "/#inbounds");
+  await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='4']");
   await page.click("#conn-form details.adv2 > summary");
   await page.click("[data-act=conn-rm]");
@@ -306,8 +312,8 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
 });
 
 // 「创建并应用到节点」:先建入站再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
-// 应用失败要把原因告诉使用者,入站照样建好,组头留着「有改动未应用 · 应用」可以重试。
-test("创建并应用到节点:应用失败时入站保留,组头可重试", async ({ page }) => {
+// 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,详情头部可以重试。
+test("创建并应用到节点:应用失败时入站保留,详情头部可重试", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#nodes/1");
   await page.click(".conn-card [data-act=conn-new]");
@@ -319,8 +325,81 @@ test("创建并应用到节点:应用失败时入站保留,组头可重试", asy
   await sync;
   await expect(page.locator(".toast")).toContainText("但应用到");
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
-  await expect(page.locator(".conn-card .ch [data-act=node-sync]")).toHaveText("应用");
-  await page.click(".conn-card .ch [data-act=node-sync]");
+  await expect(page.locator(".conn-card [data-act=node-sync]")).toHaveCount(0);
+  await expect(page.locator(".ph [data-act=node-sync]")).toHaveText("应用到节点");
+  await page.click(".ph [data-act=node-sync]");
   await expect(page.locator("#modal.open")).toContainText("把配置应用到");
   await page.click("[data-act=modal-cancel]");
+});
+
+test("旧入站地址与子路径跳到节点列表", async ({ page }) => {
+  await login(page, env);
+  for (const hash of ["inbounds", "inbounds/2"]) {
+    await page.goto(env.origin + "/#" + hash);
+    await expect(page).toHaveURL(/#nodes$/);
+    await expect(page.locator(".ph h1")).toHaveText("节点");
+    await expect(page.locator('a.nav[href="#nodes"]')).toHaveClass(/on/);
+  }
+});
+
+// 覆盖 pending、哈希漂移、从未应用三种主按钮条件,不需要真的 SSH 下发。
+for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
+  test(`节点详情头部操作:${state}`, async ({ page }) => {
+    await login(page, env);
+    await page.route("**/api/nodes/2", async route => {
+      const response = await route.fetch();
+      const n = await response.json();
+      n.deployed_hash = state === "从未应用" ? "" : "deployed";
+      n.status = { ...n.status, observed_hash: state === "漂移" ? "changed" : "deployed" };
+      await route.fulfill({ response, json: n });
+    });
+    await page.route("**/api/nodes/pending", route => route.fulfill({
+      json: state === "待应用" ? [{ node_id: 2, since: new Date().toISOString() }] : [],
+    }));
+    await openNode(page, 2);
+    await expect(page.locator("html[data-loading]")).toHaveCount(0);
+    const primary = page.locator(".ph .btn.pri");
+    if (state === "最新") {
+      await expect(primary).toHaveCount(0);
+      await page.click("[data-act=node-menu]");
+      const menu = page.locator("#node-menu");
+      await expect(menu).toBeVisible();
+      await expect(menu.locator("[data-act=node-check]")).toHaveText("刷新状态");
+      await expect(menu.locator("[data-act=node-drain]")).toHaveText("暂停分配");
+      await expect(menu.locator("[data-act=node-edit]")).toHaveText("编辑");
+      // 没有待应用时也能手动应用(改出口 IP 之类控制面不记待应用的改动)。
+      await expect(menu.locator("[data-act=node-sync]")).toHaveText("应用到节点");
+      await page.locator(".ph h1").click();
+      await expect(menu).toBeHidden();
+      await page.click("[data-act=node-menu]");
+      await menu.locator("[data-act=node-edit]").click();
+      await expect(page.locator("#drawer.open #node-form")).toBeVisible();
+      await expect(menu).toBeHidden();
+    } else {
+      await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveCount(0);
+      await expect(primary).toHaveText("应用到节点");
+      await expect(primary).toHaveAttribute("data-act", "node-sync");
+    }
+    const card = page.locator(".conn-card");
+    await expect(card.locator("[data-act=node-sync]")).toHaveCount(0);
+    await expect(card.locator(".tag.pend")).toHaveCount(state === "待应用" ? 1 : 0);
+    if (state === "待应用") await expect(card.locator(".tag.pend")).toHaveText("有改动未应用");
+  });
+}
+
+test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此一直挂着主按钮", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "";
+    n.status = { ...n.status, observed_hash: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator(".ph .btn.pri")).toHaveCount(0);
+  await page.click("[data-act=node-menu]");
+  await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveText("应用到节点");
 });

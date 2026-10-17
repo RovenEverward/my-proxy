@@ -107,7 +107,7 @@ test("停用要确认、取消不发请求;停用与启用和 CLI 一致", async
 
   await openUser(page, "ui-toggle");
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-toggle]");
-  await expect(page.locator("#modal.open")).toContainText("停用 ui-toggle?");
+  await expect(page.locator("#modal.open")).toContainText("停用 ui-toggle？");
   await page.click("[data-act=modal-cancel]");
   await page.waitForTimeout(300);
   expect(env.takeLog()).toEqual([]);
@@ -177,7 +177,7 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
   await page.click("[data-act=user-revoke]");
   await expect(page.locator("#user-menu")).toBeHidden();
   const modal = page.locator("#modal.open");
-  await expect(modal).toContainText("给 ui-relink 换一条新链接?");
+  await expect(modal).toContainText("给 ui-relink 换一条新链接？");
   await expect(modal).toContainText("旧链接马上失效");
   await expect(modal).toContainText("重新扫码或粘贴新链接");
   // 不是删除:主按钮不用红色危险样式。
@@ -191,7 +191,7 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
 
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-revoke]");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已换成新链接,旧链接已失效");
+  await expect(page.locator(".toast")).toContainText("已换成新链接，旧链接已失效");
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toContain("/api/users/ui-relink/revoke-sub");
   await expect(page.locator(".send-link")).not.toHaveAttribute("title", before);
@@ -210,6 +210,10 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   const empty = page.locator("#f-plans .plan", { hasText: "空的套餐" });
   await expect(empty.locator(".plan-n")).toHaveText("没有节点");
   await expect(page.locator("#f-plans .plan", { hasText: "默认套餐" }).locator(".plan-n")).toHaveText("2 个节点");
+  // 数字用正文字体(不是等宽),和「个」之间一个普通空格。
+  const pn = page.locator("#f-plans .plan", { hasText: "默认套餐" }).locator(".plan-n");
+  expect(await pn.evaluate(el => el.textContent)).toBe("2 个节点");
+  expect(await pn.evaluate(el => getComputedStyle(el).fontFamily)).toBe(await page.evaluate(() => getComputedStyle(document.body).fontFamily));
   await empty.click();
   const block = page.locator('#user-form .block:not([hidden])');
   await expect(block).toContainText("「空的套餐」里还没有节点");
@@ -246,9 +250,32 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   await expect(page.locator("#drawer .created")).toHaveCount(0);
   // 本机向控制面取链接失败时,二维码改用页面手里的链接画,不留一张坏图。
   await page.route(/\/local\/qr\.svg\?u=/, r => r.fulfill({ status: 502, contentType: "application/json", body: "{\"error\":\"x\"}" }));
+  // 退回的二维码也是本机画的:整个过程页面只请求本机界面,不碰任何外部服务。
+  const hosts = new Set();
+  page.on("request", q => hosts.add(new URL(q.url()).origin));
   await page.reload();
   await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /\/local\/qr\.svg\?d=http/);
   expect(await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; })).toBe(true);
+  expect([...hosts]).toEqual([env.origin]);
+});
+
+test("抽屉窄视口:没设订阅前缀的提示一行显示,不折行且完整文案在 title", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await login(page, env);
+  await openUser(page, "ui-misc");
+  const line = page.locator("#drawer .send-ip-t");
+  await expect(line).toBeVisible();
+  const full = "链接里是服务器 IP，设好订阅地址后新旧链接都能用";
+  await expect(line).toHaveText(full);
+  await expect(line).toHaveAttribute("title", full);
+  const oneLine = await line.evaluate(el => {
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    return el.scrollHeight <= lh * 1.5 && el.getClientRects().length === 1;
+  });
+  expect(oneLine).toBe(true);
+  // 390 宽也放得下整句(不靠省略号):「去设置」可以换到下一行。
+  expect(await line.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(page.locator("#drawer .send-ip a", { hasText: "去设置" })).toBeVisible();
 });
 
 test("删除用户:要逐字输入用户名才放行,和 mpx user rm 一致", async ({ page }) => {

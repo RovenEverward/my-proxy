@@ -13,7 +13,7 @@ async function modifySettings(change) {
   change(s);
   return write("PUT", "/api/settings", s);
 }
-const GENERAL = [["sub_url_prefix", "订阅地址前缀", "s", "发给用户的链接以它开头,前面通常是 TLS 反代"], ["profile_title", "订阅标题", "s", "客户端里显示的订阅名,支持 {USERNAME} 等变量"], ["update_interval", "客户端刷新间隔(小时)", "i", ""],
+const GENERAL = [["sub_url_prefix", "订阅地址前缀", "s", "发给用户的链接以它开头，前面通常是 TLS 反代"], ["profile_title", "订阅标题", "s", "客户端里显示的订阅名，支持 {USERNAME} 等变量"], ["update_interval", "客户端刷新间隔(小时)", "i", ""],
   ["support_link", "支持链接", "s", ""], ["webhook_url", "Webhook", "s", "到期、超限等通知发到这里;留空不发"], ["notify_days_left", "到期前提醒(天)", "i", "0 表示关闭"], ["notify_usage_percent", "用量提醒(%)", "i", "0 表示关闭"]];
 // 原「设置」拆成两页(都还是同一份 settings,保存时先读回最新一份、只改自己那几项):
 // 「订阅」= 地址与显示 · 客户端识别 · 订阅底稿(高级);「系统」= 通知 · 设备与接入 · 备份与恢复 · 更新与版本。
@@ -52,7 +52,7 @@ PAGES.sub = {
     if (t === "") {
       const by = Object.fromEntries(GENERAL.map(g => [g[0], g])), f = k => settingsField(s, W, by[k]);
       return H`${head}<div class="grid g2">${settingsForm(s, W, SUB_FIELDS, H`${f("sub_url_prefix")}<div class="two">${f("profile_title")}${f("update_interval")}</div>${f("support_link")}`)}
-        <div class="card pad16 self-start"><div class="sub mb8">用户拿到的链接</div><p class="sub">${s.sub_url_prefix ? "" : H`<b>还没设订阅地址:</b>发出去的链接会直接带服务器 IP。`}订阅地址形如 <code>${s.sub_url_prefix || "http://服务器 IP:端口"}/sub/&lt;token&gt;</code>。</p>
+        <div class="card pad16 self-start"><div class="sub mb8">用户拿到的链接</div><p class="sub">${s.sub_url_prefix ? "" : H`<b>还没设订阅地址：</b>发出去的链接会直接带服务器 IP。`}订阅地址形如 <code>${s.sub_url_prefix || "http://服务器 IP:端口"}/sub/&lt;token&gt;</code>。</p>
         <div class="callout stone mt"><div>标题里的 <code>{USERNAME}</code> 会换成用户名。</div></div></div></div>`;
     }
     if (t === "clients") return clientRulesCard(head, s, W);
@@ -80,7 +80,7 @@ PAGES.system = {
     if (t === "") {
       const by = Object.fromEntries(GENERAL.map(g => [g[0], g])), f = k => settingsField(s, W, by[k]);
       return H`${head}<div class="grid g2">${settingsForm(s, W, NOTIFY_FIELDS, H`${f("webhook_url")}<div class="two">${f("notify_days_left")}${f("notify_usage_percent")}</div>`)}
-        <div class="card pad16 self-start"><div class="sub mb8">会通知什么</div><p class="sub">用户快到期、用量快用完时,往 Webhook 发一条消息。两个提醒填 0 就不发。</p></div></div>`;
+        <div class="card pad16 self-start"><div class="sub mb8">会通知什么</div><p class="sub">用户快到期、用量快用完时，往 Webhook 发一条消息。两个提醒填 0 就不发。</p></div></div>`;
     }
     if (t === "devices") return devicesTab(head, d);
     return backupTab(head);
@@ -90,10 +90,10 @@ PAGES.system = {
 
 function clientRulesCard(head, s, W) {
       const R = s.rules || [];
-      return H`${head}<div class="card"><div class="ch">客户端识别<small>· 自上而下,先命中先用 · 共 ${R.length} 条</small><span class="sp"></span>${W ? H`<button class="btn ghost sm" data-act="rule-reset">恢复默认</button><button class="btn sm" data-act="rule-add">${ic("plus")}加规则</button>` : ""}</div>
+      return H`${head}<div class="card"><div class="ch">客户端识别<small>· 自上而下，先命中先用 · 共 ${R.length} 条</small><span class="sp"></span>${W ? H`<button class="btn ghost sm" data-act="rule-reset">恢复默认</button><button class="btn sm" data-act="rule-add">${ic("plus")}加规则</button>` : ""}</div>
         ${R.map((x, i) => H`<div class="row"><span class="sub mono w18">${i + 1}</span><code class="ell grow">${x.pattern}</code><span class="sub ua-to" aria-label="发">${ic("arrow")}</span><span class="tag">${x.result}</span>
           ${W ? H`<button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button class="ib sm" data-act="rule-rm" data-i="${i}" aria-label="删除">${ic("x", "sm")}</button>` : ""}</div>`)}
-        <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。规则从上往下比对,想调整优先级就上下移动。</div></div>`;
+        <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。规则从上往下比对，想调整优先级就上下移动。</div></div>`;
     }
 
 function devicesTab(head, d) {
@@ -103,13 +103,13 @@ function devicesTab(head, d) {
         ${D.length ? D.map(x => H`<div class="row"><span class="sub mono w18">${x.id}</span><b class="ell grow">${x.name}</b>${x.current ? H`<span class="pill on">这台</span>` : ""}
           <span class="sub">${x.last_used_at ? "上次 " + sinceText(x.last_used_at) : "未用过"}${x.last_ip ? " · " + x.last_ip : ""}</span>
           ${X && !x.current ? H`<button class="btn sm" data-act="dev-revoke" data-id="${x.id}" data-name="${x.name}">吊销</button>` : ""}</div>`) : H`<div class="row sub">还没有设备接入。在另一台设备的 MPX 里选「接入已有控制面」即可。</div>`}
-        <div class="row sub">「这台」就是当前正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销它,请换一台已接入的设备操作。</div></div>
+        <div class="row sub">「这台」就是当前正在用的设备，界面里不让吊销它，免得把自己踢下线;要吊销它，请换一台已接入的设备操作。</div></div>
         ${PW || PWOFF ? devicePasswordCard(PW, PWOFF) : ""}`;
     }
 
 function backupTab(head) {
-    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
-      <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">从备份恢复暂不支持在窗口里操作,见文档「备份控制面」。恢复会整库替换并重启控制面,务必先确认备份文件。</p></div></div>`;
+    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥，打包成一个归档。里面有全部用户的订阅 token，妥善保管。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
+      <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">从备份恢复暂不支持在窗口里操作，见文档「备份控制面」。恢复会整库替换并重启控制面，务必先确认备份文件。</p></div></div>`;
 }
 
 function settingsAfter(d, r) {
@@ -127,7 +127,7 @@ function settingsAfter(d, r) {
         const btn = $("#dpw-save"); btn.disabled = true; btn.classList.add("busy");
         try {
           const res = await api("/api/device-password", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw, revoke_all: revoke }) });
-          toast(revoke ? `设备密码已更新,吊销了 ${(res && res.revoked) || 0} 台设备(这台也要重新接入)` : "设备密码已更新;已接入的设备不受影响");
+          toast(revoke ? `设备密码已更新，吊销了 ${(res && res.revoked) || 0} 台设备(这台也要重新接入)` : "设备密码已更新;已接入的设备不受影响");
           $("#dpw1").value = ""; $("#dpw2").value = ""; $("#dpw-revoke").checked = false;
           afterWrite();
         } catch (e2) { $("#dpw-err").textContent = e2.message; }
@@ -166,21 +166,21 @@ function devicePasswordCard(PW, PWOFF) {
       <div class="field"><label for="dpw1">新密码</label><input class="in" id="dpw1" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}><span class="h">至少 12 个字符</span></div>
       <div class="field"><label for="dpw2">再输一次</label><input class="in" id="dpw2" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}></div>
     </div>
-    <label class="chk"><input type="checkbox" id="dpw-revoke" ${PW ? "" : raw("disabled")}> 同时吊销所有已接入设备(包括这台,之后要重新接入)</label>
+    <label class="chk"><input type="checkbox" id="dpw-revoke" ${PW ? "" : raw("disabled")}> 同时吊销所有已接入设备(包括这台，之后要重新接入)</label>
     <div class="err mt8" id="dpw-err" role="alert"></div>
     <div class="flex8 end mt">
       ${PWOFF ? H`<button type="button" class="btn" data-act="dpw-off">关闭设备密码接入</button>` : ""}
       ${PW ? H`<button type="submit" class="btn pri" id="dpw-save">保存设备密码</button>` : ""}
     </div>
-    <p class="sub mt8">关闭后新设备不能再接入,已接入的设备不受影响;要再开,在这里设一个新密码。</p></form>`;
+    <p class="sub mt8">关闭后新设备不能再接入，已接入的设备不受影响;要再开，在这里设一个新密码。</p></form>`;
 }
 
 /* ---- 模板 ---- */
 // 每种格式的真实含义,出自 internal/render 与 internal/server/templates.go。
 const TPL_META = {
   "clash-meta": { lang: "yaml", L: "YAML", ext: ".yaml", inject: "proxies", how: "注入 proxies,rule-providers / proxy-groups / rules / dns 原样带出;必须有顶层 rule-providers 段" },
-  "sing-box": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "注入节点 outbounds,并把 proxy / auto / direct / block 四个占位 tag 换成本次节点的版本" },
-  "xray": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "每个入口生成一份完整配置:节点作为第一条 outbound 插进模板的 outbounds,其余原样" },
+  "sing-box": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "注入节点 outbounds，并把 proxy / auto / direct / block 四个占位 tag 换成本次节点的版本" },
+  "xray": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "每个入口生成一份完整配置：节点作为第一条 outbound 插进模板的 outbounds，其余原样" },
 };
 const tplBytes = t => new TextEncoder().encode(t).length;
 const tplLines = t => t ? t.split("\n").length - (t.endsWith("\n") ? 1 : 0) : 0;
@@ -198,11 +198,11 @@ function templatesTab(head, s, bodies) {
     <td class="num"><div class="flex6 end"><button class="btn sm" data-act="tpl-open" data-f="${f}">${W ? (c ? "编辑" : "查看 / 自定义") : "查看"}</button>${c && D ? H`<button class="btn ghost sm c-bad" data-act="tpl-del" data-f="${f}">恢复内置</button>` : ""}</div></td></tr>`; });
   return H`${head}
   <div class="card pad16 mb tpl-intro"><div class="u"><span class="fi lg">${ic("tpl")}</span><div class="grow">
-    <b class="b6">订阅底稿</b><p class="sub mt4">用户拉 clash-meta / sing-box / xray 订阅时,控制面把这个人能用的节点注入模板,模板里的其余部分(分流规则、策略组、DNS…)原样发给所有人。没存自定义底稿的格式用内置默认。</p></div></div>
-    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS:点「查看 / 自定义」在内置模板上直接改;也可以先存成文件改完,再用抽屉里的「从文件读…」传回来。</div></div>` : ""}</div>
+    <b class="b6">订阅底稿</b><p class="sub mt4">用户拉 clash-meta / sing-box / xray 订阅时，控制面把这个人能用的节点注入模板，模板里的其余部分(分流规则、策略组、DNS…)原样发给所有人。没存自定义底稿的格式用内置默认。</p></div></div>
+    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS：点「查看 / 自定义」在内置模板上直接改;也可以先存成文件改完，再用抽屉里的「从文件读…」传回来。</div></div>` : ""}</div>
   <div class="card"><div class="ch">订阅底稿<small>· ${n} 个自定义 / ${TPL_FORMATS.length} 种格式</small></div>
     <div class="tw"><table class="tpl-t"><thead><tr><th>格式</th><th class="hide-m">语言</th><th>状态</th><th class="num hide-m">大小</th><th class="num hide-m">行数</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row sub">clash(原版)、links、base64-links 不用模板:前者固定输出最小集合,后两者是纯分享链接。控制面不记录模板的修改时间。</div></div>`;
+    <div class="row sub">clash(原版)、links、base64-links 不用模板：前者固定输出最小集合，后两者是纯分享链接。控制面不记录模板的修改时间。</div></div>`;
 }
 
 // jsonErrAt 找出 JSON 第一处语法错误的字符偏移(新版浏览器的 JSON.parse 报错不带位置)。
@@ -230,14 +230,14 @@ function validateTpl(f, text) {
       let line, col; const lc = /line (\d+) column (\d+)/.exec(e.message), pos = /position (\d+)/.exec(e.message);
       const at = lc ? null : pos ? +pos[1] : jsonErrAt(text);
       if (lc) { line = +lc[1]; col = +lc[2]; } else if (at != null) { const pre = text.slice(0, at).split("\n"); line = pre.length; col = pre[pre.length - 1].length + 1; }
-      return { line, msg: `不是合法的 JSON${line ? `:第 ${line} 行第 ${col} 列附近` : ""}(${e.message.replace(/^JSON\.parse: /, "")})` };
+      return { line, msg: `不是合法的 JSON${line ? `：第 ${line} 行第 ${col} 列附近` : ""}(${e.message.replace(/^JSON\.parse: /, "")})` };
     }
   }
   const L = text.split("\n");
-  const tab = L.findIndex(l => /^\s*\t/.test(l)); if (tab >= 0) return { line: tab + 1, msg: `第 ${tab + 1} 行用 Tab 缩进了,YAML 只能用空格` };
+  const tab = L.findIndex(l => /^\s*\t/.test(l)); if (tab >= 0) return { line: tab + 1, msg: `第 ${tab + 1} 行用 Tab 缩进了，YAML 只能用空格` };
   const first = L.findIndex(l => l.trim() && !/^\s*#/.test(l) && l.trim() !== "---");
-  if (first >= 0 && !/^[^\s#-][^:]*:(\s|$)/.test(L[first])) return { line: first + 1, msg: "顶层必须是映射(key: value),不能是列表或纯文本" };
-  if (!L.some(l => /^(rule-providers|"rule-providers"|'rule-providers')\s*:/.test(l))) return { msg: "缺顶层 rule-providers 段(proxies 的插入点),服务端会拒收" };
+  if (first >= 0 && !/^[^\s#-][^:]*:(\s|$)/.test(L[first])) return { line: first + 1, msg: "顶层必须是映射(key: value)，不能是列表或纯文本" };
+  if (!L.some(l => /^(rule-providers|"rule-providers"|'rule-providers')\s*:/.test(l))) return { msg: "缺顶层 rule-providers 段(proxies 的插入点)，服务端会拒收" };
   return null;
 }
 
@@ -247,16 +247,16 @@ async function templateDrawer(f) {
   const m = TPL_META[f], W = can("PUT", "/api/settings/templates/x"), c = !!(current.data?.settings?.templates || {})[f], orig = text;
   openDrawer(H`<form id="tpl-form" novalidate><div class="dh"><span class="fi">${ic("tpl")}</span><div style="min-width:0"><h2><span class="mono">${f}</span> 订阅底稿 <span class="pill ${c ? "on" : ""}">${c ? "自定义" : "内置默认"}</span></h2><div class="sub ell">${m.how}</div></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db tpl-db">
-    ${c ? "" : H`<div class="callout stone mb8 tpl-note"><div>这是内置默认的副本。${W ? "改动后保存,就成为 " : ""}${W ? H`<b>${f}</b> 的自定义模板,对所有用户生效。` : ""}</div></div>`}
+    ${c ? "" : H`<div class="callout stone mb8 tpl-note"><div>这是内置默认的副本。${W ? "改动后保存，就成为 " : ""}${W ? H`<b>${f}</b> 的自定义模板，对所有用户生效。` : ""}</div></div>`}
     <div id="tpl-ed"></div>
-    <div class="ed-s"><span class="tag">${m.L}</span><span id="tpl-pos">行 1,列 1</span><span id="tpl-size"></span><span id="tpl-dirty" class="c-warn"></span><span class="sp"></span><span id="tpl-ok"></span></div>
+    <div class="ed-s"><span class="tag">${m.L}</span><span id="tpl-pos">行 1，列 1</span><span id="tpl-size"></span><span id="tpl-dirty" class="c-warn"></span><span class="sp"></span><span id="tpl-ok"></span></div>
     <div class="callout bad mt8 hidden" id="tpl-err" role="alert"></div></div>
   <div class="df">${W ? H`<label class="btn sm ghost">${ic("up")}从文件读…<input type="file" id="tpl-file" accept="${m.ext},.txt,.yml" hidden></label>${m.lang === "json" ? H`<button type="button" class="btn sm ghost" id="tpl-fmt">格式化</button>` : ""}<button type="button" class="btn sm ghost" id="tpl-revert" disabled>撤销改动</button>` : ""}<span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save" disabled>保存</button>` : ""}</div></form>`, "wide");
   const err = $("#tpl-err"), save = $("#tpl-save");
-  const showErr = (r, server, jump = true) => { err.classList.toggle("hidden", !r); err.innerHTML = r ? val(H`${ic("warn")}<div>${server ? H`<b>服务端拒收:</b>` : ""}${r.msg}${r.line ? H` <button type="button" class="lnk" id="tpl-goto">跳到第 ${r.line} 行</button>` : ""}</div>`) : ""; if (r?.line) { ed.mark(r.line, jump); $("#tpl-goto").onclick = () => { ed.mark(r.line); ed.focus(); }; } };
+  const showErr = (r, server, jump = true) => { err.classList.toggle("hidden", !r); err.innerHTML = r ? val(H`${ic("warn")}<div>${server ? H`<b>服务端拒收：</b>` : ""}${r.msg}${r.line ? H` <button type="button" class="lnk" id="tpl-goto">跳到第 ${r.line} 行</button>` : ""}</div>`) : ""; if (r?.line) { ed.mark(r.line, jump); $("#tpl-goto").onclick = () => { ed.mark(r.line); ed.focus(); }; } };
   let t = 0;
   const status = kind => {
-    const [ln, col] = ed.cursor(); $("#tpl-pos").textContent = `行 ${ln},列 ${col}`;
+    const [ln, col] = ed.cursor(); $("#tpl-pos").textContent = `行 ${ln}，列 ${col}`;
     if (kind === "cursor") return;
     const v = ed.value, dirty = v !== orig;
     $("#tpl-size").textContent = `${tplLines(v)} 行 · ${tplSize(tplBytes(v))}`;
@@ -284,11 +284,11 @@ async function templateDrawer(f) {
 Object.assign(ACTS, {
   "set-revert": () => load(true, true),
   "set-test": (d, b) => busy(b, async () => { await write("POST", "/api/settings/test-webhook", undefined, "测试通知已送到"); }),
-  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效,要再用得在那台机器上重新接入。", ok: "吊销", danger: true,
+  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}？`, text: "它的 token 立即失效，要再用得在那台机器上重新接入。", ok: "吊销", danger: true,
     run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
-  "dpw-off": () => confirmBox({ title: "关闭设备密码接入?", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开,在这里设一个新密码即可。", ok: "关闭设备密码接入", danger: true,
+  "dpw-off": () => confirmBox({ title: "关闭设备密码接入？", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开，在这里设一个新密码即可。", ok: "关闭设备密码接入", danger: true,
     run: async () => { await write("DELETE", "/api/device-password", undefined, "已关闭设备密码接入;已接入的设备不受影响"); } }),
-  "rule-add": () => confirmBox({ title: "加一条客户端识别规则", text: "PATTERN 是 Go 正则,不区分大小写就以 (?i) 开头。顺序即优先级:宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
+  "rule-add": () => confirmBox({ title: "加一条客户端识别规则", text: "PATTERN 是 Go 正则，不区分大小写就以 (?i) 开头。顺序即优先级：宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
     extra: H`<div class="field"><label for="r-pat">User-Agent 正则</label><input class="in mono" id="r-pat" placeholder="(?i)karing" autocomplete="off"></div>
       <div class="two"><div class="field"><label for="r-res">命中后返回</label><select class="in" id="r-res">${RULE_RESULTS.map(x => H`<option>${x}</option>`)}</select></div>
       <div class="field"><label for="r-idx">插到第几位</label><input class="in mono" id="r-idx" placeholder="留空加在最后" inputmode="numeric"></div></div>`,
@@ -299,15 +299,15 @@ Object.assign(ACTS, {
       await modifySettings(s => {
         const R = s.rules || [];
         at = R.length;
-        if (idx) { const i = /^\d+$/.test(idx) ? +idx : NaN; if (!(i >= 1 && i <= R.length + 1)) throw new Error(`序号 ${idx} 超出范围:当前 ${R.length} 条`); at = i - 1; }
+        if (idx) { const i = /^\d+$/.test(idx) ? +idx : NaN; if (!(i >= 1 && i <= R.length + 1)) throw new Error(`序号 ${idx} 超出范围：当前 ${R.length} 条`); at = i - 1; }
         R.splice(at, 0, { pattern, result }); s.rules = R;
       });
       toast(`已加规则 ${at + 1}: ${pattern} → ${result}`); await load(true, true);
     } }),
-  "rule-rm": d => { const i = +d.i; confirmBox({ title: `删掉第 ${i + 1} 条规则?`, text: "删完如果一条不剩,就回到内置默认。", ok: "删除规则", danger: true,
+  "rule-rm": d => { const i = +d.i; confirmBox({ title: `删掉第 ${i + 1} 条规则？`, text: "删完如果一条不剩，就回到内置默认。", ok: "删除规则", danger: true,
     run: async () => { await modifySettings(s => { s.rules.splice(i, 1); }); toast(`已删掉第 ${i + 1} 条规则`); await load(true, true); } }); },
   "rule-move": (d, b) => busy(b, async () => { const i = +d.i, to = +d.to; await modifySettings(s => { const [x] = s.rules.splice(i, 1); s.rules.splice(to, 0, x); }); toast(`已把第 ${i + 1} 条挪到第 ${to + 1} 位`); await load(true, true); }),
-  "rule-reset": () => confirmBox({ title: "恢复内置默认规则?", text: "清掉全部自定义规则,回到内置默认那套(认得出主流客户端及其改名版)。", ok: "恢复默认", danger: true,
+  "rule-reset": () => confirmBox({ title: "恢复内置默认规则？", text: "清掉全部自定义规则，回到内置默认那套(认得出主流客户端及其改名版)。", ok: "恢复默认", danger: true,
     run: async () => { await modifySettings(s => { s.rules = null; }); toast("已恢复内置默认规则"); await load(true, true); } }),
   // 备份经 fetch 取回再存盘:直接点链接遇上限流(429)会把错误 JSON 当文件存下来。
   "backup": (d, b) => busy(b, async () => {
@@ -325,7 +325,7 @@ Object.assign(ACTS, {
     toast("已开始下载 " + name);
   }),
   "tpl-open": d => templateDrawer(d.f),
-  "tpl-del": d => confirmBox({ title: `恢复 ${d.f} 为内置订阅底稿?`, text: `会删除你存的 ${d.f} 自定义模板(不可撤销,控制面不留历史);之后所有用户的 ${d.f} 订阅改用内置默认。想留底,先打开模板把内容复制出来。`,
+  "tpl-del": d => confirmBox({ title: `恢复 ${d.f} 为内置订阅底稿？`, text: `会删除你存的 ${d.f} 自定义模板(不可撤销，控制面不留历史);之后所有用户的 ${d.f} 订阅改用内置默认。想留底，先打开模板把内容复制出来。`,
     ok: "删除自定义底稿", danger: true, typed: d.f,
     run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已恢复 ${d.f} 为内置订阅底稿`); closeOverlays(); await load(true, true); } }),
 });

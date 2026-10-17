@@ -50,8 +50,8 @@ for (const theme of ["light", "dark"]) {
     await go("nodes"); await page.click("[data-act=node-wizard]"); await check("添加节点向导"); await page.click("#drawer .wlnk"); await check("新建节点抽屉");
     await go("nodes/1"); await expect(page.locator("h1")).toContainText("hk");
     await page.click("[data-act=node-install]"); await check("安装核心确认框");
-    await go("inbounds"); await page.click("[data-act=conn-new] >> nth=0"); await check("添加连接抽屉");
-    await go("inbounds"); await page.click(".cx-row[data-act=conn-edit] >> nth=0"); await page.click("#conn-form details.adv2 > summary"); await check("编辑连接抽屉");
-    await go("inbounds"); await page.click(".cx-row[data-act=conn-edit] >> nth=0"); await page.click("#conn-form details.adv2 > summary"); await page.click("[data-act=conn-host-new] >> nth=0"); await check("新建入口抽屉");
+    await go("nodes/1"); await page.click(".conn-card .ch [data-act=conn-new]"); await check("添加连接抽屉");
+    await go("nodes/1"); await page.click(".cx-row[data-act=conn-edit] >> nth=0"); await page.click("#conn-form details.adv2 > summary"); await check("编辑连接抽屉");
+    await go("nodes/1"); await page.click(".cx-row[data-act=conn-edit] >> nth=0"); await page.click("#conn-form details.adv2 > summary"); await page.click("[data-act=conn-host-new] >> nth=0"); await check("新建入口抽屉");
   });
 }

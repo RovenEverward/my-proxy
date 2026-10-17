@@ -33,7 +33,7 @@ test("删除用户:列表里立刻没了这个人", async ({ page }) => {
   await expect(userRow(page, "r-rm")).toHaveCount(1);
   await userRow(page, "r-rm").click();
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-rm]");
-  await expect(page.locator("#modal.open")).toContainText("删除 r-rm?");
+  await expect(page.locator("#modal.open")).toContainText("删除 r-rm？");
   await page.fill("#typed", "r-rm");
   await page.click("#okb");
   await expect(page).toHaveURL(/#users$/);
@@ -68,9 +68,9 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
   await expect(userRow(page, "r-renew")).not.toHaveText(before, NOW);
 });
 
-test("删除入口与入站:入站页立刻更新", async ({ page }) => {
+test("删除入口与入站:节点详情的连接方式立刻更新", async ({ page }) => {
   await login(page, env);
-  await page.goto(env.origin + "/#inbounds");
+  await page.goto(env.origin + "/#nodes/1");
   // 只有一个入口时行上没有展开按钮;编辑连接抽屉的「高级」里能编辑这个入口。
   await page.click(".cx-row[data-act=conn-edit][data-id='1']");
   await page.click("#conn-form details.adv2 > summary");

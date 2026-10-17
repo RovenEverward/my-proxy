@@ -153,7 +153,7 @@ function render3() {
   if ($("#w-port")) $("#w-port").addEventListener("click", () => { W.preset = "custom"; W.errs = {}; W.step = 2; render2(); });
   if ($("#w-del")) $("#w-del").addEventListener("click", () => {
     const nodeId = t.nodeId;
-    confirmBox({ title: `删除刚加的节点 ${W.display || W.address}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
+    confirmBox({ title: `删除刚加的节点 ${W.display || W.address}？`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
       run: async () => { await api(`/api/nodes/${nodeId}`, { method: "DELETE" }); closeOverlays(); load(true, true); } });
   });
   if ($("#w-later")) $("#w-later").addEventListener("click", () => { closeOverlays(); location.hash = "nodes/" + t.nodeId; });

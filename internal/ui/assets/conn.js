@@ -2,11 +2,10 @@
 // 更多菜单,以及三个抽屉(添加连接 / 再加一个入口 / 编辑连接)。
 //
 // 谁在用:
-//   - 入站与入口页(inbounds.js)只剩页头 + CONN.groups(d);
-//   - 节点详情页的「连接方式」以后直接用它,不要再抄一份行/抽屉:
+//   - 节点详情页的「连接方式」是唯一入口,直接使用行/抽屉:
 //       const d = await CONN.load([nodeID]);      // 只拉这台节点的入站
 //       ... CONN.groups(d, { node: nodeID })      // 不带组头,只有这台的连接行
-//     抽屉保存后调用的全局刷新是 load(true, true),所以组件不依赖入站页。
+//     抽屉保存后调用全局刷新 load(true, true)。
 //
 // 动作名统一 conn-*;旧的 inb-new / inb-edit / inb-rm / host-new / host-edit / host-rm
 // 保留为别名(nodes 页与老测试还在用)。
@@ -176,10 +175,10 @@ function inbGroup(n, list) {
 // connLoad(nodeIds):拉组件要的全部数据。nodeIds 给了就只留这些节点的入站,
 // 但节点列表里没有连接的节点也照样返回(节点详情要显示「还没有连接」)。
 let INB_PENDING = new Set();
-// 节点组头 / 节点详情里的「有改动未应用 · 应用」。「应用」走节点页同一个 node-sync(确认后 POST /sync)。
-function connPending(n) {
+// 未应用提示;节点详情传 tagOnly,应用按钮统一放在详情头部。
+function connPending(n, opts = {}) {
   if (!INB_PENDING.has(n.id)) return "";
-  return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
+  return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${!opts.tagOnly && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
 }
 // 给灰字说明用的节点名:不带国旗。
 const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";
@@ -199,7 +198,7 @@ async function applyAfterWrite(n, done) {
     await write("POST", `/api/nodes/${n.id}/sync`);
     toast(`${done}，已应用到 ${plainNodeName(n)}`);
   } catch (e) {
-    toast(`${done}，但应用到 ${plainNodeName(n)} 失败:${e.message}`, true);
+    toast(`${done}，但应用到 ${plainNodeName(n)} 失败：${e.message}`, true);
   }
 }
 async function connLoad(nodeIds) {
@@ -417,7 +416,7 @@ async function connectionEditor(inbID) {
           msgs.push(`已更新入口「${name || inb.sub_name || nodeLabel(n)}」`);
         } else {
           await write("POST", inbPath(inb.id) + "/hosts", asModelHost({ ...cur, id: 0, inbound_id: inb.id, remark: name, address: addr }));
-          msgs.push(`已${name ? "创建入口「" + name + "」" : "创建入口,名字跟随节点名"}`);
+          msgs.push(`已${name ? "创建入口「" + name + "」" : "创建入口，名字跟随节点名"}`);
         }
       }
       const st = mode.state(), done = msgs.length ? msgs.join("；") : "已保存";
@@ -506,9 +505,9 @@ async function hostEditor(inbID, hostID) {
   openDrawer(H`<form id="host-form" novalidate><div class="dh"><h2>${isNew ? `给「${inbTitleById(inbID)}」加入口` : `编辑入口「${hostName}」`}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     ${F.map(([k, , l, ph, hint]) => H`<div class="field"><label for="h-${k}">${l}</label><input class="in ${k === "remark" ? "" : "mono"}" id="h-${k}" name="${k}" value="${fv(k)}" placeholder="${ph}" autocomplete="off">${hint ? H`<span class="h">${hint}</span>` : ""}</div>`)}
-    ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口,用户下次刷新订阅就跟着变;不用应用到节点。</p>` : H`<p class="sub">入口只影响订阅里写什么,不用下发节点配置。</p>`}
+    ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口，用户下次刷新订阅就跟着变;不用应用到节点。</p>` : H`<p class="sub">入口只影响订阅里写什么，不用下发节点配置。</p>`}
     <div class="err" id="h-err" role="alert"></div>
-    ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口,订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
+    ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口，订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="h-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#host-form");
   const collect = () => {
@@ -531,7 +530,7 @@ async function hostEditor(inbID, hostID) {
     try {
       if (isNew) {
         const created = await write("POST", inbPath(inbID) + "/hosts", asModelHost({ ...c.out, id: 0, inbound_id: inbID }));
-        toast(c.out.remark ? `已创建入口「${c.out.remark}」` : "已创建入口,名字跟随节点名");
+        toast(c.out.remark ? `已创建入口「${c.out.remark}」` : "已创建入口，名字跟随节点名");
       } else {
         // 与 host edit 一致:先从所属入站的列表里找到它,再整体 PUT。
         const now = (await api(inbPath(inbID) + "/hosts")).find(x => x.id === hostID);
@@ -591,14 +590,14 @@ const CONN_ACTS = {
       else toast(n ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，应用后节点才停止监听` : done);
       closeOverlays(); load(true, true);
     };
-    confirmBox({ title: `删除连接「${title}」?`, text: H`不可恢复:挂在它上面的入口一起删掉,用它的客户端下次刷新订阅后就没了这个入口。${n ? H`<br><span class="sub">${restartNote(n)}</span>` : ""}`,
+    confirmBox({ title: `删除连接「${title}」？`, text: H`不可恢复：挂在它上面的入口一起删掉，用它的客户端下次刷新订阅后就没了这个入口。${n ? H`<br><span class="sub">${restartNote(n)}</span>` : ""}`,
       ok: n ? "删除并应用到节点" : "删除连接", danger: true, typed: d.tag,
       alt: n ? { label: "只删除，稍后应用", run: () => del(false) } : null,
       run: () => del(true) });
   },
   "conn-host-new": d => hostEditor(+d.inb, 0),
   "conn-host-edit": d => hostEditor(+d.inb, +d.id),
-  "conn-host-rm": d => confirmBox({ title: `删除入口「${d.remark || "入口"}」?`, text: "客户端下次刷新订阅后这个地址就没了;节点和已连着的用户不受影响。", ok: "删除入口", danger: true,
+  "conn-host-rm": d => confirmBox({ title: `删除入口「${d.remark || "入口"}」？`, text: "客户端下次刷新订阅后这个地址就没了;节点和已连着的用户不受影响。", ok: "删除入口", danger: true,
     run: async () => { await write("DELETE", "/api/hosts/" + d.id, undefined, `已删除入口「${d.remark || "入口"}」`); closeOverlays(); load(true, true); } }),
 };
 Object.assign(ACTS, CONN_ACTS, {
@@ -607,12 +606,8 @@ Object.assign(ACTS, CONN_ACTS, {
   "inb-fix": CONN_ACTS["conn-fix"], "inb-rm": CONN_ACTS["conn-rm"], "inb-add-proto": CONN_ACTS["conn-add-proto"],
   "inb-other": CONN_ACTS["conn-other"],
   "host-new": CONN_ACTS["conn-host-new"], "host-edit": CONN_ACTS["conn-host-edit"], "host-rm": CONN_ACTS["conn-host-rm"],
-  // 节点页的「添加入站」仍然打开完整的入站表单。
-  "inb-new": d => {
-    const nid = d.node ? +d.node : 0;
-    if (route[0] === "inbounds") CONN_ACTS["conn-new"](d);
-    else inboundEditor(null, nid);
-  },
+  // 入站与入口页下线后,旧动作名 inb-new 也走「添加连接」的预设卡片。
+  "inb-new": CONN_ACTS["conn-new"],
 });
 
 // 行上的键盘:Enter 打开编辑。

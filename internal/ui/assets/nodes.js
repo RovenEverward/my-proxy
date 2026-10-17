@@ -48,7 +48,7 @@ PAGES.nodes = {
       const id = +r[1];
       // 体检报告没有就是 404,不算页面错误。
       const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
-      // 连接方式用入站页同一个组件(conn.js),数据也由它取。
+      // 连接方式由 conn.js 组件取数与渲染。
       const [node, conn, report] = await Promise.all([api(nodePath(id)), CONN.load([id]), diag]);
       return { node, inbounds: conn.inbounds, conn, report };
     }
@@ -89,11 +89,19 @@ function nodeDetail(d) {
   const rep = d.report && !d.report.error ? d.report : null;
   let summary = [];
   try { const j = rep ? (typeof rep.report === "string" ? JSON.parse(rep.report) : rep.report) : null; summary = (j && j.summary) || []; } catch { summary = []; }
+  // 「应用到节点」做主按钮的情况:有未应用的连接改动、xray 配置和下发的不一致、或者从没应用过
+  // (只有 sing-box 的节点不看 xray 的下发记录)。其余情况(比如改了出口 IP、只有 sing-box 漂移)
+  // 控制面不记待应用,仍可以从「⋯」里手动应用,不会被藏起来。
+  const sbOnly = (s?.cores || []).length > 0 && !(s.cores || []).some(c => c.core === "xray");
+  const needApply = INB_PENDING.has(id) || (!!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash) || (!n.deployed_hash && !sbOnly);
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    <button class="btn" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
-    ${W ? H`<button class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>
-    <button class="btn" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
-    ${can("PUT", "/api/nodes/x") ? H`<button class="btn" data-act="node-edit" data-id="${id}">编辑</button>` : ""}</div>
+    ${W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
+      <button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
+      ${W && !needApply ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>` : ""}
+      ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
+      ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
+    </div></span></div>
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
   ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
@@ -101,16 +109,16 @@ function nodeDetail(d) {
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有 TLS 入站"}</div></div>
   </div>
-  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n)}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
+  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
       ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">体检</button>` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包,经 SSH 送到节点,应用当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装…</button></div>` : ""}
+    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包，经 SSH 送到节点，应用当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装…</button></div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">现场问节点此刻每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
-    <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json,不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
+    <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
-  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt danger-zone"><div class="ch c-bad">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除</button></div></div>` : ""}`;
+  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt danger-zone"><div class="ch c-bad">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除</button></div></div>` : ""}`;
 }
 
 /* ---- 编辑器:add / edit ---- */
@@ -127,9 +135,9 @@ async function nodeEditor(id) {
     <div class="field"><label for="n-ssh-user">SSH 用户</label><input class="in mono" id="n-ssh-user" name="ssh_user" value="${n.ssh_user}" placeholder="root"></div></div>
     ${isNew ? "" : H`<div class="field"><label>显示名<span class="sub" id="n-display"></span></label><div class="three">
       <input class="in mono" id="n-region" name="region" value="${meta.region || ""}" placeholder="地区 US" aria-label="地区" autocomplete="off">
-      <input class="in" id="n-city" name="city" value="${meta.city || ""}" placeholder="城市,留空用国家名" aria-label="城市" autocomplete="off">
-      <input class="in mono" id="n-letter" name="letter" value="${meta.letter || ""}" placeholder="字母,留空自动" aria-label="字母" autocomplete="off"></div>
-      <div class="flex8 mt"><button type="button" class="btn sm" id="n-locate">重新识别</button><span class="h" id="n-locate-msg">按节点 IP 问 ipwho.is 给建议,只填进表单,保存才写入;节点 IP 会发给这个第三方。</span></div></div>`}
+      <input class="in" id="n-city" name="city" value="${meta.city || ""}" placeholder="城市，留空用国家名" aria-label="城市" autocomplete="off">
+      <input class="in mono" id="n-letter" name="letter" value="${meta.letter || ""}" placeholder="字母，留空自动" aria-label="字母" autocomplete="off"></div>
+      <div class="flex8 mt"><button type="button" class="btn sm" id="n-locate">重新识别</button><span class="h" id="n-locate-msg">按节点 IP 问 ipwho.is 给建议，只填进表单，保存才写入;节点 IP 会发给这个第三方。</span></div></div>`}
     <details class="adv"><summary>高级</summary>
     <div class="field"><label for="n-name">内部名</label><input class="in mono" id="n-name" name="name" value="${n.name}" placeholder="${isNew ? "留空自动生成" : ""}" autocomplete="off"><span class="h">只在命令行和数据里用;界面和订阅里显示的是显示名</span></div>
     <div class="two"><div class="field"><label for="n-api-port">xray API 端口</label><input class="in mono" id="n-api-port" name="api_port" value="${num(n.api_port)}" placeholder="默认" inputmode="numeric"></div>
@@ -177,7 +185,7 @@ async function nodeEditor(id) {
   if (!isNew) $("#n-locate").onclick = () => busy($("#n-locate"), async () => {
     const sg = await api(nodePath(id) + "/locate", { method: "POST" }); // 只是建议,不写入,不刷新页面
     $("#n-region").value = sg.region; $("#n-city").value = sg.city || "";
-    $("#n-locate-msg").textContent = `建议:${sg.display}(${sg.source},依据${sg.via === "node" ? "节点出口" : "节点"} IP ${sg.ip})${!sg.city && sg.city_en ? `;${sg.city_en} 不在对照表里,可手填城市` : ""}`;
+    $("#n-locate-msg").textContent = `建议：${sg.display}(${sg.source}，依据${sg.via === "node" ? "节点出口" : "节点"} IP ${sg.ip})${!sg.city && sg.city_en ? `;${sg.city_en} 不在对照表里，可手填城市` : ""}`;
     sync();
   });
   form.oninput = form.onchange = sync; sync();
@@ -207,7 +215,7 @@ async function nodeEditor(id) {
           if (m.letter !== (meta.letter || "")) body.letter = m.letter;
           else if (group(body) !== group(fresh)) body.letter = "";
           const saved = await write("PUT", nodePath(id) + "/metadata", body);
-          if (!nodeChanged) { toast(`显示名已改为 ${previewDisplay(saved) || "(没有地区,不显示)"}`); closeOverlays(); load(true, true); return; }
+          if (!nodeChanged) { toast(`显示名已改为 ${previewDisplay(saved) || "(没有地区，不显示)"}`); closeOverlays(); load(true, true); return; }
         }
         const fresh = asModelNode(await api(nodePath(id)));
         const updated = await write("PUT", nodePath(id), dropEmptyOutbound({ ...fresh, ...nodeOut }));
@@ -224,7 +232,7 @@ function relabelModal() {
   const m = $("#modal");
   let plans = null;
   m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
-  <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>),先出「旧名 → 新名」对照表。已经有显示名的节点会跳过,用户写过的值不会被覆盖。</p>
+  <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>)，先出「旧名 → 新名」对照表。已经有显示名的节点会跳过，用户写过的值不会被覆盖。</p>
   <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>
   <button class="btn" id="rl-plan">${ic("globe")}生成对照表</button>
@@ -262,20 +270,21 @@ async function busy(btn, fn) {
 }
 
 Object.assign(ACTS, {
+  "node-menu": () => { const m = $("#node-menu"); if (m) m.hidden = !m.hidden; },
   "node-new": () => nodeEditor(null),
   "node-wizard": () => openNodeWizard(),
   "relabel-open": () => relabelModal(),
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}?`, text: "把当前配置推到节点并重启核心:这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用,控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
-    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name},核心已重启`); await load(true, true); } }),
+  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
+    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
-    confirmBox({ title: `暂停给 ${d.label || d.name} 分配?`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线,会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "开始排水",
+    confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "开始排水",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
-  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心?`, text: "控制面下载发布包(有缓存),经 SSH 送到节点,应用当前配置并启动。慢链路上要几分钟,期间别关这个页面。", ok: "安装",
+  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心？`, text: "控制面下载发布包(有缓存)，经 SSH 送到节点，应用当前配置并启动。慢链路上要几分钟，期间别关这个页面。", ok: "安装",
     extra: H`<div class="two"><div class="field"><label for="i-core">核心</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
@@ -287,7 +296,7 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}?`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟,期间别关这个页面。", ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
     const r = await api(nodePath(d.id) + "/online");
@@ -299,7 +308,7 @@ Object.assign(ACTS, {
     const cfg = await api(nodePath(d.id) + "/config");
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}?`, text: "不可恢复:它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心还在跑,要清理得自己登上去。只想让新订阅别再发它,用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: "不可恢复：它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心还在跑，要清理得自己登上去。只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 
@@ -309,3 +318,6 @@ async function autoNodeNameFor() {
   try { names = new Set((await api("/api/nodes")).map(n => n.name)); } catch { /* 撞名由控制面报 */ }
   for (let i = 1; ; i++) if (!names.has("node-" + i)) return "node-" + i;
 }
+
+// 点菜单外或菜单项后收起。
+document.addEventListener("click", e => { const m = $("#node-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#node-menu button"))) m.hidden = true; });

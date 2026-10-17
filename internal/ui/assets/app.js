@@ -21,13 +21,15 @@ let writeGen = 0; // 写请求的代数,见 pageData
 const nodeLabel = n => (n && (n.display || n.name)) || "";
 const NODE_LABELS = {};
 const labelOfName = name => NODE_LABELS[name] || name;
+// shortVer:版本号只取开头的 vX.Y.Z(伪版本、dirty 尾巴都舍掉),匹配不到就原样显示。
+const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); return m ? (m[0][0] === "v" ? m[0] : "v" + m[0]) : (v ?? ""); };
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 async function api(path, init = {}) {
   for (let attempt = 0; ; attempt++) {
     let res;
     try {
       res = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...(init.headers || {}) } });
-    } catch (e) { throw new APIError(0, "连不上本地服务:MPX 可能已经退出,请重新打开"); }
+    } catch (e) { throw new APIError(0, "连不上本地服务：MPX 可能已经退出，请重新打开"); }
     // 写请求回来之后,之前发出的读都可能是旧的:换一代,load 不再复用它们(见 pageData)。
     if ((init.method || "GET") !== "GET") writeGen++;
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
@@ -57,6 +59,7 @@ const ICONS = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>', check: '<path d="m5 12 5 5 9-10"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>', key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3"/>',
   qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>',
@@ -126,7 +129,7 @@ const skRows = (n, c) => raw(Array.from({ length: n }, () => `<tr>${Array.from({
 function errorBox(what, e) {
   const auth = e && e.status === 401;
   return H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到${what}</h4>
-  <p>${e ? e.message : ""}</p>${auth ? H`<p class="sub mt">登录状态已失效,请重新打开 MPX 并登录。</p>` : ""}
+  <p>${e ? e.message : ""}</p>${auth ? H`<p class="sub mt">登录状态已失效，请重新打开 MPX 并登录。</p>` : ""}
   <div class="mt"><button class="btn sm" data-act="reload">${ic("refresh")}重试</button></div></div>`;
 }
 const emptyBox = (icon, title, text, cmd, btn = "") => H`<div class="empty"><div class="ill">${ic(icon)}</div><h4>${title}</h4><p>${text}</p>${btn}${cmd ? H`<div class="cmd mt">${cmd}</div>` : ""}</div>`;
@@ -229,7 +232,7 @@ function openUpdateModal() {
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
   ${releaseHighlights(u.notes).length ? H`<div class="upd-notes"><div class="upd-hl-t">这次更新</div><ul class="upd-hl">${releaseHighlights(u.notes).map(t => H`<li>${raw(inlineMd(t))}</li>`)}</ul></div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
-  <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
+  <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序，完成后自动重启。" : "将依次升级控制面、节点、本机程序，完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
   ${updFooter(u, false)}`);
   $("#scrim").classList.add("open"); m.classList.add("open");
@@ -373,14 +376,14 @@ function updRestartWait() {
   const title = updProgName() + " 正在重启";
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
-  <p class="sub">新版本起来后本页会自动刷新,会话沿用,无需重新登录。</p></div>`);
+  <p class="sub">新版本起来后本页会自动刷新，会话沿用，无需重新登录。</p></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const deadline = Date.now() + 60000;
   const tick = async () => {
     try { await api("/ui/meta"); location.reload(); return; } catch {}
     if (Date.now() >= deadline) {
       m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
-      <p class="sub">等了一分钟还没起来,请手动刷新本页确认状态。</p></div>
+      <p class="sub">等了一分钟还没起来，请手动刷新本页确认状态。</p></div>
       <div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>`);
       $("#scrim").classList.add("open"); m.classList.add("open");
       return;
@@ -407,7 +410,7 @@ function cpCard() {
     <dt>证书指纹</dt><dd class="mono fp" title="${fp}">${fp ? fpGroups(fp).map(g => H`<i>${g}</i>`) : H`<span class="sub">未使用 HTTPS 指纹</span>`}</dd>
     ${CP_DEVICE ? H`<dt>这台电脑</dt><dd>${CP_DEVICE}</dd>` : ""}</dl>
     <div class="cp-acts">${fp ? H`<button type="button" class="btn sm" data-act="copy" data-text="${fp}">${ic("copy")}复制指纹</button>` : ""}${META.profiles ? H`<button type="button" class="btn sm" data-act="cp-switch">${ic("swap")}切换控制面</button>` : ""}</div>
-    <p class="sub cp-note">只在这台电脑上能打开,别的设备需要单独接入。</p></div>` : ""}</div>`;
+    <p class="sub cp-note">只在这台电脑上能打开，别的设备需要单独接入。</p></div>` : ""}</div>`;
 }
 function shell(page, body, crumb) {
   const dark = document.documentElement.dataset.theme === "dark", on = navKey();
@@ -429,9 +432,10 @@ function shell(page, body, crumb) {
 }
 
 // 旧地址(书签、文档、别处的链接)跳到新位置。只换地址不留历史,后退不会又跳回来。
-const OLD_ROUTES = { settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients", "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans" };
+const OLD_ROUTES = { inbounds: "nodes", settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients", "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans" };
 function migrateKey(key) {
   if (OLD_ROUTES[key]) return OLD_ROUTES[key];
+  if (key.startsWith("inbounds/")) return "nodes";
   if (key.startsWith("plans/")) return "users/" + key;
   return key;
 }
@@ -459,16 +463,16 @@ function startSteps(d) {
       dTodo: nodes.length ? "节点还连不上。打开节点看看哪里出了问题" : "装好控制面时会顺带建好第一个节点;也可以在「节点」里添加",
       go: PAGES.nodes ? H`<a class="btn sm" href="#nodes">查看节点</a>` : "" },
     { t: "设好订阅地址", done: !!settings.sub_url_prefix || clGet("skip-sub"), skip: true,
-      dDone: settings.sub_url_prefix || "先用服务器 IP,之后在「订阅」里随时能改",
-      dTodo: "填你给用户用的域名。不设的话,链接里会直接露出服务器 IP",
+      dDone: settings.sub_url_prefix || "先用服务器 IP，之后在「订阅」里随时能改",
+      dTodo: "填你给用户用的域名。不设的话，链接里会直接露出服务器 IP",
       go: PAGES.sub ? H`<a class="btn sm pri" href="#sub">去设置</a>` : "" },
     { t: "添加第一个用户", done: users.total > 0, dDone: u ? u.username : "",
-      dTodo: "每个用户一条自己的订阅,可以单独停用和续期",
+      dTodo: "每个用户一条自己的订阅，可以单独停用和续期",
       go: can("POST", "/api/users") ? H`<button class="btn sm pri" data-act="user-new">${ic("plus")}添加用户</button>` : "" },
     // 任意用户的客户端第一次拉取订阅才算,复制了链接不算。老控制面读不到拉取记录:不拦着。
     { t: "把订阅发给他", done: pulls ? !!pull : users.total > 0,
-      dDone: pull ? `${clientLabel(pull.client)} 已经导入` : pulls ? "" : "控制面版本较旧,读不到拉取记录",
-      dTodo: u ? `给 ${u.username} 扫码或发链接;他的客户端第一次拉取订阅后,这一步自动完成` : "建好用户后,在这里扫码或复制链接",
+      dDone: pull ? `${clientLabel(pull.client)} 已经导入` : pulls ? "" : "控制面版本较旧，读不到拉取记录",
+      dTodo: u ? `给 ${u.username} 扫码或发链接;他的客户端第一次拉取订阅后，这一步自动完成` : "建好用户后，在这里扫码或复制链接",
       go: u ? H`<a class="btn sm pri" href="${userLink(u.username)}">${ic("qr")}发给 ${u.username}</a>` : "" },
   ];
 }
@@ -478,9 +482,9 @@ function startBlock(S, done, allDone) {
   const item = (x, i) => H`<li class="ck ${x.done ? "done" : i === cur ? "cur" : ""}"><span class="ck-i">${x.done ? ic("check") : String(i + 1)}</span>
     <div class="ck-t"><b>${x.t}</b><span class="sub">${x.done ? x.dDone : x.dTodo}</span></div>
     <div class="ck-a">${!x.done && i === cur ? H`${x.skip ? H`<button class="btn sm" data-act="cl-skip">先用 IP</button>` : ""}${x.go}` : ""}</div></li>`;
-  const optional = H`<li class="ck opt"><span class="ck-i">${ic("plus")}</span><div class="ck-t"><b>可选:让它更好用</b><span class="sub">随时都能做,不影响上面的进度</span></div>
+  const optional = H`<li class="ck opt"><span class="ck-i">${ic("plus")}</span><div class="ck-t"><b>可选：让它更好用</b><span class="sub">随时都能做，不影响上面的进度</span></div>
     <div class="ck-a">${PAGES.nodes ? H`<a class="btn sm" href="#nodes">${ic("nodes")}再加一个节点</a>` : ""}${PAGES.rules ? H`<a class="btn sm" href="#rules">${ic("split")}调整分流</a>` : ""}${PAGES.system ? H`<a class="btn sm" href="#system">${ic("bell")}打开到期提醒</a>` : ""}</div></li>`;
-  const list = H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去,大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
+  const list = H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去，大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
     <div class="cl-bar">${S.map(x => H`<i class="${x.done ? "on" : ""}"></i>`)}</div>
     <ol class="cks">${S.map(item)}${optional}</ol></section>`;
   if (!allDone) return H`<div class="mb">${list}</div>`;
@@ -514,34 +518,34 @@ PAGES.overview = {
     const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
     const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
     const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
-    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))},用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
+    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
     const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
     // 标题下一句按稿子:还没走完「开始使用」时是欢迎语,走完了是人数和节点数。
-    return H`<div class="ph"><div><h1>总览</h1><p>${allDone ? `${users.total} 个用户 · ${nodes.length} 个节点` : "欢迎用 MPX。跟着下面几步,把第一条订阅发出去。"}</p></div></div>
+    return H`<div class="ph"><div><h1>总览</h1><p>${allDone ? `${users.total} 个用户 · ${nodes.length} 个节点` : "欢迎用 MPX。跟着下面几步，把第一条订阅发出去。"}</p></div></div>
     ${startBlock(S, done, allDone)}
-    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次,${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
-      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
+    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
+      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
     <div class="grid g4">
-      ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
+      ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
       ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个入口`)}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
+      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
       ${attention.length ? H`<div class="tw"><table><tbody>${attention.slice(0, 6).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold">${u.username}</b></div></td>
         <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td class="hide-m">${usageBar(u)}</td>
         <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table></div>`
-        : !users.total ? emptyBox("users", "还没有用户", "加一个用户,他就有自己的订阅链接。")
+        : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
         : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
       <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
       ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${nodeLabel(x)}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
         : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
     </div>
     <div class="card mt"><div class="ch">通知</div>
-      <dl class="kv"><dt>Webhook</dt><dd class="mono">${settings.webhook_url || H`<span class="sub">未配置,不发通知</span>`}</dd>
+      <dl class="kv"><dt>Webhook</dt><dd class="mono">${settings.webhook_url || H`<span class="sub">未配置，不发通知</span>`}</dd>
       <dt>到期提醒</dt><dd>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</dd>
       <dt>用量提醒</dt><dd>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</dd></dl></div>`;
   },
@@ -678,7 +682,7 @@ async function openProfiles() {
   if (!META.profiles) return;
   let list;
   try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
-  catch (e) { toast("读不到控制面列表:" + e.message, true); return; }
+  catch (e) { toast("读不到控制面列表：" + e.message, true); return; }
   if (!Array.isArray(list)) list = [];
   const canAdd = !!META.connect && typeof window.openConnectForm === "function";
   if (list.length <= 1 && !canAdd) {
@@ -756,7 +760,7 @@ async function load(soft, force) {
     current = { ...current, error: e, loading: false };
     // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
-    if (current.data) toast("刷新失败:" + e.message, true);
+    if (current.data) toast("刷新失败：" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
   if (seq === loadSeq) delete document.documentElement.dataset.loading;
@@ -813,7 +817,7 @@ const ACTS = {
   "cl-skip": () => { clSet("skip-sub", true); toast("先用服务器 IP;之后在「订阅」里随时能改"); paint(); },
   "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
   "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },
-  copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
+  copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败，请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");

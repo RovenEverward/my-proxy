@@ -177,7 +177,7 @@ test("设备:列出、吊销要确认、这台不给吊销", async ({ page }) =>
   await expect(thisRow.locator("[data-act=dev-revoke]")).toHaveCount(0);
   // 吊销要走确认框,取消不发请求。
   await oldRow.locator("[data-act=dev-revoke]").click();
-  await expect(page.locator("#modal.open")).toContainText("吊销设备 old-laptop?");
+  await expect(page.locator("#modal.open")).toContainText("吊销设备 old-laptop？");
   await page.click("[data-act=modal-cancel]");
   expect(deletes).toEqual([]);
   await oldRow.locator("[data-act=dev-revoke]").click();

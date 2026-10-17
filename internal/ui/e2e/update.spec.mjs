@@ -328,3 +328,13 @@ test("总览控制面:有新版本是黑白灰底标签;开发版不比较", asy
   await expect(cpStat(page)).toContainText("开发版");
   await expect(cpStat(page)).not.toContainText("有新版本");
 });
+
+test("总览控制面:伪版本只显示短号,完整版本留在 title", async ({ page }) => {
+  const full = "v0.9.8-0.20261017152343-ed8ea60+dirty";
+  await mockStatus(page, full, { latest: "v0.9.8", behind: 0 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  const lead = cpStat(page).locator(".lead");
+  await expect(lead).toHaveText("v0.9.8");
+  await expect(lead).toHaveAttribute("title", full);
+});
