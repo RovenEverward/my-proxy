@@ -57,6 +57,7 @@ const ICONS = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>', check: '<path d="m5 12 5 5 9-10"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   warn: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
   copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
   dl: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>', term: '<path d="m4 17 6-5-6-5M12 19h8"/>',
@@ -151,6 +152,8 @@ function cmpVer(a, b) {
   for (let i = 0; i < Math.max(A.length, B.length); i++) { const d = (A[i] || 0) - (B[i] || 0); if (d) return d; }
   return 0;
 }
+// isDevVer:开发版(v0.0.0-…、带 dev 的、空的)没有可比的发布号,不提示「有新版本」。
+function isDevVer(v) { v = String(v || "").trim().toLowerCase(); return !v || /^v?0\.0\.0(\b|[-+.]|$)/.test(v) || /(^|[^a-z])dev([^a-z]|$)/.test(v); }
 // updLatest 取 cli/control 里较新且非空的 latest;都空时返回 ""。skip 以它为准。
 function updLatest(u) {
   let out = "";
@@ -173,7 +176,8 @@ function showUpdatePill(u) {
   if (!u) return false;
   const c = u.control || {}, l = u.cli || {};
   const nodes = Array.isArray(u.nodes) ? u.nodes : [];
-  if (!(c.available || l.available || nodes.some(nodeUpgradable))) return false;
+  const cAvail = c.available && !isDevVer(c.current), lAvail = l.available && !isDevVer(l.current);
+  if (!(cAvail || lAvail || nodes.some(nodeUpgradable))) return false;
   const latest = updLatest(u);
   return !(latest && updSkipped() === latest);
 }
@@ -460,7 +464,7 @@ PAGES.overview = {
     const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
     const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
     const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))},用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
-    const upd = s.update || {}, behind = upd.behind > 0;
+    const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
     return H`<div class="ph"><div><h1>总览</h1><p>后台循环每 ${s.interval_seconds} 秒一轮 · ${tick}</p></div></div>
@@ -470,7 +474,7 @@ PAGES.overview = {
       ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
       ${stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, "入口决定订阅里发什么地址")}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="c-warn">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, behind ? "warn" : "ok")}
+      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ok")}
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
@@ -521,6 +525,52 @@ function inlineMd(t) {
 /* ---------- 抽屉、确认框、提示 ---------- */
 // 抽屉在下一帧才加 open(让过渡动画生效)。期间如果已经关掉了,这一帧不能再把它和
 // 遮罩打开,否则会留下一层没有抽屉的遮罩挡住整页。
+// Windows 桌面窗口的最小化/最大化/关闭画在窗口右上角(--mygo-titlebar-inset-right 是它们占的宽)。
+// 有这块时给 <html> 加 tb-right:顶栏移到卡片外、和这三个按钮同一行,内容卡片从标题栏下面开始。
+function syncTitlebarRoom() {
+  const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--mygo-titlebar-inset-right")) || 0;
+  document.documentElement.classList.toggle("tb-right", r > 0);
+}
+syncTitlebarRoom(); addEventListener("load", syncTitlebarRoom); addEventListener("resize", syncTitlebarRoom); for (const t of [300, 1200, 3000]) setTimeout(syncTitlebarRoom, t);
+/* ---------- 下拉:灰底,弹出我们自己的列表 ---------- */
+// 原生 <select> 留着(表单取值、键盘上下键、测试的 selectOption 都照旧),只是鼠标按下时不弹系统的
+// 列表,改弹 .selmenu。选中后写回 select.value 并派发 input / change。
+let SELMENU = null;
+function closeSelMenu() { if (SELMENU) { SELMENU.el.remove(); SELMENU = null; } }
+function openSelMenu(sel) {
+  closeSelMenu();
+  const r = sel.getBoundingClientRect(), el = document.createElement("div");
+  el.className = "selmenu"; el.setAttribute("role", "listbox");
+  for (const o of sel.options) {
+    if (o.hidden) continue;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "selopt" + (o.selected ? " on" : ""); b.disabled = o.disabled;
+    b.setAttribute("role", "option"); b.setAttribute("aria-selected", o.selected); b.dataset.v = o.value;
+    b.innerHTML = val(H`<span>${o.textContent}</span>${o.selected ? ic("check") : ""}`);
+    el.append(b);
+  }
+  document.body.append(el);
+  const h = Math.min(el.scrollHeight, 300), below = innerHeight - r.bottom - 8;
+  el.style.minWidth = r.width + "px"; el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 8) + "px";
+  el.style.top = (below >= h || below >= r.top ? r.bottom + 4 : Math.max(8, r.top - 4 - h)) + "px";
+  el.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+  el.addEventListener("mousedown", e => e.preventDefault());
+  el.addEventListener("click", e => {
+    const b = e.target.closest(".selopt"); if (!b || b.disabled) return;
+    closeSelMenu();
+    if (sel.value !== b.dataset.v) { sel.value = b.dataset.v; sel.dispatchEvent(new Event("input", { bubbles: true })); sel.dispatchEvent(new Event("change", { bubbles: true })); }
+    sel.focus();
+  });
+  SELMENU = { el, sel };
+}
+document.addEventListener("mousedown", e => {
+  if (SELMENU && !SELMENU.el.contains(e.target)) { const was = SELMENU.sel; closeSelMenu(); if (e.target === was) { e.preventDefault(); return; } }
+  const sel = e.target.closest && e.target.closest("select.in");
+  if (!sel || sel.disabled || sel.multiple || e.button !== 0) return;
+  e.preventDefault(); sel.focus(); openSelMenu(sel);
+}, true);
+document.addEventListener("keydown", e => { if (SELMENU && e.key === "Escape") { e.stopPropagation(); const s = SELMENU.sel; closeSelMenu(); s.focus(); } }, true);
+addEventListener("resize", closeSelMenu); document.addEventListener("scroll", e => { if (SELMENU && !SELMENU.el.contains(e.target)) closeSelMenu(); }, true);
 let DRAWER_RAF = 0;
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
@@ -545,20 +595,22 @@ async function write(method, path, body, okText) {
 function afterWrite() { setTimeout(() => load(true, true), 0); }
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单。
-function confirmBox({ title, text, ok, danger, typed, run, extra }) {
+// alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
+function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
-  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
+  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
-  const okb = $("#okb"), t = $("#typed");
-  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
-  okb.addEventListener("click", async () => {
-    okb.disabled = true; okb.classList.add("busy");
-    try { await run(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
-    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; okb.classList.remove("busy"); }
+  const okb = $("#okb"), altb = $("#altb"), t = $("#typed");
+  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
+  const go = (b, fn) => b && b.addEventListener("click", async () => {
+    okb.disabled = true; if (altb) altb.disabled = true; b.classList.add("busy");
+    try { await fn(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); }
   });
+  go(okb, run); go(altb, alt && alt.run);
 }
 
 /* ---------- 切换控制面 ---------- */
@@ -623,9 +675,10 @@ function paint() {
   let body;
   if (current.error && !current.data) body = H`<div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
   else body = p.render(current.loading && !current.data ? null : current.data, route);
-  const y = scrollY;
+  // 滚动的是内容区 main,不是整页。
+  const y = $("main")?.scrollTop || 0;
   $("#root").innerHTML = val(shell(p, body, crumb));
-  scrollTo(0, y);
+  const m = $("main"); if (m) m.scrollTop = y;
   p.after?.(current.data, route);
 }
 async function load(soft, force) {
@@ -636,6 +689,8 @@ async function load(soft, force) {
   if (!PAGES[route[0]]) route = ["overview"];
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
+  // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
+  document.documentElement.dataset.loading = "1";
   if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
   try {
     const data = await pageData(p, key);
@@ -650,6 +705,7 @@ async function load(soft, force) {
     if (current.data) toast("刷新失败:" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
+  if (seq === loadSeq) delete document.documentElement.dataset.loading;
   if (!current.error) refreshUpdatePill();
 }
 

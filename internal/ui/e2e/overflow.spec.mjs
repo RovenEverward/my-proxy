@@ -20,6 +20,9 @@ test.afterAll(async () => { await env?.stop(); });
 const overflowing = page => page.evaluate(() => {
   const bad = [];
   if (document.documentElement.scrollWidth > innerWidth + 1) bad.push("page scrollWidth " + document.documentElement.scrollWidth);
+  // 外层不滚,横向溢出会藏在内容区 main 里:一并查。
+  const mn = document.querySelector("main");
+  if (mn && mn.scrollWidth > mn.clientWidth + 1) bad.push("main scrollWidth " + mn.scrollWidth + " > " + mn.clientWidth);
   for (const box of document.querySelectorAll(".profile, .card, #drawer.open, #modal.open, .top")) {
     const right = box.getBoundingClientRect().right;
     for (const el of box.querySelectorAll("*")) {

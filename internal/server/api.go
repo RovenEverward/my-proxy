@@ -314,6 +314,7 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("已下发节点", "node", n.Name, "address", n.Address)
+	s.clearNodePending(n.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "synced": true})
 }
 
@@ -373,6 +374,7 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("已安装节点核心", "node", n.Name, "version", installed, "address", n.Address)
+	s.clearNodePending(n.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "core": core, "version": installed})
 }
 
@@ -522,6 +524,7 @@ func (s *Server) handleCreateInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
+	s.markNodePending(in.NodeID)
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusCreated, in)
 }
@@ -575,6 +578,9 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
+	if inboundNeedsApply(*old, in) {
+		s.markNodePending(in.NodeID)
+	}
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, in)
 }
@@ -584,9 +590,13 @@ func (s *Server) handleDeleteInbound(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	gone, getErr := s.store.GetInbound(id)
 	if err := s.store.DeleteInbound(id); err != nil {
 		s.writeStoreError(w, err, "入站")
 		return
+	}
+	if getErr == nil {
+		s.markNodePending(gone.NodeID)
 	}
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)

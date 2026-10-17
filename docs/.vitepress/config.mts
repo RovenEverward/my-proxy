@@ -44,7 +44,7 @@ export default defineConfig({
           { text: '添加用户并分发订阅', link: '/guides/add-users' },
           { text: '添加节点', link: '/guides/add-nodes' },
           { text: '一键更新', link: '/guides/update' },
-          { text: '用自检排查', link: '/guides/troubleshoot' }
+          { text: '用体检排查', link: '/guides/troubleshoot' }
         ]
       },
       {

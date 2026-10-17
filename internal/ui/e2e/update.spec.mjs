@@ -282,3 +282,48 @@ test("没有 prefetch 字段:保持原来的按钮逻辑", async ({ page }) => {
   await expect(page.locator("#upd-ok")).toHaveText("重启以更新");
   await expect(page.locator("#upd-ok")).toBeEnabled();
 });
+
+// 开发版(v0.0.0-…、dev)没有可比的发布号:顶栏不出现「更新」,总览也不写「有新版本」。
+test("开发版:v0.0.0 与 dev 不显示「更新」入口", async ({ page }) => {
+  for (const cur of ["v0.0.0-20261017-abcdef", "dev", "v0.0.0"]) {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await mockUpdate(page, {
+      cli: part({ current: cur, latest: "v0.9.7", available: true }),
+      control: part({ current: "dev", latest: "v0.9.7", available: true }),
+      nodes: [node({ current: "26.4.1" })],
+      notes: "",
+    });
+    await login(page, env);
+    await page.waitForResponse(r => r.url().endsWith("/local/update"));
+    await expect(page.locator("#upd-pill"), cur).toBeHidden();
+  }
+});
+
+async function mockStatus(page, version, update) {
+  await page.route("**/api/status", async r => {
+    const res = await r.fetch();
+    const j = await res.json();
+    await r.fulfill({ response: res, json: { ...j, version, update } });
+  });
+}
+const cpStat = page => page.locator(".card.stat").filter({ has: page.locator(".l", { hasText: "控制面" }) });
+
+test("总览控制面:有新版本是黑白灰底标签;开发版不比较", async ({ page }) => {
+  await mockStatus(page, "v0.9.5", { latest: "v0.9.7", behind: 2 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  const card = cpStat(page);
+  await expect(card.locator(".tag.lab")).toHaveText("有新版本 v0.9.7");
+  await expect(card.locator(".c-warn")).toHaveCount(0);
+  await expect(card.locator(".l .dot")).toHaveClass(/\bok\b/);
+  // 灰底标签:背景和 .tag 一样是 --stone,不是橙色。
+  const bg = await card.locator(".tag.lab").evaluate(el => getComputedStyle(el).backgroundColor);
+  const stone = await page.evaluate(() => { const d = document.createElement("span"); d.className = "tag"; document.body.append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
+  expect(bg).toBe(stone);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await mockStatus(page, "v0.0.0-20261017-abcdef", { latest: "v0.9.7", behind: 9 });
+  await page.reload();
+  await expect(cpStat(page)).toContainText("开发版");
+  await expect(cpStat(page)).not.toContainText("有新版本");
+});

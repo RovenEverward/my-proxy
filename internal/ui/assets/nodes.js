@@ -101,7 +101,7 @@ function nodeDetail(d) {
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有 TLS 入站"}</div></div>
   </div>
-  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
+  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n)}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>

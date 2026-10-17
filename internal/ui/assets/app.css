@@ -7,15 +7,15 @@
 [data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#ededef;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
 --lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;
 --ok:#3fb950;--warn:#e3a008;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#271d08}
-*{box-sizing:border-box}html,body{height:100%}
+*{box-sizing:border-box}html,body,#root{height:100%}html,body{overflow:hidden}
 body{margin:0;background:var(--base);color:var(--ink);font:13.5px/1.55 var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"kern","tnum"}
 /* 国旗:app.js 把区域指示符 emoji 换成本地 /flags/<xx>.svg;高度跟着字号走。 */
 .flag{height:.82em;width:auto;aspect-ratio:4/3;vertical-align:-.08em;border-radius:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
 button,input,select,textarea{font:inherit;color:inherit}a{color:inherit;text-decoration:none}
 code,.mono{font-family:var(--mono);font-size:12.5px}
-.app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%}
 /* sidebar */
-.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
+.side{height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
 .brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px calc(8px + var(--mygo-titlebar-inset-left,0px));min-height:calc(var(--mygo-titlebar-height,0px) - 14px);font-weight:620;font-size:14px;--app-region:drag}
 .brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
@@ -44,7 +44,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .side .foot{margin-top:auto;display:grid;gap:6px;padding:10px;font-size:11.5px;color:var(--muted)}
 .ro{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;background:var(--canvas);width:max-content;font-size:11px}
 /* main */
-main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14px;min-height:calc(100vh - 16px)}
+/* 外层(html/body)一律不滚:内容区 main 自己滚。100vh 加边距、标题栏会超出视口,WebView2 就会在窗口最右边出一条整页高的系统滚动条。 */
+main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14px;height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
 .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:14px 14px 0 0;background:color-mix(in srgb,var(--canvas) 84%,transparent);backdrop-filter:blur(12px);--app-region:drag}
 .crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.crumb b{color:var(--ink);font-weight:560}.crumb i{font-style:normal;color:var(--faint)}
 .top .sp{flex:1}
@@ -197,7 +198,11 @@ tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .summary{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2)}.summary li{margin:2px 0}
 pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:12px/1.55 var(--mono);color:var(--ink2);overflow:auto;max-height:calc(100vh - 160px);white-space:pre}
 details.adv{margin:0 0 14px}details.adv>summary{cursor:pointer;font-size:12.5px;font-weight:530;color:var(--muted);margin-bottom:12px;list-style-position:inside}
-select.in{appearance:auto;padding-right:6px}
+select.in{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer}
+select.in:disabled{cursor:default;opacity:.7}
+.selmenu{position:fixed;z-index:60;max-height:300px;overflow:auto;padding:4px;border-radius:10px;background:var(--canvas);box-shadow:0 0 0 1px color-mix(in srgb,var(--ink) 10%,transparent),0 12px 32px rgb(0 0 0/.16)}
+.selopt{display:flex;align-items:center;gap:10px;width:100%;min-height:30px;padding:0 10px;border:0;border-radius:7px;background:none;text-align:left;cursor:pointer;white-space:nowrap}
+.selopt span{flex:1}.selopt:hover,.selopt:focus-visible{background:var(--stone);outline:0}.selopt.on{font-weight:560}.selopt svg{width:14px;height:14px}.selopt:disabled{opacity:.45;cursor:default}
 .field[hidden],.chk[hidden]{display:none}
 .stat .v.f18{font-size:18px}.stat .v.f16{font-size:16px}
 .drawer>form{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -416,3 +421,29 @@ details.adv2>summary span{font-weight:400;color:var(--muted);font-size:12px;marg
  .cx-port{display:none}.cx-addr{grid-column:2/3;grid-row:2}.cx-sub::before{display:none}.cx-tg{grid-column:3/5}
  .cx-warn{padding-left:76px;flex-wrap:wrap}.ng-a{display:none}
 }
+
+/* Windows 自绘标题栏(tb-right):系统三按钮在窗口右上角 52px 高的条里。顶栏挪到这条里、和按钮同一行垂直居中,
+   右边让出按钮的宽;内容卡片从这条下面开始,右上角不再被按钮压住。 */
+html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
+html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-titlebar-height,52px);padding:0 calc(var(--mygo-titlebar-inset-right,138px) + 12px) 0 20px;background:var(--base);border-radius:0;border:0;box-shadow:none;backdrop-filter:none;z-index:29;--app-region:drag}
+@media (max-width:860px){html.tb-right .top{left:0}}
+
+/* 抽屉底部「…并应用到节点」:次要 + 主按钮一行,主按钮下面一行灰字说明会重启。 */
+.drawer .df.df-apply{flex-direction:column;align-items:flex-end;gap:6px}
+.df-apply .df-row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.df-apply .df-note{margin:0;font-size:12px;color:var(--faint);text-align:right}
+/* 「有改动未应用」:黑白灰底标签,和组头的「应用」按钮并排。 */
+.tag.pend,.tag.lab{font-family:var(--sans);font-weight:500}.tag.pend{margin-right:6px}
+.ng-h .tag.pend+.btn{margin-right:6px}
+/* 端口提示:info 线性图标 + 文字 */
+.h.hi{display:flex;align-items:center;gap:5px}.h.hi svg{width:13px;height:13px;flex:none;color:var(--faint)}
+
+/* 下拉的箭头:别处用 background 简写换底色时也要留着它。 */
+select.in{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 9px center!important;background-size:14px!important}
+
+/* 细滚动条:Windows(WebView2)和 Linux 的 WebKit 上默认是粗的系统浅色条。墨色半透明,深浅主题都跟着 --ink 走。 */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 22%,transparent);border:3px solid transparent;border-radius:8px;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
+::-webkit-scrollbar-button{display:none;width:0;height:0}

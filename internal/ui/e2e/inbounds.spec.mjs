@@ -137,7 +137,15 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   await expect(dr.locator("h2")).toHaveText("添加连接");
   await expect(dr.locator("#a-node")).toHaveValue("1");
   await expect(dr.locator("#a-port")).toHaveValue("8444");
-  await expect(dr.locator("#a-port-h")).toContainText("东京 A 上 8443 已经在用，自动换成 8444");
+  await expect(dr.locator("#a-port-h")).toContainText("这台节点上 8443 已经在用，自动换成 8444");
+  // 端口提示前面是 info 线性图标,不再带国旗。
+  await expect(dr.locator("#a-port-h svg")).toHaveCount(1);
+  await expect(dr.locator("#a-port-h img.flag")).toHaveCount(0);
+  // 底部:主按钮「创建并应用到节点」+ 次要「只创建，稍后应用」+ 一行灰字。
+  await expect(dr.locator("#a-save")).toHaveText("创建并应用到节点");
+  await expect(dr.locator("#x-later")).toHaveText("只创建，稍后应用");
+  await expect(dr.locator("#x-note")).toHaveText("会重启东京 A上的代理，已连着的用户会断开几秒");
+  await expect(dr).not.toContainText("创建后要到节点页");
   await expect(dr.locator(".pv-r")).toContainText("东京 A · Reality");
   await expect(dr.locator("#pv-a")).toHaveText("203.0.113.21:8444");
   // 切到 WS:走 2087,已被占 → 2088。
@@ -147,9 +155,12 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   // 手改端口后不再自动覆盖。
   await page.fill("#drawer.open #a-port", "2090");
   await expect(page.locator("#drawer.open #pv-a")).toHaveText("203.0.113.21:2090");
-  await page.click("#add-form button[type=submit]");
-  await expect(page.locator(".toast")).toContainText("应用到节点");
+  // 选「稍后应用」:只建不下发,组头亮「有改动未应用」和「应用」。
+  await page.click("#add-form #x-later");
+  await expect(page.locator(".toast")).toContainText("显示「有改动未应用」");
   await expect(group(page, "东京 A").locator(".cx-row")).toHaveCount(3, { timeout: 15000 });
+  await expect(group(page, "东京 A").locator(".ng-h .tag.pend")).toHaveText("有改动未应用");
+  await expect(group(page, "东京 A").locator(".ng-h [data-act=node-sync]")).toHaveText("应用");
 });
 
 test("编辑连接:名称与地址在顶上,入站字段在「高级」里", async ({ page }) => {
@@ -165,5 +176,22 @@ test("编辑连接:名称与地址在顶上,入站字段在「高级」里", asy
   await expect(dr.locator("#i-port")).toHaveValue("8443");
   await expect(dr.locator("#i-protocol")).toHaveValue("vless");
   await expect(dr.locator("#i-security")).toHaveValue("reality");
+  // 没改协议、端口这些:只有一个「保存」,不带应用选项。
   await expect(dr.locator("#i-save")).toHaveText("保存");
+  await expect(dr.locator("#x-later")).toBeHidden();
+  // 下拉显示成 VLESS / REALITY 这样的名字,点开是我们自己的灰底列表。
+  await expect(dr.locator("#i-protocol option:checked")).toHaveText("VLESS");
+  await expect(dr.locator("#i-security option:checked")).toHaveText("REALITY");
+  await expect(dr.locator("label[for=i-short_ids]")).toHaveText("Short ID");
+  await dr.locator("#i-network").click();
+  const menu = page.locator(".selmenu");
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(".selopt.on")).toHaveText("TCP");
+  await menu.locator(".selopt", { hasText: "WebSocket" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(dr.locator("#i-network")).toHaveValue("ws");
+  // 改了传输 → 要应用:主按钮变成「保存并应用到节点」,出现「只保存，稍后应用」。
+  await expect(dr.locator("#i-save")).toHaveText("保存并应用到节点");
+  await expect(dr.locator("#x-later")).toHaveText("只保存，稍后应用");
+  await expect(dr.locator("#x-note")).toContainText("上的代理，已连着的用户会断开几秒");
 });
