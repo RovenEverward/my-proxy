@@ -162,6 +162,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		return model.DoctorCheck{
 			Name: name, Status: model.DoctorFail,
 			Detail: "服务端没有接上节点操作,查不了这台节点",
+			NodeID: n.ID,
 		}
 	}
 
@@ -170,6 +171,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		return model.DoctorCheck{
 			Name: name, Status: model.DoctorFail,
 			Detail: "检查失败:" + err.Error(),
+			NodeID: n.ID,
 		}
 	}
 
@@ -178,6 +180,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 			Name: name, Status: model.DoctorFail,
 			Detail: "连不上:" + st.Error,
 			Hint:   "确认地址、ssh 端口和控制面的私钥;BatchMode 下密码登录是不通的",
+			NodeID: n.ID,
 		}
 	}
 
@@ -188,6 +191,9 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 	status := model.DoctorOK
 	worstHint := ""
 	worstUIHint := ""
+	// applyDrift 记「这台节点有配置漂移」,与它是第几条、是不是最重的那条无关:
+	// 只要出现漂移,界面就该给一个「应用到节点」的行内按钮。
+	applyDrift := false
 
 	raise := func(s model.DoctorCheck) {
 		problems = append(problems, s.Detail)
@@ -224,6 +230,7 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "从没下发过配置",
 			Hint: "mpx node sync " + n.Name + " 推一次", UIHint: "到「节点」页打开 " + n.Name + ",点「下发配置」"})
 	} else if xrayRequired && st.ObservedHash != "" && st.ObservedHash != n.DeployedHash {
+		applyDrift = true
 		raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "配置和下发的不一致(节点上被改过)",
 			Hint:   "可能是你自己改的,也可能是别人改的;确认后 mpx node sync " + n.Name + " 覆盖回去",
 			UIHint: "可能是你自己改的,也可能是别人改的;确认后到「节点」页打开 " + n.Name + ",点「下发配置」覆盖回去"})
@@ -249,6 +256,11 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		if d.DeployedHash == "" {
 			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 从没下发过配置"})
 		} else if core.ObservedHash == "" || core.ObservedHash != d.DeployedHash {
+			// 读不到观测值不算漂移(那是"没读到"),界面不给「应用到节点」按钮;
+			// 读到了但和下发的不一样才是漂移。
+			if core.ObservedHash != "" {
+				applyDrift = true
+			}
 			raise(model.DoctorCheck{Status: model.DoctorWarn, Detail: "sing-box 配置未读取或与下发内容不一致"})
 		}
 	}
@@ -280,14 +292,20 @@ func (s *Server) checkOneNode(ctx context.Context, n model.Node, now time.Time) 
 		if len(st.Certificates) > 0 {
 			detail += fmt.Sprintf(",%d 张证书都不临期", len(st.Certificates))
 		}
-		return model.DoctorCheck{Name: name, Status: model.DoctorOK, Detail: detail}
+		return model.DoctorCheck{Name: name, Status: model.DoctorOK, Detail: detail, NodeID: n.ID}
+	}
+	uiAction := ""
+	if applyDrift {
+		uiAction = "apply"
 	}
 	return model.DoctorCheck{
-		Name:   name,
-		Status: status,
-		Detail: strings.Join(problems, ";"),
-		Hint:   worstHint,
-		UIHint: worstUIHint,
+		Name:     name,
+		Status:   status,
+		Detail:   strings.Join(problems, ";"),
+		Hint:     worstHint,
+		UIHint:   worstUIHint,
+		NodeID:   n.ID,
+		UIAction: uiAction,
 	}
 }
 

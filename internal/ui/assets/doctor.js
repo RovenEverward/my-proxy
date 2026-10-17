@@ -48,8 +48,16 @@ function doctorPage() {
     // 控制面给的提示里还是旧按钮名;界面上已改叫「应用到节点」「暂停分配」(控制面接口不改)。
     const hint = (c.ui_hint || c.hint || "").replace(/下发配置/g, "应用到节点").replace(/排水/g, "暂停分配");
     const shown = nm && lb !== nm ? hint.split(`打开 ${nm}`).join(`打开 ${lb}`) : hint;
+    // 漂移警告:文案换成界面说法,后面跟一个行内「应用到节点」按钮。按钮本身不在这里
+    // 下发,只是跳到节点详情并记下要自动触发的节点(nodes.js 画好后打开确认弹窗)。
+    const apply = c.ui_action === "apply" && c.node_id;
+    const applyBtn = apply && can("POST", "/api/nodes/x")
+      ? H`<button type="button" class="btn sm" data-act="doc-apply" data-id="${c.node_id}">应用到${lb || nm}</button>` : "";
+    const detail = apply ? String(c.detail).replace("配置和下发的不一致(节点上被改过)", "节点上的配置和控制面不一致") : c.detail;
+    // 建议里讲的就是「应用到节点」时按钮已经说明白了,不再重复一行。
+    const advice = applyBtn && shown.includes("应用到节点") ? "" : shown;
     return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : c.name}</b></td><td>${stBadge(cls, text)}</td>
-      <td class="doc-d"><div>${c.detail}</div>${shown ? H`<div class="sub">建议：${shown}</div>` : ""}</td></tr>`;
+      <td class="doc-d"><div>${detail}${applyBtn}</div>${advice ? H`<div class="sub">建议：${advice}</div>` : ""}</td></tr>`;
   });
   return H`${head}
     <div class="grid g3">${docStat(checks, "ok", "正常")}${docStat(checks, "warn", "警告")}${docStat(checks, "fail", "失败")}</div>
@@ -60,6 +68,9 @@ function doctorPage() {
 
 Object.assign(ACTS, {
   "doc-run": () => runDoctor(),
+  // 跳到节点详情页;nodes.js 在详情画好后看到 AUTO_APPLY,就打开「应用到节点」的
+  // 确认弹窗(用户确认才真正下发)。
+  "doc-apply": d => { window.AUTO_APPLY = +d.id; location.hash = "#nodes/" + d.id; },
 });
 
 // runDoctor:发一次请求。先用模块状态摆出「正在体检」再 paint,避免等响应期间

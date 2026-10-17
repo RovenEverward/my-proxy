@@ -57,8 +57,22 @@ PAGES.nodes = {
     return { nodes };
   },
   render(d, r) { return r[1] ? nodeDetail(d) : nodeList(d); },
+  // 详情画好后(innerHTML 已换),如果刚从体检页带过来 AUTO_APPLY,就替用户打开
+  // 「应用到节点」的确认弹窗。d 为空是骨架那一次,不能在这里消费掉标志。
+  after(d, r) { if (d && r[1]) autoApplyPending(+r[1]); },
 };
 let NODES_TOTAL = null;
+
+// autoApplyPending:体检页的「应用到<节点>」跳到详情后,在这里打开确认弹窗。只认一次:
+// 找到可点的 node-sync 就触发它(头部主按钮或「⋯」菜单项都行),找不到(比如节点
+// 连不上,按钮是灰的)就说明白;两种情况都立刻清掉标志,刷新和轮询重绘不再弹。
+function autoApplyPending(id) {
+  if (window.AUTO_APPLY !== id) return;
+  window.AUTO_APPLY = null;
+  const btn = document.querySelector('[data-act="node-sync"]:not([disabled])');
+  if (btn) ACTS["node-sync"](btn.dataset);
+  else toast("节点连不上，连上后再应用");
+}
 
 function nodeList(d) {
   const W = can("POST", "/api/nodes");
