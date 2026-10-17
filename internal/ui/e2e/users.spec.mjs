@@ -233,16 +233,22 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   // 二维码:暗色主题下也放在白底上,图由本机按用户名画。
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
   await expect(page.locator(".qr-tile")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /^\/local\/qr\.svg\?d=http/);
+  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /^\/local\/qr\.svg\?u=ui-fresh&v=/);
   const ok = await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; });
   expect(ok).toBe(true);
   await expect(page.locator("#send [data-act=copy]").first()).toHaveText("复制订阅链接");
+  await expect(page.locator("#send a[download]")).toHaveAttribute("href", /^\/local\/qr\.svg\?d=http/);
   await page.click("#send details.fmts summary");
   await expect(page.locator("#send .fmt")).toHaveCount(6);
   // 再打开一次就没有「已创建」那行了。
   await page.reload();
   await expect(page.locator("#drawer.open h2")).toHaveText("ui-fresh");
   await expect(page.locator("#drawer .created")).toHaveCount(0);
+  // 本机向控制面取链接失败时,二维码改用页面手里的链接画,不留一张坏图。
+  await page.route(/\/local\/qr\.svg\?u=/, r => r.fulfill({ status: 502, contentType: "application/json", body: "{\"error\":\"x\"}" }));
+  await page.reload();
+  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /\/local\/qr\.svg\?d=http/);
+  expect(await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; })).toBe(true);
 });
 
 test("删除用户:要逐字输入用户名才放行,和 mpx user rm 一致", async ({ page }) => {

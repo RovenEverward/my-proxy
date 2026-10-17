@@ -443,25 +443,71 @@ function routeOf(key) {
 }
 
 /* ---------- 总览 ---------- */
+// 「开始使用」:4 步的完成与否全从数据推出来,不靠手动勾选。「先用 IP」(跳过订阅地址)和
+// 「不再显示」记在这台电脑上,按控制面分开(同一台电脑接了两个控制面互不影响)。
+const clKey = k => `mpx-cl-${k}:${META.server || "-"}`;
+const clGet = k => { try { return localStorage.getItem(clKey(k)) === "1"; } catch { return false; } };
+const clSet = (k, v) => { try { v ? localStorage.setItem(clKey(k), "1") : localStorage.removeItem(clKey(k)); } catch { /* 隐私模式 */ } };
+let CL_OPEN = false;
+function startSteps(d) {
+  const { nodes, settings, users, pulls } = d, U = users.users.slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const on = nodes.find(x => x.status?.reachable), u = U[0];
+  const pull = pulls && pulls.slice().sort((a, b) => new Date(a.first_pulled_at) - new Date(b.first_pulled_at))[0];
+  const userLink = name => "#users/" + encodeURIComponent(name);
+  return [
+    { t: "第一个节点在线", done: !!on, dDone: on ? `${nodeLabel(on)} 在线` : "",
+      dTodo: nodes.length ? "节点还连不上。打开节点看看哪里出了问题" : "装好控制面时会顺带建好第一个节点;也可以在「节点」里添加",
+      go: PAGES.nodes ? H`<a class="btn sm" href="#nodes">查看节点</a>` : "" },
+    { t: "设好订阅地址", done: !!settings.sub_url_prefix || clGet("skip-sub"), skip: true,
+      dDone: settings.sub_url_prefix || "先用服务器 IP,之后在「订阅」里随时能改",
+      dTodo: "填你给用户用的域名。不设的话,链接里会直接露出服务器 IP",
+      go: PAGES.sub ? H`<a class="btn sm pri" href="#sub">去设置</a>` : "" },
+    { t: "添加第一个用户", done: users.total > 0, dDone: u ? u.username : "",
+      dTodo: "每个用户一条自己的订阅,可以单独停用和续期",
+      go: can("POST", "/api/users") ? H`<button class="btn sm pri" data-act="user-new">${ic("plus")}添加用户</button>` : "" },
+    // 任意用户的客户端第一次拉取订阅才算,复制了链接不算。老控制面读不到拉取记录:不拦着。
+    { t: "把订阅发给他", done: pulls ? !!pull : users.total > 0,
+      dDone: pull ? `${clientLabel(pull.client)} 已经导入` : pulls ? "" : "控制面版本较旧,读不到拉取记录",
+      dTodo: u ? `给 ${u.username} 扫码或发链接;他的客户端第一次拉取订阅后,这一步自动完成` : "建好用户后,在这里扫码或复制链接",
+      go: u ? H`<a class="btn sm pri" href="${userLink(u.username)}">${ic("qr")}发给 ${u.username}</a>` : "" },
+  ];
+}
+function startBlock(S, done, allDone) {
+  if (allDone && clGet("hide")) return "";
+  const cur = S.findIndex(x => !x.done);
+  const item = (x, i) => H`<li class="ck ${x.done ? "done" : i === cur ? "cur" : ""}"><span class="ck-i">${x.done ? ic("check") : String(i + 1)}</span>
+    <div class="ck-t"><b>${x.t}</b><span class="sub">${x.done ? x.dDone : x.dTodo}</span></div>
+    <div class="ck-a">${!x.done && i === cur ? H`${x.skip ? H`<button class="btn sm" data-act="cl-skip">先用 IP</button>` : ""}${x.go}` : ""}</div></li>`;
+  const optional = H`<li class="ck opt"><span class="ck-i">${ic("plus")}</span><div class="ck-t"><b>可选:让它更好用</b><span class="sub">随时都能做,不影响上面的进度</span></div>
+    <div class="ck-a">${PAGES.nodes ? H`<a class="btn sm" href="#nodes">${ic("nodes")}再加一个节点</a>` : ""}${PAGES.rules ? H`<a class="btn sm" href="#rules">${ic("split")}调整分流</a>` : ""}${PAGES.system ? H`<a class="btn sm" href="#system">${ic("bell")}打开到期提醒</a>` : ""}</div></li>`;
+  const list = H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去,大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
+    <div class="cl-bar">${S.map(x => H`<i class="${x.done ? "on" : ""}"></i>`)}</div>
+    <ol class="cks">${S.map(item)}${optional}</ol></section>`;
+  if (!allDone) return H`<div class="mb">${list}</div>`;
+  return H`<div class="cl-done" id="start-done">${ic("check")}<span><b>开始使用</b> · 4 步都完成了</span><span class="sp" style="flex:1"></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>${CL_OPEN ? H`<div class="mb">${list}</div>` : ""}`;
+}
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
 PAGES.overview = {
   title: "总览",
   async load() {
-    const [status, nodes, settings, users] = await Promise.all([
+    const [status, nodes, settings, users, pulls] = await Promise.all([
       api("/api/status"), api("/api/nodes"), api("/api/settings"), api("/api/users?limit=1000"),
+      api("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
     ]);
     STATUS = status;
-    return { status, nodes, settings, users };
+    return { status, nodes, settings, users, pulls };
   },
   render(d) {
     const L = !d;
-    const stat = (label, v, sub, dot) => H`<div class="card stat"><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s">${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
+    const stat = (label, v, sub, dot, tip) => H`<div class="card stat" ${tip ? raw(`title="${esc(val(tip))}"`) : ""}><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s">${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
     if (L) return H`<div class="ph"><div><h1>总览</h1><p><span class="sk" style="width:260px"></span></p></div></div>
       <div class="grid g4">${stat()}${stat()}${stat()}${stat()}</div>
       <div class="grid g2 mt"><div class="card"><div class="ch">需要处理的用户</div><table><tbody>${skRows(4, 3)}</tbody></table></div><div class="card"><div class="ch">节点</div><table><tbody>${skRows(4, 2)}</tbody></table></div></div>`;
-    const { status: s, nodes, settings, users } = d, U = users.users;
+    const { status: s, nodes, settings, users, pulls } = d, U = users.users;
+    const S = startSteps(d), done = S.filter(x => x.done).length, allDone = done === S.length;
+    const pulled24 = (pulls || []).filter(p => Date.now() - new Date(p.last_pulled_at) < 864e5).length;
     const n = k => U.filter(u => u.status === k).length;
     const usagePct = settings.notify_usage_percent || 80;
     const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
@@ -472,20 +518,23 @@ PAGES.overview = {
     const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
-    return H`<div class="ph"><div><h1>总览</h1><p>后台循环每 ${s.interval_seconds} 秒一轮 · ${tick}</p></div></div>
+    // 标题下一句按稿子:还没走完「开始使用」时是欢迎语,走完了是人数和节点数。
+    return H`<div class="ph"><div><h1>总览</h1><p>${allDone ? `${users.total} 个用户 · ${nodes.length} 个节点` : "欢迎用 MPX。跟着下面几步,把第一条订阅发出去。"}</p></div></div>
+    ${startBlock(S, done, allDone)}
     ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次,${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
       : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
     <div class="grid g4">
       ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
-      ${stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, "入口决定订阅里发什么地址")}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink")}
+      ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个入口`)}
+      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
       ${attention.length ? H`<div class="tw"><table><tbody>${attention.slice(0, 6).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold">${u.username}</b></div></td>
         <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td class="hide-m">${usageBar(u)}</td>
         <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table></div>`
+        : !users.total ? emptyBox("users", "还没有用户", "加一个用户,他就有自己的订阅链接。")
         : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
       <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
       ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${nodeLabel(x)}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
@@ -761,6 +810,9 @@ const ACTS = {
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
   "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
+  "cl-skip": () => { clSet("skip-sub", true); toast("先用服务器 IP;之后在「订阅」里随时能改"); paint(); },
+  "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
+  "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {

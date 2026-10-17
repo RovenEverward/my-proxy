@@ -131,6 +131,15 @@ async function polish(page, setup = false) {
   });
   // 示例数据的入站是直接建的、没应用过,每台节点都会显示「有改动未应用」;文档图里按已应用的样子摆。
   await page.route("**/api/nodes/pending", r => r.fulfill({ json: [] }));
+  // 示例数据里没有客户端真拉过订阅:给 alice、bob 摆一条拉取记录,总览「开始使用」按走完的样子收成一行,
+  // 用户详情「发给他」右边显示拉取状态。
+  await page.route("**/api/sub-pulls", r => {
+    const at = m => new Date(Date.now() - m * 60e3).toISOString();
+    r.fulfill({ json: [
+      { username: "alice", first_pulled_at: at(3 * 1440), last_pulled_at: at(130), format: "clash-meta", client: "clash-verge" },
+      { username: "bob", first_pulled_at: at(1440), last_pulled_at: at(300), format: "links", client: "Shadowrocket" },
+    ] });
+  });
   // 测试环境没真的 SSH 上节点巡检过,列表里会全是「未巡检」;给每台补一份
   // 正常的状态,总览与节点页都显示「运行中」。页面可能接连请求几次(登录后
   // 一次、goto 再一次),控制面有限流:取一次成功就缓存着用,429 就等等重试,

@@ -188,18 +188,19 @@ const SEND_FORMATS = [["links", "分享链接", "一行一个节点,粘贴进 v2
 // 「发给他」:创建后和用户详情共用。二维码由本机 /local/qr.svg 画,永远放在白底上(暗色也一样),保证能扫。
 function sendBlock(u, links, d) {
   const name = u.username, L = (links && links.auto) || "";
-  // 页面手里已经有链接,直接 ?d= 让本机画:不用再问一次控制面(连开几个抽屉时不会撞上限流),
-  // 换了新链接地址也跟着变。
-  const qr = `/local/qr.svg?d=${encodeURIComponent(L)}`;
+  // 按稿子用 ?u=<名字>,由本机进程向控制面取链接再画;v 让换了新链接后不吃旧图。
+  // 本机取不到(比如撞上控制面限流)时,改用页面手里现成的链接 ?d= 画,见 userDrawer。
+  // 「保存二维码」直接用 ?d=:点的时候不必再问一次控制面。
+  const qr = `/local/qr.svg?u=${encodeURIComponent(name)}&v=${encodeURIComponent(L.slice(-10))}`, qrD = `/local/qr.svg?d=${encodeURIComponent(L)}`;
   const noPrefix = d && d.settings && !d.settings.sub_url_prefix;
   const pull = d && d.pull;
   return H`<section class="send" id="send">
     <div class="send-h"><h3>发给他</h3><span class="sub" id="send-pull">${pull ? pullText(pull) : d && d.pullsKnown ? "还没有客户端导入过" : ""}</span></div>
-    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" alt="${name} 的订阅二维码"></div>
+    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" data-fb="${qrD}" alt="${name} 的订阅二维码"></div>
       <div class="send-r">
         <button type="button" class="btn pri send-copy" data-act="copy" data-text="${L}">${ic("copy")}复制订阅链接</button>
         <div class="send-link mono" title="${L}">${L.replace(/^https?:\/\//, "")}</div>
-        <a class="btn" href="${qr}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
+        <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
         <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入,会自动拿到适合它的格式。</p>
       </div></div>
     ${noPrefix ? H`<div class="send-ip">${ic("warn")}<span>链接里是服务器 IP。设好订阅地址后,新旧链接都能用。</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
@@ -234,6 +235,8 @@ function userDrawer(u, links, d) {
       <dt>最近导入</dt><dd>${pull ? pullText(pull) : "还没有"}</dd>
       <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
   </div>`);
+  const img = $("#send .qrs");
+  img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
 }
 async function refreshDrawer(name) {
   await load(true, true);
