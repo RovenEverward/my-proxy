@@ -74,7 +74,7 @@ var uiCmd = &cobra.Command{
 	Short: "在本机浏览器里打开管理界面",
 	Long: `在本机起一个只听回环地址的页面服务,用浏览器看控制面。
 
-页面是 CLI 的另一种界面:它和其他命令用同一个配置档(--server / --token /
+页面是 CLI 的另一种界面:它和其他命令用同一份配置(--server / --token /
 --profile),请求经本进程带上 token 转给控制面的 /api。token 不会交给浏览器。
 
 打印出来的链接只能用一次:浏览器用它换一个会话 cookie,之后链接作废。
@@ -120,7 +120,7 @@ type uiLaunch struct {
 	restarted bool
 }
 
-// startUI 完成两种界面共用的启动:读重启交接、解析配置档、绑回环端口、建页面
+// startUI 完成两种界面共用的启动:读重启交接、解析控制面、绑回环端口、建页面
 // 服务。它不打印、不开浏览器,也不决定谁来 Serve —— mpx ui 交给浏览器,mpx app
 // 交给窗口,各自的收尾不同。
 func startUI(addr string, forceSetup bool) (*uiLaunch, error) {

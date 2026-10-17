@@ -9,10 +9,10 @@ import (
 	"strings"
 )
 
-// profilesBodyMax 是切换配置档请求体的字节上限。
+// profilesBodyMax 是切换控制面请求体的字节上限。
 const profilesBodyMax = 4 << 10
 
-// ProfileInfo 是页面上列出的一个配置档:名字、控制面地址、"是不是当前档",以及
+// ProfileInfo 是页面上列出的一个控制面:名字、控制面地址、"是不是当前档",以及
 // 这个档记下的证书指纹(给人核对用,http 控制面没有则为空)。token 绝不出现在
 // 这里,页面拿到的永远是这一层信息。
 type ProfileInfo struct {
@@ -24,11 +24,17 @@ type ProfileInfo struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
-// ProfileSource 由 cli 实现:列出本机的配置档,并把某个档解析成转发要用的
+// ProfileSource 由 cli 实现:列出本机的控制面,并把某个档解析成转发要用的
 // upstream/token/transport。ui 包不 import cli,靠这个接口解耦。
 type ProfileSource interface {
 	List() ([]ProfileInfo, error)
 	Resolve(name string) (upstream *url.URL, token string, tr http.RoundTripper, err error)
+}
+
+// ProfileSaver 是 ProfileSource 的可选扩展:切换后记住选择(写回配置文件里的
+// current)。v0.9.5 起窗口里切换控制面会记住,下次打开仍连这一个。
+type ProfileSaver interface {
+	SetCurrent(name string) error
 }
 
 // serveProfiles 处理 /local/profiles(列出)与 /local/profiles/use(切换),以及
@@ -37,7 +43,7 @@ type ProfileSource interface {
 // 一律 404。
 func (s *Server) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Profiles == nil {
-		writeError(w, http.StatusNotFound, "这里不支持切换配置档")
+		writeError(w, http.StatusNotFound, "这里不支持切换控制面")
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -54,7 +60,7 @@ func (s *Server) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	case "/local/profiles/connect":
 		s.profileConnect(w, r)
 	default:
-		writeError(w, http.StatusNotFound, "没有这个配置档接口")
+		writeError(w, http.StatusNotFound, "没有这个接口")
 	}
 }
 
@@ -85,7 +91,8 @@ func (s *Server) profileList(w http.ResponseWriter) {
 }
 
 // profileUse:POST /local/profiles/use,body {"name":"..."}。换掉本进程的转发目标,
-// 不写配置文件:切换只影响这个 mpx ui 进程。
+// 并(实现了 ProfileSaver 时)把选择写回配置文件,下次打开窗口仍连这一个。
+// 写回失败不影响这次切换,响应里 remembered=false。
 func (s *Server) profileUse(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, profilesBodyMax)
 	var body struct {
@@ -97,7 +104,7 @@ func (s *Server) profileUse(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
-		writeError(w, http.StatusBadRequest, "请给配置档名字")
+		writeError(w, http.StatusBadRequest, "请给控制面名称")
 		return
 	}
 	up, token, tr, err := s.opts.Profiles.Resolve(name)
@@ -106,19 +113,23 @@ func (s *Server) profileUse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if up == nil || up.Host == "" {
-		writeError(w, http.StatusBadRequest, "配置档 "+name+" 没有控制面地址")
+		writeError(w, http.StatusBadRequest, "控制面 "+name+" 没有地址")
 		return
 	}
 	s.setUpstream(up, token, tr)
 	s.mu.Lock()
 	s.opts.Profile = name
 	s.mu.Unlock()
-	writeJSON(w, map[string]any{"ok": true, "profile": name, "server": up.Redacted()})
+	remembered := false
+	if saver, ok := s.opts.Profiles.(ProfileSaver); ok {
+		remembered = saver.SetCurrent(name) == nil
+	}
+	writeJSON(w, map[string]any{"ok": true, "profile": name, "server": up.Redacted(), "remembered": remembered})
 }
 
-// currentFingerprint 给 /ui/meta 找当前配置档记下的证书指纹:设置页要显示它,好
+// currentFingerprint 给 /ui/meta 找当前控制面记下的证书指纹:设置页要显示它,好
 // 把窗口里连着的控制面和终端里 mpx status 报的那一行对上。档表每次向实现方现读
-// (cli 读的是配置文件),切换或新接入配置档后自然跟着变,不用在这里另记状态。
+// (cli 读的是配置文件),切换或新接入控制面后自然跟着变,不用在这里另记状态。
 func (s *Server) currentFingerprint() string {
 	s.mu.Lock()
 	name := s.opts.Profile

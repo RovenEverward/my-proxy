@@ -138,7 +138,7 @@ test("d. 完整流程(接口用 page.route 模拟)", async ({ page }) => {
     expect(body.password).toBeUndefined();
     expect(body.device_password).toBe(DPW);
     expect(body.username).toBe("alice");
-    expect(body.name).toBe("tokyo");
+    expect(body.name).toBe(""); // 内部名不再问,交给后端取 node-1
     const body0 = JSON.stringify({ id: "j1" });
     respLens.push(body0.length);
     await route.fulfill({ status: 202, contentType: "application/json", body: body0 });
@@ -178,7 +178,8 @@ test("d. 完整流程(接口用 page.route 模拟)", async ({ page }) => {
   await page.locator("#s-next").click();
   await expect(page.locator("#s-username")).toBeVisible();
   await page.locator("#s-username").fill("alice");
-  await page.locator("#s-name").fill("tokyo");
+  await expect(page.locator("#s-name")).toHaveCount(0);
+  await expect(page.locator("#s-autoname")).toContainText("自动识别");
   await page.locator("#s-dpw").fill(DPW);
   await page.locator("#s-dpw2").fill(DPW);
   await page.locator("#s-run").click();
@@ -296,4 +297,32 @@ test("g. 失败屏与重新运行", async ({ page }) => {
   const cmds = await page.evaluate(() => [...document.querySelectorAll(".setup .cmd")].map(e => e.textContent).join("\n"));
   expect(cmds).not.toContain("mpx ");
   await noLeak(page);
+});
+
+test("端口被占:检查一步说清是谁占的,自动换成空闲端口再装", async ({ page }) => {
+  await page.route("**/local/setup/check", route => route.fulfill({ json: { probe: {
+    os: "Linux", arch: "x86_64", uid: "0", fetch: "/usr/bin/curl",
+    api_port: "8080", api_busy: "nginx(进程 1234)", api_suggest: "28080",
+    inbound_port: "443", inbound_busy: "caddy(进程 900)", inbound_suggest: "2087",
+  } } }));
+  let runBody = null;
+  await page.route("**/local/setup/run", async route => {
+    runBody = route.request().postDataJSON();
+    await route.fulfill({ status: 500, json: { error: "停在这里" } });
+  });
+  await openSetup(page);
+  await page.locator("#s-start").click();
+  await page.locator("#s-host").fill("203.0.113.10");
+  await page.locator("#s-pw").fill(PW);
+  await page.locator("#s-check").click();
+  await expect(page.locator("#s-ports")).toContainText("8080 端口已被 nginx(进程 1234) 占用，已改用 28080");
+  await expect(page.locator("#s-ports")).toContainText("443 端口已被 caddy(进程 900) 占用，已改用 2087");
+  await page.locator("#s-next").click();
+  await page.locator("#s-dpw").fill(DPW);
+  await page.locator("#s-dpw2").fill(DPW);
+  await page.locator("#s-run").click();
+  await expect.poll(() => runBody).not.toBeNull();
+  expect(runBody.addr).toBe("0.0.0.0:28080");
+  expect(runBody.inbound_port).toBe(2087);
+  expect(runBody.name).toBe("");
 });

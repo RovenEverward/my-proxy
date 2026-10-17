@@ -28,7 +28,7 @@ func (f *fakeProfiles) List() ([]ProfileInfo, error) {
 func (f *fakeProfiles) Resolve(name string) (*url.URL, string, http.RoundTripper, error) {
 	up, ok := f.ups[name]
 	if !ok {
-		return nil, "", nil, errors.New("没有名为 " + name + " 的配置档")
+		return nil, "", nil, errors.New("没有名为 " + name + " 的控制面")
 	}
 	return up, f.tokens[name], nil, nil
 }
@@ -105,7 +105,7 @@ func TestProfilesListHidesSecrets(t *testing.T) {
 	s, c, _, _ := profileRig(t)
 	w := doJSON(s, http.MethodPost, "/local/profiles", c, "{}")
 	if w.Code != http.StatusOK {
-		t.Fatalf("列配置档应 200,得到 %d %s", w.Code, w.Body)
+		t.Fatalf("列控制面应 200,得到 %d %s", w.Code, w.Body)
 	}
 	if strings.Contains(w.Body.String(), "token-a") || strings.Contains(w.Body.String(), "token-b") {
 		t.Fatal("列表泄露了 token")
@@ -188,7 +188,7 @@ func TestProfilesUseInSetupMode(t *testing.T) {
 	}
 	wl := doJSON(s, http.MethodPost, "/local/profiles", c, "{}")
 	if wl.Code != http.StatusOK {
-		t.Fatalf("setup 模式下列配置档应 200,得到 %d %s", wl.Code, wl.Body)
+		t.Fatalf("setup 模式下列控制面应 200,得到 %d %s", wl.Code, wl.Body)
 	}
 	// 列出的 current 保留实现方的结论(进程里还没有 profile)。
 	var list []ProfileInfo
@@ -202,5 +202,33 @@ func TestProfilesUseInSetupMode(t *testing.T) {
 	}
 	if r := do(s, "GET", "/api/status", c); r.Code != 200 {
 		t.Fatalf("切换后转发应 200,得到 %d %s", r.Code, r.Body)
+	}
+}
+
+// savingProfiles 在 fakeProfiles 上加 SetCurrent:切换后要记住选择。
+type savingProfiles struct {
+	fakeProfiles
+	saved []string
+}
+
+func (f *savingProfiles) SetCurrent(name string) error { f.saved = append(f.saved, name); return nil }
+
+func TestProfileUseRemembersChoice(t *testing.T) {
+	up, _ := url.Parse("http://127.0.0.1:1")
+	src := &savingProfiles{fakeProfiles: fakeProfiles{infos: []ProfileInfo{{Name: "a"}, {Name: "b"}}, ups: map[string]*url.URL{"a": up, "b": up}, tokens: map[string]string{}}}
+	s, err := New("127.0.0.1:7480", Options{Upstream: up, Profile: "a", Allow: []string{"GET /api"}, Profiles: src})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c *http.Cookie
+	for _, x := range do(s, "GET", "/?k="+s.Key(), nil).Result().Cookies() {
+		c = x
+	}
+	w := doJSON(s, "POST", "/local/profiles/use", c, `{"name":"b"}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"remembered":true`) {
+		t.Fatalf("切换应成功并记住,得到 %d %s", w.Code, w.Body)
+	}
+	if len(src.saved) != 1 || src.saved[0] != "b" {
+		t.Fatalf("应写回 current=b,得到 %v", src.saved)
 	}
 }

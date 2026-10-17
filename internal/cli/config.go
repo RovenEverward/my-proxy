@@ -171,7 +171,7 @@ func resolve() (server, token string, err error) {
 }
 
 // resolveFingerprint 找出连 server 时该认的证书指纹:--fp > MPX_FINGERPRINT >
-// 生效配置档里记的那个。配置档里的指纹只在地址也来自(或等于)这个配置档时才
+// 生效配置里记的那个。配置里的指纹只在地址也来自(或等于)这个控制面时才
 // 用 —— --server 临时指到别处时沿用旧指纹,只会得到一个莫名其妙的"指纹不符"。
 func resolveFingerprint(server string) (string, error) {
 	fp := firstNonEmpty(opts.fingerprint, os.Getenv("MPX_FINGERPRINT"))
@@ -220,12 +220,12 @@ func (c Config) pick(name string) (Profile, error) {
 	}
 	p, ok := c.Profiles[name]
 	if !ok {
-		return Profile{}, fmt.Errorf("没有名为 %q 的配置档,%s", name, c.profileHint())
+		return Profile{}, fmt.Errorf("没有名为 %q 的控制面,%s", name, c.profileHint())
 	}
 	return p, nil
 }
 
-// profileHint 列出有哪些配置档,给报错用。一个都没有时提示去 login。
+// profileHint 列出有哪些控制面,给报错用。一个都没有时提示去 login。
 func (c Config) profileHint() string {
 	names := c.names()
 	if len(names) == 0 {

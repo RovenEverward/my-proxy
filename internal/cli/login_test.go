@@ -106,7 +106,7 @@ func TestLoginProfileAloneSwitches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("切回 default: %v", err)
 	}
-	if !strings.Contains(out, "已切到配置档 default") {
+	if !strings.Contains(out, "已切到控制面 default") {
 		t.Errorf("没明说切到哪了: %q", out)
 	}
 

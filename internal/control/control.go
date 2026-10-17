@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
+	"github.com/RovenEverward/my-proxy/internal/ports"
 	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
@@ -307,4 +309,18 @@ func (c *Control) ProbeEgressGeo(ctx context.Context, n model.Node) (string, err
 		return "", fmt.Errorf("节点上探测出口失败(需要 curl): %w", err)
 	}
 	return out, nil
+}
+
+// ListeningPorts 在节点上列出正在监听的 TCP、UDP 端口和占用它们的进程
+// (端口 → 「nginx(进程 1234)」)。给装核心前的端口检查和 GET /api/nodes/{id}/ports 用。
+func (c *Control) ListeningPorts(ctx context.Context, n model.Node) (tcp, udp map[int]string, err error) {
+	out, err := c.runner.Run(ctx, n, `command -v ss >/dev/null 2>&1 || { echo MPX_NO_SS; exit 0; }; ss -Hltnp 2>/dev/null; echo MPX_UDP; ss -Hlunp 2>/dev/null; true`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("读节点上的监听端口失败: %w", err)
+	}
+	if strings.Contains(out, "MPX_NO_SS") {
+		return nil, nil, ports.ErrNoSS
+	}
+	t, u, _ := strings.Cut(out, "MPX_UDP")
+	return ports.Parse(t), ports.Parse(u), nil
 }

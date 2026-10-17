@@ -33,6 +33,8 @@ type SetupParams struct {
 	Addr           string `json:"addr,omitempty"`
 	SubPrefix      string `json:"sub_prefix,omitempty"`
 	SNI            string `json:"sni,omitempty"`
+	// InboundPort:第一个入站的端口,0 = 默认 443(被占用时自动换)。v0.9.5 新增。
+	InboundPort int `json:"inbound_port,omitempty"`
 }
 
 // SetupProgress 是 runner 汇报进度的口子。
@@ -66,18 +68,18 @@ type ConnectRunner interface {
 	// Probe 整理地址并取回证书指纹:addr 是人填的(IP / 域名 / https://host:port),
 	// server 是归一后的 https://host:port,fingerprint 形如 SHA256:…。
 	Probe(ctx context.Context, addr string) (server, fingerprint string, err error)
-	// Connect 用设备密码换 token、存配置档并切为当前,返回能让页面切到正常模式的
+	// Connect 用设备密码换 token、存控制面并切为当前,返回能让页面切到正常模式的
 	// Upstream/Token/Transport/Profile。name 为空由实现方取默认(主机名)。
 	Connect(ctx context.Context, server, fingerprint, password, name string) (*SetupResult, error)
 }
 
 // ConnectNamedRunner 是 ConnectRunner 的可选扩展:接入结果存进**指定名字的新
-// 配置档**而不是实现方自己挑的那个。mpx ui 正常模式的「添加控制面」走它
+// 控制面**而不是实现方自己挑的那个。mpx ui 正常模式的「添加控制面」走它
 // (POST /local/profiles/connect);只实现了 ConnectRunner 的旧实现照常工作,只是
 // 那两个接口回 404。
 type ConnectNamedRunner interface {
 	ConnectRunner
-	// ConnectProfile 与 Connect 同一件事,但必须存成名为 profile 的**新**配置档:
+	// ConnectProfile 与 Connect 同一件事,但必须存成名为 profile 的**新**控制面:
 	// 档已存在时报错,绝不覆盖(默认的 default 档也不行)。name 仍是设备名。
 	ConnectProfile(ctx context.Context, server, fingerprint, password, name, profile string) (*SetupResult, error)
 }

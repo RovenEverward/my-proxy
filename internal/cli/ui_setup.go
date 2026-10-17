@@ -49,7 +49,18 @@ func (setupRunner) Check(ctx context.Context, p ui.SetupParams) (map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	return probeRemote(ctx, n, auth)
+	info, err := probeRemote(ctx, n, auth)
+	if err != nil {
+		return nil, err
+	}
+	inb := ip.InboundPort
+	if inb == 0 {
+		inb = 443
+	}
+	api, inbound := checkPorts(info, ip.APIPort, inb)
+	portProbeFields(info, api, inbound)
+	delete(info, "ss") // 原始的 ss 输出不往页面送
+	return info, nil
 }
 
 // Run:公钥在 Check 时已经装好,这里不再需要密码,直接走 runInitSteps。
@@ -85,14 +96,14 @@ func (setupRunner) Run(ctx context.Context, p ui.SetupParams, prog ui.SetupProgr
 		out.Upstream = up
 	}
 	// transportFor 需要配置里那份指纹(https 地址没有指纹会报错);按它的要求,
-	// 指纹随 connectAndSave 一起落进了配置档。
+	// 指纹随 connectAndSave 一起落进了控制面。
 	if tr, err := transportFor(res.Server); err == nil {
 		out.Transport = tr
 	}
 	return out, nil
 }
 
-// profileForServer 找 Server 地址等于 server 的配置档,拿它的名字与 token。
+// profileForServer 找 Server 地址等于 server 的控制面,拿它的名字与 token。
 func profileForServer(cfg Config, server string) (string, Profile, bool) {
 	for name, p := range cfg.Profiles {
 		if p.Server == server {
@@ -102,11 +113,11 @@ func profileForServer(cfg Config, server string) (string, Profile, bool) {
 	return "", Profile{}, false
 }
 
-// profilesRunner 把页面的配置档列表/切换接到配置文件上:列出 cfg.Profiles,
+// profilesRunner 把页面的控制面列表/切换接到配置文件上:列出 cfg.Profiles,
 // 切换时用 loadConfig / cfg.pick / transportFor 解析出转发要用的东西。
 type profilesRunner struct{}
 
-// List:返回配置档的名字与地址,current 先按配置文件里的 current 打勾。指纹是要
+// List:返回控制面的名字与地址,current 先按配置文件里的 current 打勾。指纹是要
 // 给人核对的信息(等价 mpx status 里的「证书指纹」),一并带上;token 绝不进返回值。
 func (profilesRunner) List() ([]ui.ProfileInfo, error) {
 	cfg, err := loadConfig()
@@ -134,7 +145,7 @@ func (profilesRunner) Resolve(name string) (*url.URL, string, http.RoundTripper,
 		return nil, "", nil, err
 	}
 	if p.Server == "" {
-		return nil, "", nil, fmt.Errorf("配置档 %s 没有控制面地址", name)
+		return nil, "", nil, fmt.Errorf("控制面 %s 没有地址", name)
 	}
 	up, err := url.Parse(p.Server)
 	if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
@@ -173,9 +184,11 @@ func setupInitParams(p ui.SetupParams) (*initParams, error) {
 		return nil, err
 	}
 
+	// 向导不再让人填内部名:空着就用 node-1(全新安装时还没有别的节点),
+	// 和「添加节点」向导的 node-N 一致;显示名由控制面按 IP 自动识别。
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
-		name = "default"
+		name = "node-1"
 	}
 	username := strings.TrimSpace(p.Username)
 	if username == "" {
@@ -188,6 +201,8 @@ func setupInitParams(p ui.SetupParams) (*initParams, error) {
 
 	return &initParams{
 		FromUI:         true,
+		AutoRemark:     true,
+		InboundPort:    p.InboundPort,
 		Host:           host,
 		SSHUser:        sshUser,
 		SSHPort:        sshPort,
@@ -261,4 +276,21 @@ func (w *lineWriter) Flush() {
 	line := strings.TrimSuffix(string(w.buf), "\r")
 	w.buf = nil
 	w.emit(line)
+}
+
+// SetCurrent:窗口里切换控制面后记住选择 —— 把配置文件里的 current 改成 name,
+// 下次打开窗口(以及终端里不带 --profile 的 mpx 命令)连的就是它。
+func (profilesRunner) SetCurrent(name string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	if _, err := cfg.pick(name); err != nil {
+		return err
+	}
+	if cfg.Current == name {
+		return nil
+	}
+	cfg.Current = name
+	return saveConfig(cfg)
 }
