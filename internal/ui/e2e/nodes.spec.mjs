@@ -335,9 +335,12 @@ test("创建并应用到节点:应用失败时入站保留,详情头部可重试
   await expect(page.locator(".conn-card [data-act=node-sync]")).toHaveCount(0);
   // 节点连不上:头部主按钮是「刷新状态」,「应用到节点」灰掉带提示。
   await expect(page.locator(".ph .btn.pri")).toHaveText("刷新状态");
-  const dis = page.locator(".ph .dis-tip");
-  await expect(dis.locator("[data-act=node-sync]")).toBeDisabled();
+  const dis = page.locator(".ph [data-act=node-sync]");
+  await expect(dis).toHaveAttribute("aria-disabled", "true");
+  // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
+  expect(await dis.evaluate(el => el.disabled)).toBe(false);
   await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(page.locator(".ph .vh")).toHaveText("节点连不上，连上后再应用");
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
 });
 
@@ -454,13 +457,26 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
   await page.route("**/api/nodes/pending", route => route.fulfill({ json: pending }));
   await openNode(page, 2);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  // pending 非空:头部主按钮是「刷新状态」,灰的「应用到节点」在它左边,悬停提示落在父 span 上。
+  // pending 非空:头部主按钮是「刷新状态」,灰的「应用到节点」在它左边,提示用 aria-describedby 关联。
   const primary = page.locator(".ph .btn.pri");
   await expect(primary).toHaveText("刷新状态");
   await expect(primary).toHaveAttribute("data-act", "node-check");
-  const dis = page.locator(".ph .dis-tip");
-  await expect(dis.locator("[data-act=node-sync]")).toBeDisabled();
+  const dis = page.locator(".ph [data-act=node-sync]");
+  await expect(dis).toHaveAttribute("aria-disabled", "true");
+  // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
+  expect(await dis.evaluate(el => el.disabled)).toBe(false);
   await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  // 键盘/读屏:按钮可聚焦,aria-describedby 指向视觉隐藏的提示文字。
+  await dis.focus();
+  expect(await dis.evaluate(el => document.activeElement === el)).toBe(true);
+  const whyID = await dis.getAttribute("aria-describedby");
+  await expect(page.locator("#" + whyID)).toHaveText("节点连不上，连上后再应用");
+  // 点击/回车都不能触发下发(不弹确认框,也不发请求)。
+  // Playwright 把 aria-disabled 也当不可点,这里直接派发 click 事件,测的是页面自己的分发。
+  await dis.dispatchEvent("click");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  await expect(page.locator("#modal.open")).toHaveCount(0);
   await expect(page.locator(".conn-card .tag.pend")).toHaveText("有改动未应用");
 
   // pending 为空:没有未应用改动,禁用项落进「⋯」菜单,菜单里不再有「刷新状态」。
@@ -471,9 +487,47 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
   await page.click("[data-act=node-menu]");
   const menu = page.locator("#node-menu");
   await expect(menu).toBeVisible();
-  const mdis = menu.locator(".dis-tip");
-  await expect(mdis.locator("[data-act=node-sync]")).toBeDisabled();
+  const mdis = menu.locator("[data-act=node-sync]");
+  await expect(mdis).toHaveAttribute("aria-disabled", "true");
+  expect(await mdis.evaluate(el => el.disabled)).toBe(false);
   await expect(mdis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  const mwhyID = await mdis.getAttribute("aria-describedby");
+  await expect(page.locator("#" + mwhyID)).toHaveText("节点连不上，连上后再应用");
+  await mdis.dispatchEvent("click");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
   await expect(menu.locator("[data-act=node-check]")).toHaveCount(0);
+});
+
+// 只有读权限(GET /api)时,连不上的节点仍要能「刷新状态」——那是 GET ?fresh=1,不是写操作。
+test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
+  // 权限来自 /ui/meta,必须在页面第一次加载前就把写权限摘掉。
+  await page.route("**/ui/meta", async route => {
+    const response = await route.fetch();
+    const m = await response.json();
+    m.allow = (m.allow || []).filter(a => a.startsWith("GET "));
+    await route.fulfill({ response, json: m });
+  });
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...n.status, observed_hash: "deployed", reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
+  await login(page, env);
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  const primary = page.locator(".ph .btn.pri");
+  await expect(primary).toHaveText("刷新状态");
+  await expect(primary).toHaveAttribute("data-act", "node-check");
+  await expect(primary).toBeEnabled();
+  // 菜单里也保留刷新项(主按钮已经出现,所以菜单里没有再放一份)。
+  await page.click("[data-act=node-menu]");
+  await expect(page.locator("#node-menu [data-act=node-check]")).toHaveCount(0);
+  // 写操作按钮因为没写权限都不出现。
+  await expect(page.locator(".ph [data-act=node-sync]")).toHaveCount(0);
+  await primary.click();
+  await expect(page.locator(".toast")).toContainText("状态已刷新", { timeout: 30_000 });
 });
 

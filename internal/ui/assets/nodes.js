@@ -69,7 +69,7 @@ let NODES_TOTAL = null;
 function autoApplyPending(id) {
   if (window.AUTO_APPLY !== id) return;
   window.AUTO_APPLY = null;
-  const btn = document.querySelector('[data-act="node-sync"]:not([disabled])');
+  const btn = document.querySelector('[data-act="node-sync"]:not([disabled]):not([aria-disabled=true])');
   if (btn) ACTS["node-sync"](btn.dataset);
   else toast("节点连不上，连上后再应用");
 }
@@ -108,15 +108,19 @@ function nodeDetail(d) {
   // 控制面不记待应用,仍可以从「⋯」里手动应用,不会被藏起来。
   const sbOnly = (s?.cores || []).length > 0 && !(s.cores || []).some(c => c.core === "xray");
   const needApply = INB_PENDING.has(id) || (!!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash) || (!n.deployed_hash && !sbOnly);
-  // 连不上时主按钮改成「刷新状态」;要应用也推不动,按 needApply 的位置换成灰按钮/灰菜单项。
+  // 连不上时主按钮改成「刷新状态」—— 它是只读的 GET ?fresh=1,有读权限就能点;要应用也
+  // 推不动,按 needApply 的位置换成灰按钮/灰菜单项(aria-disabled,仍可聚焦,读屏读得到原因)。
+  // 只有主按钮真的换成「刷新状态」时,「⋯」里才去掉刷新项。
   const down = !!s && !s.reachable;
+  // 刷新是 GET,不受写权限限制;主按钮真的换成「刷新状态」时,菜单里才不重复放一份。
+  const refreshPrimary = down;
   const tip = "节点连不上，连上后再应用";
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    ${W && down && needApply ? H`<span class="dis-tip" title="${tip}"><button class="btn" data-act="node-sync" disabled>应用到节点</button></span>` : ""}
-    ${W && down ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" title="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
+    ${refreshPrimary ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
-      ${down ? "" : H`<button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>`}
-      ${W && !needApply ? (down ? H`<span class="dis-tip" title="${tip}"><button type="button" data-act="node-sync" disabled>${ic("upload")}应用到节点</button></span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
+      ${refreshPrimary ? "" : H`<button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>`}
+      ${W && !needApply ? (down ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why-m" title="${tip}">${ic("upload")}应用到节点</button><span id="sync-why-m" class="vh">${tip}</span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
       ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
       ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
     </div></span></div>

@@ -821,6 +821,8 @@ const ACTS = {
 };
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
+  // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
+  if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
   if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a, e); return; }
   const tr = e.target.closest("tr[data-href]");
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;

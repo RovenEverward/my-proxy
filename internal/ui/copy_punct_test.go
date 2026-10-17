@@ -120,14 +120,39 @@ func copyPunctFragments(line string) []string {
 	var fragments []string
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
-		// 三个半角点是中文省略号写错了(「安装...」);JS 展开运算符(...x、[...a]、{...o})
-		// 两边都不是汉字,不会命中。一段连续的点只在开头判一次。
+		// 三个半角点是中文省略号写错了(「安装...」「加载中 ...」「正在连接 ${name}...」)。
+		// 三点前是汉字、空格或 ${…} 插值,但同一片段里得有汉字才算文案:展开运算符
+		// (...x、[...a]、{...o}、f(...args))和纯英文(Loading...)都不会命中。
 		if r == '.' && i+2 < len(runes) && runes[i+1] == '.' && runes[i+2] == '.' {
 			if i > 0 && runes[i-1] == '.' {
 				continue
 			}
-			if (i > 0 && chinese(runes[i-1])) || (i+3 < len(runes) && chinese(runes[i+3])) {
-				fragments = append(fragments, string(runes[max(0, i-16):min(len(runes), i+17)]))
+			before := false
+			interp := false
+			if i > 0 {
+				j := i - 1
+				for j >= 0 && unicode.IsSpace(runes[j]) {
+					j--
+				}
+				if j >= 0 {
+					if chinese(runes[j]) {
+						before = true
+					} else if runes[j] == '}' && endsInterp(runes, j) {
+						interp = true
+					}
+				}
+			}
+			after := i+3 < len(runes) && chinese(runes[i+3])
+			lo, hi := max(0, i-16), min(len(runes), i+17)
+			hasHan := false
+			for j := lo; j < hi; j++ {
+				if unicode.Is(unicode.Han, runes[j]) {
+					hasHan = true
+					break
+				}
+			}
+			if hasHan && (before || interp || after) {
+				fragments = append(fragments, string(runes[lo:hi]))
 			}
 			continue
 		}
@@ -156,6 +181,24 @@ func copyPunctFragments(line string) []string {
 		}
 	}
 	return fragments
+}
+
+// endsInterp 判断 runes[close] 这个 '}' 是不是 ${…} 插值的收尾:从右往左配对花括号,
+// 找到配对的 '{' 时看它前面是不是 '$'。
+func endsInterp(runes []rune, close int) bool {
+	depth := 0
+	for j := close; j >= 0; j-- {
+		switch runes[j] {
+		case '}':
+			depth++
+		case '{':
+			depth--
+			if depth == 0 {
+				return j > 0 && runes[j-1] == '$'
+			}
+		}
+	}
+	return false
 }
 
 func TestCopyPunct(t *testing.T) {
@@ -217,8 +260,14 @@ func TestCopyPunct(t *testing.T) {
 			{"interpolationEnglish", "`${a}?x=1`", 0},
 			{"ellipsisAfterHan", `"安装..."`, 1},
 			{"ellipsisAfterHan2", `"加载中..."`, 1},
+			{"ellipsisSpace", `"加载中 ..."`, 1},
+			{"ellipsisAfterInterp", "`正在连接 ${name}...`", 1},
+			{"ellipsisAfterInterpSpace", "`正在连接 ${name} ...`", 1},
 			{"ellipsisSpread", `[...a, ...b]`, 0},
+			{"ellipsisObjectSpread", `({ ...o })`, 0},
+			{"ellipsisCallArgs", `f(...args)`, 0},
 			{"ellipsisEnglish", `"Loading..."`, 0},
+			{"ellipsisEnglishSpace", `"Loading ..."`, 0},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				var got []string

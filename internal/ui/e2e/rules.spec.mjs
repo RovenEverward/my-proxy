@@ -186,6 +186,32 @@ test("策略组:界面不再有「标签」条件;旧数据里的标签原样保
   await cp("/api/proxy-groups/" + id, { method: "DELETE" });
 });
 
+test("普通删除不刺眼:编辑行和策略组抽屉的删除都不是红按钮,删除卡也不是红卡;确认框仍是红的", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+  await page.locator("[data-act=rp-edit]").first().click();
+  const del = page.locator(".rp-row.editing [data-act=rp-del]");
+  await expect(del).toBeVisible();
+  await expect(del).not.toHaveClass(/c-bad/);
+
+  await page.goto(env.origin + "/#rules/groups");
+  await page.locator(".rp-g").first().click();
+  await expect(page.locator("#gp-form")).toBeVisible();
+  const gpDel = page.locator("#gp-form [data-act=gp-rm]");
+  await expect(gpDel).toBeVisible();
+  await expect(gpDel).not.toHaveClass(/c-bad/);
+  // 删除卡是普通灰卡,不再用 danger-zone。
+  await expect(page.locator("#gp-form .danger-zone")).toHaveCount(0);
+  const card = page.locator("#gp-form .card").filter({ hasText: "删除策略组" });
+  await expect(card).toHaveCount(1);
+  await expect(card).not.toHaveClass(/danger-zone/);
+  // 确认弹窗保持红色。
+  await gpDel.click();
+  await expect(page.locator("#modal.open #okb")).toHaveClass(/danger/);
+  await page.click("#modal [data-act=modal-cancel]");
+});
+
 test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色", async ({ page }) => {
   const rgb = s => s.match(/[\d.]+/g).map(Number);
   const gray = (c, tol) => Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) <= tol;

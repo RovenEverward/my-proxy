@@ -137,3 +137,25 @@ test("漂移警告:一键跳到节点详情并弹出应用确认", async ({ page
   await page.waitForTimeout(1000);
   await expect(page.locator("#modal.open")).toHaveCount(0);
 });
+
+// ui_action==="apply" 时服务端一定观测到了不一致:sing-box 的那句「未读取或与下发内容
+// 不一致」也按不一致讲;两句同时出现时合并成一句,只留一个「应用到」按钮。
+for (const [name, detail, want] of [
+  ["仅 sing-box 漂移", "sing-box 配置未读取或与下发内容不一致", "节点上的 sing-box 配置和控制面不一致"],
+  ["xray 与 sing-box 都漂移", "配置和下发的不一致(节点上被改过);sing-box 配置未读取或与下发内容不一致", "节点上的配置和控制面不一致"],
+]) {
+  test(`漂移文案:${name}`, async ({ page }) => {
+    await login(page, env);
+    await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+      { name: "节点 doc-drift", status: "warn", detail, ui_action: "apply", node_id: driftNodeID },
+    ] }) }));
+    await page.goto(env.origin + "/#doctor");
+    await page.click("[data-act=doc-run]");
+    const row = page.locator("table tbody tr").first();
+    await expect(row).toContainText(want);
+    await expect(row).not.toContainText("配置和下发的不一致");
+    await expect(row).not.toContainText("未读取或与下发内容不一致");
+    // 合并后只留一句,按钮也只有一个。
+    await expect(row.locator("[data-act=doc-apply]")).toHaveCount(1);
+  });
+}

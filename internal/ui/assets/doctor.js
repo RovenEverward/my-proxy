@@ -30,6 +30,30 @@ const docStat = (checks, k, label) => {
   <div class="s">${k === "ok" ? "没有毛病" : k === "warn" ? "该看一眼，不算坏" : "要看，系统确实有毛病"}</div></div>`;
 };
 
+// doctorApplyDetail:ui_action==="apply" 的漂移行换成界面说法。控制面此时一定观测到
+// 了不一致,所以「未读取或与下发内容不一致」也按不一致讲。xray 和 sing-box 两句同时
+// 出现(控制面用分号拼同一条明细)时合并成一句,只出现一次;其他问题原样挨着分号。
+function doctorApplyDetail(detail) {
+  const XRAY = "配置和下发的不一致(节点上被改过)";
+  const SINGBOX = "sing-box 配置未读取或与下发内容不一致";
+  const MERGED = "节点上的配置和控制面不一致";
+  const parts = String(detail).split(";");
+  const both = parts.some(p => p.includes(XRAY)) && parts.some(p => p.includes(SINGBOX));
+  const out = [];
+  let merged = false;
+  for (const p of parts) {
+    const hx = p.includes(XRAY), hs = p.includes(SINGBOX);
+    if (!hx && !hs) { out.push(p); continue; }
+    if (both) {
+      if (!merged) { out.push(MERGED); merged = true; }
+      continue;
+    }
+    if (hx) out.push(p.split(XRAY).join(MERGED));
+    if (hs) out.push(p.split(SINGBOX).join("节点上的 sing-box 配置和控制面不一致"));
+  }
+  return out.join(";");
+}
+
 function doctorPage() {
   const head = H`<div class="ph"><div><h1>体检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>
     ${DOC_RUNNING ? H`<button class="btn pri busy" disabled>开始体检</button>` : H`<button class="btn pri" data-act="doc-run">${ic("check")}开始体检</button>`}</div>`;
@@ -53,7 +77,7 @@ function doctorPage() {
     const apply = c.ui_action === "apply" && c.node_id;
     const applyBtn = apply && can("POST", "/api/nodes/x")
       ? H`<button type="button" class="btn sm" data-act="doc-apply" data-id="${c.node_id}">应用到${lb || nm}</button>` : "";
-    const detail = apply ? String(c.detail).replace("配置和下发的不一致(节点上被改过)", "节点上的配置和控制面不一致") : c.detail;
+    const detail = apply ? doctorApplyDetail(c.detail) : c.detail;
     // 建议里讲的就是「应用到节点」时按钮已经说明白了,不再重复一行。
     const advice = applyBtn && shown.includes("应用到节点") ? "" : shown;
     return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : c.name}</b></td><td>${stBadge(cls, text)}</td>
