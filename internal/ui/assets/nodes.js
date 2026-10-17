@@ -64,13 +64,13 @@ function nodeList(d) {
   const head = H`<tr><th>节点</th><th>状态</th><th class="hide-m">核心</th><th class="hide-m">配置</th><th class="hide-m">SSH</th><th class="num hide-m">检查于</th></tr>`;
   let inner;
   if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(5, 6)}</tbody></table>`;
-  else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "填 VPS 的地址和 SSH 密码，自动装好并加进订阅", "mpx node add hk --address 203.0.113.10", W ? H`<div style="display:grid;gap:10px;justify-items:center"><button class="btn pri sm" data-act="node-wizard">${ic("plus")}添加节点</button><a class="lnk wlnk" data-act="node-new" href="#">已能免密 SSH，直接登记</a></div>` : "");
+  else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "填 VPS 的地址和 SSH 密码，自动装好并加进订阅。点下面的「添加节点」开始。", "", W ? H`<div style="display:grid;gap:10px;justify-items:center"><button class="btn pri sm" data-act="node-wizard">${ic("plus")}添加节点</button><a class="lnk wlnk" data-act="node-new" href="#">已能免密 SSH，直接登记</a></div>` : "");
   else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${n.display || n.name}</b> ${n.display ? H`<span class="sub mono">${n.name}</span> ` : ""}<span class="sub">#${n.id}</span><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
     <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : H`<span class="sub">—</span>`}</td>
     <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
   // 「批量识别显示名」只在有实现、且确实还有没显示名的节点时出现。
   const needRelabel = d && META.relabel && d.nodes.some(n => !n.display);
-  return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存 · 对应 <code>mpx node list</code></p></div><div class="sp"></div>
+  return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存</p></div><div class="sp"></div>
     ${needRelabel ? H`<button class="btn" data-act="relabel-open">${ic("globe")}批量识别显示名</button>` : ""}
     ${W ? H`<button class="btn pri" data-act="node-wizard">${ic("plus")}添加节点</button>` : ""}</div><div class="card">${inner}</div>`;
 }
@@ -102,13 +102,13 @@ function nodeDetail(d) {
   </div>
   <div class="card mt"><div class="ch">入站<small>· ${d.inbounds.length}</small><span class="sp"></span>${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="inb-new" data-node="${id}">${ic("plus")}添加入站</button>` : ""}</div>
     ${d.inbounds.length ? H`<div class="tw"><table><thead><tr><th>标签</th><th>协议</th><th class="num">端口</th><th class="hide-m">传输 / 安全</th><th class="hide-m">SNI</th></tr></thead><tbody>${d.inbounds.map(i => H`<tr data-href="#inbounds" tabindex="0"><td><b class="bold">${i.tag || i.protocol + "-" + i.port}</b> <span class="sub">#${i.id}</span></td><td><span class="tag">${i.protocol}</span></td><td class="num mono">${i.port}</td><td class="hide-m sub">${i.network} · ${i.security}</td><td class="hide-m mono sub">${i.sni || "—"}</td></tr>`)}</tbody></table></div>`
-      : emptyBox("inb", "这个节点上还没有入站", "入站决定节点上监听什么协议和端口。加好后要下发一次才生效,下发会重启核心。", `mpx inbound add --node ${id} --protocol vless --port 443 --security reality`)}</div>
+      : emptyBox("inb", "这个节点上还没有入站", "入站决定节点上监听什么协议和端口。点上面的「添加入站」开始,加好后要下发一次才生效,下发会重启核心。", "")}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
       ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}">体检</button>` : ""}</div>
     ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包,经 SSH 送到节点,下发当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}">安装…</button></div>` : ""}
-    <div class="row"><div><b class="bold">在线用户</b><div class="sub">现场问节点此刻每个用户连着几个 IP · <code>mpx node online ${id}</code></div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}">查看</button></div>
-    <div class="row"><div><b class="bold">配置预览</b><div class="sub">下发会推的 config.json,不碰节点 · <code>mpx node config ${id}</code></div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}">查看</button></div>
+    <div class="row"><div><b class="bold">在线用户</b><div class="sub">现场问节点此刻每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}">查看</button></div>
+    <div class="row"><div><b class="bold">配置预览</b><div class="sub">下发会推的 config.json,不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}">查看</button></div>
   </div>
   ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt danger-zone"><div class="ch c-bad">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="node-rm" data-id="${id}" data-name="${n.name}">删除</button></div></div>` : ""}`;
 }
@@ -140,42 +140,33 @@ async function nodeEditor(id) {
       <option value="v4" ${n.outbound_ip === "v4" ? "selected" : ""}>仅 IPv4</option>
       <option value="v6" ${n.outbound_ip === "v6" ? "selected" : ""}>仅 IPv6</option>
       <option value="asis" ${n.outbound_ip === "asis" ? "selected" : ""}>不指定(AsIs)</option>
-    </select><span class="h">节点直连出口的 IP 版本;改完要下发配置(mpx node sync)才生效</span></div></details>
+    </select><span class="h">节点直连出口的 IP 版本;改完要下发配置才生效</span></div></details>
     ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="n-cmd"></div></div>
     <div class="err" id="n-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="n-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#node-form");
-  const FIELDS = [["name", "--name"], ["address", "--address"], ["ssh_port", "--ssh-port"], ["ssh_user", "--ssh-user"], ["api_port", "--api-port"], ["config_path", "--config-path"], ["service_name", "--service-name"], ["outbound_ip", "--outbound-ip"]];
+  const FIELDS = [["name", "名称"], ["address", "对外地址"], ["ssh_port", "SSH 端口"], ["ssh_user", "SSH 用户"], ["api_port", "API 端口"], ["config_path", "配置路径"], ["service_name", "服务名"], ["outbound_ip", "出口 IP"]];
   const INTS = new Set(["ssh_port", "api_port"]);
   const collect = () => {
-    const f = new FormData(form), out = {}, err = [], flags = [];
-    for (const [k, flag] of FIELDS) {
+    const f = new FormData(form), out = {}, err = [], changed = {};
+    for (const [k, label] of FIELDS) {
       const s = String(f.get(k) || "").trim();
-      if (INTS.has(k)) { if (s && !/^\d+$/.test(s)) err.push(`${flag} 要是整数`); out[k] = s ? +s : 0; } else out[k] = s;
-      const changed = isNew ? out[k] !== "" && out[k] !== 0 : out[k] !== (n[k] || (INTS.has(k) ? 0 : ""));
-      if (changed && !(isNew && k === "name")) flags.push(flag, INTS.has(k) ? String(out[k]) : out[k] === "" ? '""' : shq(out[k]));
+      if (INTS.has(k)) { if (s && !/^\d+$/.test(s)) err.push(`${label} 要是整数`); out[k] = s ? +s : 0; } else out[k] = s;
+      changed[k] = isNew ? out[k] !== "" && out[k] !== 0 : out[k] !== (n[k] || (INTS.has(k) ? 0 : ""));
     }
-    const metaFlags = [];
     if (!isNew) {
       const region = String(f.get("region") || "").trim().toUpperCase(), city = String(f.get("city") || "").trim(), letter = String(f.get("letter") || "").trim().toUpperCase();
-      if (letter && !/^[A-Z]{1,2}$/.test(letter)) err.push("--letter 要是 1–2 位字母");
+      if (letter && !/^[A-Z]{1,2}$/.test(letter)) err.push("字母要是 1–2 位");
       out.meta = { region, city, letter };
-      if (region !== (meta.region || "")) metaFlags.push("--region", region === "" ? '""' : shq(region));
-      if (city !== (meta.city || "")) metaFlags.push("--city", city === "" ? '""' : shq(city));
-      if (letter !== (meta.letter || "")) metaFlags.push("--letter", letter === "" ? '""' : shq(letter));
-      out.metaChanged = metaFlags.length > 0;
-      out.nodeChanged = flags.length > 0;
-      flags.push(...metaFlags);
+      out.metaChanged = region !== (meta.region || "") || city !== (meta.city || "") || letter !== (meta.letter || "");
+      out.nodeChanged = FIELDS.some(([k]) => changed[k] && !(isNew && k === "name"));
     }
     if (isNew && !out.name) err.push("名称不能为空");
     if (isNew && !out.address) err.push("必须给对外地址");
-    const cmd = isNew ? `mpx node add ${shq(out.name || "<名称>")} ${flags.join(" ")}` : `mpx node edit ${id} ${flags.join(" ") || "(没有改动)"}`;
-    return { out, err, cmd };
+    return { out, err };
   };
   const sync = () => {
     const c = collect();
-    $("#n-cmd").textContent = c.cmd;
     if (!isNew) {
       // 字母留空、或换了地区/城市而没指定字母时,由控制面在保存时分配,这里先不猜。
       const m = { ...c.out.meta }, group = x => (x.region || "").toUpperCase() + "\0" + (x.city || "");
@@ -233,9 +224,6 @@ function relabelModal() {
   let plans = null;
   m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
   <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>),先出「旧名 → 新名」对照表。已经有显示名的节点会跳过,用户写过的值不会被覆盖。</p>
-  <div class="field"><label>等价命令</label>
-    <div class="cmd">mpx node relabel --all --dry-run</div>
-    <div class="cmd mt2">mpx node relabel --all --yes</div></div>
   <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>
   <button class="btn" id="rl-plan">${ic("globe")}生成对照表</button>
@@ -279,17 +267,16 @@ Object.assign(ACTS, {
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("已现场检查,状态已更新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `下发配置到 ${d.name}?`, text: "把当前配置推到节点并重启核心:这台节点上所有人的连接会断一次。加人、删人、到期、超限不用下发,控制面每 30 秒自动收敛。", cmd: `mpx node sync ${d.id}`, ok: "下发并重启",
+  "node-sync": d => confirmBox({ title: `下发配置到 ${d.name}?`, text: "把当前配置推到节点并重启核心:这台节点上所有人的连接会断一次。加人、删人、到期、超限不用下发,控制面每 30 秒自动收敛。", ok: "下发并重启",
     run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已下发节点 ${d.id},它的核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `节点 ${d.id} 已取消排水`); await load(true, true); });
-    confirmBox({ title: `开始排水 ${d.name}?`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线,会在下次订阅刷新时漂走。随时可以结束排水。", cmd: `mpx node drain ${d.id}`, ok: "开始排水",
+    confirmBox({ title: `开始排水 ${d.name}?`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线,会在下次订阅刷新时漂走。随时可以结束排水。", ok: "开始排水",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `节点 ${d.id} 已开始排水`); await load(true, true); } });
   },
   "node-install": d => confirmBox({ title: `在 ${d.name} 上安装核心?`, text: "控制面下载发布包(有缓存),经 SSH 送到节点,下发当前配置并启动。慢链路上要几分钟,期间别关这个页面。", ok: "安装",
     extra: H`<div class="two"><div class="field"><label for="i-core">核心</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
-    cmdOf: m => { const core = $("#i-core", m).value, v = $("#i-ver", m).value.trim(); return `mpx node install ${d.id}${core !== "xray" ? " --core " + core : ""}${v ? " --version " + shq(v) : ""}`; },
     run: async () => {
       const core = $("#i-core").value, v = $("#i-ver").value.trim();
       let path = nodePath(d.id) + "/install?core=" + encodeURIComponent(core);
@@ -299,18 +286,18 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.name}?`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟,期间别关这个页面;要改参数请用 CLI。", cmd: `mpx node diagnose ${d.id}`, ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.name}?`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟,期间别关这个页面。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
     const r = await api(nodePath(d.id) + "/online");
-    infoDrawer(`${r.node} 在线`, H`现场读出 · <code>mpx node online ${d.id}</code>`, r.online.length
+    infoDrawer(`${r.node} 在线`, H`现场读出的结果`, r.online.length
       ? H`<div class="tw"><table><thead><tr><th>用户</th><th class="num">IP 数</th><th>IP</th></tr></thead><tbody>${r.online.map(e => H`<tr><td><b class="bold">${e.user}</b></td><td class="num">${e.count}</td><td class="mono sub">${(e.ips || []).join(", ")}</td></tr>`)}</tbody></table></div>`
       : emptyBox("users", "没有在线用户", "此刻没有用户连在这台节点上。", ""));
   }),
   "node-config": (d, b) => busy(b, async () => {
     const cfg = await api(nodePath(d.id) + "/config");
-    infoDrawer(`节点 ${d.id} 的配置预览`, H`下发会推这一份 · <code>mpx node config ${d.id}</code>`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
+    infoDrawer(`节点 ${d.id} 的配置预览`, H`下发会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.name}?`, text: "不可恢复:它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心还在跑,要清理得自己登上去。只想让新订阅别再发它,用「排水」。", cmd: `mpx node rm ${d.id}`, ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.name}?`, text: "不可恢复:它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心还在跑,要清理得自己登上去。只想让新订阅别再发它,用「排水」。", ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.id}`); location.hash = "nodes"; } }),
 });

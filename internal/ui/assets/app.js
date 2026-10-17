@@ -17,7 +17,7 @@ async function api(path, init = {}) {
     let res;
     try {
       res = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...(init.headers || {}) } });
-    } catch (e) { throw new APIError(0, "连不上 mpx ui:终端里的 mpx ui 可能已经退出"); }
+    } catch (e) { throw new APIError(0, "连不上本地服务:MPX 可能已经退出,请重新打开"); }
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
     if (res.status === 429 && attempt < 3) { await sleep(1000 * (+res.headers.get("Retry-After") || 2)); continue; }
     const text = await res.text();
@@ -83,8 +83,6 @@ function expireCell(u) {
   const d = daysLeft(u.expire_at), cls = d < 0 ? "c-bad" : d <= EXPIRE_SOON_DAYS ? "c-warn" : "";
   return H`${ymd(new Date(u.expire_at))}<div class="sub ${cls}">${d < 0 ? `已过 ${-d} 天` : d === 0 ? "今天到期" : `剩 ${d} 天`}</div>`;
 }
-// shq:拼等价命令时按 shell 规则给参数加引号。
-const shq = s => /^[A-Za-z0-9_.,:/@%+=-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`;
 const avatar = n => H`<span class="av">${[...String(n)][0]?.toUpperCase() || "?"}</span>`;
 function nodeSt(n) {
   if (!n.status) return n.draining ? stBadge("info", "排水中") : stBadge("", "未巡检");
@@ -101,7 +99,7 @@ const skRows = (n, c) => raw(Array.from({ length: n }, () => `<tr>${Array.from({
 function errorBox(what, e) {
   const auth = e && e.status === 401;
   return H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到${what}</h4>
-  <p>${e ? e.message : ""}</p>${auth ? H`<div class="cmd">mpx login --server ${META.server || "URL"} --token …</div><p class="sub mt">重新登录后需要重启 mpx ui。</p>` : ""}
+  <p>${e ? e.message : ""}</p>${auth ? H`<p class="sub mt">登录状态已失效,请重新打开 MPX 并登录。</p>` : ""}
   <div class="mt"><button class="btn sm" data-act="reload">${ic("refresh")}重试</button></div></div>`;
 }
 const emptyBox = (icon, title, text, cmd, btn = "") => H`<div class="empty"><div class="ill">${ic(icon)}</div><h4>${title}</h4><p>${text}</p>${btn}${cmd ? H`<div class="cmd mt">${cmd}</div>` : ""}</div>`;
@@ -119,10 +117,10 @@ let route = [], current = { page: null, data: null, error: null, loading: true, 
 let UPDATE = null;
 const UPD_SKIP_KEY = "mpx-upd-skip";
 // 本机那一层与「正在运行的程序」的叫法:桌面构建(/local/update 的 desktop 为
-// true)都叫「桌面程序」,浏览器模式是「本机 CLI」与 mpx ui;还没问到结论时按
-// 浏览器模式叫。
-const updSelfName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "本机 CLI";
-const updProgName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "mpx ui";
+// true)都叫「桌面程序」,浏览器模式是「本机程序」与「本机界面」;还没问到结论时
+// 按浏览器模式叫。
+const updSelfName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "本机程序";
+const updProgName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "本机界面";
 
 // cmpVer 给版本号做粗略排序:按数字段比,段数不够的算小。"v" 前缀与预发布后缀不计。
 function cmpVer(a, b) {
@@ -198,9 +196,9 @@ function openUpdateModal() {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
-  ${u.notes ? H`<pre class="upd-notes">${u.notes}</pre>` : ""}
+  ${u.notes ? H`<div class="upd-notes">${raw(renderMarkdown(u.notes))}</div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
-  <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机,完成后 mpx ui 自动重启。"}</p>
+  <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
@@ -326,7 +324,7 @@ function shell(page, body, crumb) {
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${STATUS?.version || ""}</small></div>
   <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${STATUS ? "ok" : current.error ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
-  <div class="foot"><span class="ro">${ic("term")} 由 <code>mpx ui</code> 提供</span><span>仅本机可访问 · token 不出本进程</span></div></aside>
+  <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
   <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
@@ -380,9 +378,9 @@ PAGES.overview = {
         : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
       <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
       ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${x.name}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
-        : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。", "mpx node add hk --address 203.0.113.10")}</div>
+        : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
     </div>
-    <div class="card mt"><div class="ch">通知<small>· mpx settings show</small></div>
+    <div class="card mt"><div class="ch">通知</div>
       <dl class="kv"><dt>Webhook</dt><dd class="mono">${settings.webhook_url || H`<span class="sub">未配置,不发通知</span>`}</dd>
       <dt>到期提醒</dt><dd>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</dd>
       <dt>用量提醒</dt><dd>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</dd></dl></div>`;
@@ -410,16 +408,15 @@ async function write(method, path, body, okText) {
 // 否则地址没变(例如在 #users 删掉用户后又设 location.hash="users")时不会有 hashchange,列表就停在旧数据。
 function afterWrite() { setTimeout(() => load(true, true), 0); }
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
-// extra 是插在说明下面的表单;cmdOf(modal) 给了就随输入重算等价命令。
-function confirmBox({ title, text, cmd, ok, danger, typed, run, extra, cmdOf }) {
+// extra 是插在说明下面的表单。
+function confirmBox({ title, text, ok, danger, typed, run, extra }) {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
-  ${extra || ""}${cmd || cmdOf ? H`<div class="cmd mb" id="modal-cmd">${cmd || ""}</div>` : ""}<div class="err" id="modal-err" role="alert"></div></div>
+  ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const okb = $("#okb"), t = $("#typed");
-  if (cmdOf) { const upd = () => { $("#modal-cmd").textContent = cmdOf(m); }; m.oninput = m.onchange = upd; upd(); } else m.oninput = m.onchange = null;
   if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
   okb.addEventListener("click", async () => {
     okb.disabled = true; okb.classList.add("busy");
@@ -429,25 +426,29 @@ function confirmBox({ title, text, cmd, ok, danger, typed, run, extra, cmdOf }) 
 }
 
 /* ---------- 配置档切换 ---------- */
-// 点左上角的配置档卡片:拉一次列表。只有一个档时不弹,直接提示去登录加一个;
-// 有多个时弹窗,当前档打勾,点别的就 POST 切换,成功后整页 reload。
+// 点左上角的配置档卡片:拉一次列表。有多个档,或者能在页面里接入新控制面时,
+// 弹窗列出全部(当前档打勾,每项带指纹前 16 位);点别的就 POST 切换,成功后整页
+// reload。只有一个档又接不了新控制面时,不弹,直接提示去登录加一个。
 async function openProfiles() {
   if (!META.profiles) return;
   let list;
   try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
   catch (e) { toast("读不到配置档:" + e.message, true); return; }
   if (!Array.isArray(list)) list = [];
-  if (list.length <= 1) {
-    toast(H`只有一个配置档 ${list[0]?.name || "default"};用 mpx login --profile <名字> 添加`);
+  const canAdd = !!META.connect && typeof window.openConnectForm === "function";
+  if (list.length <= 1 && !canAdd) {
+    toast(H`只有一个配置档 ${list[0]?.name || "default"};要加新的配置档,请先在终端登录另一个控制面`);
     return;
   }
+  // 指纹只摆前 16 位(核对用的那几位),完整的在设置页「当前控制面」里。
+  const fp16 = p => String(p.fingerprint || "").slice(0, 16);
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>切换配置档</h2>
-  <p>只影响这个 mpx ui 进程;配置文件里的 current 不动。</p>
+  <p>只影响这次打开的界面;配置文件里的当前配置档不动。</p>
   <div class="pflist">${list.map(p => H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
-    <span class="dot ${p.current ? "ok" : ""}"></span><span class="pf-t"><b>${p.name}</b><span>${String(p.server || "").replace(/^https?:\/\//, "")}</span></span>${p.current ? ic("check") : ""}</button>`)}</div>
+    <span class="dot ${p.current ? "ok" : ""}"></span><span class="pf-t"><b>${p.name}</b><span>${String(p.server || "").replace(/^https?:\/\//, "")}</span>${fp16(p) ? H`<span title="${p.fingerprint}">${fp16(p)}…</span>` : ""}</span>${p.current ? ic("check") : ""}</button>`)}</div>
   <div class="err" id="prof-err" role="alert"></div></div>
-  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button></div>`);
+  <div class="mf">${canAdd ? H`<button type="button" class="btn" data-act="profile-add">${ic("plus")}添加控制面…</button><span class="sp" style="flex:1"></span>` : ""}<button class="btn" data-act="modal-cancel">取消</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   for (const b of m.querySelectorAll(".pfitem")) b.addEventListener("click", () => useProfile(b.dataset.name, b));
 }
@@ -507,6 +508,9 @@ const ACTS = {
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
   "profile-open": () => openProfiles(),
+  // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
+  // 设备密码的手续,存成新配置档再切过去)。
+  "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };
 document.addEventListener("click", e => {

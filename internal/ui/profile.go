@@ -12,12 +12,16 @@ import (
 // profilesBodyMax 是切换配置档请求体的字节上限。
 const profilesBodyMax = 4 << 10
 
-// ProfileInfo 是页面上列出的一个配置档。只有名字、控制面地址与"是不是当前档":
-// token 与证书指纹绝不出现在这里,页面拿到的永远是这一层信息。
+// ProfileInfo 是页面上列出的一个配置档:名字、控制面地址、"是不是当前档",以及
+// 这个档记下的证书指纹(给人核对用,http 控制面没有则为空)。token 绝不出现在
+// 这里,页面拿到的永远是这一层信息。
 type ProfileInfo struct {
 	Name    string `json:"name"`
 	Server  string `json:"server"`
 	Current bool   `json:"current"`
+	// Fingerprint 形如 SHA256:…。它本来就要摆到人眼前核对(接入时的 TOFU、
+	// mpx status 里的「证书指纹」),不属于机密;token 才是。
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // ProfileSource 由 cli 实现:列出本机的配置档,并把某个档解析成转发要用的
@@ -27,9 +31,10 @@ type ProfileSource interface {
 	Resolve(name string) (upstream *url.URL, token string, tr http.RoundTripper, err error)
 }
 
-// serveProfiles 处理 /local/profiles(列出)与 /local/profiles/use(切换)。
-// 两个接口都只接受 POST;会话与来源校验已经在 ServeHTTP 里做过,与 /local/setup
-// 同规矩。没有实现 ProfileSource 时一律 404。
+// serveProfiles 处理 /local/profiles(列出)与 /local/profiles/use(切换),以及
+// 正常模式下的 /local/profiles/connect(/probe)。接口都只接受 POST;会话与来源
+// 校验已经在 ServeHTTP 里做过,与 /local/setup 同规矩。没有实现 ProfileSource 时
+// 一律 404。
 func (s *Server) serveProfiles(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Profiles == nil {
 		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持切换配置档")
@@ -44,12 +49,16 @@ func (s *Server) serveProfiles(w http.ResponseWriter, r *http.Request) {
 		s.profileList(w)
 	case "/local/profiles/use":
 		s.profileUse(w, r)
+	case "/local/profiles/connect/probe":
+		s.profileConnectProbe(w, r)
+	case "/local/profiles/connect":
+		s.profileConnect(w, r)
 	default:
 		writeError(w, http.StatusNotFound, "没有这个配置档接口")
 	}
 }
 
-// profileList:POST /local/profiles,返回 [{name, server, current}]。
+// profileList:POST /local/profiles,返回 [{name, server, current, fingerprint}]。
 //
 // current 以这个 ui 进程正在用的档为准(而不是配置文件里的 current):页面上的
 // 勾要跟着实际转发目标走。
@@ -105,4 +114,27 @@ func (s *Server) profileUse(w http.ResponseWriter, r *http.Request) {
 	s.opts.Profile = name
 	s.mu.Unlock()
 	writeJSON(w, map[string]any{"ok": true, "profile": name, "server": up.Redacted()})
+}
+
+// currentFingerprint 给 /ui/meta 找当前配置档记下的证书指纹:设置页要显示它,好
+// 把窗口里连着的控制面和终端里 mpx status 报的那一行对上。档表每次向实现方现读
+// (cli 读的是配置文件),切换或新接入配置档后自然跟着变,不用在这里另记状态。
+func (s *Server) currentFingerprint() string {
+	s.mu.Lock()
+	name := s.opts.Profile
+	src := s.opts.Profiles
+	s.mu.Unlock()
+	if src == nil || name == "" {
+		return ""
+	}
+	list, err := src.List()
+	if err != nil {
+		return ""
+	}
+	for _, p := range list {
+		if p.Name == name {
+			return p.Fingerprint
+		}
+	}
+	return ""
 }

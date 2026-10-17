@@ -251,12 +251,24 @@ func (c *Checker) countBehind(ctx context.Context, latest string) int {
 
 // Ahead 报告 latest 是否比 current 新。
 //
-// 只比数字段。两边的版本号都形如 vMAJOR.MINOR.PATCH,比不出来(带后缀、格式怪)
-// 时返回 false —— 宁可不说,也不要因为一个不认识的版本号天天报"有新版本"。
+// 先比数字段(主.次.补丁),比不出来(格式怪)时返回 false —— 宁可不说,也不要
+// 因为一个不认识的版本号天天报"有新版本"。数字段相同再按 semver 看预发布后缀:
+//
+//   - current 带后缀(-rc.1、-0.2026… 这类伪版本)而 latest 不带:latest 是正式
+//     发布,比任何预发布都新。桌面程序 v0.9.0-rc.1 对 v0.9.0 显示"已是最新"
+//     就是在这里漏的;
+//   - 两边都带:按 semver 的预发布规则逐段比(rc.1 < rc.2、rc < rc.1);
+//   - latest 带后缀而 current 不带:返回 false —— 不向跑着正式版的人推销预发布,
+//     数字段领先也一样。
+//
+// + 后面的 build metadata 不参与比大小(semver 的规定)。
 func Ahead(current, latest string) bool {
-	cur, ok1 := parseVersion(current)
-	lat, ok2 := parseVersion(latest)
+	cur, curPre, ok1 := parseSemver(current)
+	lat, latPre, ok2 := parseSemver(latest)
 	if !ok1 || !ok2 {
+		return false
+	}
+	if latPre != "" && curPre == "" {
 		return false
 	}
 	for i := 0; i < 3; i++ {
@@ -264,7 +276,65 @@ func Ahead(current, latest string) bool {
 			return lat[i] > cur[i]
 		}
 	}
-	return false
+	switch {
+	case latPre == "":
+		return curPre != "" // 同版本:正式发布比任何预发布新;两边都干净则不算新
+	default:
+		return preNewer(curPre, latPre)
+	}
+}
+
+// parseSemver 把版本号拆成数字段与预发布后缀。与 parseVersion 的差别:带 -rc.1、
+// -0.2026… 这类后缀也算解析成功(后缀单独返回),+ 后面的 build metadata 按
+// semver 的规定直接丢掉;数字段的规矩与 parseVersion 相同。
+func parseSemver(v string) ([3]int, string, bool) {
+	var out [3]int
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	core, pre, hasPre := strings.Cut(v, "-")
+	parts := strings.Split(core, ".")
+	if len(parts) > 3 {
+		return out, "", false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, "", false
+		}
+		out[i] = n
+	}
+	if hasPre && pre == "" {
+		return out, "", false // "v1.2.3-" 这种光杆横线不是合法后缀
+	}
+	return out, pre, true
+}
+
+// preNewer 按 semver 的预发布规则比较:以 "." 分段逐段比,纯数字段按数值、数字段
+// 排在任何字母段前面、字母段按字典序;前缀相同时段数少的更小(rc < rc.1)。
+func preNewer(a, b string) bool {
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] == bs[i] {
+			continue
+		}
+		an, aErr := strconv.Atoi(as[i])
+		bn, bErr := strconv.Atoi(bs[i])
+		aNum, bNum := aErr == nil, bErr == nil
+		switch {
+		case aNum && bNum:
+			return an < bn
+		case aNum:
+			return true
+		case bNum:
+			return false
+		default:
+			return as[i] < bs[i]
+		}
+	}
+	return len(as) < len(bs)
 }
 
 // SameMajorMinor 报告两个版本号的主版本与次版本是否一致。
@@ -285,7 +355,8 @@ func SameMajorMinor(a, b string) bool {
 func parseVersion(v string) ([3]int, bool) {
 	var out [3]int
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	// 带后缀的(比如 v0.2.0-rc1、v0.2.0-dirty)不比大小。
+	// 带后缀的(比如 v0.2.0-rc1、v0.2.0-dirty)不比大小。它只剩 SameMajorMinor
+	// 一个调用方,那条"带后缀不判不一致"的口径靠它保持;比大小走 parseSemver。
 	if v == "" || strings.ContainsAny(v, "-+") {
 		return out, false
 	}

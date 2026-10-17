@@ -23,6 +23,15 @@ func withLocalVersion(t *testing.T, v string) {
 	t.Cleanup(func() { localVersion = old })
 }
 
+// withLocalDesktop 把「是不是桌面构建」钉成 d,测试结束复原:go test 编出来的是
+// 普通 CLI 构建,不注入的话「桌面程序」那一支一个用例也测不到。
+func withLocalDesktop(t *testing.T, d bool) {
+	t.Helper()
+	old := localDesktop
+	localDesktop = func() bool { return d }
+	t.Cleanup(func() { localDesktop = old })
+}
+
 // captureStderr 抓住直接写 os.Stderr 的警告。它必须与 stdout 分开抓:警告混进
 // stdout 正是 json 模式下要避免的事,合在一起断言就看不出有没有混。
 func captureStderr(t *testing.T, fn func()) string {
@@ -120,6 +129,55 @@ func TestUpdateCommandPrintsTable(t *testing.T) {
 	// 以为敲一下就能升。
 	if strings.Contains(out, "update apply") {
 		t.Errorf("不该提到还没实现的 apply 命令:\n%s", out)
+	}
+}
+
+// 桌面构建里本机那一层叫「桌面程序」,普通构建仍叫「本机 CLI」:同一份二进制,
+// 跑在窗口里时再说"本机 CLI"会让人以为是另一个东西。
+func TestUpdateLocalLayerName(t *testing.T) {
+	cases := []struct {
+		name    string
+		desktop bool
+		want    string
+		notWant string
+	}{
+		{"桌面构建", true, "桌面程序", "本机 CLI"},
+		{"普通构建", false, "本机 CLI", "桌面程序"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withLocalVersion(t, "v0.9.0")
+			withLocalDesktop(t, tc.desktop)
+			opts.output = outputTable
+			t.Cleanup(func() { opts.output = outputTable })
+			fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write(updatePayload(t, "v0.9.0", "v0.9.0", nil))
+			})
+
+			out := captureStdout(t, func() { runRoot(t, "update") })
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("表格里本机那一行该叫 %q:\n%s", tc.want, out)
+			}
+			if strings.Contains(out, tc.notWant) {
+				t.Errorf("表格里不该再出现 %q:\n%s", tc.notWant, out)
+			}
+		})
+	}
+}
+
+// 主/次版本不一致的警告也跟着叫对名字:桌面构建里说「本机 CLI 是 …」同样指错了对象。
+func TestUpdateMismatchWarningUsesLayerName(t *testing.T) {
+	withLocalVersion(t, "v0.2.0")
+	withLocalDesktop(t, true)
+	opts.output = outputTable
+	t.Cleanup(func() { opts.output = outputTable })
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(updatePayload(t, "v0.3.0", "v0.9.9", nil))
+	})
+
+	errOut := captureStderr(t, func() { captureStdout(t, func() { runRoot(t, "update") }) })
+	if !strings.Contains(errOut, "桌面程序 是 v0.2.0") {
+		t.Errorf("警告该叫桌面程序,得到 %q", errOut)
 	}
 }
 

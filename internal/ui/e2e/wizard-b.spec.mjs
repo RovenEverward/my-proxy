@@ -24,7 +24,7 @@ async function openSetup(page) {
   await expect(page.locator("#s-start")).toBeVisible();
 }
 
-// noLeak:root 密码与设备密码不能出现在正文、URL、localStorage、等价命令里。
+// noLeak:root 密码与设备密码不能出现在正文、URL、localStorage 里。
 async function noLeak(page) {
   const body = await page.evaluate(() => document.body.innerText);
   expect(body).not.toContain(PW);
@@ -34,9 +34,9 @@ async function noLeak(page) {
   const ls = await page.evaluate(() => JSON.stringify(localStorage));
   expect(ls).not.toContain(PW);
   expect(ls).not.toContain(DPW);
-  const cmd = await page.evaluate(() => document.querySelector("#s-cmd")?.textContent || "");
-  expect(cmd).not.toContain(PW);
-  expect(cmd).not.toContain(DPW);
+  // 界面里不展示任何等价命令(后端原话里可能带 mpx 字样,只查界面自己的命令块)。
+  const cmds = await page.evaluate(() => [...document.querySelectorAll(".setup .cmd")].map(e => e.textContent).join("\n"));
+  expect(cmds).not.toContain("mpx ");
 }
 
 test("a. 没配置控制面时进入首次安装", async ({ page }) => {
@@ -47,7 +47,7 @@ test("a. 没配置控制面时进入首次安装", async ({ page }) => {
   await expect(page.locator("#s-check")).toBeVisible();
 });
 
-test("b. 连接屏校验与等价命令", async ({ page }) => {
+test("b. 连接屏校验,界面里不出现命令", async ({ page }) => {
   await openSetup(page);
   await page.locator("#s-start").click();
 
@@ -56,20 +56,14 @@ test("b. 连接屏校验与等价命令", async ({ page }) => {
   await expect(page.getByText("请填写服务器地址")).toBeVisible();
   await expect(page.getByText("请输入 root 密码")).toBeVisible();
 
-  // 填地址与端口:命令里出现 --ssh-password,且不带密码。
+  // 填地址与端口:界面上不出现等价命令。
   await page.locator("#s-host").fill("203.0.113.10");
   await page.locator("#s-port").fill("2222");
-  await expect(page.locator("#s-cmd")).toHaveText(
-    "mpx init --host 203.0.113.10 --ssh-port 2222 --ssh-password"
-  );
 
-  // 切到密钥登录:命令改成 --identity,且参数被正确引用。
+  // 切到密钥登录:密码框消失,私钥路径可用。
   await page.locator("#s-auth-key").click();
   await expect(page.locator("#s-pw")).toHaveCount(0);
   await page.locator("#s-identity").fill("~/.ssh/id_ed25519");
-  await expect(page.locator("#s-cmd")).toHaveText(
-    'mpx init --host 203.0.113.10 --ssh-port 2222 --identity "~/.ssh/id_ed25519"'
-  );
 });
 
 test("c. 检查失败显示原话(真后端)", async ({ page }) => {
@@ -192,8 +186,12 @@ test("d. 完整流程(接口用 page.route 模拟)", async ({ page }) => {
   await expect(page.locator(".logt")).toContainText("a");
   await expect(page.locator(".logt")).toContainText("c");
   await expect(page.locator(".done-hd")).toContainText("装好了", { timeout: 30_000 });
-  await expect(page.getByText("mpx connect 203.0.113.10:8080", { exact: true })).toBeVisible();
   await expect(page.getByText("本机没有自动接入")).toBeVisible();
+  // 接入地址仍要显示,但不再给命令。
+  await expect(page.locator(".setup")).toContainText("203.0.113.10:8080");
+  await expect(page.locator(".setup")).toContainText("接入已有控制面");
+  const cmds = await page.evaluate(() => [...document.querySelectorAll(".setup .cmd")].map(e => e.textContent).join("\n"));
+  expect(cmds).not.toContain("mpx ");
 
   expect(sinceArgs.slice(0, 4)).toEqual(["0", "3", "4", "4"]);
   for (const n of respLens) expect(n).toBeLessThan(4096);
@@ -258,7 +256,7 @@ test("f. 轮询退避与页面隐藏时暂停", async ({ page }) => {
   await expect.poll(() => jobCalls).toBeGreaterThan(paused);
 });
 
-// g. 任务失败:显示后端原话与重新运行;失败屏等价命令里不能有密码。
+// g. 任务失败:显示后端原话与重新运行;失败屏不出现命令,也不泄露密码。
 test("g. 失败屏与重新运行", async ({ page }) => {
   await page.route("**/local/setup/check", route => route.fulfill({
     status: 200, contentType: "application/json",
@@ -295,8 +293,7 @@ test("g. 失败屏与重新运行", async ({ page }) => {
   await expect(page.locator(".plist li.fail").last()).toBeVisible();
   await expect(page.locator("#s-rerun")).toBeVisible();
 
-  const cmd = await page.locator(".setup .cmd").last().textContent();
-  expect(cmd).not.toContain(PW);
-  expect(cmd).not.toContain(DPW);
+  const cmds = await page.evaluate(() => [...document.querySelectorAll(".setup .cmd")].map(e => e.textContent).join("\n"));
+  expect(cmds).not.toContain("mpx ");
   await noLeak(page);
 });

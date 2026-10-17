@@ -27,7 +27,7 @@ PAGES.rules = {
     return { routing, rules, groups, catalog, members, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
-    const head = H`<div class="ph"><div><h1>分流规则</h1><p>决定每个网站怎么走:直连、走代理还是拦截。从上往下比对,第一条对上的生效 · 改完客户端更新订阅即可 · 对应 <code>mpx rule</code> / <code>mpx group</code></p></div></div>`;
+    const head = H`<div class="ph"><div><h1>分流规则</h1><p>决定每个网站怎么走:直连、走代理还是拦截。从上往下比对,第一条对上的生效 · 改完客户端更新订阅即可</p></div></div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     RP.d = d;
     const R = d.rules, G = d.groups;
@@ -35,7 +35,7 @@ PAGES.rules = {
     const tabs = H`<div class="rp-bar"><div class="seg">${[["rules", "规则", R.global.length + 1], ["groups", "策略组", G.length]].map(([k, t, n]) => H`<button class="${RP.tab === k ? "on" : ""}" data-act="rp-tab" data-k="${k}">${t}<em>${n}</em></button>`)}</div><span class="sp"></span>
       ${RP.tab === "rules" ? H`<span class="sub">作用于</span><select class="in w200" id="rp-scope"><option value="">全部用户(全局)</option>${d.users.map(u => H`<option value="${u}" ${raw(RP.scope === u ? "selected" : "")}>只改 ${u}</option>`)}</select>` : ""}</div>`;
     return H`${head}${modeBanner(d)}${tabs}<div class="rp-main"><div>${RP.tab === "rules" ? rpRulesCard(d) : rpGroupsCard(d)}</div>
-      <div class="rp-side">${rpTestCard()}<div class="card mt pad16 sub">等价命令:<code>${RP.tab === "rules" ? `mpx rule list${RP.scope ? " --user " + shq(RP.scope) : ""}` : "mpx group list"}</code> · <code>${RP.tab === "rules" ? "mpx rule test <域名>" : "mpx group preview <名字>"}</code></div></div></div>`;
+      <div class="rp-side">${rpTestCard()}</div></div>`;
   },
   after(d) {
     if (!d) return;
@@ -79,7 +79,7 @@ function modeBanner(d) {
   if (rep && (rep.status === "needs_confirm" || rep.status === "blocked")) {
     out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div><b>${rep.status === "needs_confirm" ? "需要确认后才能改用规则表" : "旧模板里有转换不了的规则"}</b>
       ${rep.status === "needs_confirm" ? H`<div>存过自定义 sing-box 模板:迁移后 sing-box 的分流改为跟随规则表(模板里的其他部分照用)。</div>` : H`<div>${(rep.unconvertible || []).slice(0, 5).map(x => H`<code>${x}</code> `)}${rep.unconvertible?.length > 5 ? `等 ${rep.unconvertible.length} 条` : ""}</div>`}
-      ${rep.status === "needs_confirm" && can("POST", "/api/routing/migrate") ? H`<div class="mt6"><button class="btn sm" data-act="rp-migrate" data-confirm="1">确认并迁移</button> <span class="sub">mpx rule migrate --confirm</span></div>` : ""}</div></div>`);
+      ${rep.status === "needs_confirm" && can("POST", "/api/routing/migrate") ? H`<div class="mt6"><button class="btn sm" data-act="rp-migrate" data-confirm="1">确认并迁移</button></div>` : ""}</div></div>`);
   }
   if (st.warnings?.length) out.push(H`<div class="callout rp-warn">${ic("warn", "ico-warn")}<div>${st.warnings.map(w => H`<div>${w}</div>`)}</div></div>`);
   return out;
@@ -94,8 +94,7 @@ function rpEmpty(d) {
     ${W ? H`<div class="rp-starts">
       <button class="rp-start rec" data-act="rp-migrate"><span class="pill on">推荐</span><b>沿用现在的分流</b><span>把现在的模板转换成规则表:国内直连、拦广告、各类网站走对应分组,其他自动选最快。</span><em>转换 ${ic("arrow")}</em></button>
       <button class="rp-start" data-act="rp-blank" data-k="all"><b>全部走代理</b><span>只建一个「自动选择」组,除了局域网,所有网站都走它。</span><em>用这套 ${ic("arrow")}</em></button>
-      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部 → 自动选择」,你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>
-      <p class="sub mt">等价命令:<code>mpx rule migrate</code> · <code>mpx group add 自动选择 --mode auto</code></p>` : H`<div class="cmd mt">mpx rule migrate</div>`}</div>`;
+      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部 → 自动选择」,你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>` : ""}</div>`;
 }
 
 function rpRow(r, i, own, editable) {
@@ -167,7 +166,7 @@ function rpGroupsCard(d) {
     return H`<div class="row rp-g" data-act="gp-edit" data-id="${g.id}" tabindex="0"><span class="rp-gi">${g.icon || "◎"}</span><div class="grow"><b class="bold">${g.name}</b> <span class="pill">${g.mode === "auto" ? "自动选最快" : "手动选"}</span>
       <div class="sub">${cond(g)} · 被 ${used(g.id)} 条规则使用</div>
       <div class="chips mt6">${e ? e.map(x => H`<span class="tag">${x}</span>`) : ""}${e && !e.length ? H`<span class="c-warn">没有符合条件的入口,订阅里这个组只有「直连」</span>` : ""}</div></div>${ic("arrow")}</div>`; })
-    : emptyBox("tpl", "还没有策略组", "策略组是规则的去向:按地区、协议、能力检测挑入口。", "mpx group add 自动选择 --mode auto")}</div>`;
+    : emptyBox("tpl", "还没有策略组", "策略组是规则的去向:按地区、协议、能力检测挑入口。点右上角「新建策略组」开始。", "")}</div>`;
 }
 
 async function groupEditor(id) {
@@ -187,16 +186,13 @@ async function groupEditor(id) {
     <div class="field"><label class="sub" for="gp-tags">标签(任一,逗号分隔)</label><input class="in mono" id="gp-tags" value="${g.tags.join(",")}" autocomplete="off"></div>
     <div class="field"><label>怎么选</label><div class="seg" id="gp-mode"><button type="button" class="${g.mode === "auto" ? "on" : ""}" data-m="auto">自动选最快</button><button type="button" class="${g.mode === "manual" ? "on" : ""}" data-m="manual">我手动选</button></div><span class="h">自动:客户端定时测网页延迟,挑最快的。手动:用户在客户端里自己选。</span></div>
     <div class="card mt"><div class="ch">现在会收进来<small id="gp-cnt"></small></div><div id="gp-pv"></div></div>
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="gp-cmd"></div></div><div class="err" id="gp-err" role="alert"></div>
+    <div class="err" id="gp-err" role="alert"></div>
     ${g0 && can("DELETE", "/api/proxy-groups/x") ? H`<div class="card danger-zone mt22"><div class="row"><div><b class="bold">删除策略组</b><div class="sub">还有规则指向它时删不掉,先改掉那些规则。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="gp-rm" data-id="${g0.id}" data-name="${g0.name}">删除</button></div></div>` : ""}</div>
     <div class="df"><button type="button" class="btn" data-act="close">取消</button>${W ? H`<button class="btn pri" id="gp-save">保存</button>` : ""}</div></form>`);
   const f = $("#gp-form");
   const read = () => {
     for (const k of ["regions", "protocols", "capabilities"]) g[k] = [...f.querySelectorAll(`[data-key=${k}] input:checked`)].map(x => x.value);
     g.tags = splitCSV($("#gp-tags").value); g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
-    const flag = (k, n) => g[k].length ? ` --${n} ${shq(g[k].join(","))}` : "";
-    $("#gp-cmd").textContent = g0 ? `mpx group edit ${shq(g0.name)}${g.name !== g0.name ? " --name " + shq(g.name) : ""} --mode ${g.mode}${flag("regions", "region")}${flag("protocols", "protocol")}${flag("capabilities", "capability")}${flag("tags", "tag")}`
-      : `mpx group add ${shq(g.name || "<名字>")} --mode ${g.mode}${flag("regions", "region")}${flag("protocols", "protocol")}${flag("capabilities", "capability")}${flag("tags", "tag")}`;
   };
   let seq = 0;
   const sync = async () => {
@@ -275,9 +271,9 @@ Object.assign(ACTS, {
     try { await rpPut(list, version, "已删除"); RP.edit = null; } catch (e) { $("#re-err").textContent = e.message; } },
   "rp-builtin": () => rpBuiltin(),
   "gp-edit": d => groupEditor(d.id),
-  "gp-rm": d => confirmBox({ title: `删除策略组 ${d.name}?`, text: "删除后订阅里不再有这个组。", cmd: `mpx group rm ${shq(d.name)}`, ok: "删除", danger: true,
+  "gp-rm": d => confirmBox({ title: `删除策略组 ${d.name}?`, text: "删除后订阅里不再有这个组。", ok: "删除", danger: true,
     run: async () => { await write("DELETE", groupPath(d.id), undefined, `策略组「${d.name}」已删除`); closeOverlays(); } }),
-  "rp-migrate": d => confirmBox({ title: d.confirm ? "确认迁移到规则表?" : "把现在的分流转换成规则表?", text: "按现在的模板生成策略组与规则,订阅改由规则表生成。原来的模板保留。", cmd: d.confirm ? "mpx rule migrate --confirm" : "mpx rule migrate", ok: "转换",
+  "rp-migrate": d => confirmBox({ title: d.confirm ? "确认迁移到规则表?" : "把现在的分流转换成规则表?", text: "按现在的模板生成策略组与规则,订阅改由规则表生成。原来的模板保留。", ok: "转换",
     run: async () => { const r = await write("POST", "/api/routing/migrate", d.confirm ? { confirm: true } : {}); if (r.status !== "migrated") throw new Error(r.status === "needs_confirm" ? "存过自定义 sing-box 模板,需要确认后迁移" : (r.unconvertible || r.notes || []).join(";") || r.status); toast(`已转换:${r.groups.length} 个策略组、${r.rules} 条规则`); } }),
   "rp-blank": async (d, b) => busy(b, async () => {
     const g = await write("POST", "/api/proxy-groups", { name: "自动选择", icon: "⚡", mode: "auto" });

@@ -172,12 +172,11 @@ function planEditor(id) {
     </div><div id="pl-pv"></div></div></div>
     <div class="err" id="pl-err" role="alert"></div></div>
   <div class="df">${p0?.is_default ? H`<span class="sub">新用户自动进这里 · 不能删除</span>` : p0 && can("DELETE", "/api/plans") ? H`<button type="button" class="btn ghost c-bad" data-act="pl-del" data-id="${p0.id}">${ic("trash")}删除</button>` : ""}<span style="flex:1"></span>
-    <div class="cmd hide-m" id="pl-cmd" style="max-width:420px"></div>${W ? H`<button type="button" class="btn ghost" data-act="close">取消</button><button class="btn pri" id="pl-save">保存</button>` : H`<button type="button" class="btn" data-act="close">关闭</button>`}</div></form>`, "wide");
+    ${W ? H`<button type="button" class="btn ghost" data-act="close">取消</button><button class="btn pri" id="pl-save">保存</button>` : H`<button type="button" class="btn" data-act="close">关闭</button>`}</div></form>`, "wide");
   const f = $("#pl-form");
   if (!f) return;
   f.addEventListener("input", e => {
     if (e.target.id === "pl-name") { ED.name = e.target.value; plSync(); }
-    // 备注也进等价命令(edit 的 --note),跟着刷。
     if (e.target.id === "pl-note") { ED.note = e.target.value; plSync(); }
   });
   f.addEventListener("change", e => {
@@ -238,8 +237,6 @@ function plSync() {
   document.querySelectorAll("#pl-nodes [data-ind]").forEach(x => { x.indeterminate = true; });
   const pvEl = $("#pl-pv");
   if (pvEl) pvEl.innerHTML = val(plPreview(users));
-  const cmdEl = $("#pl-cmd");
-  if (cmdEl) cmdEl.textContent = plCmd(!p0);
 }
 
 function plNodes() {
@@ -276,50 +273,6 @@ function plPreview(users) {
 
 const planInflightName = (n, i) => `${planNodeName(n) || "#" + i.node_id} · ${planInboundLabel(i)}`;
 
-// planNodeRef / planInboundRef 把 id 摆成 CLI 认得的参数:节点用显示名
-// (resolveNodeID 收 id、名字、显示名或唯一前缀),入站用「节点名/tag」;tag 缺失
-// 或节点对不上时退回入站 id(resolveInboundID 两种都收,见 internal/cli/resolve.go)。
-const planNodeRef = nid => { const n = PLAN_CACHE.nodes.find(x => x.id === +nid); return planNodeName(n) || String(nid); };
-const planInboundRef = iid => {
-  const i = PLAN_CACHE.inbounds.find(x => x.id === +iid);
-  const n = i && PLAN_CACHE.nodes.find(x => x.id === i.node_id);
-  return i && i.tag && n ? `${planNodeName(n)}/${i.tag}` : String(iid);
-};
-
-// plCmd 生成等价命令,只作展示;真实请求是 POST/PUT /api/plans 的整体模型。
-// add 直接摆最终状态;edit 按「改前 → 改后」的差异给 flag,与 mpx plan edit 的
-// 选项一一对应,没有任何变化时就只剩 mpx plan edit 名字 —— 第一个参数是改前的
-// 名字,新名字放在 --name。
-function plCmd(isNew) {
-  const e = ED;
-  // all_nodes 时请求体不带节点/入站(见 plBody),差异按清空了算。
-  const sel = e.all_nodes ? {} : e.sel;
-  const nodes = Object.keys(sel).filter(k => sel[k] === "all").map(Number).sort((a, b) => a - b);
-  const inbs = Object.keys(sel).filter(k => Array.isArray(sel[k])).flatMap(k => sel[k]).sort((a, b) => a - b);
-  if (isNew) {
-    let s = `mpx plan add ${shq(e.name.trim() || "名字")}`;
-    for (const nid of nodes) s += ` --node ${shq(planNodeRef(nid))}`;
-    for (const iid of inbs) s += ` --inbound ${shq(planInboundRef(iid))}`;
-    if (e.note.trim()) s += ` --note ${shq(e.note.trim())}`;
-    if (e.all_nodes) s += " --all-nodes";
-    return s;
-  }
-  const p0 = (PLAN_CACHE.plans || []).find(p => p.id === e.id);
-  if (!p0) return `mpx plan edit ${shq(e.name.trim() || "名字")}`;
-  const oldNodes = (p0.node_ids || []).slice().sort((a, b) => a - b);
-  const oldInbs = (p0.inbound_ids || []).slice().sort((a, b) => a - b);
-  const name = e.name.trim();
-  let s = `mpx plan edit ${shq(p0.name)}`;
-  for (const nid of nodes.filter(x => !oldNodes.includes(x))) s += ` --add-node ${shq(planNodeRef(nid))}`;
-  for (const nid of oldNodes.filter(x => !nodes.includes(x))) s += ` --rm-node ${shq(planNodeRef(nid))}`;
-  for (const iid of inbs.filter(x => !oldInbs.includes(x))) s += ` --add-inbound ${shq(planInboundRef(iid))}`;
-  for (const iid of oldInbs.filter(x => !inbs.includes(x))) s += ` --rm-inbound ${shq(planInboundRef(iid))}`;
-  if (name && name !== p0.name) s += ` --name ${shq(name)}`;
-  if (e.note.trim() !== (p0.note || "")) s += ` --note ${e.note.trim() ? shq(e.note.trim()) : '""'}`;
-  if (!!e.all_nodes !== !!p0.all_nodes) s += e.all_nodes ? " --all-nodes" : " --all-nodes=false";
-  return s;
-}
-
 /* ---- 删除:有用户时必须选改挂去向,没有「移出套餐」 ---- */
 function planDelete(id) {
   const p0 = PLAN_CACHE.plans.find(p => p.id === +id);
@@ -331,10 +284,6 @@ function planDelete(id) {
     title: `删除「${p0.name}」`, danger: true, ok: "删除",
     text: used.length ? `${planCountText(used.length, used.filter(u => u.status === "active").length)} 个用户挂着这个套餐。` : "没有用户挂着这个套餐。",
     extra: used.length ? H`<div class="field"><label for="pl-to">这些用户改挂到</label><select class="in" id="pl-to">${others.map(x => H`<option value="${x.id}" ${raw(x.id === def?.id ? "selected" : "")}>「${x.name}」</option>`)}</select></div>` : "",
-    cmdOf: m => {
-      const v = $("#pl-to", m)?.value;
-      return `mpx plan rm ${shq(p0.name)}${used.length && v ? ` --reassign ${shq((PLAN_CACHE.plans.find(x => x.id === +v) || {}).name || "")}` : ""}`;
-    },
     run: async () => {
       const v = used.length ? $("#pl-to")?.value : "";
       const path = "/api/plans/" + p0.id + (v ? "?reassign=" + v : "");

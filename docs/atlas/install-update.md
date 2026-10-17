@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/]
-verified: 2026-10-17 @ 65a3d5e
+verified: 2026-10-17 @ 56ed6f8
 ---
 # 安装与升级
 
@@ -26,6 +26,7 @@ verified: 2026-10-17 @ 65a3d5e
 ## 坑
 
 - 从 v0.6.0 或更早升级 → 老布局没有版本目录和升级单元 → 先在 VPS 上跑一次 `install.sh --version v0.6.1` 或更新版本。
+- 补跑 `install.sh` 升级时没传 `--addr` → 脚本读现有 mpx.service 的 ExecStart 里的 `--addr`（`--addr=值` 也认）沿用；只有旧单元不存在或读不出 `--addr` 才按仓库默认回环装并说明。只 mpx.service 这样，mpx-update.service 的健康检查固定打 `127.0.0.1`，不跟着沿用。
 - 升级 v0.7.0 前库还是 `template` 模式 → 控制面拒绝启动 → 先用 v0.6.6 迁移（[CHANGELOG](../../CHANGELOG.md)）。
 - 源码编出的伪版本 → 比不出新旧时一律算「没有更新」，不报「落后 1 个」（decisions 第 37 条的实机教训）。
 - 节点连不上 GitHub → `apply nodes` 拉不动 xray 包 → 这台失败、整批停下；推送整包的 `mpx node install` 还在。

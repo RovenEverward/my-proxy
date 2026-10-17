@@ -71,6 +71,17 @@ type ConnectRunner interface {
 	Connect(ctx context.Context, server, fingerprint, password, name string) (*SetupResult, error)
 }
 
+// ConnectNamedRunner 是 ConnectRunner 的可选扩展:接入结果存进**指定名字的新
+// 配置档**而不是实现方自己挑的那个。mpx ui 正常模式的「添加控制面」走它
+// (POST /local/profiles/connect);只实现了 ConnectRunner 的旧实现照常工作,只是
+// 那两个接口回 404。
+type ConnectNamedRunner interface {
+	ConnectRunner
+	// ConnectProfile 与 Connect 同一件事,但必须存成名为 profile 的**新**配置档:
+	// 档已存在时报错,绝不覆盖(默认的 default 档也不行)。name 仍是设备名。
+	ConnectProfile(ctx context.Context, server, fingerprint, password, name, profile string) (*SetupResult, error)
+}
+
 // setupStep 是一步的状态。State 取 run|done|fail。
 type setupStep struct {
 	Title string  `json:"title"`

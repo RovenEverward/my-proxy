@@ -43,14 +43,14 @@ test("弹窗列出本机、控制面与节点核心三层;稍后本会话不再�
   const modal = page.locator("#modal.open");
   await expect(modal).toBeVisible();
   await expect(modal).toContainText("更新到");
-  await expect(modal).toContainText("本机 CLI");
+  await expect(modal).toContainText("本机程序");
   await expect(modal).toContainText("控制面");
   await expect(modal).toContainText("la-1");
   await expect(modal).toContainText("xray");
   await expect(modal).toContainText("26.3.27");
   await expect(modal).toContainText("26.4.1");
   await expect(modal).toContainText("已是推荐版本"); // hk-2 在推荐版本上
-  await expect(modal).toContainText("将依次升级控制面、节点、本机");
+  await expect(modal).toContainText("将依次升级控制面、节点、本机程序");
   await expect(modal).not.toContainText("mpx update apply");
   await expect(page.locator("[data-act=update-skip]")).toBeVisible();
   await expect(page.locator("[data-act=update-apply]")).toBeVisible();
@@ -60,6 +60,50 @@ test("弹窗列出本机、控制面与节点核心三层;稍后本会话不再�
   await expect(pill).toBeHidden();
   await page.reload();
   await expect(page.locator("#upd-pill")).toBeHidden();
+});
+
+test("发版说明按 Markdown 渲染,原文里的 <script> 被转义", async ({ page }) => {
+  const notes = [
+    "# 大版本",
+    "",
+    "修了 **几个** 小问题,细节看 `docs/update.md`。",
+    "",
+    "## 改进",
+    "",
+    "- 第一项",
+    "  - 嵌套项",
+    "- 第二项",
+    "",
+    "1. 第一步",
+    "2. 第二步",
+    "",
+    "```",
+    "mpx --version",
+    "```",
+    "",
+    "详见 [发布说明](https://example.com/notes)。",
+    "<script>alert(1)</script>",
+  ].join("\n");
+  await mockUpdate(page, { ...available, notes });
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  const box = page.locator(".upd-notes");
+  await expect(box.locator("h1")).toHaveText("大版本");
+  await expect(box.locator("h2")).toHaveText("改进");
+  await expect(box.locator("ul > li").first()).toContainText("第一项");
+  await expect(box.locator("ul ul li")).toHaveText("嵌套项");
+  await expect(box.locator("ol > li")).toHaveCount(2);
+  await expect(box.locator("strong")).toHaveText("几个");
+  await expect(box.locator("code").first()).toHaveText("docs/update.md");
+  await expect(box.locator("pre code")).toContainText("mpx --version");
+  const link = box.locator("a");
+  await expect(link).toHaveText("发布说明");
+  await expect(link).toHaveAttribute("href", "https://example.com/notes");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener");
+  // <script> 只能是正文,不能变成元素。
+  await expect(box.locator("script")).toHaveCount(0);
+  await expect(box).toContainText("<script>alert(1)</script>");
 });
 
 test("无更新:三层都不落后时顶栏不出现 pill", async ({ page }) => {
@@ -93,8 +137,8 @@ test("重启以更新:进度按层分组,走到重启后整页刷新", async ({ 
   const events = [
     { seq: 1, step: "control", status: "ok", msg: "控制面 v1.0.0 → v1.1.0" },
     { seq: 2, step: "nodes", status: "ok", msg: "la-1 xray 26.3.27 → 26.4.1 ok" },
-    { seq: 3, step: "cli", status: "ok", msg: "本机 CLI v1.0.0 → v1.1.0" },
-    { seq: 4, step: "restart", status: "start", msg: "重启 mpx ui 启用新版本" },
+    { seq: 3, step: "cli", status: "ok", msg: "本机程序 v1.0.0 → v1.1.0" },
+    { seq: 4, step: "restart", status: "start", msg: "重启本机界面启用新版本" },
   ];
   const state = { v: "running" };
   const calls = await mockUpdateAll(page, events, state);
@@ -106,9 +150,9 @@ test("重启以更新:进度按层分组,走到重启后整页刷新", async ({ 
   await expect(page.locator("#modal")).toContainText("la-1 xray 26.3.27 → 26.4.1");
   await expect(page.locator(".upd-step").first()).toHaveText("控制面");
   await expect(page.locator(".upd-step").nth(1)).toHaveText("节点");
-  // 转入 restarting:显示重启中,/ui/meta 问通(测试里 mpx ui 活着,第一次就通)后整页刷新。
+  // 转入 restarting:显示重启中,/ui/meta 问通(测试里本机界面活着,第一次就通)后整页刷新。
   state.v = "restarting";
-  await expect(page.locator("#modal")).toContainText("mpx ui 正在重启");
+  await expect(page.locator("#modal")).toContainText("本机界面 正在重启");
   await page.waitForFunction(() => {
     const nav = performance.getEntriesByType("navigation");
     return nav.length > 0 && nav[0].type === "reload";

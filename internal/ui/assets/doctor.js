@@ -28,7 +28,7 @@ const docStat = (checks, k, label) => H`<div class="card stat"><div class="l"><s
   <div class="s">${k === "ok" ? "没有毛病" : k === "warn" ? "该看一眼,不算坏" : "要看,系统确实有毛病"}</div></div>`;
 
 function doctorPage() {
-  const head = H`<div class="ph"><div><h1>自检</h1><p>控制面、每台节点、六种订阅格式、采样表 · 对应 <code>mpx doctor</code></p></div><div class="sp"></div>
+  const head = H`<div class="ph"><div><h1>自检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>
     ${DOC_RUNNING ? H`<button class="btn pri busy" disabled>开始自检</button>` : H`<button class="btn pri" data-act="doc-run">${ic("check")}开始自检</button>`}</div>`;
   if (DOC_RUNNING) return H`${head}<div class="card pad16"><div class="callout stone">${ic("refresh")}<div>正在自检:会逐台连上节点现场查一次,可能要几十秒。期间别关这个页面。</div></div></div>`;
   if (DOC_ERR) return H`${head}<div class="card pad16"><div class="callout bad" role="alert">${ic("warn", "ico-bad")}<div><b>自检没有跑成</b><div class="mono mt2" data-doc-err>${DOC_ERR}</div></div></div>
@@ -36,9 +36,7 @@ function doctorPage() {
   if (!DOC) return H`${head}<div class="card pad16">
     <b class="b6">一次体检,只读不改</b>
     <p class="sub mt6 mb14">检查控制面的库能不能读、后台任务还在不在跳;每一台节点现场问一次(服务在不在跑、配置有没有漂移、证书还剩几天);六种订阅格式各渲染一次;采样表有多少行。自检只报告,不动任何东西 —— 发现的问题要不要处置由你决定。</p>
-    <p class="sub mb8">它会对每台节点 SSH 一次,<b class="c-ink">要几十秒到几分钟</b>,所以进页面不自动跑。想要脚本能用的退出码,用终端:</p>
-    <div class="cmd">mpx doctor</div>
-    <p class="sub mt8">任何一项 fail 时,<code>mpx doctor</code> 的退出码是 3,可以直接当健康检查。</p></div>`;
+    <p class="sub mb8">它会对每台节点 SSH 一次,<b class="c-ink">要几十秒到几分钟</b>,所以进页面不自动跑。点右上角「开始自检」即可。</p></div>`;
   const checks = DOC.checks || [];
   const rows = checks.map(c => {
     const [cls, text] = DOC_ST[c.status] || ["", c.status];

@@ -130,7 +130,7 @@ PAGES.users = {
     if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 6)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
       ? emptyBox("search", "没有匹配的用户", "换个筛选条件或搜索词试试。", "")
-      : emptyBox("users", "还没有用户", "加一个用户,他就会拿到一条订阅地址。之后续期、停用、重置流量都在这里。", "mpx user add alice --limit 100GB --expire 2026-12-31", can("POST", "/api/users") ? H`<button class="btn pri sm" data-act="user-new">${ic("plus")}添加用户</button>` : "");
+      : emptyBox("users", "还没有用户", "加一个用户,他就会拿到一条订阅地址。之后续期、停用、重置流量都在这里。", "", can("POST", "/api/users") ? H`<button class="btn pri sm" data-act="user-new">${ic("plus")}添加用户</button>` : "");
     else {
       const P = d.page, end = P.offset + P.users.length;
       inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${P.users.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0"><td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
@@ -139,7 +139,7 @@ PAGES.users = {
     }
     const c = d ? d.counts : {};
     const planOpts = d ? d.plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id)) : [];
-    return H`<div class="ph"><div><h1>用户</h1><p>对应 <code>mpx user list</code> · 状态由控制面判定</p></div><div class="sp"></div>
+    return H`<div class="ph"><div><h1>用户</h1><p>状态由控制面判定</p></div><div class="sp"></div>
       <button class="btn hide-m" data-act="user-export">${ic("dl")}导出 CSV</button>
       ${can("POST", "/api/users") ? H`<button class="btn pri" data-act="user-new">${ic("plus")}添加用户</button>` : ""}</div>
       <div class="card"><div class="tb"><div class="seg" role="tablist">${STATUS_TABS.map(([k, t]) => H`<button role="tab" class="${US.status === k ? "on" : ""}" data-act="user-filter" data-status="${k}">${t}<em>${c[k] ?? ""}</em></button>`)}</div>
@@ -167,7 +167,7 @@ function userDrawer(u, links) {
     <dl class="kv flat"><dt>到期</dt><dd>${expireCell(u)}</dd><dt>重置</dt><dd>${RESET[u.reset_strategy] || u.reset_strategy}</dd>
       <dt>套餐</dt><dd>${userPlanDetail(u)}</dd>
       <dt>额外授权</dt><dd>${u.inbound_ids?.length ? u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `) : H`<span class="sub">无</span>`}</dd><dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd></dl>
-    <div class="sub mb8">订阅地址 · <code>mpx user links ${name}</code></div>
+    <div class="sub mb8">订阅地址</div>
     <div class="links mb">${links ? fmtOrder.filter(([k]) => links[k]).map(([k, t]) => H`<div class="lk"><span>${t}</span><code title="${links[k]}">${links[k]}</code><button class="ib sm" data-act="copy" data-text="${links[k]}" aria-label="复制${t}地址">${ic("copy", "sm")}</button></div>`) : ""}</div>
     ${W ? H`<div class="sub mb8">操作</div><div class="stack8">
       <button class="btn" data-act="user-edit" data-name="${name}">编辑…</button>
@@ -212,17 +212,15 @@ async function userEditor(name) {
     <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${i.tag || i.protocol}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
     <div class="field"><label for="f-note">备注</label><input class="in" id="f-note" name="note" value="${u.note || ""}" placeholder="可选"></div>
     ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 建好后先停用</label>` : ""}
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="f-cmd"></div></div>
     <div class="err" id="f-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="f-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#user-form");
-  // 表单 → { flags, ... }:flags 是等价命令;collect 同时把套餐三态收出来 ——
-  // 没变就不发 plan_id(和 CLI 不带 --plan 一样),变了才发具体 id。
+  // 表单 → { ... }:collect 同时把套餐三态收出来 —— 没变就不发 plan_id,变了才发具体 id。
   // 挂的是 all_nodes 套餐时额外授权没有意义:勾了和它一起提交会被控制面摘掉
   // 套餐(store.UpdateUser 的规则),于是固定按空处理 —— 新建不带 inbound_ids,
   // 编辑清空,命令里也不出现 --inbounds(编辑时原本有授权才用 --inbounds "" 清掉)。
   const collect = () => {
-    const f = new FormData(form), flags = [], err = [];
+    const f = new FormData(form), err = [];
     const username = isNew ? String(f.get("username") || "").trim() : u.username;
     const limitS = String(f.get("limit") || "").trim(), expS = String(f.get("expire") || "").trim();
     const reset = String(f.get("reset") || "none"), note = String(f.get("note") || "");
@@ -235,27 +233,10 @@ async function userEditor(name) {
     if (isNew && !USERNAME_RE.test(username)) err.push("用户名只能用字母、数字、下划线、点和减号,长度 1-64");
     try { limit = limitS ? parseBytes(limitS) : 0; } catch (e) { err.push(e.message); }
     try { exp = expS ? parseExpire(expS) : null; } catch (e) { err.push(e.message); }
-    if (isNew) {
-      if (limitS) flags.push("--limit", limitS);
-      if (reset !== "none") flags.push("--reset-strategy", reset);
-      if (expS) flags.push("--expire", expS);
-      if (inb.length) flags.push("--inbounds", inb.join(","));
-      if (planChanged && planName) flags.push("--plan", planName);
-      if (note) flags.push("--note", note);
-      if (f.get("disabled")) flags.push("--disabled");
-    } else {
-      flags.push("--limit", limitS || "0", "--expire", expS || '""', "--reset-strategy", reset);
-      if (allNodes) { if ((u.inbound_ids || []).length) flags.push("--inbounds", '""'); }
-      else flags.push("--inbounds", inb.length ? inb.join(",") : '""');
-      if (planChanged && planName) flags.push("--plan", planName);
-      flags.push("--note", note || '""');
-    }
-    const cmd = `mpx user ${isNew ? "add" : "edit"} ${shq(username || "<用户名>")} ` + flags.map(x => x.startsWith("--") || x === '""' ? x : shq(x)).join(" ");
-    return { err, cmd, username, limit, exp, reset, inb, note, disabled: !!f.get("disabled"), planVal, planChanged };
+    return { err, username, limit, exp, reset, inb, note, disabled: !!f.get("disabled"), planVal, planChanged };
   };
   const sync = () => {
     const c = collect();
-    $("#f-cmd").textContent = c.cmd;
     const p = planList.find(x => String(x.id) === c.planVal);
     const allNodes = !!p && !!p.all_nodes;
     // all_nodes 套餐下额外授权不可选(见 collect),切回普通套餐恢复。
@@ -304,7 +285,7 @@ Object.assign(ACTS, {
   "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); load(true); },
   "user-new": () => userEditor(null),
   "user-edit": d => userEditor(d.name),
-  "user-export": () => confirmBox({ title: "导出 CSV", text: "导出要写本机文件,在终端里跑这一条;导出的文件可以直接用 mpx user import 导回来。", cmd: "mpx user export > users.csv", ok: "复制命令", run: async () => { await navigator.clipboard.writeText("mpx user export > users.csv"); toast("已复制命令"); } }),
+  "user-export": () => confirmBox({ title: "导出 CSV", text: "导出用户清单暂不支持在窗口里操作。", ok: "知道了", run: async () => {} }),
   "user-renew": async d => {
     try {
       let target;
@@ -317,13 +298,13 @@ Object.assign(ACTS, {
     const off = !!d.on, verb = off ? "停用" : "启用";
     const run = async () => { await readModify(d.name, m => { m.enabled = !off; }); toast(`已${verb}用户 ${d.name}`); await refreshDrawer(d.name); };
     if (!off) return run().catch(e => toast(e.message, true));
-    confirmBox({ title: `停用 ${d.name}?`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉,订阅里只剩「已停用」占位节点。记录保留,随时可以再启用。", cmd: `mpx user disable ${shq(d.name)}`, ok: "停用", run });
+    confirmBox({ title: `停用 ${d.name}?`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉,订阅里只剩「已停用」占位节点。记录保留,随时可以再启用。", ok: "停用", run });
   },
-  "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量?`, text: "本期用量清零,累计用量不变。超限的用户会在下一轮收敛时恢复。", cmd: `mpx user reset-traffic ${shq(d.name)}`, ok: "重置流量",
+  "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量?`, text: "本期用量清零,累计用量不变。超限的用户会在下一轮收敛时恢复。", ok: "重置流量",
     run: async () => { await write("POST", userPath(d.name) + "/reset-traffic", undefined, `已重置用户 ${d.name} 的流量`); await refreshDrawer(d.name); } }),
-  "user-revoke": d => confirmBox({ title: `吊销 ${d.name} 的订阅?`, text: "换一个新的订阅 token:旧地址立刻 404,已经连上的客户端不受影响。新地址要重新发给他。", cmd: `mpx user revoke-sub ${shq(d.name)}`, ok: "吊销订阅", danger: true,
+  "user-revoke": d => confirmBox({ title: `吊销 ${d.name} 的订阅?`, text: "换一个新的订阅 token:旧地址立刻 404,已经连上的客户端不受影响。新地址要重新发给他。", ok: "吊销订阅", danger: true,
     run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换新订阅地址,旧地址已失效"); await refreshDrawer(d.name); } }),
-  "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复:协议凭证与订阅 token 一起删掉,已经连上的客户端会断开,订阅地址立刻 404。只想让人连不上,用「停用」。", cmd: `mpx user rm ${shq(d.name)}`, ok: "删除用户", danger: true, typed: d.name,
+  "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复:协议凭证与订阅 token 一起删掉,已经连上的客户端会断开,订阅地址立刻 404。只想让人连不上,用「停用」。", ok: "删除用户", danger: true, typed: d.name,
     run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });

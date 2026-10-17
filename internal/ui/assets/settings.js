@@ -30,17 +30,17 @@ PAGES.settings = {
   },
   render(d, r) {
     const t = SET_TABS.some(x => x[0] === r[1]) ? r[1] : "general";
-    const head = H`<div class="ph"><div><h1>设置</h1><p>订阅、通知、识别规则与模板 · 对应 <code>mpx settings</code></p></div></div><div class="tabs">${SET_TABS.map(([k, l]) => H`<a class="${t === k ? "on" : ""}" href="#settings/${k}">${l}</a>`)}</div>`;
+    const head = H`<div class="ph"><div><h1>设置</h1><p>订阅、通知、识别规则与模板</p></div></div><div class="tabs">${SET_TABS.map(([k, l]) => H`<a class="${t === k ? "on" : ""}" href="#settings/${k}">${l}</a>`)}</div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     const s = d.settings, W = can("PUT", "/api/settings");
     if (t === "general") {
       const f = ([k, l, ty, h]) => H`<div class="field"><label for="s-${k}">${l}</label>${k === "webhook_url" ? H`<div class="flex8"><input class="in mono" id="s-${k}" name="${k}" value="${s[k] || ""}" ${W ? "" : raw("readonly")}>${can("POST", "/api/settings/test-webhook") ? H`<button type="button" class="btn" data-act="set-test">测试</button>` : ""}</div>` : H`<input class="in ${ty === "i" ? "" : "mono"}" id="s-${k}" name="${k}" value="${s[k] ?? ""}" ${ty === "i" ? raw('inputmode="numeric"') : ""} ${W ? "" : raw("readonly")}>`}${h ? H`<span class="h">${h}</span>` : ""}</div>`;
       const by = Object.fromEntries(GENERAL.map(g => [g[0], g]));
-      return H`${head}<div class="grid g2"><form class="card pad18" id="set-form" novalidate>
+      return H`${head}${controlPlaneCard()}<div class="grid g2"><form class="card pad18" id="set-form" novalidate>
         ${f(by.sub_url_prefix)}<div class="two">${f(by.profile_title)}${f(by.update_interval)}</div>${f(by.support_link)}${f(by.webhook_url)}<div class="two">${f(by.notify_days_left)}${f(by.notify_usage_percent)}</div>
         <div class="err" id="s-err" role="alert"></div>
         ${W ? H`<div class="flex8 end"><button type="button" class="btn" data-act="set-revert">还原</button><button type="submit" class="btn pri" id="s-save">保存</button></div>` : ""}</form>
-        <div class="card pad16 self-start"><div class="sub mb8">怎么保存的</div><p class="sub">设置是整体替换的:保存时先读回最新一份,只改你动过的字段,规则与模板原样带回。等价于改好 <code>mpx -o json settings show</code> 的输出再 <code>mpx settings set -f</code>。</p>
+        <div class="card pad16 self-start"><div class="sub mb8">怎么保存的</div><p class="sub">设置是整体替换的:保存时先读回最新一份,只改你动过的字段,规则与模板原样带回,不会覆盖别处刚改的内容。</p>
         <div class="callout stone mt"><div><code>{USERNAME}</code> 会替换成用户名;订阅地址形如 <code>${s.sub_url_prefix || "https://…"}/sub/&lt;token&gt;</code>。</div></div></div></div>`;
     }
     if (t === "rules") {
@@ -48,21 +48,21 @@ PAGES.settings = {
       return H`${head}<div class="card"><div class="ch">User-Agent 识别规则<small>· 自上而下,先命中先用 · 共 ${R.length} 条</small><span class="sp"></span>${W ? H`<button class="btn ghost sm" data-act="rule-reset">恢复默认</button><button class="btn sm" data-act="rule-add">${ic("plus")}加规则</button>` : ""}</div>
         ${R.map((x, i) => H`<div class="row"><span class="sub mono w18">${i + 1}</span><code class="ell grow">${x.pattern}</code><span class="sub">→</span><span class="tag">${x.result}</span>
           ${W ? H`<button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">↑</button><button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">↓</button><button class="ib sm c-bad" data-act="rule-rm" data-i="${i}" aria-label="删除">${ic("x", "sm")}</button>` : ""}</div>`)}
-        <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。想看某个 UA 会拿到什么:<code>mpx settings rules test '&lt;UA&gt;'</code></div></div>`;
+        <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。规则从上往下比对,想调整优先级就上下移动。</div></div>`;
     }
     if (t === "templates") return templatesTab(head, s, d.tpl || {});
     if (t === "devices") {
       const D = d.devices || [], X = can("DELETE", "/api/devices");
       const PW = can("PUT", "/api/device-password"), PWOFF = can("DELETE", "/api/device-password");
-      return H`${head}<div class="card"><div class="ch">接入的设备<small>· 共 ${D.length} 台 · 对应 <code>mpx device list</code></small></div>
+      return H`${head}<div class="card"><div class="ch">接入的设备<small>· 共 ${D.length} 台</small></div>
         ${D.length ? D.map(x => H`<div class="row"><span class="sub mono w18">${x.id}</span><b class="ell grow">${x.name}</b>${x.current ? H`<span class="pill on">这台</span>` : ""}
           <span class="sub">${x.last_used_at ? "上次 " + sinceText(x.last_used_at) : "未用过"}${x.last_ip ? " · " + x.last_ip : ""}</span>
-          ${X && !x.current ? H`<button class="btn sm danger" data-act="dev-revoke" data-id="${x.id}" data-name="${x.name}">吊销</button>` : ""}</div>`) : H`<div class="row sub">还没有设备用 <code>mpx connect</code> 接入。</div>`}
-        <div class="row sub">「这台」就是 mpx ui 正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销请在终端 <code>mpx device revoke &lt;id&gt;</code>。</div></div>
+          ${X && !x.current ? H`<button class="btn sm danger" data-act="dev-revoke" data-id="${x.id}" data-name="${x.name}">吊销</button>` : ""}</div>`) : H`<div class="row sub">还没有设备接入。在另一台设备的 MPX 里选「接入已有控制面」即可。</div>`}
+        <div class="row sub">「这台」就是当前正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销它,请换一台已接入的设备操作。</div></div>
         ${PW || PWOFF ? devicePasswordCard(PW, PWOFF) : ""}`;
     }
-    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。等价于 <code>mpx backup</code>。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
-      <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">恢复会整库替换、要重启控制面,只在终端里做,界面里不提供。</p><div class="cmd">mpx restore mpx-backup.tar.gz</div></div></div>`;
+    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
+      <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">从备份恢复暂不支持在窗口里操作,见文档「备份控制面」。恢复会整库替换并重启控制面,务必先确认备份文件。</p></div></div>`;
   },
   after(d, r) {
     if (!d) return;
@@ -107,17 +107,30 @@ PAGES.settings = {
   },
 };
 
+/* ---- 当前控制面 ---- */
+// 设置页开头先摆清「这个窗口在对谁说话」:地址、配置档名、证书指纹。指纹等宽并
+// 带复制,方便跟 mpx init 打印的、别的设备上 mpx status 里的那行对上;http 控制面
+// 没有指纹,明说。地址、档名与指纹都来自 /ui/meta(切换配置档后整页刷新,自然
+// 是新的)。
+function controlPlaneCard() {
+  const fp = META.fingerprint || "";
+  return H`<div class="card mb"><div class="ch">当前控制面</div>
+    <dl class="kv"><dt>地址</dt><dd class="mono ell" title="${META.server}">${META.server || "—"}</dd>
+    <dt>配置档</dt><dd class="mono">${META.profile || "default"}</dd>
+    <dt>证书指纹</dt><dd>${fp ? H`<span class="cmdc"><span class="cmd" title="${fp}">${fp}</span><button type="button" class="ib" data-act="copy" data-text="${fp}" aria-label="复制指纹">${ic("copy")}</button></span>` : H`<span class="sub">未使用 HTTPS 指纹</span>`}</dd></dl></div>`;
+}
+
 /* ---- 设备密码 ---- */
-// 设备密码一节:新设备 mpx connect 时输入它。改密码不影响已接入的设备;勾上吊销
+// 设备密码一节:新设备接入时输入它。改密码不影响已接入的设备;勾上吊销
 // 会把所有设备(包括这台)踢下线;关闭则不再受理新设备接入。
 function devicePasswordCard(PW, PWOFF) {
   return H`<form class="card pad18 mt" id="dpw-form" novalidate>
-    <b class="b6">设备密码</b><p class="sub mt6 mb14">新设备运行 <code>mpx connect</code> 时输入它,对应 <code>mpx device password</code>。改密码不影响已接入的设备。</p>
+    <b class="b6">设备密码</b><p class="sub mt6 mb14">在另一台设备的 MPX 里选「接入已有控制面」时输入它。改密码不影响已接入的设备。</p>
     <div class="two">
       <div class="field"><label for="dpw1">新密码</label><input class="in" id="dpw1" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}><span class="h">至少 12 个字符</span></div>
       <div class="field"><label for="dpw2">再输一次</label><input class="in" id="dpw2" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}></div>
     </div>
-    <label class="chk"><input type="checkbox" id="dpw-revoke" ${PW ? "" : raw("disabled")}> 同时吊销所有已接入设备(包括这台,之后要重新 mpx connect)</label>
+    <label class="chk"><input type="checkbox" id="dpw-revoke" ${PW ? "" : raw("disabled")}> 同时吊销所有已接入设备(包括这台,之后要重新接入)</label>
     <div class="err mt8" id="dpw-err" role="alert"></div>
     <div class="flex8 end mt">
       ${PWOFF ? H`<button type="button" class="btn danger" data-act="dpw-off">关闭设备密码接入</button>` : ""}
@@ -150,7 +163,7 @@ function templatesTab(head, s, bodies) {
   return H`${head}
   <div class="card pad16 mb tpl-intro"><div class="u"><span class="fi lg">${ic("tpl")}</span><div class="grow">
     <b class="b6">模板是订阅的底稿</b><p class="sub mt4">用户拉 clash-meta / sing-box / xray 订阅时,控制面把这个人能用的节点注入模板,模板里的其余部分(分流规则、策略组、DNS…)原样下发给所有人。没存自定义模板的格式用内置默认。</p></div></div>
-    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS:点「查看 / 自定义」在内置模板上改,或先导出到本地改完再传:<div class="cmd mt8">mpx settings template get sing-box > sing-box.json</div><div class="cmd">mpx settings template set sing-box -f sing-box.json</div></div></div>` : ""}</div>
+    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS:点「查看 / 自定义」在内置模板上直接改;也可以先存成文件改完,再用抽屉里的「从文件读…」传回来。</div></div>` : ""}</div>
   <div class="card"><div class="ch">模板<small>· ${n} 个自定义 / ${TPL_FORMATS.length} 种格式</small></div>
     <div class="tw"><table class="tpl-t"><thead><tr><th>格式</th><th class="hide-m">语言</th><th>状态</th><th class="num hide-m">大小</th><th class="num hide-m">行数</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row sub">clash(原版)、links、base64-links 不用模板:前者固定输出最小集合,后两者是纯分享链接。控制面不记录模板的修改时间。</div></div>`;
@@ -201,8 +214,7 @@ async function templateDrawer(f) {
     ${c ? "" : H`<div class="callout stone mb8 tpl-note"><div>这是内置默认的副本。${W ? "改动后保存,就成为 " : ""}${W ? H`<b>${f}</b> 的自定义模板,对所有用户生效。` : ""}</div></div>`}
     <div id="tpl-ed"></div>
     <div class="ed-s"><span class="tag">${m.L}</span><span id="tpl-pos">行 1,列 1</span><span id="tpl-size"></span><span id="tpl-dirty" class="c-warn"></span><span class="sp"></span><span id="tpl-ok"></span></div>
-    <div class="callout bad mt8 hidden" id="tpl-err" role="alert"></div>
-    <div class="field mt12"><label>等价命令</label><div class="cmd">mpx settings template get ${f} > ${f}${m.ext}</div>${W ? H`<div class="cmd">mpx settings template set ${f} -f ${f}${m.ext}</div>` : ""}</div></div>
+    <div class="callout bad mt8 hidden" id="tpl-err" role="alert"></div></div>
   <div class="df">${W ? H`<label class="btn sm ghost">${ic("up")}从文件读…<input type="file" id="tpl-file" accept="${m.ext},.txt,.yml" hidden></label>${m.lang === "json" ? H`<button type="button" class="btn sm ghost" id="tpl-fmt">格式化</button>` : ""}<button type="button" class="btn sm ghost" id="tpl-revert" disabled>撤销改动</button>` : ""}<span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save" disabled>保存</button>` : ""}</div></form>`, "wide");
   const err = $("#tpl-err"), save = $("#tpl-save");
   const showErr = (r, server, jump = true) => { err.classList.toggle("hidden", !r); err.innerHTML = r ? val(H`${ic("warn")}<div>${server ? H`<b>服务端拒收:</b>` : ""}${r.msg}${r.line ? H` <button type="button" class="lnk" id="tpl-goto">跳到第 ${r.line} 行</button>` : ""}</div>`) : ""; if (r?.line) { ed.mark(r.line, jump); $("#tpl-goto").onclick = () => { ed.mark(r.line); ed.focus(); }; } };
@@ -236,15 +248,14 @@ async function templateDrawer(f) {
 Object.assign(ACTS, {
   "set-revert": () => load(true, true),
   "set-test": (d, b) => busy(b, async () => { await write("POST", "/api/settings/test-webhook", undefined, "测试通知已送到"); }),
-  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效,要再用得在那台机器上重新 mpx connect。", cmd: `mpx device revoke ${d.id}`, ok: "吊销", danger: true,
+  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效,要再用得在那台机器上重新接入。", ok: "吊销", danger: true,
     run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
-  "dpw-off": () => confirmBox({ title: "关闭设备密码接入?", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开,在这里设一个新密码即可。", cmd: "mpx device password --disable", ok: "关闭设备密码接入", danger: true,
+  "dpw-off": () => confirmBox({ title: "关闭设备密码接入?", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开,在这里设一个新密码即可。", ok: "关闭设备密码接入", danger: true,
     run: async () => { await write("DELETE", "/api/device-password", undefined, "已关闭设备密码接入;已接入的设备不受影响"); } }),
   "rule-add": () => confirmBox({ title: "加一条识别规则", text: "PATTERN 是 Go 正则,不区分大小写就以 (?i) 开头。顺序即优先级:宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
     extra: H`<div class="field"><label for="r-pat">User-Agent 正则</label><input class="in mono" id="r-pat" placeholder="(?i)karing" autocomplete="off"></div>
       <div class="two"><div class="field"><label for="r-res">命中后返回</label><select class="in" id="r-res">${RULE_RESULTS.map(x => H`<option>${x}</option>`)}</select></div>
       <div class="field"><label for="r-idx">插到第几位</label><input class="in mono" id="r-idx" placeholder="留空加在最后" inputmode="numeric"></div></div>`,
-    cmdOf: m => { const p = $("#r-pat", m).value, i = $("#r-idx", m).value.trim(); return `mpx settings rules add ${p ? shq(p) : "<PATTERN>"} --result ${$("#r-res", m).value}${i ? " --index " + i : ""}`; },
     run: async () => {
       const pattern = $("#r-pat").value, result = $("#r-res").value, idx = $("#r-idx").value.trim();
       if (!pattern) throw new Error("正则不能为空");
@@ -257,10 +268,10 @@ Object.assign(ACTS, {
       });
       toast(`已加规则 ${at + 1}: ${pattern} → ${result}`); await load(true, true);
     } }),
-  "rule-rm": d => { const i = +d.i; confirmBox({ title: `删掉第 ${i + 1} 条规则?`, text: "删完如果一条不剩,就回到内置默认。", cmd: `mpx settings rules rm ${i + 1}`, ok: "删除规则", danger: true,
+  "rule-rm": d => { const i = +d.i; confirmBox({ title: `删掉第 ${i + 1} 条规则?`, text: "删完如果一条不剩,就回到内置默认。", ok: "删除规则", danger: true,
     run: async () => { await modifySettings(s => { s.rules.splice(i, 1); }); toast(`已删掉第 ${i + 1} 条规则`); await load(true, true); } }); },
   "rule-move": (d, b) => busy(b, async () => { const i = +d.i, to = +d.to; await modifySettings(s => { const [x] = s.rules.splice(i, 1); s.rules.splice(to, 0, x); }); toast(`已把第 ${i + 1} 条挪到第 ${to + 1} 位`); await load(true, true); }),
-  "rule-reset": () => confirmBox({ title: "恢复内置默认规则?", text: "清掉全部自定义规则,回到内置默认那套(认得出主流客户端及其改名版)。", cmd: "mpx settings rules reset", ok: "恢复默认", danger: true,
+  "rule-reset": () => confirmBox({ title: "恢复内置默认规则?", text: "清掉全部自定义规则,回到内置默认那套(认得出主流客户端及其改名版)。", ok: "恢复默认", danger: true,
     run: async () => { await modifySettings(s => { s.rules = null; }); toast("已恢复内置默认规则"); await load(true, true); } }),
   // 备份经 fetch 取回再存盘:直接点链接遇上限流(429)会把错误 JSON 当文件存下来。
   "backup": (d, b) => busy(b, async () => {
@@ -278,7 +289,7 @@ Object.assign(ACTS, {
     toast("已开始下载 " + name);
   }),
   "tpl-open": d => templateDrawer(d.f),
-  "tpl-del": d => confirmBox({ title: `恢复 ${d.f} 为内置模板?`, text: `会删除你存的 ${d.f} 自定义模板(不可撤销,控制面不留历史);之后所有用户的 ${d.f} 订阅改用内置默认。想留底,先用 mpx settings template get ${d.f} 导出一份。`,
-    cmd: `mpx settings template del ${d.f}`, ok: "删除自定义模板", danger: true, typed: d.f,
+  "tpl-del": d => confirmBox({ title: `恢复 ${d.f} 为内置模板?`, text: `会删除你存的 ${d.f} 自定义模板(不可撤销,控制面不留历史);之后所有用户的 ${d.f} 订阅改用内置默认。想留底,先打开模板把内容复制出来。`,
+    ok: "删除自定义模板", danger: true, typed: d.f,
     run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已恢复 ${d.f} 为内置模板`); closeOverlays(); await load(true, true); } }),
 });

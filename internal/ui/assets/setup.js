@@ -49,58 +49,58 @@ function setup(st, bodyRaw, footRaw) {
   d.innerHTML = val(H`<div class="sbrand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"> · 首次安装${META?.version ? H`<small>${META.version}</small>` : ""}</div><div class="scard">${st ? steps(st) : ""}<div class="db">${bodyRaw}</div><div class="df">${footRaw}</div></div>`);
   document.body.append(d);
 }
-function updateCmd(fn) { const c = $("#s-cmd"); if (c) c.textContent = fn(); }
-function bindInput(sel, key, fn) {
+function bindInput(sel, key) {
   const el = $(sel);
   if (!el) return;
-  el.addEventListener("input", () => { S[key] = el.value; updateCmd(fn); clearErr(el, key); });
+  el.addEventListener("input", () => { S[key] = el.value; clearErr(el, key); });
 }
 
 /* ---------- 屏 1:欢迎 ---------- */
 function renderWelcome() {
   S.step = 1;
   setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-light.svg" alt=""><img class="mk-d" src="/mark-dark.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
-  <p class="lead">和 <code>mpx init</code> 一样：一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
+  <p class="lead">一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、入站和入口</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
   <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。已经有控制面？选右边的「接入已有控制面」。</p></div>`,
   H`<span class="sub" style="flex:1">${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换已有配置档</a>` : ""}</span>${btn("接入已有控制面", "", "lock", "s-connect")}${btn("首次安装（新服务器）", "pri", "", "s-start")}`);
   $("#s-start").addEventListener("click", () => renderConnect());
-  $("#s-connect").addEventListener("click", renderConnectCP);
+  $("#s-connect").addEventListener("click", () => { resetCN("setup"); renderConnectCP(); });
   $("#s-profiles")?.addEventListener("click", e => { e.preventDefault(); openProfiles(); });
 }
 
-/* ---------- 接入已有控制面(等价 mpx connect) ---------- */
-// CN 是接入流程的状态:addr/name 是表单值,server/fp 是取指纹的结果,pw 只在
-// 内存里,请求发出后立刻清掉,绝不进等价命令。
-const CN = { addr: "", name: "", server: "", fp: "", fpErr: "", err: "", probing: false, ok: false, pw: "", pwShown: false, errs: {} };
+/* ---------- 接入已有控制面 ---------- */
+// CN 是接入流程的状态:addr/name/profile 是表单值,server/fp 是取指纹的结果,pw 只在
+// 内存里,请求发出后立刻清掉。mode 决定走哪条路:"setup" 是首次安装的欢迎屏进来的
+// (/local/setup/connect*,存进实现方挑的档);"add" 是正常模式的「添加控制面」
+// (/local/profiles/connect*,存进指名的新档,app.js 也从这进)。
+const CN = { mode: "setup", addr: "", name: "", profile: "", server: "", fp: "", fpErr: "", err: "", probing: false, ok: false, pw: "", pwShown: false, errs: {} };
 
-function cmdConnectCP() {
-  let s = `mpx connect ${shq(String(CN.addr || "").trim() || "<地址>")}`;
-  const name = String(CN.name || "").trim();
-  if (name) s += ` --name ${shq(name)}`;
-  if (CN.fp) s += ` --fp ${CN.fp}`;
-  return s;
+// CN_EP 是两种模式各自的一组本地接口前缀。
+const CN_EP = { setup: "/local/setup", add: "/local/profiles" };
+
+function resetCN(mode) {
+  Object.assign(CN, { mode, addr: "", name: "", profile: "", server: "", fp: "", fpErr: "", err: "", probing: false, ok: false, pw: "", pwShown: false, errs: {} });
 }
 
 function renderConnectCP() {
-  const e = CN.errs || {}, fp = CN.fp && !CN.fpErr;
-  setup(null, H`<h2>接入已有控制面</h2>
-  <p class="lead">把这台电脑接进已经在跑的控制面，和终端里的 <code>mpx connect</code> 一样：先取回证书指纹核对，再输入设备密码。</p>
+  const add = CN.mode === "add", e = CN.errs || {}, fp = CN.fp && !CN.fpErr;
+  setup(null, H`<h2>${add ? "添加控制面" : "接入已有控制面"}</h2>
+  <p class="lead">${add ? H`把另一套控制面接进来，存成一个新的配置档并切过去；先取回证书指纹核对，再输入设备密码。` : H`把这台电脑接进已经在跑的控制面：先取回证书指纹核对，再输入设备密码。`}</p>
   <div class="two">${field("控制面地址", H`<input id="s-cp-addr" class="in mono ${e.addr ? "bad" : ""}" placeholder="203.0.113.10:8080" autocomplete="off">`, "IP 或域名，端口默认 8080", e.addr)}
   ${field("设备名", H`<input id="s-cp-name" class="in mono" autocomplete="off">`, "这台电脑在设备列表里叫什么；留空用主机名")}</div>
+  ${add ? field("配置档名", H`<input id="s-cp-profile" class="in mono ${e.profile ? "bad" : ""}" placeholder="work" autocomplete="off">`, "只能用字母、数字、- 和 _，1–32 个字符；名字已存在会提示换一个", e.profile) : ""}
   ${CN.err ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>接入失败</b><div class="raw">${CN.err}</div></div></div>` : ""}
   ${CN.fpErr ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>取指纹失败</b><div class="raw">${CN.fpErr}</div></div></div>` : ""}
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
-  ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${CN.fp}</div><span class="h">跟 mpx init 打印的那一行，或已接入设备上 mpx status 里的「证书指纹」对一下</span></div>
+  ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
   <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
-  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "mpx init 时设的；忘了在任何一台已接入设备上 mpx device password 重设")}` : ""}
-  <div class="field mt"><label>等价命令</label><div class="cmd" id="s-cmd">${cmdConnectCP()}</div></div>
-  <p class="sub">等价命令里不写密码，终端会询问。</p>`,
-  H`${btn("上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
+  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「设置 → 设备」里重设")}` : ""}
+  <p class="sub">接入时会核对证书指纹，设备密码只用于这一次接入。</p>`,
+  H`${btn(add ? "取消" : "上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
   $("#s-cp-addr").value = CN.addr; $("#s-cp-name").value = CN.name;
+  if (add) $("#s-cp-profile").value = CN.profile;
   if (fp) $("#s-cp-pw").value = CN.pw;
-  const updCmd = () => { const c = $("#s-cmd"); if (c) c.textContent = cmdConnectCP(); };
   // 改地址会作废已取的指纹:得重新取、重新核对。
   $("#s-cp-addr").addEventListener("input", ev => {
     CN.addr = ev.target.value; CN.errs = {};
@@ -110,17 +110,23 @@ function renderConnectCP() {
       const a = $("#s-cp-addr"); a.focus(); a.setSelectionRange(a.value.length, a.value.length);
       return;
     }
-    updCmd();
   });
-  $("#s-cp-name").addEventListener("input", ev => { CN.name = ev.target.value; updCmd(); });
-  $("#s-cp-back").addEventListener("click", () => { CN.errs = {}; renderWelcome(); });
+  $("#s-cp-name").addEventListener("input", ev => { CN.name = ev.target.value; });
+  if (add) $("#s-cp-profile").addEventListener("input", ev => { CN.profile = ev.target.value; CN.errs = {}; });
+  $("#s-cp-back").addEventListener("click", () => {
+    CN.errs = {};
+    // 正常模式:拆掉遮罩回到管理界面;setup 模式(欢迎屏也能从配置档弹窗进到这)
+    // 没有底层页面可回,退回欢迎屏。
+    if (add && META.mode !== "setup") document.querySelector(".setup")?.remove();
+    else renderWelcome();
+  });
   $("#s-cp-probe").addEventListener("click", async () => {
     const addr = String(CN.addr || "").trim();
     if (!addr) { CN.errs = { addr: "请填写控制面地址" }; renderConnectCP(); return; }
     CN.errs = {}; CN.err = ""; CN.fpErr = ""; CN.server = ""; CN.fp = ""; CN.ok = false; CN.probing = true;
     renderConnectCP();
     try {
-      const r = await api("/local/setup/connect/probe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ addr }) });
+      const r = await api(`${CN_EP[CN.mode]}/connect/probe`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ addr }) });
       CN.server = (r && r.server) || ""; CN.fp = (r && r.fingerprint) || "";
       if (!CN.server || !CN.fp) CN.fpErr = "控制面没有报证书指纹";
     } catch (e2) { CN.fpErr = e2.message || String(e2); }
@@ -136,12 +142,19 @@ function renderConnectCP() {
     updGo();
     go.addEventListener("click", async () => {
       if (!CN.ok || !CN.pw) return;
+      const profile = String(CN.profile || "").trim();
+      if (add && !/^[A-Za-z0-9_-]{1,32}$/.test(profile)) {
+        CN.errs = { profile: "只能用字母、数字、- 和 _，1–32 个字符" };
+        renderConnectCP();
+        return;
+      }
       const body = { server: CN.server, fingerprint: CN.fp, password: CN.pw, name: String(CN.name || "").trim() };
+      if (add) body.profile = profile;
       CN.pw = ""; CN.err = "";
       go.disabled = true; go.classList.add("busy");
       try {
-        const r = await api("/local/setup/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        if (r && r.ok) { location.reload(); return; } // 已切到正常模式,整页刷新进管理界面
+        const r = await api(`${CN_EP[CN.mode]}/connect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (r && r.ok) { location.reload(); return; } // 已切到新控制面(setup 模式则是转成正常模式),整页刷新
         CN.err = "控制面没有确认接入";
       } catch (e2) { CN.err = e2.message || String(e2); }
       renderConnectCP();
@@ -150,14 +163,6 @@ function renderConnectCP() {
 }
 
 /* ---------- 屏 2:连接 ---------- */
-function cmdHost() {
-  let s = `mpx init --host ${shq(S.host || "<地址>")}`;
-  if (String(S.sshPort) !== "22") s += ` --ssh-port ${S.sshPort}`;
-  if (S.sshUser !== "root") s += ` --ssh-user ${shq(S.sshUser)}`;
-  if (S.auth === "password") s += " --ssh-password";
-  else if (S.identity) s += ` --identity ${shq(S.identity)}`;
-  return s;
-}
 function validateConnect() {
   const e = {}, port = String(S.sshPort ?? "").trim();
   if (!String(S.host || "").trim()) e.host = "请填写服务器地址";
@@ -174,17 +179,14 @@ function renderConnect() {
   <div class="field"><label>登录方式</label><div class="opts" style="margin:0">${opt(!key, "s-auth-pw", "SSH 密码", "只用来装一次本机公钥，用完即丢")}${opt(key, "s-auth-key", "这台电脑已能用密钥登录", "例如之前跑过 ssh-copy-id")}</div></div>
   ${key ? field("私钥路径（可选）", H`<input id="s-identity" class="in mono" placeholder="~/.ssh/id_ed25519" autocomplete="off">`, "留空时和 ssh 命令一样自动找")
     : field("root 密码", pwBox("s-pw", S.pwShown), "", e.pw)}
-  <details class="adv"><summary>高级</summary>${field("SSH 用户", H`<input id="s-user" class="in mono" autocomplete="off">`, "固定 root：mpx init 要求 uid=0")}</details>
-  <div class="field mt"><label>等价命令</label><div class="cmd" id="s-cmd">${cmdHost()}</div></div>
-  <p class="sub">等价命令里不写密码，终端会询问。</p>`,
+  <details class="adv"><summary>高级</summary>${field("SSH 用户", H`<input id="s-user" class="in mono" autocomplete="off">`, "固定 root：控制面要求以 root 身份安装")}</details>`,
   H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("检查机器", "pri", "", "s-check")}`);
   $("#s-host").value = S.host; $("#s-port").value = S.sshPort; $("#s-user").value = S.sshUser;
   if (key) $("#s-identity").value = S.identity; else $("#s-pw").value = S.pw;
-  bindInput("#s-host", "host", cmdHost); bindInput("#s-port", "sshPort", cmdHost);
-  bindInput("#s-user", "sshUser", cmdHost);
-  if (key) bindInput("#s-identity", "identity", cmdHost);
+  bindInput("#s-host", "host"); bindInput("#s-port", "sshPort"); bindInput("#s-user", "sshUser");
+  if (key) bindInput("#s-identity", "identity");
   else {
-    bindInput("#s-pw", "pw", cmdHost);
+    bindInput("#s-pw", "pw");
     $("#s-pw-eye").addEventListener("click", () => { S.pw = $("#s-pw").value; S.pwShown = !S.pwShown; renderConnect(); $("#s-pw").focus(); });
   }
   $("#s-auth-pw").addEventListener("click", () => { S.auth = "password"; S.errs = {}; renderConnect(); });
@@ -254,13 +256,6 @@ function renderCheck() {
 }
 
 /* ---------- 屏 4:设置 ---------- */
-function cmdSetup() {
-  let s = cmdHost() + ` --username ${shq(S.username || "<用户>")} --name ${shq(S.name || "<节点名>")}`;
-  if (String(S.addr || "") !== "0.0.0.0:8080") s += ` --addr ${shq(S.addr)}`;
-  if (S.subPrefix) s += ` --sub-prefix ${shq(S.subPrefix)}`;
-  if (String(S.sni || "") !== "www.cloudflare.com") s += ` --sni ${shq(S.sni)}`;
-  return s;
-}
 function strength(pw) {
   let n = 0;
   if (pw.length >= 12) n++;
@@ -293,24 +288,23 @@ function renderSettings() {
   ${field("节点名", H`<input id="s-name" class="in mono ${e.name ? "bad" : ""}" autocomplete="off">`, "建议用地区名", e.name)}</div>
   <div class="two"><div class="field"><label>设备密码</label>${pwBox("s-dpw", S.dpwShown)}<div class="meter" id="s-meter">${raw(meterHtml(S.dpw))}</div><span class="h" id="s-str">强度：${SW[strength(S.dpw)]}</span>${e.dpw ? H`<span class="fe">${e.dpw}</span>` : ""}</div>
   <div class="field"><label>再输一次</label>${pwBox("s-dpw2", S.dpwShown)}${e.dpw2 ? H`<span class="fe">${e.dpw2}</span>` : ""}</div></div>
-  <p class="sub" style="margin-top:-4px">别的电脑运行 <code>mpx connect</code> 时要用它。不会保存在这台电脑之外。</p>
+  <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
   <details class="adv"><summary>高级</summary>
    <div class="two">${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("订阅前缀", H`<input id="s-sub" class="in mono" autocomplete="off">`)}</div>${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个入站用的 REALITY SNI")}</details>
-  <div class="field mt"><label>等价命令</label><div class="cmd" id="s-cmd">${cmdSetup()}</div></div>
-  <p class="sub">等价命令里不写密码，终端会询问。</p>`,
+  `,
   H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("开始安装", "pri", "", "s-run")}`);
   $("#s-username").value = S.username; $("#s-name").value = S.name;
   $("#s-dpw").value = S.dpw; $("#s-dpw2").value = S.dpw2;
   $("#s-addr").value = S.addr; $("#s-sub").value = S.subPrefix; $("#s-sni").value = S.sni;
-  bindInput("#s-username", "username", cmdSetup); bindInput("#s-name", "name", cmdSetup);
-  bindInput("#s-addr", "addr", cmdSetup); bindInput("#s-sub", "subPrefix", cmdSetup); bindInput("#s-sni", "sni", cmdSetup);
+  bindInput("#s-username", "username"); bindInput("#s-name", "name");
+  bindInput("#s-addr", "addr"); bindInput("#s-sub", "subPrefix"); bindInput("#s-sni", "sni");
   $("#s-dpw").addEventListener("input", () => {
     S.dpw = $("#s-dpw").value;
     const m = $("#s-meter"); if (m) m.innerHTML = meterHtml(S.dpw);
     const t = $("#s-str"); if (t) t.textContent = "强度：" + SW[strength(S.dpw)];
-    clearErr($("#s-dpw"), "dpw"); updateCmd(cmdSetup);
+    clearErr($("#s-dpw"), "dpw");
   });
-  bindInput("#s-dpw2", "dpw2", cmdSetup);
+  bindInput("#s-dpw2", "dpw2");
   const eye = () => {
     S.dpw = $("#s-dpw").value; S.dpw2 = $("#s-dpw2").value; S.dpwShown = !S.dpwShown; renderSettings();
     $("#s-dpw").focus();
@@ -345,7 +339,7 @@ function scrollLog() { const lg = $(".logt"); if (lg) lg.scrollTop = lg.scrollHe
 function renderInstall() {
   const list = P.steps.length ? P.steps : [{ title: "准备安装", state: "run", secs: 0 }];
   setup(["done", "done", "done", "cur", ""], H`<h2>安装</h2>
-  <div class="banner">${ic("term")}<span>安装期间不要关闭运行 <code>mpx ui</code> 的终端。可以刷新这个页面，进度会接着显示。</span></div>
+  <div class="banner">${ic("term")}<span>安装期间不要关闭 MPX。可以刷新这个页面，进度会接着显示。</span></div>
   <ol class="plist">${list.map(s => row(s.state, s.title, stepDur(s.secs),
     s.state === "run" ? H`<div class="sub2"><span class="tog">${ic("arrow")}最近 50 行输出</span></div>${logBlock()}` : ""))}</ol>`,
   H`<span class="sub" style="flex:1">已用 ${fmtClock(P.elapsed)} · 最长约 25 分钟</span>${raw('<button type="button" class="btn pri" disabled style="opacity:.5">安装中…</button>')}`);
@@ -353,12 +347,10 @@ function renderInstall() {
 }
 
 function renderFail() {
-  const cmd = cmdSetup();
   setup(["done", "done", "done", "fail", ""], H`<h2>安装</h2>
   <ol class="plist">${P.steps.map(s => row(s.state, s.title, stepDur(s.secs), s.state === "fail" ? logBlock() : ""))}</ol>
-  <div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>安装失败</b><div class="raw">${P.error || "安装没有完成"}</div><div class="mt2">每一步都可以安全重跑，已经装好的部分会复用。也可以在终端运行下面的命令。</div></div></div>
-  <div class="field"><label>等价命令</label><div class="cmd" style="padding-left:12px">${cmd}</div></div>`,
-  H`<span class="sp"></span>${raw(`<button type="button" class="btn" data-act="copy" data-text="${esc(cmd)}">${ic("copy")}复制命令</button>`)}${btn("重新运行", "pri", "refresh", "s-rerun")}`);
+  <div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>安装失败</b><div class="raw">${P.error || "安装没有完成"}</div><div class="mt2">每一步都可以安全重跑，已经装好的部分会复用。处理完点「重新运行」即可。</div></div></div>`,
+  H`<span class="sp"></span>${btn("重新运行", "pri", "refresh", "s-rerun")}`);
   scrollLog();
   $("#s-rerun").addEventListener("click", () => {
     if (S.run) window.setupStartRun(S.run);
@@ -442,8 +434,6 @@ async function renderDone(res) {
   S.dpw = ""; S.dpw2 = "";
   if (S.run) S.run.device_password = "";
   const hp = res.host_port || S.host || "", fp = res.fingerprint || "", username = res.username || S.username || "";
-  const connCmd = `mpx connect ${hp} --fp ${fp}`;
-  const plainCmd = `mpx connect ${hp}`;
   let url = "";
   if (res.connected) {
     try {
@@ -453,18 +443,26 @@ async function renderDone(res) {
   }
   const copyBtn = t => raw(`<button type="button" class="ib" data-act="copy" data-text="${esc(t)}" aria-label="复制">${ic("copy")}</button>`);
   const cmdBox = t => H`<div class="cmdc"><div class="cmd">${t}</div>${copyBtn(t)}</div>`;
+  const addrBox = hp ? cmdBox(hp) : H`<span class="h">控制面地址未知</span>`;
   setup(["done", "done", "done", "done", "cur"], H`<div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>装好了</h3><p>控制面已经在 <b>${hp}</b> 上运行${res.connected ? "，这台电脑已经接入。" : "。"}</p></div></div>
   ${res.connected ? (url ? H`<div class="qrw"><img class="qr" src="/local/qr.svg?d=${encodeURIComponent(url)}" alt="订阅二维码">
     <div class="field"><label>${username} 的订阅链接</label>${cmdBox(url)}<span class="h">在手机客户端里扫码，或复制链接导入</span></div></div>`
     : H`<div class="field"><label>订阅链接</label><span class="h">到用户页查看订阅链接</span></div>`)
-  : H`<div class="callout stone mb">${ic("info")}<div><b>本机没有自动接入</b><div class="mt2">在终端运行下面的命令，把这台电脑接入控制面。</div></div></div>
-    <div class="field"><label>接入命令</label>${cmdBox(plainCmd)}<span class="h">对方运行后输入设备密码即可</span></div>`}
-  <div class="field"><label>给别的电脑用</label>${cmdBox(connCmd)}<span class="h">对方运行后输入设备密码即可</span></div>
+  : H`<div class="callout stone mb">${ic("info")}<div><b>本机没有自动接入</b><div class="mt2">在这台电脑的 MPX 里选「接入已有控制面」，输入下面的地址和设备密码。</div></div></div>`}
+  <div class="field"><label>在另一台设备上接入</label>${addrBox}<span class="h">在 MPX 里选「接入已有控制面」，输入这个地址，核对证书指纹后输入设备密码。</span></div>
   <div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${fp || "（未知）"}</div></div>
   <p class="sub">本机用了 <code>~/.ssh</code> 里的一把密钥；VPS 上追加了这把公钥和控制面自己的公钥。</p>`,
   H`<span class="sp"></span>${btn("进入管理界面", "pri", "arrow", "s-enter")}`);
   $("#s-enter").addEventListener("click", () => location.reload());
 }
+
+// openConnectForm:正常模式「添加控制面」的入口,app.js 的配置档弹窗调它。重置
+// 状态再进表单,免得带上 setup 流程里输过的地址或指纹;成功后表单自己 reload。
+function openConnectForm() {
+  resetCN("add");
+  renderConnectCP();
+}
+window.openConnectForm = openConnectForm;
 
 window.setupStartRun = async params => {
   S.run = params;

@@ -61,16 +61,16 @@ PAGES.inbounds = {
   },
   render(d) {
     const W = can("POST", "/api/inbounds"), WH = can("PUT", "/api/hosts/x");
-    const head = H`<div class="ph"><div><h1>入站与入口</h1><p>入站是节点上监听的端口;入口决定订阅里发什么地址 · 对应 <code>mpx inbound list</code> / <code>mpx host list</code></p></div><div class="sp"></div>${W && d?.nodes.length ? H`<button class="btn pri" data-act="inb-new">${ic("plus")}添加入站</button>` : ""}</div>`;
+    const head = H`<div class="ph"><div><h1>入站与入口</h1><p>入站是节点上监听的端口;入口决定订阅里发什么地址</p></div><div class="sp"></div>${W && d?.nodes.length ? H`<button class="btn pri" data-act="inb-new">${ic("plus")}添加入站</button>` : ""}</div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     if (!d.inbounds.length) return H`${head}<div class="card">${d.nodes.length
-      ? emptyBox("inb", "还没有入站", "入站决定节点上监听什么协议和端口。加好后要下发一次节点配置才生效。", `mpx inbound add --node ${d.nodes[0].id} --protocol vless --port 443 --security reality`, W ? H`<button class="btn pri sm" data-act="inb-new">${ic("plus")}添加入站</button>` : "")
-      : emptyBox("nodes", "还没有节点", "先有节点,再在节点上加入站。", "mpx node add hk --address 203.0.113.10")}</div>`;
+      ? emptyBox("inb", "还没有入站", "入站决定节点上监听什么协议和端口。加好后要下发一次节点配置才生效。", "", W ? H`<button class="btn pri sm" data-act="inb-new">${ic("plus")}添加入站</button>` : "")
+      : emptyBox("nodes", "还没有节点", "先有节点,再在节点上加入站。到「节点」页点「添加节点」开始。")}</div>`;
     const nodeName = id => d.nodes.find(n => n.id === id)?.name || "#" + id;
     return H`${head}${d.inbounds.map(i => { const hs = d.hosts[i.id] || []; return H`<div class="card mb14"><div class="ch wrap"><b class="b6">${inbTag(i)}</b><span class="tag">${i.protocol}</span><span class="sub mono fw4">#${i.id} · ${nodeName(i.node_id)} :${i.port} · ${i.network} · ${i.security}${i.max_users ? ` · 上限 ${i.max_users} 人` : ""}</span><span class="sp"></span>
       ${can("PUT", "/api/inbounds/x") ? H`<button class="btn ghost sm" data-act="inb-edit" data-id="${i.id}">编辑</button>` : ""}${WH ? H`<button class="btn sm" data-act="host-new" data-inb="${i.id}">${ic("plus")}入口</button>` : ""}</div>
       ${hs.length ? hs.map(h => H`<div class="row"><span class="dot ok"></span><b class="bold">${h.remark || "(无名)"}</b><span class="sub mono ell">${h.address ? `${h.address}:${h.effective.port}` : H`(节点地址) ${h.effective.address}:${h.effective.port}`}</span>${h.alpn?.length ? H`<span class="tag hide-m">${h.alpn.join(",")}</span>` : ""}<span class="sp"></span><span class="sub hide-m">#${h.id}</span>${WH ? H`<button class="btn ghost sm" data-act="host-edit" data-inb="${i.id}" data-id="${h.id}">编辑</button>` : ""}</div>`)
-        : H`<div class="row sub">没有对外入口,订阅里用入站自己的地址与端口。<span class="sp"></span><code class="hide-m">mpx host add --inbound ${i.id}</code></div>`}</div>`; })}`;
+        : H`<div class="row sub">没有对外入口,订阅里用入站自己的地址与端口。<span class="sp"></span><span class="hide-m">点上面的「入口」可以加一个</span></div>`}</div>`; })}`;
   },
 };
 let INB_TOTAL = null;
@@ -96,7 +96,6 @@ async function inboundEditor(id, presetNode) {
     ${["sni", "reality_dest", "short_ids", "cert_file", "key_file", "alpn", "fingerprint", "flow", "ws_path", "grpc_service", "xhttp_path", "xhttp_host", "xhttp_mode", "wg_address", "wg_mtu", "congestion_control"].map(input)}
     <details class="adv"><summary>更多</summary>${["tag", "listen", "max_users"].map(input)}<div class="stack8 mb">${input("mux")}${input("fragment")}</div></details>
     <p class="sub">${isNew ? "REALITY 的密钥对由控制面生成。" : "只改用户数上限不用下发;"}改端口、协议、传输、安全层、证书后要下发节点配置才生效,下发会重启核心。</p>
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="i-cmd"></div></div>
     <div class="err" id="i-err" role="alert"></div>
     ${!isNew && can("DELETE", "/api/inbounds/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入站</b><div class="sub">挂在它上面的入口一起删掉。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="inb-rm" data-id="${id}" data-tag="${inbTag(v)}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="i-save">${isNew ? "创建" : "保存"}</button></div></form>`);
@@ -111,24 +110,11 @@ async function inboundEditor(id, presetNode) {
     if (!(out.port >= 1 && out.port <= 65535)) err.push(`端口必须在 1-65535 之间`);
     for (const [k, flag, t] of INB_FIELDS) {
       const s = t === "b" ? !!f.get(k) : String(f.get(k) ?? "").trim();
-      if (t === "i") { if (s && !/^\d+$/.test(s)) err.push(`${flag} 要是整数`); out[k] = s ? +s : 0; }
+      if (t === "i") { if (s && !/^\d+$/.test(s)) err.push(`${INB_LABEL[k]?.[0] || k} 要是整数`); out[k] = s ? +s : 0; }
       else if (t === "l") out[k] = splitCSV(s);
       else out[k] = s;
     }
-    // 等价命令:新增列出非默认值;修改列出改动的字段(CLI 只认给出来的 flag)。
-    const flags = [], cur = isNew ? { network: QUIC(out.protocol) ? "udp" : "tcp", security: QUIC(out.protocol) ? "tls" : "none", wg_mtu: 1420 } : base;
-    const same = (k, x) => { const o = cur[k]; return Array.isArray(x) ? x.join(",") === (o || []).join(",") : x === (o ?? (typeof x === "number" ? 0 : typeof x === "boolean" ? false : "")); };
-    if (isNew) flags.push("--node", out.node_id, "--protocol", out.protocol, "--port", portS || "<端口>");
-    else { if (out.protocol !== base.protocol) flags.push("--protocol", out.protocol); if (out.port !== base.port) flags.push("--port", portS); }
-    for (const k of ["network", "security"]) if (!same(k, out[k])) flags.push("--" + k, out[k]);
-    for (const [k, flag, t] of INB_FIELDS) {
-      const x = out[k];
-      if (same(k, x)) continue;
-      if (t === "b") flags.push(x ? flag : flag + "=false");
-      else { const s = t === "l" ? x.join(",") : String(x); flags.push(flag, s === "" ? '""' : shq(s)); }
-    }
-    const cmd = isNew ? `mpx inbound add ${flags.join(" ")}` : `mpx inbound edit ${id} ${flags.join(" ") || "(没有改动)"}`;
-    return { out, err, cmd };
+    return { out, err };
   };
   const sync = () => {
     const p = $("#i-protocol").value;
@@ -137,7 +123,6 @@ async function inboundEditor(id, presetNode) {
     lastProto = p;
     const c = collect();
     for (const [k, , , show] of INB_FIELDS) { const el = form.querySelector(`[data-f="${k}"]`); if (el && show) el.hidden = !show(c.out); }
-    $("#i-cmd").textContent = c.cmd;
   };
   form.oninput = form.onchange = sync; sync();
   form.addEventListener("submit", async e => {
@@ -175,25 +160,21 @@ async function hostEditor(inbID, hostID) {
   <div class="db">
     ${F.map(([k, , l, ph, hint]) => H`<div class="field"><label for="h-${k}">${l}</label><input class="in ${k === "remark" ? "" : "mono"}" id="h-${k}" name="${k}" value="${fv(k)}" placeholder="${ph}" autocomplete="off">${hint ? H`<span class="h">${hint}</span>` : ""}</div>`)}
     ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口,用户下次刷新订阅就跟着变;不用下发。</p>` : H`<p class="sub">入口只影响订阅里写什么,不用下发节点配置。</p>`}
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="h-cmd"></div></div>
     <div class="err" id="h-err" role="alert"></div>
     ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口,订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="host-rm" data-id="${hostID}" data-remark="${h.remark}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="h-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#host-form");
   const collect = () => {
-    const f = new FormData(form), out = {}, err = [], flags = [];
-    for (const [k, flag] of F) {
+    const f = new FormData(form), out = {}, err = [];
+    for (const [k] of F) {
       const s = String(f.get(k) || "").trim();
       if (k === "port") { if (s && !/^\d+$/.test(s)) err.push("对外端口要是整数"); out.port = s ? +s : 0; }
       else if (k === "alpn") out.alpn = splitCSV(s);
       else out[k] = s;
-      const cur = k === "alpn" ? out.alpn.join(",") : String(out[k] || ""), old = fv(k);
-      if (isNew ? cur !== "" : cur !== old) flags.push(flag, cur === "" ? '""' : shq(cur));
     }
-    const cmd = isNew ? `mpx host add --inbound ${inbID} ${flags.join(" ")}` : `mpx host edit ${hostID} --inbound ${inbID} ${flags.join(" ") || "(没有改动)"}`;
-    return { out, err, cmd };
+    return { out, err };
   };
-  const sync = () => { $("#h-cmd").textContent = collect().cmd; };
+  const sync = () => { collect(); };
   form.oninput = form.onchange = sync; sync();
   form.addEventListener("submit", async e => {
     e.preventDefault();
@@ -220,10 +201,10 @@ async function hostEditor(inbID, hostID) {
 Object.assign(ACTS, {
   "inb-new": d => inboundEditor(null, d.node ? +d.node : 0),
   "inb-edit": d => inboundEditor(+d.id),
-  "inb-rm": d => confirmBox({ title: `删除入站 ${d.tag}?`, text: "不可恢复:挂在它上面的入口一起删掉,用它的客户端下次刷新订阅后就没了这个入口。节点上的核心要等下次下发才停止监听。", cmd: `mpx inbound rm ${d.id}`, ok: "删除入站", danger: true, typed: d.tag,
+  "inb-rm": d => confirmBox({ title: `删除入站 ${d.tag}?`, text: "不可恢复:挂在它上面的入口一起删掉,用它的客户端下次刷新订阅后就没了这个入口。节点上的核心要等下次下发才停止监听。", ok: "删除入站", danger: true, typed: d.tag,
     run: async () => { await write("DELETE", inbPath(d.id), undefined, `已删除入站 ${d.id}`); closeOverlays(); if (route[0] === "inbounds") load(true, true); else location.hash = "inbounds"; } }),
   "host-new": d => hostEditor(+d.inb, 0),
   "host-edit": d => hostEditor(+d.inb, +d.id),
-  "host-rm": d => confirmBox({ title: `删除入口 ${d.remark || "#" + d.id}?`, text: "客户端下次刷新订阅后这个地址就没了;节点和已连着的用户不受影响。", cmd: `mpx host rm ${d.id}`, ok: "删除入口", danger: true,
+  "host-rm": d => confirmBox({ title: `删除入口 ${d.remark || "#" + d.id}?`, text: "客户端下次刷新订阅后这个地址就没了;节点和已连着的用户不受影响。", ok: "删除入口", danger: true,
     run: async () => { await write("DELETE", "/api/hosts/" + d.id, undefined, `已删除对外入口 ${d.id}`); closeOverlays(); load(true, true); } }),
 });

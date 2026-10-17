@@ -48,8 +48,9 @@ test("前端校验文案", async ({ page }) => {
   await page.fill("#w-name", "jp-2");
   await page.fill("#w-ssh-port", "2222");
   await page.fill("#w-ssh-user", "ubuntu");
-  await expect(page.locator("#w-cmd")).toHaveText("mpx node add jp-2 --address 203.0.113.42 --ssh-port 2222 --ssh-user ubuntu --ssh-password");
-  await expect(page.locator("#w-cmd")).not.toContainText(PW);
+  // 界面里不再展示等价命令:抽屉正文不该出现任何 mpx 命令。
+  await expect(page.locator("#drawer")).not.toContainText("mpx ");
+  await expect(page.locator("#drawer")).not.toContainText(PW);
 
   await page.click("#w-next");
   await page.click("#w-opt-custom");

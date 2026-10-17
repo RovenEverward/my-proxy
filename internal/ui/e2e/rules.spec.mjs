@@ -130,7 +130,7 @@ test("策略组:新建与 mpx group add 结果一致,预览随条件变化;被�
   await page.locator("[data-key=regions] label", { hasText: "美国" }).click();
   await expect(page.locator("#gp-cnt")).toContainText("2 / 3");
   await page.click("#gp-mode [data-m=manual]");
-  await expect(page.locator("#gp-cmd")).toHaveText('mpx group add "美国节点" --mode manual --region US');
+  await expect(page.locator("#gp-form")).not.toContainText("mpx ");
   await page.click("#gp-save");
   await expect(page.locator(".toast")).toContainText("已保存");
   const uiGroup = (await getJSON("/api/proxy-groups")).find(g => g.name === "美国节点");

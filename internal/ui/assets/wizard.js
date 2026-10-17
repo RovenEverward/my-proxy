@@ -22,12 +22,6 @@ function drawer(st, bodyRaw, footRaw) {
   ${steps(st)}<div class="db" style="padding-top:4px">${bodyRaw}</div><div class="df">${footRaw}</div>`);
   $("#drawer").classList.add("wiz");
 }
-function cmd1() {
-  let s = `mpx node add ${shq(W.name || "<名称>")} --address ${shq(W.address || "<地址>")}`;
-  if (W.sshPort && String(W.sshPort) !== "22") s += ` --ssh-port ${W.sshPort}`;
-  if (W.sshUser && W.sshUser !== "root") s += ` --ssh-user ${W.sshUser}`;
-  return s + " --ssh-password";
-}
 function validate1() {
   const e = {}, name = String(W.name || "").trim(), port = String(W.sshPort ?? "").trim();
   if (!String(W.address || "").trim()) e.address = "请填写服务器地址";
@@ -53,17 +47,13 @@ function render1() {
     ${field("节点名", H`<input id="w-name" class="in mono ${e.name ? "bad" : ""}" value="${W.name}" placeholder="jp-2" autocomplete="off">`, "只用字母、数字和 -，之后会自动识别显示名", e.name)}</div>
     <div class="two">${field("SSH 端口", H`<input id="w-ssh-port" class="in mono ${e.sshPort ? "bad" : ""}" value="${W.sshPort}" placeholder="22" inputmode="numeric" autocomplete="off">`, "", e.sshPort)}
     ${field("SSH 用户", H`<input id="w-ssh-user" class="in mono" value="${W.sshUser}" placeholder="root" autocomplete="off">`, "", "")}</div>
-    ${field("SSH 密码", pwBox, "机房给的初始密码即可", e.pw)}
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="w-cmd">${cmd1()}</div></div>
-    <p class="sub">等价命令里不写密码，终端会询问。</p>`,
+    ${field("SSH 密码", pwBox, "机房给的初始密码即可", e.pw)}`,
     H`<button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" id="w-next">下一步</button>`);
   $("#w-pw").value = W.pw || "";
   const bind = (sel, key) => {
     const el = $(sel);
     el.addEventListener("input", () => {
       W[key] = el.value;
-      const c = $("#w-cmd");
-      if (c) c.textContent = cmd1();
       clearErr(el, key);
     });
   };
@@ -78,9 +68,6 @@ function render1() {
     W.step = 2; render2();
   });
 }
-function cmd2() {
-  return `mpx inbound add --node ${shq(W.name)} --protocol vless --port ${W.inbPort} --network tcp --security reality --sni ${W.sni} --reality-dest ${W.dest} --flow xtls-rprx-vision`;
-}
 function validate2() {
   const e = {}, port = String(W.inbPort ?? "").trim();
   if (!/^\d+$/.test(port) || +port < 1 || +port > 65535) e.inbPort = "端口要在 1–65535 之间";
@@ -91,7 +78,7 @@ function validate2() {
 function render2() {
   const e = W.errs || {};
   drawer(["done", "cur", "", ""], H`
-    <p class="lead">给这台节点建一个入站。默认值和 <code>mpx bootstrap</code> 一致。</p>
+    <p class="lead">给这台节点建一个入站。默认值与首次安装时建的入站一致。</p>
     <div class="opts">
       <div class="opt ${W.preset === "reality" ? "on" : ""}" id="w-opt-reality"><span class="rd"></span><div><b>REALITY · 443（推荐）</b><span class="h">VLESS + TCP + REALITY，SNI 和回落目标 www.cloudflare.com</span></div></div>
       <div class="opt ${W.preset === "custom" ? "on" : ""}" id="w-opt-custom"><span class="rd"></span><div><b>自定义</b><span class="h">在下面的高级里改端口、SNI 和回落目标</span></div></div>
@@ -99,15 +86,12 @@ function render2() {
     <details class="adv" id="w-adv" ${W.preset === "custom" ? raw("open") : ""}><summary>高级</summary>
       <div class="two">${field("端口", H`<input id="w-inb-port" class="in mono ${e.inbPort ? "bad" : ""}" value="${W.inbPort}" placeholder="443" inputmode="numeric" autocomplete="off">`, "", e.inbPort)}
       ${field("SNI", H`<input id="w-sni" class="in mono ${e.sni ? "bad" : ""}" value="${W.sni}" placeholder="www.cloudflare.com" autocomplete="off">`, "", e.sni)}</div>
-      ${field("回落目标", H`<input id="w-dest" class="in mono ${e.dest ? "bad" : ""}" value="${W.dest}" placeholder="域名:端口" autocomplete="off">`, "", e.dest)}</details>
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="w-cmd">${cmd2()}</div></div>`,
+      ${field("回落目标", H`<input id="w-dest" class="in mono ${e.dest ? "bad" : ""}" value="${W.dest}" placeholder="域名:端口" autocomplete="off">`, "", e.dest)}</details>`,
     H`<button type="button" class="btn ghost" id="w-back">${ic("back")}上一步</button><span style="flex:1"></span><button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" id="w-start">开始安装</button>`);
   const bind = (sel, key) => {
     const el = $(sel);
     el.addEventListener("input", () => {
       W[key] = el.value;
-      const c = $("#w-cmd");
-      if (c) c.textContent = cmd2();
       clearErr(el, key);
     });
   };
@@ -145,20 +129,12 @@ function fmtDur(ms) {
 function failExtra(stage, msg) {
   return H`<div class="sub2"><div class="raw">${msg}</div><div class="mt2">${HINTS[stage]}</div></div>`;
 }
-function cmd3() {
-  const t = W.task;
-  if (!t || !t.rows) return cmd1();
-  if (t.rows[3].st === "run" || t.rows[2].st === "done") return `mpx node install ${t.nodeId}`;
-  if (t.rows[1].st === "done") return cmd2();
-  return cmd1();
-}
 function render3() {
   const t = W.task, stages = t.rows.map(r => r.st);
   const keyFail = stages[0] === "fail", inbFail = stages[2] === "fail", coreFail = stages[3] === "fail";
   const st = keyFail ? ["fail", "", "", ""] : ["done", "done", "cur", ""];
   if (!keyFail && (inbFail || coreFail)) st[2] = "fail";
-  const body = H`<ol class="plist">${t.rows.map(r => row(r.st, r.t, r.du, r.extra))}</ol>
-    <div class="field mt"><label>等价命令</label><div class="cmd" id="w-cmd">${cmd3()}</div></div>`;
+  const body = H`<ol class="plist">${t.rows.map(r => row(r.st, r.t, r.du, r.extra))}</ol>`;
   let foot;
   if (keyFail) foot = H`<span style="flex:1"></span><button type="button" class="btn pri" id="w-back1">${ic("back")}返回修改</button>`;
   else if (inbFail) foot = H`<button type="button" class="btn ghost" id="w-del">删除刚加的节点</button><span style="flex:1"></span><button type="button" class="btn pri" id="w-retry">${ic("refresh")}重试这一步</button>`;
@@ -169,7 +145,7 @@ function render3() {
   if ($("#w-retry")) $("#w-retry").addEventListener("click", () => runFrom(t.stage));
   if ($("#w-del")) $("#w-del").addEventListener("click", () => {
     const nodeId = t.nodeId;
-    confirmBox({ title: `删除刚加的节点 ${W.name}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", cmd: `mpx node rm ${nodeId}`, ok: "删除节点", danger: true,
+    confirmBox({ title: `删除刚加的节点 ${W.name}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
       run: async () => { await api(`/api/nodes/${nodeId}`, { method: "DELETE" }); closeOverlays(); load(true, true); } });
   });
   if ($("#w-later")) $("#w-later").addEventListener("click", () => { closeOverlays(); location.hash = "nodes/" + t.nodeId; });

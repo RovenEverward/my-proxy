@@ -67,7 +67,7 @@ test("识别规则:add / move / rm / reset 与 CLI 一致,删除和恢复默认�
   await page.fill("#r-pat", "(?i)hiddify");
   await page.selectOption("#r-res", "clash-meta");
   await page.fill("#r-idx", "2");
-  await expect(page.locator("#modal-cmd")).toHaveText('mpx settings rules add "(?i)hiddify" --result clash-meta --index 2');
+  await expect(page.locator("#modal.open")).not.toContainText("mpx ");
   await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("已加规则 2");
   expect(normalize(env.takeLog(), [])).toEqual(add.reqs);
@@ -175,7 +175,7 @@ test("设备:列出、吊销要确认、这台不给吊销", async ({ page }) =>
   await expect(thisRow.locator("[data-act=dev-revoke]")).toHaveCount(0);
   // 吊销要走确认框,取消不发请求。
   await oldRow.locator("[data-act=dev-revoke]").click();
-  await expect(page.locator("#modal-cmd")).toHaveText("mpx device revoke 2");
+  await expect(page.locator("#modal.open")).toContainText("吊销设备 old-laptop?");
   await page.click("[data-act=modal-cancel]");
   expect(deletes).toEqual([]);
   await oldRow.locator("[data-act=dev-revoke]").click();
