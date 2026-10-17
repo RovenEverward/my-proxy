@@ -118,7 +118,7 @@ function plIncTags(p, d) {
     const name = planNodeName(nodeByID.get(nid)) || "节点";
     if (sel === "all") tags.push(H`<span class="tag">${name}</span>`);
     else {
-      const protos = sel.map(id => { const inb = (d.inbounds || []).find(i => i.id === id); return inb ? planInboundLabel(inb) : "入站"; }).join("、");
+      const protos = sel.map(id => { const inb = (d.inbounds || []).find(i => i.id === id); return inb ? planInboundLabel(inb) : "连接方式"; }).join("、");
       tags.push(H`<span class="tag">${name} · 仅 ${protos}</span>`);
     }
   }
@@ -246,12 +246,12 @@ function plNodes() {
   const occ = activeOccupancy(PLAN_CACHE.inbounds, PLAN_CACHE.users, PLAN_CACHE.plans);
   return H`<div class="pl-nodes ${off ? "off" : ""}">${PLAN_CACHE.nodes.map(n => {
     const sel = off ? "all" : e.sel[n.id], part = Array.isArray(sel), exp = PL_EXP.has(n.id);
-    const tail = !sel ? "" : part ? `已选 ${sel.length} / ${PLAN_CACHE.inbounds.filter(i => i.node_id === n.id).length} 个入站` : "含以后新加的入站";
+    const tail = !sel ? "" : part ? `已选 ${sel.length} / ${PLAN_CACHE.inbounds.filter(i => i.node_id === n.id).length} 个连接方式` : "含以后新加的连接方式";
     return H`<div class="pl-n ${exp ? "exp" : ""}">
       <label><input type="checkbox" data-node="${n.id}" ${sel ? raw("checked") : ""} ${part ? raw("data-ind=1") : ""} ${off || !can("PUT", "/api/plans") ? raw("disabled") : ""}><b>${planNodeName(n)}</b>${nodeSt(n)}</label>
-      <span class="tail">${tail}</span><button type="button" class="ib sm" data-act="pl-exp" data-id="${n.id}" aria-label="展开入站">${ic("arrow")}</button></div>
+      <span class="tail">${tail}</span><button type="button" class="ib sm" data-act="pl-exp" data-id="${n.id}" aria-label="展开连接方式">${ic("arrow")}</button></div>
       ${exp ? H`<div class="pl-ibs">${PLAN_CACHE.inbounds.filter(i => i.node_id === n.id).map(i => H`<label class="pl-i"><input type="checkbox" data-ib="${i.id}" ${sel === "all" || (part && sel.includes(i.id)) ? raw("checked") : ""} ${off || !can("PUT", "/api/plans") ? raw("disabled") : ""}><span>${planInboundLabel(i)}</span><span class="mono">:${i.port}</span>${plFullTag(i, occ)}</label>`)}
-        ${PLAN_CACHE.inbounds.some(i => i.node_id === n.id) ? "" : H`<div class="pl-i sub">这台节点还没有入站</div>`}</div>` : ""}`;
+        ${PLAN_CACHE.inbounds.some(i => i.node_id === n.id) ? "" : H`<div class="pl-i sub">这台节点还没有连接方式</div>`}</div>` : ""}`;
   })}</div>`;
 }
 
@@ -267,7 +267,7 @@ function plPreview(users) {
   const nodeSet = [...new Set(auth.map(i => i.node_id))];
   const why = i => { const n = PLAN_CACHE.nodes.find(x => x.id === i.node_id); if (n && n.draining) return "暂停分配"; if (i.max_users && occ[i.id] >= i.max_users) return "满员"; return ""; };
   const ulist = users.length ? H`<div class="pl-sub"><div class="pl-sec">在用的用户</div><div class="pl-users">${users.slice(0, 12).map(u => H`<span class="tag">${u.username}</span>`)}${users.length > 12 ? H`<span class="tag g">+${users.length - 12}</span>` : ""}</div></div>` : "";
-  return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${auth.length} 个入口` : ""}</small></h5>
+  return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${auth.length} 个节点` : ""}</small></h5>
     ${auth.length ? nodeSet.map(nid => { const n = PLAN_CACHE.nodes.find(x => x.id === nid); return H`<div class="pl-g"><b>${planNodeName(n) || "节点"}</b>${auth.filter(i => i.node_id === nid).map(i => { const w = why(i); return H`<div class="pl-e ${w ? "dim" : ""}"><span class="pp-mk ${w ? "" : "ok"}">${ic(w ? "ban" : "check")}</span>${planInflightName(n, i)}<span class="sp"></span><span class="why">${w}</span></div>`; })}</div>`; })
       : H`<div class="pl-none"><span class="ill">${ic("ban")}</span><b>无可用节点</b><span>${users.length ? `${planCountText(users.length, users.filter(u => u.status === "active").length)} 个用户将断开` : "挂上的用户什么都用不了"}</span></div>`}
     ${ulist}</div>`;

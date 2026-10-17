@@ -8,7 +8,7 @@ Object.assign(ICONS, {
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   dash: '<path d="M6 12h12"/>',
 });
-const X = ic("x"), AN = ["连接", "入站", "安装", "完成"];
+const X = ic("x"), AN = ["连接", "连接方式", "安装", "完成"];
 // 向导状态。pw 只留在内存和密码框里,只随请求体发出,不拼进其他文字,也不落盘。
 const W = {};
 function steps(st) {
@@ -75,7 +75,7 @@ function validate2() {
 function render2() {
   const e = W.errs || {};
   drawer(["done", "cur", "", ""], H`
-    <p class="lead">给这台节点建一个入站。默认值与首次安装时建的入站一致。</p>
+    <p class="lead">给这台节点加一条连接方式。默认值与首次安装时建的一致。</p>
     <div class="opts">
       <div class="opt ${W.preset === "reality" ? "on" : ""}" id="w-opt-reality"><span class="rd"></span><div><b>REALITY · 443（推荐）</b><span class="h">VLESS + TCP + REALITY，SNI 和回落目标 www.cloudflare.com</span></div></div>
       <div class="opt ${W.preset === "custom" ? "on" : ""}" id="w-opt-custom"><span class="rd"></span><div><b>自定义</b><span class="h">在下面的高级里改端口、SNI 和回落目标</span></div></div>
@@ -109,12 +109,12 @@ function render2() {
 function row(st, t, du, extraRaw) {
   return H`<li class="${st}"><span class="pi">${st === "run" ? raw('<span class="spin"></span>') : st === "done" ? ic("check") : st === "fail" ? X : st === "skip" ? ic("dash") : raw("<i></i>")}</span><span class="t">${t}</span><span class="du">${du || ""}</span>${extraRaw || ""}</li>`;
 }
-const ROW_TITLES = ["登录并装公钥", "登记节点", "建入站和入口", "装核心并应用配置"];
+const ROW_TITLES = ["登录并装公钥", "登记节点", "建连接方式和对外地址", "装核心并应用配置"];
 const HINTS = [
   "密码不对，或这台机器关了密码登录。节点还没有建，不用回退。",
   "",
   "节点已经建了，公钥也在上面，重试不再需要密码。",
-  "节点、入站、入口都保留。常见原因是机器暂时下不了包，过一会儿重试即可。",
+  "节点、连接方式、对外地址都保留。常见原因是机器暂时下不了包，过一会儿重试即可。",
 ];
 function newTask() {
   return { stage: 0, nodeId: null, inboundId: null, rows: ROW_TITLES.map(t => ({ st: "wait", t, du: "", extra: null })), err: null };
@@ -153,7 +153,7 @@ function render3() {
   if ($("#w-port")) $("#w-port").addEventListener("click", () => { W.preset = "custom"; W.errs = {}; W.step = 2; render2(); });
   if ($("#w-del")) $("#w-del").addEventListener("click", () => {
     const nodeId = t.nodeId;
-    confirmBox({ title: `删除刚加的节点 ${W.display || W.address}？`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
+    confirmBox({ title: `删除刚加的节点 ${W.display || W.address}？`, text: "节点、它的连接方式和对外地址一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
       run: async () => { await api(`/api/nodes/${nodeId}`, { method: "DELETE" }); closeOverlays(); load(true, true); } });
   });
   if ($("#w-later")) $("#w-later").addEventListener("click", () => { closeOverlays(); location.hash = "nodes/" + t.nodeId; });
@@ -184,7 +184,7 @@ async function runFrom(stage) {
       if (!t.inboundId) {
         // 建入站前先看端口:默认的 443 被别的程序占着就换一个空闲的;自己填的端口被占就停下说清楚。
         const pick = await pickInboundPort(t.nodeId, +W.inbPort, W.preset !== "custom");
-        if (pick.port !== +W.inbPort) { t.rows[2].t = `建入站：${W.inbPort} 端口已被 ${pick.owner} 占用，改用 ${pick.port}`; W.inbPort = pick.port; }
+        if (pick.port !== +W.inbPort) { t.rows[2].t = `建连接方式：${W.inbPort} 端口已被 ${pick.owner} 占用，改用 ${pick.port}`; W.inbPort = pick.port; }
         const inb = await api("/api/inbounds", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: 0, node_id: t.nodeId, tag: "", protocol: "vless", listen: "", port: +W.inbPort, network: "tcp", security: "reality", sni: W.sni, reality_dest: W.dest, wg_mtu: 1420, flow: "xtls-rprx-vision" }) });
         t.inboundId = inb.id;
@@ -228,7 +228,7 @@ async function render4() {
   drawer(["done", "done", "done", "cur"], H`
     <div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>${display || address} 已就绪</h3><p>${address} · xray 已安装，配置已应用</p></div></div>
     <dl class="kvw"><dt>显示名</dt><dd>${display || "—"} <span class="sub">· ${locateNote || "按 IP 自动识别，可在节点页改"}</span></dd>
-    <dt>入站</dt><dd class="mono">REALITY · ${W.inbPort} · 1 个入口</dd>
+    <dt>连接方式</dt><dd class="mono">REALITY · ${W.inbPort} · 1 个对外地址</dd>
     <dt>进了哪些订阅</dt><dd>${subs}</dd></dl>
     <div class="callout stone mb">${ic("info")}<div><b>包含全部节点的套餐会自动包含它。</b>只给部分节点的套餐不会自动加，需要的话到套餐页勾上。</div></div>`,
     H`<button type="button" class="btn" id="w-again">${ic("plus")}再加一台</button><span style="flex:1"></span><button type="button" class="btn pri" id="w-view">查看节点</button>`);

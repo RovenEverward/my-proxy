@@ -69,8 +69,8 @@ function userPlanCell(u, d) {
   const p = plans.find(x => x.id === u.plan_id);
   if (!p) {
     const n = (u.inbound_ids || []).length;
-    return n ? H`<span class="pl-ptag"><span class="tag g" title="单独授权的 ${n} 个入站">单独授权 · ${n} 个入站</span></span>`
-             : H`<span class="sub">全部入站</span>`;
+    return n ? H`<span class="pl-ptag"><span class="tag g" title="单独授权的 ${n} 个连接方式">单独授权 · ${n} 个连接方式</span></span>`
+             : H`<span class="sub">全部连接方式</span>`;
   }
   const extra = extrasOf(u, p, inbounds);
   return H`<span class="pl-ptag"><span class="tag ${p.is_default ? "g" : ""}">${p.name}</span>${extra.length ? H`<span class="sub" title="额外授权：${extra.map(i => planInboundLabel(i)).join("、")}">+${extra.length}</span>` : ""}</span>`;
@@ -89,7 +89,7 @@ function inboundDisplay(id) { return planInboundLabel((PLAN_CACHE.inbounds || []
 // userPlanDetail 是用户详情里的套餐描述。
 function userPlanDetail(u) {
   const p = (PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
-  if (!p) return (u.inbound_ids || []).length ? H`单独授权 · ${u.inbound_ids.length} 个入站` : H`全部入站`;
+  if (!p) return (u.inbound_ids || []).length ? H`单独授权 · ${u.inbound_ids.length} 个连接方式` : H`全部连接方式`;
   return p.all_nodes ? H`${p.name} · 全部节点` : H`${p.name} · ${(p.node_ids || []).length} 个节点`;
 }
 
@@ -270,7 +270,7 @@ async function userEditor(name) {
     <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD，留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
     <details class="fmts more" id="f-more"><summary>${ic("arrow", "car")}更多选项<span class="sub">清零周期、额外授权、备注</span></summary><div class="more-b">
     <div class="field"><label>流量重置</label><div class="chips">${Object.entries(RESET).map(([k, t]) => H`<label class="chip"><input type="radio" name="reset" value="${k}" ${(u.reset_strategy || "none") === k ? raw("checked") : ""}>${t}</label>`)}</div></div>
-    <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${inbTitle(i, null)}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
+    <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${inbTitle(i, null)}</label>`) : H`<span class="sub">还没有连接方式</span>`}</div><span class="h" id="f-inb-h"></span></div>
     <div class="field"><label for="f-note">备注</label><input class="in" id="f-note" name="note" value="${u.note || ""}" placeholder="可选"></div>
     ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 先不启用(建好后手动启用)</label>` : ""}</div></details>
     <div class="err" id="f-err" role="alert"></div>
@@ -308,9 +308,9 @@ async function userEditor(name) {
     if (isNew) { $("#f-why").hidden = !empty; $("#f-save").disabled = empty; }
     const label = $("#f-inb-label"), hint = $("#f-inb-h");
     if (label && hint) {
-      if (!p) { label.textContent = "可用入站"; hint.textContent = "一个都不选 = 全部入站，含以后新加的"; }
+      if (!p) { label.textContent = "可用连接方式"; hint.textContent = "一个都不选 = 全部连接方式，含以后新加的"; }
       else if (allNodes) { label.textContent = "额外授权"; hint.textContent = "全部节点套餐不需要额外授权"; }
-      else { label.textContent = "额外授权(可选)"; hint.textContent = "在套餐之外再给这个用户开放的入站"; }
+      else { label.textContent = "额外授权(可选)"; hint.textContent = "在套餐之外再给这个用户开放的连接方式"; }
     }
   };
   form.addEventListener("input", sync); form.addEventListener("change", sync); sync();

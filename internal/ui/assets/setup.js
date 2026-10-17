@@ -60,7 +60,7 @@ function renderWelcome() {
   S.step = 1;
   setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-light.svg" alt=""><img class="mk-d" src="/mark-dark.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
   <p class="lead">一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
-  <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、入站和入口</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
+  <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、连接方式和对外地址</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
   <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。已经有控制面？选右边的「接入已有控制面」。</p></div>`,
   H`<span class="sub" style="flex:1">${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换到已有的控制面</a>` : ""}</span>${btn("接入已有控制面", "", "lock", "s-connect")}${btn("首次安装（新服务器）", "pri", "", "s-start")}`);
@@ -268,7 +268,7 @@ function applyPortProbe(p) {
   }
   if (p.inbound_busy && p.inbound_suggest) {
     if (S.portProbe !== p) S.inboundPort = +p.inbound_suggest;
-    notes.push(`代理入站默认用的 ${p.inbound_port} 端口已被 ${p.inbound_busy} 占用，已改用 ${p.inbound_suggest}。`);
+    notes.push(`连接方式默认用的 ${p.inbound_port} 端口已被 ${p.inbound_busy} 占用，已改用 ${p.inbound_suggest}。`);
   }
   S.portProbe = p;
   return notes;
@@ -307,7 +307,7 @@ function renderSettings() {
   <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
   ${field("订阅地址", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
   <details class="adv"><summary>高级</summary>
-   ${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个入站用的 REALITY SNI")}</details>
+   ${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个连接方式用的 REALITY SNI")}</details>
   `,
   H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("开始安装", "pri", "", "s-run")}`);
   $("#s-username").value = S.username;

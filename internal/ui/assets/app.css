@@ -50,7 +50,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 /* main */
 /* 外层(html/body)一律不滚:内容区 main 自己滚。100vh 加边距、标题栏会超出视口,WebView2 就会在窗口最右边出一条整页高的系统滚动条。 */
 main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14px;height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:14px 14px 0 0;background:color-mix(in srgb,var(--canvas) 84%,transparent);backdrop-filter:blur(12px);--app-region:drag}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:14px 14px 0 0;background:var(--canvas);--app-region:drag}
 .crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.crumb b{color:var(--ink);font-weight:560}.crumb i{font-style:normal;color:var(--faint)}
 .top .sp{flex:1}
 /* 拖拽区里能点的东西保持可点(浏览器里 --app-region 没有意义,外观不变)。 */
@@ -76,7 +76,7 @@ main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14p
 [aria-disabled=true]:active{transform:none}
 [aria-disabled=true][data-tip]{position:relative}
 [aria-disabled=true][data-tip]:hover::after,[aria-disabled=true][data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);z-index:60;padding:5px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:12px;font-weight:400;line-height:1.4;white-space:nowrap;box-shadow:0 4px 14px #0003}
-.btn.danger{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
+.btn.danger{background:var(--bad);color:#fff}.btn.danger:hover,.btn.danger:focus-visible{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
 .btn.sm{height:28px;padding:0 10px;font-size:12.5px}
 /* cards */
 .card{background:var(--panel);border-radius:12px}
@@ -265,7 +265,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .mt0{margin-top:0}.w140{width:140px}.w180{width:180px}.w200{width:200px}.w220{width:220px}
 .rp-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}.rp-bar .sp{flex:1}
 .rp-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}.rp-side{position:sticky;top:66px}
-.rp-row{display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 6px;border-radius:8px;min-height:46px}.rp-row:hover{background:var(--hover)}
+.rp-row{display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 6px;border-radius:8px;min-height:46px}.rp-row:nth-child(even){background:color-mix(in srgb,var(--ink) 4%,transparent)}.rp-row:hover{background:var(--hover)}
 .rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--ink) 10%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
 .rp-row.editing{background:var(--canvas)}.rp-row.final{background:var(--canvas)}
 .rp-grip{width:12px;color:var(--faint);font-size:11px;letter-spacing:-2px}.rp-n{width:22px;text-align:right;font:500 11.5px var(--mono);color:var(--faint)}
