@@ -21,6 +21,8 @@ const PROTO_NAMES = { vless: "VLESS", vmess: "VMess", trojan: "Trojan", shadowso
 const NET_NAMES = { ws: "WS", grpc: "gRPC", xhttp: "XHTTP", splithttp: "SplitHTTP", httpupgrade: "HTTPUpgrade" };
 const inbAutoTag = i => !i.tag || i.tag === `${i.protocol}-${i.port}`;
 const inbKind = i => [PROTO_NAMES[i.protocol] || i.protocol, NET_NAMES[i.network], i.security === "reality" ? "Reality" : i.security === "tls" ? "TLS" : ""].filter(Boolean).join(" ");
+// 列表行里的短标签(设计稿只给 64px):Reality / WS / gRPC…,没有传输层名时用协议名;全称放在 title 里。
+const inbShortKind = i => i.security === "reality" ? "Reality" : NET_NAMES[i.network] || PROTO_NAMES[i.protocol] || i.protocol;
 const inbReadable = (i, node) => `${node ? nodeLabel(node) + " · " : ""}${inbKind(i)} :${i.port}`;
 const inbTitle = (i, node) => inbAutoTag(i) ? inbReadable(i, node) : inbTag(i);
 // 订阅里的名字:控制面按订阅同一套规则算好(sub_name);没起名的跟随节点显示名。
@@ -146,7 +148,7 @@ function inbRow(i, hs, n) {
   const baseName = i.sub_name || nodeLabel(n);
   return H`<div class="cx ${open ? "open" : ""}">
   <div class="cx-row" tabindex="0" data-act="conn-edit" data-id="${i.id}">
-    <span class="cx-p"><span class="ptag">${inbKind(i)}</span></span>
+    <span class="cx-p"><span class="ptag" title="${inbKind(i)}">${inbShortKind(i)}</span></span>
     <span class="cx-port mono">:${i.port}</span>
     <span class="cx-name">${inbCustom(name, customName(h))}${many ? H`<button type="button" class="cx-more" data-act="conn-exp" data-id="${i.id}" aria-expanded="${open}">${hs.length} 个入口${ic("down")}</button>` : ""}</span>
     <span class="cx-addr">${inbCustom(addr, customAddr(h), true)}</span>
@@ -303,9 +305,11 @@ async function inboundEditor(id, presetNode) {
 /* ---------- 编辑连接:名称、地址在顶上,入站细节收进「高级」 ---------- */
 async function connectionEditor(inbID) {
   let inb, hosts, nodes;
+  const seq = ++CONN_OPEN_SEQ;
   try {
     [inb, hosts, nodes] = await Promise.all([api(inbPath(inbID)), api(inbPath(inbID) + "/hosts"), api("/api/nodes")]);
   } catch (e) { toast(e.message, true); return; }
+  if (seq !== CONN_OPEN_SEQ) return;
   const n = nodes.find(x => x.id === inb.node_id) || { address: "", id: inb.node_id };
   const h = firstHost(hosts), base = asModelInbound(inb);
   const defName = nameOfHost(inb, h, n);
@@ -379,7 +383,7 @@ function drawAddConnection() {
   const want = PROTO_DEF[INB_ADD.proto], auto = inbFreePort(node.id, want);
   if (!INB_ADD.portTouched) INB_ADD.port = auto;
   const opt = (k, t, h, rec) => H`<div class="opt pcard ${INB_ADD.proto === k ? "on" : ""}" data-act="conn-add-proto" data-k="${k}" role="radio" aria-checked="${INB_ADD.proto === k}" tabindex="0"><span class="rd"></span><div><b>${t}${rec ? H`<span class="rec">推荐</span>` : ""}</b><span class="h">${h}</span></div></div>`;
-  openDrawer(H`<form id="add-form" novalidate><div class="dh"><div class="dt"><h2>添加连接</h2><span class="sub">加好后会自动建一个入口，出现在订阅里</span></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  openDrawer(H`<form id="add-form" novalidate><div class="dh"><div class="dt"><h2>添加连接</h2><span class="sub">加好后会出现在订阅里</span></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     <div class="field"><label for="a-node">节点</label><select class="in" id="a-node">${nodes.map(x => H`<option value="${x.id}" ${x.id === node.id ? raw("selected") : ""}>${nodeLabel(x)}　${x.address}</option>`)}</select></div>
     <div class="field"><label>协议</label><div class="opts">${opt("reality", "VLESS Reality", "不需要域名和证书，伪装成访问普通网站，最省心", true)}${opt("ws", "VLESS WS", "可以套 CDN 隐藏节点地址，需要一个域名")}</div></div>
@@ -422,9 +426,14 @@ function drawAddConnection() {
 }
 
 /* ---------- 入口(host)编辑器 ---------- */
+// 抽屉要先拉数据再打开:连点两下或在一个抽屉里打开另一个时,只让最后一次打开的生效,
+// 先发出去的那个请求回来后不再把抽屉换掉。
+let CONN_OPEN_SEQ = 0;
 async function hostEditor(inbID, hostID) {
   let hosts = [];
+  const seq = ++CONN_OPEN_SEQ;
   try { hosts = await api(inbPath(inbID) + "/hosts"); } catch (e) { toast(e.message, true); return; }
+  if (seq !== CONN_OPEN_SEQ) return;
   const found = hostID ? hosts.find(h => h.id === hostID) : null;
   if (hostID && !found) { toast(`入站 ${inbID} 上没有 id 为 ${hostID} 的对外入口`, true); return; }
   const isNew = !found, h = found ? asModelHost(found) : { inbound_id: inbID, remark: "", address: "", port: 0 };
@@ -489,7 +498,12 @@ const CONN_ACTS = {
     drawAddConnection();
   },
   "conn-other": d => inboundEditor(null, +d.node || 0),
-  "conn-edit": (d, el, ev) => { if (ev && ev.target.closest("button,.cx-more,.menu,.cx-warn")) return; connectionEditor(+d.id); },
+  "conn-edit": (d, el, ev) => {
+    // 整行可点;点到行里别的按钮(展开入口、更多、改回)不算。行尾的铅笔按钮本身就是 conn-edit,要放行。
+    const b = ev && ev.target.closest("button,.cx-more,.menu,.cx-warn");
+    if (b && b !== el) return;
+    connectionEditor(+d.id);
+  },
   "conn-menu": (d, el, ev) => { ev.stopPropagation(); INB_MENU = INB_MENU === +d.id ? null : +d.id; paint(); },
   "conn-exp": (d, el, ev) => { ev.stopPropagation(); const id = +d.id; INB_EXP.has(id) ? INB_EXP.delete(id) : INB_EXP.add(id); paint(); },
   "conn-add-proto": d => { INB_ADD.proto = d.k; INB_ADD.portTouched = false; drawAddConnection(); },

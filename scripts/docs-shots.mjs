@@ -224,15 +224,15 @@ const SHOTS = [
     },
   },
   { name: "rules", run: async (page, env) => { await page.goto(env.origin + "/#rules"); } },
+  { name: "inbounds", run: async (page, env) => { await page.goto(env.origin + "/#inbounds"); await page.waitForSelector(".cx-row"); } },
   {
-    // 添加节点向导第 1 步「连接」:填好地址与节点名,停在提交前。
+    // 添加节点向导第 1 步「连接」:填好地址,停在提交前(v0.9.4 起节点名由向导自动起)。
     name: "node-wizard",
     run: async (page, env) => {
       await page.goto(env.origin + "/#nodes");
       await page.click('button[data-act="node-wizard"]');
       await page.waitForSelector("#w-address");
       await page.fill("#w-address", "203.0.113.40");
-      await page.fill("#w-name", "singapore-a");
       await page.waitForTimeout(350); // 等抽屉滑入
     },
   },

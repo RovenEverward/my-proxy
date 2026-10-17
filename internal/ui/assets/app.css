@@ -343,6 +343,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .cx-row:hover,.cx-row:focus-visible,.cx-sub:hover{background:var(--hover)}.cx-row:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
 .cx.open>.cx-row{background:var(--hover)}
 .ptag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:99px;background:var(--stone);color:var(--ink2);font-size:11.5px;font-weight:540;white-space:nowrap}
+.cx-p{min-width:0;display:flex;align-items:center}.cx-p .ptag{max-width:100%;overflow:hidden;text-overflow:ellipsis;display:block;line-height:22px}
 .ptag.lite{background:none;color:var(--muted);padding:0;font-weight:450}
 .cx-port{color:var(--ink2);font-size:12.5px}
 .cx-name{display:flex;align-items:center;gap:10px;min-width:0}

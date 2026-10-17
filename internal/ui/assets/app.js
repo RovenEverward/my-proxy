@@ -485,8 +485,12 @@ function inlineMd(t) {
 }
 
 /* ---------- 抽屉、确认框、提示 ---------- */
-function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
+// 抽屉在下一帧才加 open(让过渡动画生效)。期间如果已经关掉了,这一帧不能再把它和
+// 遮罩打开,否则会留下一层没有抽屉的遮罩挡住整页。
+let DRAWER_RAF = 0;
+function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
+  cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
   $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
   updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }

@@ -53,13 +53,13 @@ test("默认值灰色、自定义带铅笔;只有多入口才可展开", async (
   await goto(page);
   // 东京 Reality:没有入口 → 名称跟随节点、地址用节点地址。
   const rows = group(page, "东京 A").locator(".cx-row");
-  const plain = rows.filter({ hasText: "VLESS Reality" });
+  const plain = rows.filter({ has: page.locator('.ptag[title="VLESS Reality"]') });
   await expect(plain.locator(".cx-name .cx-v")).not.toHaveClass(/\bon\b/);
   await expect(plain.locator(".cx-addr .cx-v")).not.toHaveClass(/\bon\b/);
   await expect(plain.locator(".cx-name .cx-pen")).toHaveCount(0);
   await expect(plain.locator(".cx-more")).toHaveCount(0);
   // WS:第一个入口自定义了名字和地址,且有两个入口。
-  const ws = rows.filter({ hasText: "VLESS WS" });
+  const ws = rows.filter({ has: page.locator('.ptag[title="VLESS WS"]') });
   // 「N 个入口」展开的是行下面的一段(.cx-subs 与 .cx-row 平级,不在行里面)。
   const wsCard = group(page, "东京 A").locator(".cx", { hasText: "2 个入口" });
   await expect(ws.locator(".cx-name .cx-v")).toHaveClass(/on/);

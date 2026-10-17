@@ -21,6 +21,19 @@ async function openNode(page, id) {
   await expect(page.locator(".ph").first()).toContainText(id === 2 ? "ui-n" : "ui-rm");
 }
 
+// 打开某条连接的编辑抽屉并展开「高级」。保存后列表会整页重画,点到正在被换掉的行
+// 会落空。
+async function openConnEdit(page, id) {
+  await expect(page.locator("#drawer.open")).toHaveCount(0);
+  // 只点一次;页面上一直有轮询,不能等 networkidle。连点或旧请求晚回来时由 conn.js 只认最后一次打开。
+  // 点行尾的铅笔:行中间可能正好是「N 个入口」展开按钮。
+  const pen = page.locator(`.cx-row[data-id='${id}'] button[data-act=conn-edit]`);
+  await expect(pen).toBeVisible();
+  await pen.click();
+  await expect(page.locator("#drawer.open #conn-form")).toBeVisible({ timeout: 20000 });
+  await page.click("#conn-form details.adv2 > summary");
+}
+
 test("添加节点:与 mpx node add 一致", async ({ page }) => {
   await login(page, env);
   const names = ["cli-new", "ui-new"];
@@ -225,8 +238,7 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
 
   await page.goto(env.origin + "/#inbounds");
   // 入口按钮在编辑连接抽屉的「高级」里。
-  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
-  await page.click("#conn-form details.adv2 > summary");
+  await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-new][data-inb='2']");
   await page.fill("#h-remark", "直连");
   await page.fill("#h-port", "8443");
@@ -236,8 +248,7 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await expect(page.locator(".toast")).toContainText("已创建入口「直连」");
   expect(take([], opt)).toEqual(addCLI);
 
-  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
-  await page.click("#conn-form details.adv2 > summary");
+  await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「入口」");
   await page.fill("#h-address", "");
@@ -247,8 +258,7 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await expect(page.locator(".toast")).toContainText("已更新入口「备用」");
   expect(take([], opt)).toEqual(editCLI);
 
-  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
-  await page.click("#conn-form details.adv2 > summary");
+  await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
   await page.click("[data-act=conn-host-rm]");

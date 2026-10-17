@@ -19,10 +19,12 @@ MPX 桌面窗口左侧是导航，分「管理」和「配置」两组。本页�
 | 用户 | 添加、编辑、续期 30 天、重置流量、停用 / 启用、吊销订阅、删除；按状态和套餐筛选；查看订阅链接 | [添加用户并分发订阅](/guides/add-users) |
 | 套餐 | 新建、编辑、删除套餐；查看每个套餐的节点和人数 | [用套餐分配节点](/guides/plans) |
 | 节点 | 添加节点向导；现场检查、下发配置、排水、体检、安装核心、在线用户、配置预览、删除；批量识别显示名 | [添加节点](/guides/add-nodes) |
-| 入站与入口 | 入站（节点上监听的协议和端口）和对外入口（客户端连接用的地址）的增删改 | [控制面与节点](/concepts/architecture) |
+| 入站与入口 | 按节点分组列出每条连接（协议、端口、订阅里的名称和地址）；添加连接、再加一个入口、编辑都在右侧抽屉里；名称和节点所在地对不上时提醒 | [控制面与节点](/concepts/architecture) |
 | 分流规则 | 规则的添加、拖动排序、停用、删除；「其他全部」的去向；某个用户的专属规则；内置规则组；策略组；测试一个网址 | [设置分流规则](/guides/routing) |
 | 自检 | 逐项检查控制面、节点和订阅格式 | [用自检排查](/guides/troubleshoot) |
 | 设置 | 通用、识别规则、模板、设备、备份 | [订阅设置](/reference/settings) · [在多台设备上管理](/guides/devices) · [备份控制面](/guides/backup) |
+
+<figure class="shot"><img class="only-light" src="/ui/inbounds.png" width="1280" height="820" alt="入站与入口页：按节点分组列出每条连接"><img class="only-dark" src="/ui/inbounds-dark.png" width="1280" height="820" alt="入站与入口页：按节点分组列出每条连接（深色）"><figcaption>入站与入口</figcaption></figure>
 
 还没有接入控制面时，窗口显示首次安装向导，可以装一台新服务器，或接入已有控制面。见[快速开始](/tutorial/quickstart)。
 
