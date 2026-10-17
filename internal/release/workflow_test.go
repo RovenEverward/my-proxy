@@ -146,6 +146,9 @@ func TestReleaseDupCheckCaseInsensitive(t *testing.T) {
 	os.Mkdir(dist, 0o755)
 	os.WriteFile(filepath.Join(dist, "MPX-macOS.dmg"), []byte("a"), 0o644)
 	os.WriteFile(filepath.Join(dist, "mpx-macos.dmg"), []byte("b"), 0o644)
+	if ents, _ := os.ReadDir(dist); len(ents) < 2 {
+		t.Skip("文件系统不分大小写(macOS 默认),造不出两个只差大小写的文件")
+	}
 	if out, err := runScript(t, root, stepRun(t, publishSteps(t), "检查附件名不分大小写也不重复")); err == nil {
 		t.Fatalf("大小写不同的同名附件应当被拦下:\n%s", out)
 	}
