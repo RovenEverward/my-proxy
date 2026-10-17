@@ -195,13 +195,15 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   await env.cli("inbound", "edit", "1", "--port", "9443", "--sni", "www.example.com", "--max-users", "10", "--mux");
   const fromCLI = take(names, opt);
   await page.goto(env.origin + "/#inbounds");
-  await page.click("[data-act=inb-edit][data-id='2']");
+  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
+  // 入站字段收在编辑连接抽屉的「高级」里。
+  await page.click("#conn-form details.adv2 > summary");
   await page.fill("#i-port", "9443");
   await page.fill("#i-sni", "www.example.com");
   await page.click("details.adv summary");
   await page.fill("#i-max_users", "10");
   await page.check("input[name=mux]");
-  await expect(page.locator("#inb-form")).not.toContainText("mpx ");
+  await expect(page.locator("#conn-form")).not.toContainText("mpx ");
   await page.click("#i-save");
   // 节点显示名里的国旗也换成了 SVG;toast 文本里只剩城市与字母。
   // 国旗换成了 img,文本里旗后留一个空格当间距,所以从城市名开始比。
@@ -222,7 +224,10 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   const rmCLI = take([], opt);
 
   await page.goto(env.origin + "/#inbounds");
-  await page.click("[data-act=host-new][data-inb='2']");
+  // 入口按钮在编辑连接抽屉的「高级」里。
+  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
+  await page.click("#conn-form details.adv2 > summary");
+  await page.click("[data-act=conn-host-new][data-inb='2']");
   await page.fill("#h-remark", "直连");
   await page.fill("#h-port", "8443");
   await page.fill("#h-alpn", "h2,http/1.1");
@@ -231,7 +236,9 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await expect(page.locator(".toast")).toContainText("已创建入口「直连」");
   expect(take([], opt)).toEqual(addCLI);
 
-  await page.click("[data-act=host-edit][data-id='2']");
+  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
+  await page.click("#conn-form details.adv2 > summary");
+  await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「入口」");
   await page.fill("#h-address", "");
   await page.fill("#h-remark", "备用");
@@ -240,12 +247,14 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await expect(page.locator(".toast")).toContainText("已更新入口「备用」");
   expect(take([], opt)).toEqual(editCLI);
 
-  await page.click("[data-act=host-edit][data-id='2']");
+  await page.click(".cx-row[data-act=conn-edit][data-id='2']");
+  await page.click("#conn-form details.adv2 > summary");
+  await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
-  await page.click("[data-act=host-rm]");
+  await page.click("[data-act=conn-host-rm]");
   await page.click("[data-act=modal-cancel]");
   expect(env.takeLog()).toEqual([]);
-  await page.click("[data-act=host-rm]");
+  await page.click("[data-act=conn-host-rm]");
   await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("已删除入口「备用」");
   expect(take([], opt)).toEqual(rmCLI);
@@ -258,8 +267,9 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await env.cli("inbound", "rm", "3");
   const inbCLI = take([], opt);
   await page.goto(env.origin + "/#inbounds");
-  await page.click("[data-act=inb-edit][data-id='4']");
-  await page.click("[data-act=inb-rm]");
+  await page.click(".cx-row[data-act=conn-edit][data-id='4']");
+  await page.click("#conn-form details.adv2 > summary");
+  await page.click("[data-act=conn-rm]");
   await expect(page.locator("#okb")).toBeDisabled();
   await page.fill("#typed", "t-2-2000");
   await page.click("#okb");
