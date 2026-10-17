@@ -166,7 +166,8 @@ else
     curl -sf -H "$AUTH" -H 'Content-Type: application/json' -X PUT "$API/api/nodes/$nid/metadata" \
       -d "{\"region\":\"$3\",\"city\":\"$4\"}" >/dev/null
   }
-  add_node jp-1 203.0.113.10 JP 东京 && add_node us-1 203.0.113.20 US 洛杉矶 && add_node de-1 203.0.113.30 DE 法兰克福
+  # 城市名写成 JSON 的 \u 转义:Windows 上 Git Bash 把中文参数交给原生 curl 时会变成问号。
+  add_node jp-1 203.0.113.10 JP '\u4e1c\u4eac' && add_node us-1 203.0.113.20 US '\u6d1b\u6749\u77f6' && add_node de-1 203.0.113.30 DE '\u6cd5\u5170\u514b\u798f'
   if [ $? -ne 0 ]; then
     echo "登记示例节点失败" >&2; cat "$TMP/node.json" >&2 2>/dev/null; FAIL=1
   else
