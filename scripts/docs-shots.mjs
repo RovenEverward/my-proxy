@@ -142,6 +142,43 @@ async function polish(page) {
   });
 }
 
+// 自检报告的示例:13 项,12 过 1 警,文案对齐 internal/server/doctor.go 的拼法,
+// 数字与路径都是示例。采样一项带时间戳,按安装路由那一刻算。
+const doctorReport = () => {
+  const ok = (name, detail) => ({ name, status: "ok", detail });
+  const latest = new Date(Date.now() - 35e3).toISOString();
+  return { checks: [
+    ok("数据库", "能读能写"),
+    ok("后台任务", "上一轮 1.4s,距现在 6s"),
+    ok("节点 tokyo-a", "可达,服务在跑(v26.3.27),配置没有漂移,1 张证书都不临期"),
+    ok("节点 tokyo-b", "可达,服务在跑(v26.3.27),配置没有漂移,1 张证书都不临期"),
+    { name: "节点 frankfurt-a", status: "warn", detail: "证书 /etc/letsencrypt/live/node.example.com/fullchain.pem 还有 14 天到期", hint: "这一批不做自动续期,提前安排换证书" },
+    ok("节点 sanjose-a", "可达,服务在跑(v26.3.27),配置没有漂移"),
+    ok("订阅 links", "渲染出 412 字节"),
+    ok("订阅 base64-links", "渲染出 556 字节"),
+    ok("订阅 clash", "渲染出 1284 字节"),
+    ok("订阅 clash-meta", "渲染出 1316 字节"),
+    ok("订阅 sing-box", "渲染出 2410 字节"),
+    ok("订阅 xray", "渲染出 1876 字节"),
+    ok("流量采样", `9137 行,最近一条在 ${latest}(35s 前)`),
+  ] };
+};
+
+// 更新弹窗的示例结论:桌面程序与控制面 v0.9.0 → v0.9.1 可升级,四个节点的
+// xray 都已在推荐版本上;notes 是 v0.9.1 的发版说明,弹窗里按 Markdown 渲染。
+const UPDATE_INFO = {
+  desktop: true,
+  cli: { current: "v0.9.0", latest: "v0.9.1", available: true, release_url: "" },
+  control: { current: "v0.9.0", latest: "v0.9.1", available: true, release_url: "" },
+  nodes: [
+    { name: "tokyo-a", core: "xray", current: "26.3.27", target: "26.3.27" },
+    { name: "tokyo-b", core: "xray", current: "26.3.27", target: "26.3.27" },
+    { name: "frankfurt-a", core: "xray", current: "26.3.27", target: "26.3.27" },
+    { name: "sanjose-a", core: "xray", current: "26.3.27", target: "26.3.27" },
+  ],
+  notes: "### 新增\n- 设置 → 通用 显示**当前控制面**与证书指纹\n- 配置档列表可「添加控制面…」\n\n### 修复\n- 预发布版不再误显示为「已是最新」\n- 安装脚本补跑时沿用 `mpx.service` 的监听地址",
+};
+
 const SHOTS = [
   {
     name: "overview",
@@ -183,6 +220,81 @@ const SHOTS = [
     },
   },
   { name: "rules", run: async (page, env) => { await page.goto(env.origin + "/#rules"); } },
+  {
+    // 添加节点向导第 1 步「连接」:填好地址与节点名,停在提交前。
+    name: "node-wizard",
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#nodes");
+      await page.click('button[data-act="node-wizard"]');
+      await page.waitForSelector("#w-address");
+      await page.fill("#w-address", "203.0.113.40");
+      await page.fill("#w-name", "singapore-a");
+      await page.waitForTimeout(350); // 等抽屉滑入
+    },
+  },
+  {
+    // 节点详情 tokyo-a:巡检状态和在线用户都要现场连节点,测试环境拿不到,
+    // 路由补示例(核心 26.3.27、配置一致、证书剩 47 天、在线用户 2),再点
+    // 「查看」把在线用户抽屉摆开。
+    name: "node-detail",
+    routes: async (page, env) => {
+      const r = await cpFetch(env.cpURL + "/api/nodes", { headers: { Authorization: "Bearer " + env.token } });
+      if (!r.ok) throw new Error("GET /api/nodes -> " + r.status);
+      const id = (await r.json()).find(n => n.name === "tokyo-a")?.id;
+      if (!id) throw new Error("没找到节点 tokyo-a");
+      env.tokyoID = id;
+      const hash = "9f2c7a51e8b4d06c3a1f5e9728b4d06c3a1f5e97";
+      await page.route(`**/api/nodes/${id}`, async r => {
+        const res = await r.fetch();
+        const j = await res.json();
+        const now = new Date().toISOString();
+        j.status = {
+          node_id: id, checked_at: now, reachable: true, active: true, version: "26.3.27",
+          observed_hash: hash,
+          certificates: [{ inbound_name: "vless-443", days_left: 47, path: "/etc/letsencrypt/live/node.example.com/fullchain.pem" }],
+        };
+        j.deployed_hash = hash; // 与 observed 一致,详情页显示「一致」
+        j.deployed_at = now;
+        await r.fulfill({ response: res, json: j });
+      });
+      await page.route(`**/api/nodes/${id}/online`, r => r.fulfill({ json: { node: "tokyo-a", online: [
+        { user: "alice", count: 2, ips: ["198.51.100.7", "198.51.100.9"] },
+        { user: "bob", count: 1, ips: ["203.0.113.99"] },
+      ] } }));
+    },
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#nodes/" + env.tokyoID);
+      await page.waitForSelector('[data-act="node-online"]');
+      await page.waitForTimeout(350);
+      await page.click('[data-act="node-online"]');
+      await page.waitForSelector("#drawer.open");
+      await page.waitForTimeout(350); // 等抽屉滑入
+    },
+  },
+  {
+    // 自检页:点「开始自检」后展示示例报告(12 过 1 警)。
+    name: "doctor",
+    routes: async page => { await page.route("**/api/doctor", r => r.fulfill({ json: doctorReport() })); },
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#doctor");
+      await page.click('[data-act="doc-run"]');
+      await page.waitForSelector('tr[data-check]');
+      await page.waitForTimeout(300);
+    },
+  },
+  {
+    // 更新弹窗:/local/update 摆成示例结论,等右上角出现「更新」pill 后点开
+    // 弹窗。结论要在登录前就拦上:刷新 pill 有 30 秒节流,登录那一次 load
+    // 拿到什么就定形了。
+    name: "update",
+    routes: async page => { await page.route("**/local/update", r => r.fulfill({ json: UPDATE_INFO })); },
+    run: async page => {
+      await page.locator("#upd-pill").waitFor({ state: "visible" });
+      await page.click("#upd-pill");
+      await page.waitForSelector("#modal.open");
+      await page.waitForTimeout(300); // 等 Markdown 渲染与按钮聚焦
+    },
+  },
   { name: "settings-devices", run: async (page, env) => { await page.goto(env.origin + "/#settings/devices"); } },
   { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#settings/backup"); } },
   { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#settings/rules"); } },
@@ -201,6 +313,7 @@ async function takeShot(browser, shot, env) {
       await context.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
       const page = await context.newPage();
       await polish(page);
+      if (shot.routes) await shot.routes(page, env);
       await login(page, env);
       await shot.run(page, env);
       // 页面有周期轮询时 networkidle 等不到,超时就接着截,再留 300ms 收尾。
