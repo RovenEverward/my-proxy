@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=MPX
+Comment=自建 xray / sing-box 多节点代理的控制面
+Exec=/opt/mpx/mpx app
+Icon=mpx
+Type=Application
+Categories=Network;Utility;
+Terminal=false

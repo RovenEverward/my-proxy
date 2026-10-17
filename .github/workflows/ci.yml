@@ -33,8 +33,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: go test -race ./...
 
-  # 桌面端 S1 冒烟:在三个平台上开 WebView 载入 mpx ui,等主界面出现后截图。
-  desktop-s1:
+  # 桌面程序冒烟:在三个平台上编出 desktop 构建的 mpx(desktop=1,无参数启动就
+  # 开窗口),跑 desktop/smoke/app-smoke.sh:先无配置进安装向导、再连本地控制面
+  # 进主界面,两次都要求输出 APP_SMOKE_OK 且截图存在。
+  #
+  # 原来的 desktop-s1 job(S1 穿刺:单独编一个 s1 程序载入 mpx ui)已被这里的
+  # app 冒烟取代,CI 不再跑 s1;desktop/s1/ 目录保留,本地仍可手动跑。Windows
+  # 这里刻意不加 -H windowsgui:冒烟要看 stdout 里的 APP_SMOKE_OK,带 windowsgui
+  # 的构建没有控制台输出。
+  desktop-smoke:
     strategy:
       fail-fast: false
       matrix:
@@ -56,22 +63,24 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
 
-      - name: 编译 mpx 与 s1
+      - name: 编译桌面 mpx
         run: |
           set -eu
           ext=""
           if [ "${{ matrix.os }}" = "windows-latest" ]; then ext=".exe"; fi
-          go build -o "mpxbin/mpx$ext" ./cmd/mpx
-          (cd desktop/s1 && go build -o "../../mpxbin/s1$ext" .)
+          mkdir -p mpxbin
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1" \
+            -o "mpxbin/mpx$ext" ./cmd/mpx
           ls -l mpxbin
 
-      - name: S1 冒烟
-        run: bash desktop/s1/ci-smoke.sh
+      - name: 桌面冒烟(安装向导 + 主界面)
+        run: bash desktop/smoke/app-smoke.sh
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: s1-${{ matrix.os }}
+          name: app-${{ matrix.os }}
           path: |
-            s1-*.png
-            s1-*.log
+            app-*.png
+            app-*.log

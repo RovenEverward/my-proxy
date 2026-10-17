@@ -1,0 +1,53 @@
+# nfpm 配置:把桌面版 mpx 打成 .deb(装到 /opt/mpx,不碰 CLI 的 /usr/bin/mpx)。
+# 由 .github/workflows/release.yml 的 desktop-linux job 使用:
+#
+#   NFPM_ARCH=amd64 NFPM_VERSION=0.7.2 NFPM_BIN=./mpx \
+#   NFPM_DESKTOP=./mpx.desktop NFPM_ICON256=./mpx-256.png NFPM_ICON512=./mpx-512.png \
+#     nfpm package -f deploy/desktop/nfpm-desktop.yaml -p deb \
+#       -t mpx-desktop_0.7.2_amd64.deb
+#
+# 包名是 mpx-desktop,和命令行的 mpx 包并存:两个包都装时 /usr/bin/mpx 仍是
+# 命令行版,桌面版从 /opt/mpx/mpx 启动(桌面文件里的 Exec 写死了这个路径)。
+# GTK / WebKitGTK 用系统自带的,不打进包;Debian 12 起 libgtk-3-0 改名
+# libgtk-3-0t64,所以依赖写成二选一。没签名。
+name: mpx-desktop
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NFPM_VERSION}
+section: utils
+priority: optional
+maintainer: RovenEverward <roveneverward@users.noreply.github.com>
+description: |
+  MPX desktop application.
+  A native window around the same local `mpx ui` pages, for managing a
+  self-hosted multi-node proxy control plane.
+homepage: https://github.com/RovenEverward/my-proxy
+license: MIT
+
+depends:
+  - libgtk-3-0 | libgtk-3-0t64
+  - libwebkit2gtk-4.1-0
+
+contents:
+  # expand: true 让 nfpm 展开 src/dst 里的 ${NFPM_*};不写的话 contents 里的
+  # 占位符不会被替换,会当成字面路径去找文件。
+  - src: ${NFPM_BIN}
+    dst: /opt/mpx/mpx
+    expand: true
+    file_info:
+      mode: 0755
+  - src: ${NFPM_DESKTOP}
+    dst: /usr/share/applications/mpx.desktop
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${NFPM_ICON256}
+    dst: /usr/share/icons/hicolor/256x256/apps/mpx.png
+    expand: true
+    file_info:
+      mode: 0644
+  - src: ${NFPM_ICON512}
+    dst: /usr/share/icons/hicolor/512x512/apps/mpx.png
+    expand: true
+    file_info:
+      mode: 0644
