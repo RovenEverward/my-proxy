@@ -6,7 +6,7 @@
 
 ### 新增
 - **桌面程序 MPX**(desktop-rfc D2):原生窗口(MyGo,系统 WebView),安装后双击即开,不开浏览器;页面与 `mpx ui` 同一套。也可以 `mpx app` 启动。
-  - 安装包(均未签名):macOS `MPX_<版本>_darwin_universal.dmg`;Windows `MPX_<版本>_windows_amd64_setup.exe`(按用户安装,开始菜单/桌面有 MPX);Linux `mpx-desktop_<版本>_{amd64,arm64}.deb` 与 `MPX_<版本>_linux_{amd64,arm64}.tar.gz`(`./install.sh`)。Linux 需要 WebKitGTK 4.1。
+  - 安装包(均未签名):macOS `mpx-desktop_<版本>_darwin_universal.dmg`;Windows `mpx-desktop_<版本>_windows_amd64_setup.exe`(按用户安装,开始菜单/桌面有 MPX);Linux `mpx-desktop_<版本>_{amd64,arm64}.deb` 与 `mpx-desktop_<版本>_linux_{amd64,arm64}.tar.gz`(`./install.sh`)。Linux 需要 WebKitGTK 4.1。
   - 未接入控制面时,窗口里可做首次安装,或用设备密码接入已有控制面(代替 `mpx connect`)。
   - 设置页可修改设备密码、关闭设备密码接入。
 - **桌面程序自更新**(D3):一键更新的本机一层升级桌面程序本身,取 `mpx_desktop_*` 归档,必须通过 SHA256SUMS 校验;安装目录没有写权限(如 .deb 装在 /opt/mpx)时提示改用安装包。

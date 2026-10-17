@@ -3,7 +3,7 @@
 ;
 ;   makensis -INPUTCHARSET UTF8 -DVERSION=0.7.2 \
 ;     -DSRCEXE="$(pwd)/mpx.exe" -DICONFILE="$(pwd)/deploy/desktop/icon.ico" \
-;     -DOUTFILE="$(pwd)/MPX_0.7.2_windows_amd64_setup.exe" \
+;     -DOUTFILE="$(pwd)/mpx-desktop_0.7.2_windows_amd64_setup.exe" \
 ;     deploy/windows/mpx-desktop.nsi
 ;
 ; 与命令行版的 mpx.nsi 刻意分开:

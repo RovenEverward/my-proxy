@@ -349,14 +349,14 @@ jobs:
           cp -R MPX.app dmg/MPX.app
           ln -s /Applications dmg/Applications
           hdiutil create -volname "MPX" -srcfolder dmg -ov -format UDZO \
-            "MPX_${ver}_darwin_universal.dmg"
-          ls -l MPX_*.dmg
+            "mpx-desktop_${ver}_darwin_universal.dmg"
+          ls -l mpx-desktop_*.dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: pkg_desktop_macos
           path: |
-            MPX_${{ steps.ver.outputs.ver }}_darwin_universal.dmg
+            mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg
             mpx_desktop_darwin_universal.tar.gz
           if-no-files-found: error
 
@@ -394,14 +394,14 @@ jobs:
             -DVERSION="${{ steps.ver.outputs.ver }}" \
             -DSRCEXE="$PWD/bin/mpx.exe" \
             -DICONFILE="$PWD/deploy/desktop/icon.ico" \
-            -DOUTFILE="$PWD/MPX_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe" \
+            -DOUTFILE="$PWD/mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe" \
             deploy/windows/mpx-desktop.nsi
-          ls -l MPX_*setup.exe
+          ls -l mpx-desktop_*setup.exe
 
       - uses: actions/upload-artifact@v4
         with:
           name: pkg_desktop_windows
-          path: MPX_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe
+          path: mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe
           if-no-files-found: error
 
   # 桌面版 Linux:.deb 装到 /opt/mpx(不碰 CLI 的 /usr/bin/mpx),另出一份带
@@ -456,16 +456,16 @@ jobs:
             cp deploy/desktop/mpx-256.png stage/MPX/mpx.png
             cp deploy/desktop/install.sh stage/MPX/install.sh
             chmod +x stage/MPX/install.sh
-            tar -czf "MPX_${ver}_linux_${arch}.tar.gz" -C stage MPX
+            tar -czf "mpx-desktop_${ver}_linux_${arch}.tar.gz" -C stage MPX
           done
-          ls -l mpx-desktop_*.deb MPX_*.tar.gz
+          ls -l mpx-desktop_*.deb mpx-desktop_*.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
           name: pkg_desktop_linux
           path: |
             mpx-desktop_${{ steps.ver.outputs.ver }}_*.deb
-            MPX_${{ steps.ver.outputs.ver }}_linux_*.tar.gz
+            mpx-desktop_${{ steps.ver.outputs.ver }}_linux_*.tar.gz
           if-no-files-found: error
 
   publish:
@@ -494,14 +494,21 @@ jobs:
           pattern: '{mpx_,pkg_}*'
           merge-multiple: true
 
-      # SHA256SUMS 覆盖全部发布件(命令行的 mpx_*、桌面的 mpx-desktop_* 与
-      # MPX_*),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
+      # SHA256SUMS 覆盖全部发布件(命令行的 mpx_*、桌面的 mpx-desktop_*),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
       # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
+      # GitHub 的附件名不分大小写:v0.9.0-rc.1/rc.2 里桌面安装包叫 MPX_<ver>_windows_amd64_setup.exe,
+      # 和命令行的 mpx_<ver>_windows_amd64_setup.exe 撞名,前者把后者顶掉了。这里先拦住。
+      - name: 检查附件名不分大小写也不重复
+        run: |
+          set -eu
+          dup=$(ls dist | tr '[:upper:]' '[:lower:]' | sort | uniq -d)
+          if [ -n "$dup" ]; then echo "::error::附件名大小写不敏感地重复: $dup"; exit 1; fi
+
       - name: SHA256SUMS
         run: |
           set -eu
           cd dist
-          sha256sum mpx_* mpx-desktop_* MPX_* > SHA256SUMS
+          sha256sum mpx_* mpx-desktop_* > SHA256SUMS
           cat SHA256SUMS
 
       - name: 取出 tag 消息当发布说明
@@ -550,16 +557,16 @@ jobs:
 
           双击打开就是一个 MPX 窗口,里面是同一套管理界面。都没有签名。
 
-          - **macOS(通用,Intel 与 Apple 芯片)**:`MPX_${{ steps.ver.outputs.ver }}_darwin_universal.dmg`
+          - **macOS(通用,Intel 与 Apple 芯片)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg`
             —— 打开后把 `MPX.app` 拖进「应用程序」。未签名,首次打开请右键 →「打开」,
             或到「系统设置 → 隐私与安全性」里放行。
-          - **Windows(64 位)**:`MPX_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
+          - **Windows(64 位)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
             —— 按当前用户安装(不需要管理员),装完开始菜单里有 MPX。未签名,
             SmartScreen 提示时选「仍要运行」。
           - **Linux(Debian / Ubuntu)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_amd64.deb`
             (arm64 是 `mpx-desktop_${{ steps.ver.outputs.ver }}_arm64.deb`)
             —— 双击安装或 `sudo apt install ./mpx-desktop_....deb`。
-          - **Linux(其他发行版)**:`MPX_${{ steps.ver.outputs.ver }}_linux_amd64.tar.gz`
+          - **Linux(其他发行版)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_linux_amd64.tar.gz`
             (arm64 同理)—— 解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
             `./install.sh --uninstall` 卸载。Linux 桌面版需要系统的 WebKitGTK 4.1
             (`libwebkit2gtk-4.1-0`,GTK 3 会随依赖装上)。
