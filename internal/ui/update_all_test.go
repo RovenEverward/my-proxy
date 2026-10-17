@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -250,6 +251,9 @@ func waitAllState(t *testing.T, s *Server, c *http.Cookie, want ...string) updat
 }
 
 func TestUpdateAllHappyPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
@@ -319,6 +323,9 @@ func sameEvents(got, want []updateAllEvent) bool {
 }
 
 func TestUpdateAllControlFailureStops(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	// 不该被碰到:控制面失败后,节点与本机都不能开始。
@@ -352,6 +359,9 @@ func TestUpdateAllControlFailureStops(t *testing.T) {
 }
 
 func TestUpdateAllNodesFailureStops(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
@@ -399,6 +409,9 @@ func TestUpdateAllNodesFailureStops(t *testing.T) {
 }
 
 func TestUpdateAllNodesUnsupported(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
@@ -422,6 +435,9 @@ func TestUpdateAllNodesUnsupported(t *testing.T) {
 }
 
 func TestUpdateAllConflictWhileRunning(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	// 本机已是最新:这轮跑到 CLI 那步记 skip 就收尾,不用重启。
