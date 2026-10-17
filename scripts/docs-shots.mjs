@@ -102,16 +102,20 @@ async function seed(env) {
 
 // 截图前统一改写页面拿到的元数据,让图里是文档想展示的样子而不是测试环境的
 // 随机值:版本号去掉 +dirty、地址与指纹换成示例、节点状态显示运行中。拦的是
-// 页面自己的请求,r.fetch() 不走路由,不会递归。
-async function polish(page) {
+// 页面自己的请求,r.fetch() 不走路由,不会递归。setup 模式没有控制面:地址、
+// 指纹与 /api/* 都是控制面相关的改写,一概不挂,只留版本号。
+async function polish(page, setup = false) {
   await page.route("**/ui/meta", async r => {
     const res = await r.fetch();
     const j = await res.json();
     j.cli_version = "v0.9.1";
-    j.server = "127.0.0.1:18080";
-    j.fingerprint = "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA";
+    if (!setup) {
+      j.server = "127.0.0.1:18080";
+      j.fingerprint = "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA";
+    }
     await r.fulfill({ response: res, json: j });
   });
+  if (setup) return;
   await page.route("**/api/status", async r => {
     const res = await r.fetch();
     const j = await res.json();
@@ -234,8 +238,8 @@ const SHOTS = [
   },
   {
     // 节点详情 tokyo-a:巡检状态和在线用户都要现场连节点,测试环境拿不到,
-    // 路由补示例(核心 26.3.27、配置一致、证书剩 47 天、在线用户 2),再点
-    // 「查看」把在线用户抽屉摆开。
+    // 路由补示例(核心 26.3.27、配置一致、证书剩 47 天、在线用户 2)。只拍
+    // 详情页本身,不开在线用户抽屉。
     name: "node-detail",
     routes: async (page, env) => {
       const r = await cpFetch(env.cpURL + "/api/nodes", { headers: { Authorization: "Bearer " + env.token } });
@@ -266,9 +270,6 @@ const SHOTS = [
       await page.goto(env.origin + "/#nodes/" + env.tokyoID);
       await page.waitForSelector('[data-act="node-online"]');
       await page.waitForTimeout(350);
-      await page.click('[data-act="node-online"]');
-      await page.waitForSelector("#drawer.open");
-      await page.waitForTimeout(350); // 等抽屉滑入
     },
   },
   {
@@ -298,6 +299,34 @@ const SHOTS = [
   { name: "settings-devices", run: async (page, env) => { await page.goto(env.origin + "/#settings/devices"); } },
   { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#settings/backup"); } },
   { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#settings/rules"); } },
+  // 首次安装(setup 模式:配置为空的 mpx ui)。
+  { name: "setup-welcome", setup: true, run: async page => { await page.waitForSelector("#s-start"); } },
+  {
+    name: "setup-host", setup: true,
+    run: async page => {
+      await page.click("#s-start");
+      await page.waitForSelector("#s-host");
+      await page.fill("#s-host", "203.0.113.10");
+      await page.fill("#s-port", "22");
+    },
+  },
+  {
+    // 接入已有控制面:取指纹的结果用路由摆成示例,不连任何真控制面。
+    name: "setup-connect", setup: true,
+    routes: async page => {
+      await page.route("**/local/setup/connect/probe", r => r.fulfill({ json: {
+        server: "https://203.0.113.10:8080", fingerprint: "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA",
+      } }));
+    },
+    run: async page => {
+      await page.click("#s-connect");
+      await page.waitForSelector("#s-cp-addr");
+      await page.fill("#s-cp-addr", "203.0.113.10:8080");
+      await page.fill("#s-cp-name", "laptop");
+      await page.click("#s-cp-probe");
+      await page.waitForSelector("#s-cp-ok");
+    },
+  },
 ];
 
 // 一张图 = 浅色、深色各截一次;每次新 context,主题在首个文档脚本前写进 localStorage。
@@ -312,7 +341,7 @@ async function takeShot(browser, shot, env) {
     try {
       await context.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
       const page = await context.newPage();
-      await polish(page);
+      await polish(page, !!shot.setup);
       if (shot.routes) await shot.routes(page, env);
       await login(page, env);
       await shot.run(page, env);
