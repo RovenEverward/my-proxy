@@ -106,7 +106,7 @@ func TestReleaseAssetNames(t *testing.T) {
 	want := []string{
 		"MPX-" + v + "-Linux-amd64.deb", "MPX-" + v + "-Linux-amd64.tar.gz", "MPX-" + v + "-Linux-arm64.deb", "MPX-" + v + "-Linux-arm64.tar.gz",
 		"MPX-" + v + "-Windows-x64-setup.exe", "MPX-" + v + "-macOS.dmg",
-		"MPX-Linux-amd64.deb", "MPX-Linux-arm64.deb", "MPX-Windows-x64-setup.exe", "MPX-macOS.dmg",
+		"MPX-Linux-amd64.deb", "MPX-Linux-amd64.tar.gz", "MPX-Linux-arm64.deb", "MPX-Linux-arm64.tar.gz", "MPX-Windows-x64-setup.exe", "MPX-macOS.dmg",
 		"SHA256SUMS",
 		"mpx-cli_" + v + "_darwin_universal.pkg", "mpx-cli_" + v + "_linux_amd64.deb", "mpx-cli_" + v + "_linux_amd64.rpm",
 		"mpx-cli_" + v + "_linux_arm64.deb", "mpx-cli_" + v + "_linux_arm64.rpm", "mpx-cli_" + v + "_windows_amd64_setup.exe",
@@ -128,7 +128,7 @@ func TestReleaseAssetNames(t *testing.T) {
 		}
 	}
 	// 固定名副本与带版本号的那份内容相同。
-	for _, f := range []string{"macOS.dmg", "Windows-x64-setup.exe", "Linux-amd64.deb", "Linux-arm64.deb"} {
+	for _, f := range []string{"macOS.dmg", "Windows-x64-setup.exe", "Linux-amd64.deb", "Linux-arm64.deb", "Linux-amd64.tar.gz", "Linux-arm64.tar.gz"} {
 		a, _ := os.ReadFile(filepath.Join(dist, "MPX-"+f))
 		b, _ := os.ReadFile(filepath.Join(dist, "MPX-"+v+"-"+f))
 		if string(a) != string(b) || len(a) == 0 {

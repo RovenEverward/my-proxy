@@ -82,7 +82,7 @@ export default defineConfig({
     langMenuLabel: '切换语言',
 
     footer: {
-      message: 'MPX — 自建多节点代理的控制面',
+      message: 'MPX — 在自己电脑上管好你那几台 VPS',
       copyright: '文档与代码同仓库维护'
     }
   }

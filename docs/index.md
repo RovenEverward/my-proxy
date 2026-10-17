@@ -48,7 +48,7 @@ title: MPX
 <li>页面底部可以自己换订阅地址，换之前会先确认；换完旧地址立刻失效</li>
 </ul>
 </div>
-<figure class="tile shot"><img class="only-light" src="/subscription-dashboard.png" width="1360" height="1882" alt="浏览器中的订阅页"><img class="only-dark" src="/subscription-dashboard-dark.png" width="1360" height="1882" alt="浏览器中的订阅页（深色）"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/subscription-dashboard.png" width="1360" height="1884" alt="浏览器中的订阅页"><img class="only-dark" src="/subscription-dashboard-dark.png" width="1360" height="1884" alt="浏览器中的订阅页（深色）"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">

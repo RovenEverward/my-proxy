@@ -31,7 +31,7 @@ MPX 依次升级控制面、节点、桌面程序，弹窗里逐条显示进度�
 | 症状 | 处理 |
 | :--- | :--- |
 | 弹窗显示「更新失败」 | 失败那一行写明原因。修好原因后再点一次 **更新**；已经是新版本的部分会跳过 |
-| 提示安装目录没有写权限 | 你是用 `.deb` 安装的 MPX（装在 `/opt/mpx`，普通用户不能改写）。控制面和节点已经升好了；从[最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载新的 `MPX-<版本>-Linux-amd64.deb`（ARM 用 `arm64`）覆盖安装即可 |
+| 提示安装目录没有写权限 | 你是用 `.deb` 安装的 MPX（装在 `/opt/mpx`，普通用户不能改写）。控制面和节点已经升好了；下载新的 [MPX-Linux-amd64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb)（ARM 用 [MPX-Linux-arm64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-arm64.deb)）覆盖安装即可 |
 | 窗口一直显示「正在重启」超过 1 分钟 | 关掉 MPX 再打开 |
 
 ## 从老版本升上来

@@ -498,7 +498,7 @@ jobs:
       # 对外的安装包名在这里统一定下(各打包 job 仍按原来的中间名产出,只在发布前改):
       #   桌面安装包:MPX-<ver>-macOS.dmg、MPX-<ver>-Windows-x64-setup.exe、
       #               MPX-<ver>-Linux-amd64.deb / arm64.deb、MPX-<ver>-Linux-amd64.tar.gz / arm64.tar.gz
-      #   每个桌面安装包另有一份不带版本号的固定名副本(MPX-macOS.dmg 等),
+      #   每个桌面安装包(含 tar.gz)另有一份不带版本号的固定名副本(MPX-macOS.dmg、MPX-Linux-amd64.tar.gz 等),
       #   让 releases/latest/download/<固定名> 永远指向最新版;副本也进 SHA256SUMS。
       #   命令行安装包:前缀 mpx-cli_(mpx-cli_<ver>_windows_amd64_setup.exe 等)。
       #   自更新用的压缩包 mpx_<os>_<arch>.tar.gz/.zip 与 mpx_desktop_* 名字不变:
@@ -516,7 +516,7 @@ jobs:
             mvf "mpx-desktop_${VER}_${a}.deb"                  "MPX-${VER}-Linux-${a}.deb"
             mvf "mpx-desktop_${VER}_linux_${a}.tar.gz"         "MPX-${VER}-Linux-${a}.tar.gz"
           done
-          for f in MPX-${VER}-macOS.dmg MPX-${VER}-Windows-x64-setup.exe MPX-${VER}-Linux-amd64.deb MPX-${VER}-Linux-arm64.deb; do
+          for f in MPX-${VER}-macOS.dmg MPX-${VER}-Windows-x64-setup.exe MPX-${VER}-Linux-amd64.deb MPX-${VER}-Linux-arm64.deb MPX-${VER}-Linux-amd64.tar.gz MPX-${VER}-Linux-arm64.tar.gz; do
             cp "$f" "MPX-${f#MPX-${VER}-}"
           done
           mvf "mpx_${VER}_darwin_universal.pkg"                "mpx-cli_${VER}_darwin_universal.pkg"
@@ -545,7 +545,7 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
           # 固定名副本必须和带版本号的那份逐字节相同,且都列进了 SHA256SUMS。
-          for f in macOS.dmg Windows-x64-setup.exe Linux-amd64.deb Linux-arm64.deb; do
+          for f in macOS.dmg Windows-x64-setup.exe Linux-amd64.deb Linux-arm64.deb Linux-amd64.tar.gz Linux-arm64.tar.gz; do
             a=$(sha256sum "MPX-$f" | cut -d' ' -f1); b=$(sha256sum "MPX-${{ steps.ver.outputs.ver }}-$f" | cut -d' ' -f1)
             [ "$a" = "$b" ] || { echo "::error::MPX-$f 与带版本号的不一致"; exit 1; }
             grep -q "  MPX-$f\$" SHA256SUMS || { echo "::error::SHA256SUMS 里没有 MPX-$f"; exit 1; }
@@ -614,7 +614,7 @@ jobs:
 
           - `MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.tar.gz`(arm64 同理):解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
             `./install.sh --uninstall` 卸载。需要系统的 WebKitGTK 4.1(`libwebkit2gtk-4.1-0`)。
-          - 不带版本号的 `MPX-macOS.dmg`、`MPX-Windows-x64-setup.exe`、`MPX-Linux-amd64.deb`、`MPX-Linux-arm64.deb`
+          - 不带版本号的 `MPX-macOS.dmg`、`MPX-Windows-x64-setup.exe`、`MPX-Linux-amd64.deb`、`MPX-Linux-arm64.deb`、`MPX-Linux-amd64.tar.gz`、`MPX-Linux-arm64.tar.gz`
             与上面同名带版本号的文件逐字节相同,供 `releases/latest/download/<文件名>` 固定链接使用。
 
           ### 命令行安装包

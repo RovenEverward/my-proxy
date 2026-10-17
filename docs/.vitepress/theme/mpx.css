@@ -13,6 +13,8 @@
 .md li { margin:4px 0; }
 .md a { text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:3px; color:var(--ink); }
 .md a:hover { text-decoration-color:var(--ink); }
+/* 正文里的按钮（快速开始的下载按钮）：上面 .md a 的字色会把 .btn 的反色盖掉，按钮成了纯色块 */
+.md a.btn { color:var(--canvas); text-decoration:none; }
 .md strong { color:var(--ink); font-weight:600; }
 .md table { margin:0 0 20px; display:block; overflow-x:auto; }
 .md td code { white-space:nowrap; }
@@ -28,6 +30,11 @@
 .md .custom-block::before { content:""; width:6px; height:6px; margin-top:9px; border-radius:50%; background:var(--ink); grid-row:1 / span 2; }
 .md .custom-block-title { margin:0; color:var(--ink); font-weight:600; }
 .md .custom-block p { margin:0; grid-column:2; }
+/* 折叠块（::: details）不要提示块的圆点：summary 自带三角，两个标记叠在一起像列表项 */
+.md details.custom-block { display:block; }
+.md details.custom-block::before { content:none; }
+.md details.custom-block > summary { cursor:pointer; color:var(--ink); font-weight:600; margin:0 0 8px; }
+.md details.custom-block > :not(summary) { margin-left:1.1em; }
 .md .fig-one { max-width:420px; margin:0 0 28px; }
 /* tile 内图片 */
 .tile img { display:block; width:100%; height:auto; }
@@ -110,4 +117,8 @@ pre:hover::-webkit-scrollbar-thumb, .md div[class*="language-"] pre:hover::-webk
 /* size="dialog"：裁到对话框的窄图，居中、按自身比例，不撑满整栏 */
 .md .win.dialog { max-width:560px; margin-left:auto; margin-right:auto; }
 .win.dialog img { width:100%; height:auto; }
+/* 截图可以点开看原图（手机上整窗截图太小） */
+.md .win a { text-decoration:none; }
+/* 手机上「出了问题」这类表格：第一列别一字一行 */
+@media (max-width:600px) { .md table th:first-child, .md table td:first-child { min-width:7.5em; } }
 .hero .dl-note { font-size:14px; color:var(--muted); margin:14px 0 0; max-width:30em; }
