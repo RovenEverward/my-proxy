@@ -296,7 +296,7 @@ function addrForm(d, W) {
   const ro = W && !SUB.saving ? "" : raw("readonly");
   return H`<div class="s5-form">
     <div class="field"><label for="f-prefix">订阅地址</label>
-      <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
+      <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="例如 https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
       <span class="h">发给用户的链接以它开头，一般是你的域名，前面接反向代理。</span>
       <span class="s5-field-err" id="pfx-err" role="alert">${SUB.fieldErrors?.sub_url_prefix || ""}</span><div id="pfx-slot">${prefixWarn(d)}</div></div>
     <div class="field"><label for="f-title">订阅名</label>
@@ -306,7 +306,7 @@ function addrForm(d, W) {
     <div class="two">
       <div class="field"><label for="f-int">刷新间隔</label>
         <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
-        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h">客户端多久自动更新一次。填 0 交给客户端自己决定。</span></div>
+        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h">客户端多久自动更新一次，填 0 由客户端决定。</span></div>
       <div class="field"><label for="f-help">支持链接</label>
         <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
         <span class="h">客户端里的帮助按钮会打开它。可以不填。</span></div>
@@ -333,7 +333,7 @@ function preview(d) {
     </div>
     ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>${tail}</code>
       <button type="button" class="ib sm" data-act="copy" data-text="${link}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
-    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>，${(FMT[f] || FMT.links)[1]}。</p>`;
+    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>，<span class="nw">${(FMT[f] || FMT.links)[1]}</span>。</p>`;
 }
 function addrCard(d, W) {
   return H`<section class="card s5-sec" id="sec-addr"><div class="ch">地址与显示<small>· 用户拿到的链接，和客户端里显示的样子</small></div>
@@ -448,7 +448,7 @@ function subLeaveModal(target) {
     else $('.profile[data-act="cp-toggle"]')?.focus();
   };
   m.innerHTML = val(H`<div class="mbody"><h2 id="sub-leave-title">有 ${c.length} 处改动还没保存</h2>
-    <p>离开「订阅」页这些改动就会丢：</p>
+    <p>离开「订阅」页，这些改动就会丢：</p>
     <ul class="s5-leave-list">${c.map(x => H`<li>${x}</li>`)}</ul>
     <div class="err" id="modal-err" role="alert"></div></div>
     <div class="mf"><button class="btn" data-act="sub-leave-stay">留下</button><button class="btn" data-act="sub-leave-drop">不保存</button><button class="btn pri" id="sub-leave-ok" data-act="sub-leave-save">保存并离开</button></div>`);
@@ -634,6 +634,8 @@ function subAnchor(r) {
   const key = r.join("/");
   if (subAnchorKey === key) return;
   subAnchorKey = key;
-  const id = r[1] === "clients" ? "sec-clients" : r[1] === "templates" ? "sec-adv" : "sec-addr";
+  const id = r[1] === "clients" ? "sec-clients" : r[1] === "templates" ? "sec-adv" : "";
+  // 只有 #sub/clients、#sub/templates 才滚到对应段;普通 #sub 停在顶上,页标题「订阅」露着。
+  if (!id) return;
   requestAnimationFrame(() => { if (route.join("/") === key) document.getElementById(id)?.scrollIntoView({ block: "start" }); });
 }

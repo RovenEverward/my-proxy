@@ -304,7 +304,7 @@ func TestAssetsNoMojibake(t *testing.T) {
 
 // copyBannedTerms 是界面上不再使用的旧词。可见文案里出现任何一个都算失败;
 // 确有技术含义的地方按文件 + 子串在 copyBannedAllowed 里点名放行。
-var copyBannedTerms = []string{"入站", "入口", "巡检", "下发", "排水"}
+var copyBannedTerms = []string{"入站", "入口", "巡检", "下发", "排水", "核心", "比对"}
 
 // copyBannedAllowed 是文件 → 放行的子串。掩码后的某一行命中其中任一子串就整行放行。
 // 只用于「高级」里确实要展示入站/入口技术细节的地方,以及必须与控制面原文逐字

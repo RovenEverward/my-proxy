@@ -109,7 +109,7 @@ function render2() {
 function row(st, t, du, extraRaw) {
   return H`<li class="${st}"><span class="pi">${st === "run" ? raw('<span class="spin"></span>') : st === "done" ? ic("check") : st === "fail" ? X : st === "skip" ? ic("dash") : raw("<i></i>")}</span><span class="t">${t}</span><span class="du">${du || ""}</span>${extraRaw || ""}</li>`;
 }
-const ROW_TITLES = ["登录并装公钥", "登记节点", "建连接方式和对外地址", "装核心并应用配置"];
+const ROW_TITLES = ["登录并装公钥", "登记节点", "建连接方式和对外地址", "装代理程序并应用配置"];
 const HINTS = [
   "密码不对，或这台机器关了密码登录。节点还没有建，不用回退。",
   "",
@@ -247,7 +247,7 @@ async function pickInboundPort(nodeId, want, auto) {
   const busy = new Map((r && r.tcp || []).filter(p => !p.core).map(p => [p.port, p.owner]));
   if (!busy.has(want)) return { port: want };
   const owner = busy.get(want);
-  if (!auto) throw new Error(`${want} 端口已被 ${owner} 占用，代理核心起不来。点「改端口」换一个，或先停掉占用它的程序再重试。`);
+  if (!auto) throw new Error(`${want} 端口已被 ${owner} 占用，代理程序起不来。点「改端口」换一个，或先停掉占用它的程序再重试。`);
   const alt = INB_CANDIDATES.find(p => p !== want && !busy.has(p));
   if (!alt) throw new Error(`${want} 端口已被 ${owner} 占用，备选端口也都被占了。点「改端口」换一个。`);
   return { port: alt, owner };

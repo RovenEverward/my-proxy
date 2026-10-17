@@ -305,7 +305,7 @@ function renderSettings() {
   <div class="two"><div class="field"><label>设备密码</label>${pwBox("s-dpw", S.dpwShown)}<div class="meter" id="s-meter">${raw(meterHtml(S.dpw))}</div><span class="h" id="s-str">强度：${SW[strength(S.dpw)]}</span>${e.dpw ? H`<span class="fe">${e.dpw}</span>` : ""}</div>
   <div class="field"><label>再输一次</label>${pwBox("s-dpw2", S.dpwShown)}${e.dpw2 ? H`<span class="fe">${e.dpw2}</span>` : ""}</div></div>
   <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
-  ${field("订阅地址", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
+  ${field("订阅地址", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="例如 https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
   <details class="adv"><summary>高级</summary>
    ${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个连接方式用的 REALITY SNI")}</details>
   `,
