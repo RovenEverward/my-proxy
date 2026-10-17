@@ -1,135 +1,30 @@
-# 命令行参考
+# 命令行
 
-全部内容以 `mpx --help` 和各子命令的 `--help` 为准；子命令的 `--help` 带可运行的例子。
+日常管理都在 MPX 桌面程序里完成。`mpx` 命令行是备用入口，适合写脚本，以及少数界面里不提供的操作。
 
-## 全局参数
+## 安装
 
-| 参数 | 类型 | 默认 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `--server` | string | — | 控制面地址 |
-| `--token` | string | — | 管理 token |
-| `--fp` | string | — | 控制面证书指纹（`SHA256:...`），`https://` 地址必须有 |
-| `--profile` | string | 配置文件里的 `current` | 使用哪个配置档 |
-| `-o, --output` | string | `table` | `table` 或 `json` |
-| `-v, --version` | — | — | 打印版本 |
+在[最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载命令行安装包（名字以 `mpx_` 开头，不带 `desktop`）。macOS 和 Linux 也可以运行：
 
-## 连接参数的取值顺序
-
-地址和 token 各自按以下顺序取第一个非空值：
-
-1. 命令行参数 `--server` / `--token`
-2. 环境变量 `MPX_SERVER` / `MPX_TOKEN`
-3. 配置文件中所选配置档的 `server` / `token`
-
-证书指纹按 `--fp`、`MPX_FINGERPRINT`、配置档的 `fingerprint` 依次取；配置档里的指纹只在地址也是这个配置档的地址时才用。`https://` 地址没有指纹时命令直接报错，指纹不符时拒绝连接。
-
-配置档按 `--profile`、`MPX_PROFILE`、配置文件的 `current` 依次选择。
-
-## 配置文件
-
-路径：用户配置目录下的 `mpx/config.json`（Linux `~/.config/mpx/config.json`，macOS `~/Library/Application Support/mpx/config.json`）。由 `mpx login` 写入：
-
-```json
-{
-  "current": "default",
-  "profiles": {
-    "default": {
-      "server": "http://127.0.0.1:8080",
-      "token": "demo-token"
-    },
-    "vps": {
-      "server": "https://203.0.113.10:8080",
-      "token": "…",
-      "fingerprint": "SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg"
-    }
-  }
-}
+```bash
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
 ```
 
-## 命令
+命令行和桌面程序共用同一份接入信息：这台电脑已经在 MPX 里接入了控制面，命令行直接可用。
+
+## 只有命令行能做的事
 
 | 命令 | 作用 |
 | :--- | :--- |
-| `init` | 在一台新 VPS 上装好控制面、节点、入站、用户，打印订阅地址 |
-| `connect` | 用设备密码把这台设备接入控制面，见[在多台设备上管理控制面](/guides/devices) |
-| `login` | 手动保存地址、token 与指纹（应急用）；不带参数时显示当前值 |
-| `device` | 接入的设备：`list` `revoke` `password` |
-| `serve` | 启动控制面 |
-| `status` | 查看控制面状态（只读） |
-| `update` | 查看本机 CLI、控制面与各节点核心的版本（只读）；`mpx update show` 等价；`mpx update apply cli` 升级本机 CLI、`mpx update rollback cli` 回退；`mpx update apply control` 远程升级控制面、`mpx update rollback control` 回退 |
-| `doctor` | 逐项自检（只读） |
-| `node` | 管理节点：`add` `list` `show` `edit` `rm` `install` `sync` `config` `status` `online` `drain` `undrain` `core` `probe` `capabilities` `capability-set` `diagnose` `diagnostics` |
-| `inbound` | 管理入站：`add` `list` `show` `edit` `rm` |
-| `host` | 管理入站的对外入口：`add` `list` `edit` `rm` |
-| `rule` | 管理分流规则：`list` `add` `move` `rm` `toggle` `final` `test` `catalog` `migrate` `mode`（`mode` 只读，模式固定为 `rules`） |
-| `group` | 管理策略组：`list` `add` `edit` `rm` `preview` |
-| `user` | 管理用户：`add` `list` `edit` `rm` `enable` `disable` `renew` `reset-traffic` `revoke-sub` `links` `import` `export` |
-| `settings` | 订阅设置：`show` `set` `rules` `template` `test` |
-| `backup` / `restore` | 下载备份；把备份暂存到控制面，重启后生效 |
-| `diagnose` | 在本机直连或经 SOCKS 代理做综合体检，不需要登录控制面 |
-| `ui` | 在本机浏览器里管理控制面，见[用 mpx ui 在浏览器里管理](/guides/web-ui) |
+| `mpx restore <备份文件>` | 从备份恢复控制面，见[备份控制面](/guides/backup) |
+| `mpx user import` / `mpx user export` | 用 CSV 批量导入、导出用户 |
+| `mpx settings rules test '<User-Agent>'` | 测试某个客户端会拿到哪种格式 |
 
-## mpx serve
+## 怎样查命令
 
-| 参数 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `--addr` | `127.0.0.1:8080` | HTTP 监听地址 |
-| `--db` | 用户配置目录下 `mpx/mpx.db` | SQLite 数据库路径 |
-| `--interval` | `30s` | 同步用户名单与采集流量的间隔 |
+```bash
+mpx --help
+mpx user add --help
+```
 
-token 为空时控制面不校验鉴权。对公网提供服务时必须设置 token 并显式给出 `--addr`。
-
-## mpx ui
-
-| 参数 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `--addr` | `127.0.0.1:7480` | 监听地址，只能是回环地址 |
-| `--no-open` | 关 | 只打印一次性链接，不打开浏览器 |
-
-## mpx init
-
-| 参数 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `--host` | 必填 | VPS 地址或 IP |
-| `--ssh-user` | `root` | 必须是 root |
-| `--ssh-port` | `22` | |
-| `--ssh-password` | 关 | 提示输入一次密码，装好公钥后改用密钥 |
-| `--identity` | ssh 默认身份 | 私钥路径 |
-| `--addr` | `0.0.0.0:8080` | 控制面监听地址 |
-| `--api-port` | 取自 `--addr` | 控制面端口 |
-| `--name` | `default` | 节点名 |
-| `--remark` | 节点名 | 客户端里显示的节点名 |
-| `--username` | `user1` | 要建的用户名 |
-| `--sni` | `www.cloudflare.com` | REALITY 的 SNI |
-| `--reality-dest` | `www.cloudflare.com:443` | REALITY 回落目标 |
-| `--sub-prefix` | `http://<host>:<端口>` | 订阅地址前缀；设过一次后，不显式给出就不再覆盖 |
-| `--binary` | 从 GitHub Releases 下载 | 上传本机的 Linux `mpx` 二进制 |
-| `--install-script` | 仓库里的 `install.sh` | 使用哪份安装脚本 |
-
-重复运行会复用已有的节点、入站、入口和用户。
-
-开始时提示设置设备密码；非交互运行时用环境变量 `MPX_DEVICE_PASSWORD` 给出。装完后本机自动接入，并打印给其他设备的 `mpx connect` 命令。
-
-## mpx connect
-
-| 参数 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `<地址>` | 必填 | IP 或域名，可带端口，默认端口 `8080`；不接受 `http://` |
-| `--fp` | — | 证书指纹；不给时显示指纹并要求输入 `yes` 确认，非交互时必须给 |
-| `--name` | 主机名 | 设备名 |
-| `--password-stdin` | 关 | 从标准输入读设备密码 |
-| `--upgrade` | 关 | 把当前配置档的 `http://` 地址换成 `https://` 并记下指纹，沿用原 token |
-| `--profile` | `default` | 存进哪个配置档 |
-
-## mpx user add
-
-| 参数 | 默认 | 说明 |
-| :--- | :--- | :--- |
-| `--limit` | 不限 | 流量上限，如 `100GB`、`1.5TB`；`0` 表示不限 |
-| `--reset-strategy` | `none` | `none` / `daily` / `weekly` / `monthly` |
-| `--expire` | 不过期 | `YYYY-MM-DD`，当地时区当天 23:59:59 |
-| `--inbounds` | 全部 | 入站 id，逗号分隔 |
-| `--note` | — | 备注 |
-| `--disabled` | 关 | 建好后先停用 |
-
-`mpx user edit` 只改给出的字段。改回空值要显式给：`--limit 0`、`--expire ""`、`--inbounds ""`、`--note ""`。
+每个子命令的 `--help` 列出全部参数，并带可运行的例子。界面里每个表单底部的 **等价命令** 也给出了对应的命令。

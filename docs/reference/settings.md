@@ -1,26 +1,28 @@
 # 订阅设置
 
-用 `mpx settings show` 查看，`mpx -o json settings show` 取得 JSON。`mpx settings set -f FILE` 整体替换：**文件里没写的字段会被清空**，包括 `templates`。只改规则或模板时用 `settings rules` 和 `settings template` 子命令。
+在 **设置 → 通用** 里修改，点 **保存** 生效。保存只改你动过的项，其他设置保持不变。
 
-## 字段
+<Shot name="settings-general" cap="设置 · 通用" />
 
-| 字段 | 类型 | 默认 | 说明 |
+## 通用
+
+| 界面上的名字 | 类型 | 默认 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `sub_url_prefix` | string | 空 | 订阅地址前缀。为空时用请求自身的协议和主机 |
-| `profile_title` | string | `{USERNAME}` | 客户端里显示的订阅名 |
-| `support_link` | string | 空 | 支持链接 |
-| `update_interval` | int（小时） | `24` | 客户端自动更新间隔 |
-| `webhook_url` | string | 空 | 通知投递地址；为空不发通知 |
-| `notify_days_left` | int | `3` | 到期前多少天提醒 |
-| `notify_usage_percent` | int | `80` | 用量达到多少百分比提醒 |
-| `rules` | 数组 | 内置 9 条 | User-Agent 规则，见下 |
-| `templates` | 对象 | `null` | 各格式的客户端模板，键为 `clash-meta` / `sing-box` / `xray`；缺键或空串用内置模板 |
+| 订阅地址前缀 | 网址 | 空 | 发给用户的订阅链接以它开头。为空时用控制面自己的地址 |
+| 订阅标题 | 文字 | `{USERNAME}` | 客户端里显示的订阅名。`{USERNAME}` 替换成用户名 |
+| 客户端刷新间隔（小时） | 整数 | `24` | 客户端多久自动更新一次订阅 |
+| 支持链接 | 网址 | 空 | 客户端里显示的支持页面 |
+| Webhook | 网址 | 空 | 到期、超限等通知发到这里；为空不发通知。旁边的 **测试** 发一条测试通知 |
+| 到期前提醒（天） | 整数 | `3` | 到期前多少天提醒；`0` 表示关闭 |
+| 用量提醒（%） | 整数 | `80` | 用量达到多少百分比时提醒；`0` 表示关闭 |
 
-## 内置 User-Agent 规则
+## 识别规则
 
-从上到下匹配，第一条命中生效；都不命中返回 `links`。
+**设置 → 识别规则** 决定每个客户端拿到哪种格式。从上到下匹配 User-Agent，第一条命中生效；都不命中返回 `links`。
 
-| 顺序 | 正则 | 结果 |
+内置规则：
+
+| 顺序 | User-Agent 正则 | 返回 |
 | :--- | :--- | :--- |
 | 1 | `(?i)karing` | `clash-meta` |
 | 2 | `(?i)mihomo\|clash-verge\|clash\.meta\|clashmeta\|flclash\|stash` | `clash-meta` |
@@ -32,24 +34,10 @@
 | 8 | `(?i)quantumult` | `base64-links` |
 | 9 | `(?i)surge\|loon` | `base64-links` |
 
-规则结果可取：`clash-meta`、`clash`、`sing-box`、`xray`、`links`、`base64-links`、`block`（返回 404）。
+可返回的格式：`clash-meta`、`clash`、`sing-box`、`xray`、`links`、`base64-links`、`block`（客户端拿不到订阅）。
 
-## 样本
+## 模板
 
-```json
-{
-  "sub_url_prefix": "",
-  "profile_title": "{USERNAME}",
-  "support_link": "",
-  "update_interval": 24,
-  "webhook_url": "",
-  "notify_days_left": 3,
-  "notify_usage_percent": 80,
-  "rules": [
-    { "pattern": "(?i)karing", "result": "clash-meta" }
-  ],
-  "templates": null
-}
-```
+模板是 `clash-meta`、`sing-box` 和 `xray` 三种订阅的底稿：控制面把每个用户能用的节点填进模板，模板里的其余部分（分流、策略组、DNS 等）原样下发给所有人。
 
-（`rules` 截取了第一条。）
+在 **设置 → 模板** 里点 **查看 / 自定义** 修改某种格式的模板；改过的格式标为「自定义」，点 **恢复内置** 改回内置模板。没有改过的格式用内置模板。

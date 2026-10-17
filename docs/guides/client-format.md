@@ -1,48 +1,40 @@
 # 让某个客户端拿到指定格式
 
-某个客户端导入订阅后拿到的格式不对，比如拿到一串分享链接而不是 Clash 配置。
+某个客户端导入订阅后拿到的格式不对，例如拿到一串分享链接，而不是 Clash 配置。
 
 ## 判断它现在拿到什么
 
-控制面按客户端请求里的 User-Agent，从上到下匹配规则，第一条命中的决定格式。没有规则命中时返回分享链接（`links`），这不是错误。
+控制面按客户端请求里的 User-Agent，从上到下匹配识别规则，第一条命中的决定格式。没有规则命中时返回分享链接（`links`），这不是错误。
 
-```bash
-mpx settings rules list
-```
+在左侧点 **设置**，再点 **识别规则** 标签页：
 
-第一行写明规则来自「内置默认」还是「自定义」。
+<Shot name="settings-rules" cap="设置 · 识别规则" />
 
 ## 加一条规则
 
 假设客户端的 User-Agent 以 `MyClient/` 开头，你要它拿 sing-box 格式：
 
-```console
-$ mpx settings rules add '(?i)^myclient/' -r sing-box --index 1
-已加规则 1: (?i)^myclient/ → sing-box
-```
+1. 点 **加规则**。
+2. **User-Agent 正则** 填 `(?i)^myclient/`。`(?i)` 表示不区分大小写。
+3. **命中后返回** 选 `sing-box`，**插到第几位** 填 `1`。
+4. 点 **加规则**。
 
-`--index 1` 把它放到第一位。宽的规则会挡住后面的规则，例如 `(?i)clash` 也会命中 mihomo，所以具体的规则要放在前面。
+之后要调整顺序，用规则右侧的 **↑**、**↓**。
 
-`-r` 可选值：`clash-meta`、`clash`、`sing-box`、`xray`、`links`、`base64-links`、`block`。`block` 让该客户端拿到 404。
+宽的规则会挡住后面的规则，例如 `(?i)clash` 也会命中 mihomo，所以具体的规则要放在前面。
+
+结果可选 `clash-meta`、`clash`、`sing-box`、`xray`、`links`、`base64-links` 和 `block`。`block` 让该客户端拿不到订阅。
+
+第一次改规则时，整张内置规则表会一起保存为你的规则；之后内置规则更新不再影响你。
 
 ## 验证
 
-```console
-$ curl -s -A 'MyClient/2.0' -o /dev/null -w '%{content_type}\n' http://127.0.0.1:8080/sub/<token>
-application/json; charset=utf-8
-```
-
-sing-box 格式返回 JSON。
+在客户端里更新订阅，确认它拿到的配置类型对了。sing-box 格式是 JSON，Clash 格式是 YAML。
 
 ## 改回默认
 
-```console
-$ mpx settings rules reset
-已清掉自定义规则,回到内置默认
-```
-
-第一次改规则时，整张内置规则表会一起保存为自定义；之后内置规则更新不会再影响你。
+点 **恢复默认**，确认后清掉你的所有规则，回到内置规则。
 
 ## 不改规则的办法
 
-让用户直接导入带格式后缀的地址，例如 `.../sub/<token>/clash-meta`。`mpx user links` 列出了全部后缀。
+让用户直接导入指定格式的链接。用户详情的 **订阅地址** 一节列出了每种格式各自的链接，例如 **Clash Meta** 那一行。
