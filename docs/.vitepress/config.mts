@@ -10,7 +10,7 @@ export default defineConfig({
 
   lang: 'zh-CN',
   title: 'MPX',
-  description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，在 MPX 桌面程序里管理。',
+  description: 'MPX：在自己电脑上管好几台代理 VPS。装机、加人、加服务器、升级都在桌面程序里点，不用登 VPS。',
   head: [
     ['link', { rel: 'icon', href: '/my-proxy/favicon.svg', type: 'image/svg+xml' }],
     ['link', { rel: 'icon', href: '/my-proxy/favicon.ico', sizes: 'any' }],

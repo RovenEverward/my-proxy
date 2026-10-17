@@ -17,7 +17,7 @@
 
 <Shot name="user-new" cap="添加用户" />
 
-新用户在 30 秒内同步到节点，节点不重启，其他人不掉线。
+新用户在 30 秒内同步到节点。Xray 节点（默认的 VLESS + REALITY）不重启，其他人不掉线；Hysteria2 / TUIC 节点由 sing-box 承载，名单一变会重启 sing-box，这台节点上的 Hysteria2 / TUIC 连接会断开一次。
 
 ## 发订阅链接
 
