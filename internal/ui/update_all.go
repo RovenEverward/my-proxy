@@ -225,7 +225,7 @@ func (s *Server) runUpdateAll() {
 
 	s.setAllStep(updateStepCLI)
 	cliCtx, cancel := context.WithTimeout(ctx, updateInstallTimeout)
-	changed, err := s.updateAllCLI(cliCtx)
+	changed, exe, err := s.updateAllCLI(cliCtx)
 	cancel()
 	if err != nil {
 		s.failUpdateAll(err)
@@ -237,7 +237,7 @@ func (s *Server) runUpdateAll() {
 	}
 
 	s.setAllStep(updateStepRestart)
-	if err := s.updateAllRestart(); err != nil {
+	if err := s.updateAllRestart(exe); err != nil {
 		s.failUpdateAll(err)
 	}
 	// 重启成功不会返回:进程已被新二进制替换,状态停在 restarting。
@@ -393,23 +393,26 @@ func nodeEventMsg(ev model.UpdateNodeEvent) string {
 	return fmt.Sprintf("%s %s %s → %s %s", ev.Node, ev.Core, ev.From, ev.To, ev.Status)
 }
 
-// updateAllCLI 升级本机 CLI(复用 updateCLI 的实现),返回二进制是否真的被换掉。
-func (s *Server) updateAllCLI(ctx context.Context) (bool, error) {
-	from, to, changed, _, err := applyCLIUpdate(ctx, "")
+// updateAllCLI 升级本机 CLI(复用 updateCLI 的实现),返回二进制是否真的被换掉,
+// 以及新二进制实际写入的路径 exe —— 重启要用它,不能等到重启时再问 selfExecutable
+// (那时旧二进制已改名成 .prev,os.Executable 会指回旧版)。
+func (s *Server) updateAllCLI(ctx context.Context) (changed bool, exe string, err error) {
+	from, to, changed, exe, _, err := applyCLIUpdate(ctx, "")
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if !changed {
 		s.addAllEvent(updateStepCLI, "skip", "本机 CLI 已是最新")
-		return false, nil
+		return false, "", nil
 	}
 	s.addAllEvent(updateStepCLI, "ok", "本机 CLI "+from+" → "+to)
-	return true, nil
+	return true, exe, nil
 }
 
-// updateAllRestart 用新二进制原地重启 mpx ui。交接文件带上监听地址与会话,新进程
-// 读完后监听同一个地址、认同一个会话,浏览器的 cookie 继续有效。
-func (s *Server) updateAllRestart() error {
+// updateAllRestart 用新二进制原地重启 mpx ui。exe 是升级时实际写入的新二进制路径
+// (见 updateAllCLI),重启直接 exec 它,不再问 selfExecutable。交接文件带上监听
+// 地址与会话,新进程读完后监听同一个地址、认同一个会话,浏览器的 cookie 继续有效。
+func (s *Server) updateAllRestart(exe string) error {
 	path, err := writeRestartState(s.listenAddr(), s.sessionValue())
 	if err != nil {
 		return err
@@ -430,7 +433,7 @@ func (s *Server) updateAllRestart() error {
 	case <-time.After(updateRestartAck):
 	}
 	time.Sleep(updateRestartDelay)
-	if err := restartSelf(path); err != nil {
+	if err := restartSelf(path, exe); err != nil {
 		_ = os.Remove(path)
 		return fmt.Errorf("重启 mpx ui 失败: %w", err)
 	}

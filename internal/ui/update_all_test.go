@@ -171,10 +171,16 @@ func tarGzWithMPX(t *testing.T, content string) []byte {
 
 // withFakeRelease 接管本机 CLI 升级的两处外部依赖:发布件来源指向假服务器,
 // 本机可执行文件指向临时目录里的一份。返回的计数器记录假服务器被问了几次,
-// 失败路径的测试用它证明「后面的步骤没有做」。
-func withFakeRelease(t *testing.T, latest, newBin string) *int32 {
+// 失败路径的测试用它证明「后面的步骤没有做」;exe 是升级目标路径,重启测试用它
+// 断言 exec 的是新二进制。
+//
+// 假发布服务器一旦被下载(升级真的发生),selfExecutable 就改回 exe+".prev" ——
+// 复刻真实升级:旧二进制被改名成 .prev,Linux 的 /proc/self/exe 随之指向它。重启
+// 若还问 selfExecutable,就会 exec 到旧版。
+func withFakeRelease(t *testing.T, latest, newBin string) (*int32, string) {
 	t.Helper()
 	var hits int32
+	var downloaded atomic.Bool
 	archive := tarGzWithMPX(t, newBin)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
@@ -186,6 +192,8 @@ func withFakeRelease(t *testing.T, latest, newBin string) *int32 {
 			// 旧发布没有清单:404 走「未校验也继续」的分支,不用真算摘要。
 			http.NotFound(w, r)
 		default:
+			// 下载新二进制 = 升级发生,此后可执行文件已是改名后的 .prev。
+			downloaded.Store(true)
 			_, _ = w.Write(archive)
 		}
 	}))
@@ -199,18 +207,29 @@ func withFakeRelease(t *testing.T, latest, newBin string) *int32 {
 	updateSource = func() selfupdate.Source {
 		return selfupdate.Source{Repo: "test/mpx", APIBase: srv.URL, DownloadBase: srv.URL}
 	}
-	selfExecutable = func() (string, error) { return exe, nil }
+	selfExecutable = func() (string, error) {
+		if downloaded.Load() {
+			return exe + ".prev", nil
+		}
+		return exe, nil
+	}
 	t.Cleanup(func() { updateSource, selfExecutable = oldSrc, oldExe })
-	return &hits
+	return &hits, exe
 }
 
-// stubRestart 把重启换成只记录交接文件路径的替身,返回拿到路径的通道。
-func stubRestart(t *testing.T) <-chan string {
+// restartCall 记录一次重启替身收到的参数:交接文件路径与要 exec 的二进制。
+type restartCall struct {
+	stateFile string
+	exe       string
+}
+
+// stubRestart 把重启换成只记录参数的替身,返回拿到参数的通道。
+func stubRestart(t *testing.T) <-chan restartCall {
 	t.Helper()
-	called := make(chan string, 1)
+	called := make(chan restartCall, 1)
 	old := restartSelf
-	restartSelf = func(stateFile string) error {
-		called <- stateFile
+	restartSelf = func(stateFile, exe string) error {
+		called <- restartCall{stateFile: stateFile, exe: exe}
 		return nil
 	}
 	t.Cleanup(func() { restartSelf = old })
@@ -256,7 +275,7 @@ func TestUpdateAllHappyPath(t *testing.T) {
 	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
-	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	hits, exe := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
 	cp := &fakeControlPlane{
 		current: "v0.6.4", latest: "v0.6.5",
 		nodesFirst: "running", nodesThen: "done",
@@ -273,14 +292,19 @@ func TestUpdateAllHappyPath(t *testing.T) {
 		t.Fatalf("启动应 202,得到 %d %s", w.Code, w.Body)
 	}
 
-	var path string
+	var call restartCall
 	select {
-	case path = <-restarted:
+	case call = <-restarted:
 	case <-time.After(15 * time.Second):
 		t.Fatal("没有走到重启这一步")
 	}
+	// 升级后 selfExecutable 会指到改名后的 mpx.prev;重启必须 exec 升级时记下的
+	// 新二进制路径,而不是 .prev,否则又把旧版起回来(本 bug 的回归测试)。
+	if call.exe != exe {
+		t.Fatalf("重启应 exec 新二进制 %s,得到 %s", exe, call.exe)
+	}
 	// 交接文件要能被新进程读回,内容正是本服务的地址与会话(cookie 的值)。
-	st, err := ReadRestartState(path)
+	st, err := ReadRestartState(call.stateFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,6 +334,52 @@ func TestUpdateAllHappyPath(t *testing.T) {
 	}
 }
 
+// TestUpdateAllRestartUsesInstalledPath 是本 bug 的回归测试:升级把旧二进制改名成
+// mpx.prev 后,selfExecutable 再问会指到 .prev;重启必须用升级时记下的新二进制路径,
+// 且路径若以 .prev 结尾要去掉后缀,断言 restartSelf 收到的是 .../mpx 而不是 .../mpx.prev。
+func TestUpdateAllRestartUsesInstalledPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
+	withUpdateAllTiming(t)
+	withLocalVersion(t, "v0.6.4")
+	_, exe := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	cp := &fakeControlPlane{current: "v0.6.4", latest: "v0.6.5",
+		nodesFirst: "running", nodesThen: "done"}
+	s, c := allRig(t, cp)
+	restarted := stubRestart(t)
+
+	if w := doJSON(s, http.MethodPost, "/local/update/all", c, "{}"); w.Code != http.StatusAccepted {
+		t.Fatalf("启动应 202,得到 %d %s", w.Code, w.Body)
+	}
+	select {
+	case call := <-restarted:
+		if call.exe != exe {
+			t.Fatalf("升级后重启应 exec %s,得到 %s", exe, call.exe)
+		}
+		if strings.HasSuffix(call.exe, ".prev") {
+			t.Fatalf("重启路径不该带 .prev 后缀: %s", call.exe)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("没有走到重启这一步")
+	}
+}
+
+// TestStripPrevSuffix 覆盖兜底:升级后再问 selfExecutable 会拿到 .../mpx.prev,去掉
+// 后缀要指回 .../mpx;本来就不带后缀的路径原样返回。
+func TestStripPrevSuffix(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/home/u/.local/bin/mpx.prev", "/home/u/.local/bin/mpx"},
+		{"/home/u/.local/bin/mpx", "/home/u/.local/bin/mpx"},
+		{"/home/u/.local/bin/mpx.previous", "/home/u/.local/bin/mpx.previous"},
+	}
+	for _, tc := range cases {
+		if got := stripPrevSuffix(tc.in); got != tc.want {
+			t.Errorf("stripPrevSuffix(%q) = %q, 期望 %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func sameEvents(got, want []updateAllEvent) bool {
 	if len(got) != len(want) {
 		return false
@@ -329,7 +399,7 @@ func TestUpdateAllControlFailureStops(t *testing.T) {
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	// 不该被碰到:控制面失败后,节点与本机都不能开始。
-	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	hits, _ := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
 	cp := &fakeControlPlane{current: "v0.6.4", latest: "v0.6.5", controlReject: true}
 	s, c := allRig(t, cp)
 	restarted := stubRestart(t)
@@ -353,7 +423,7 @@ func TestUpdateAllControlFailureStops(t *testing.T) {
 	}
 	select {
 	case p := <-restarted:
-		t.Fatalf("不该重启,却拿到了交接文件 %s", p)
+		t.Fatalf("不该重启,却拿到了重启参数 %+v", p)
 	default:
 	}
 }
@@ -364,7 +434,7 @@ func TestUpdateAllNodesFailureStops(t *testing.T) {
 	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
-	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	hits, _ := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
 	cp := &fakeControlPlane{
 		current: "v0.6.4", latest: "v0.6.5",
 		nodesFirst: "running", nodesThen: "failed",
@@ -403,7 +473,7 @@ func TestUpdateAllNodesFailureStops(t *testing.T) {
 	}
 	select {
 	case p := <-restarted:
-		t.Fatalf("不该重启,却拿到了交接文件 %s", p)
+		t.Fatalf("不该重启,却拿到了重启参数 %+v", p)
 	default:
 	}
 }
@@ -414,7 +484,7 @@ func TestUpdateAllNodesUnsupported(t *testing.T) {
 	}
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
-	hits := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	hits, _ := withFakeRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
 	cp := &fakeControlPlane{current: "v0.6.4", latest: "v0.6.5", nodesMissing: true}
 	s, c := allRig(t, cp)
 
@@ -441,7 +511,7 @@ func TestUpdateAllConflictWhileRunning(t *testing.T) {
 	withUpdateAllTiming(t)
 	withLocalVersion(t, "v0.6.4")
 	// 本机已是最新:这轮跑到 CLI 那步记 skip 就收尾,不用重启。
-	hits := withFakeRelease(t, "v0.6.4", "#!/bin/sh\necho mpx v0.6.4\n")
+	hits, _ := withFakeRelease(t, "v0.6.4", "#!/bin/sh\necho mpx v0.6.4\n")
 	cp := &fakeControlPlane{current: "v0.6.4", latest: "v0.6.5", controlHang: make(chan struct{}),
 		nodesFirst: "running", nodesThen: "done"}
 	s, c := allRig(t, cp)
@@ -481,7 +551,7 @@ func TestUpdateAllConflictWhileRunning(t *testing.T) {
 	}
 	select {
 	case p := <-restarted:
-		t.Fatalf("二进制没换不该重启,却拿到了交接文件 %s", p)
+		t.Fatalf("二进制没换不该重启,却拿到了重启参数 %+v", p)
 	default:
 	}
 }
