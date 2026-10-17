@@ -136,7 +136,7 @@ test("重启以更新:进度按层分组,走到重启后整页刷新", async ({ 
   await mockUpdate(page, available);
   const events = [
     { seq: 1, step: "control", status: "ok", msg: "控制面 v1.0.0 → v1.1.0" },
-    { seq: 2, step: "nodes", status: "ok", msg: "la-1 xray 26.3.27 → 26.4.1 ok" },
+    { seq: 2, step: "nodes", status: "ok", msg: "la-1 xray:26.3.27 → 26.4.1 完成" },
     { seq: 3, step: "cli", status: "ok", msg: "本机程序 v1.0.0 → v1.1.0" },
     { seq: 4, step: "restart", status: "start", msg: "重启本机界面启用新版本" },
   ];
@@ -147,7 +147,7 @@ test("重启以更新:进度按层分组,走到重启后整页刷新", async ({ 
   await page.click("[data-act=update-apply]");
   await expect(page.locator("#modal")).toContainText("正在更新");
   await expect(page.locator("#modal")).toContainText("控制面 v1.0.0 → v1.1.0");
-  await expect(page.locator("#modal")).toContainText("la-1 xray 26.3.27 → 26.4.1");
+  await expect(page.locator("#modal")).toContainText("la-1 xray:26.3.27 → 26.4.1 完成");
   await expect(page.locator(".upd-step").first()).toHaveText("控制面");
   await expect(page.locator(".upd-step").nth(1)).toHaveText("节点");
   // 转入 restarting:显示重启中,/ui/meta 问通(测试里本机界面活着,第一次就通)后整页刷新。
@@ -165,7 +165,7 @@ test("失败:停在失败消息与关闭按钮,不再轮询", async ({ page }) =
   await mockUpdate(page, available);
   const events = [
     { seq: 1, step: "control", status: "ok", msg: "控制面 v1.0.0 → v1.1.0" },
-    { seq: 2, step: "nodes", status: "failed", msg: "la-1 xray 26.3.27 → 26.4.1 failed: 下载超时" },
+    { seq: 2, step: "nodes", status: "failed", msg: "la-1 xray:升级失败(下载超时)" },
   ];
   const state = { v: "failed" };
   const calls = await mockUpdateAll(page, events, state);
