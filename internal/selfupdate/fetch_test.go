@@ -118,6 +118,49 @@ func TestLatest(t *testing.T) {
 	}
 }
 
+// 接口被限流(403)时,Latest 退回下载站的重定向,从 Location 里取版本号。
+func TestLatestFallsBackToRedirect(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/"+testRepo+"/releases/latest":
+			w.WriteHeader(http.StatusForbidden)
+		case r.URL.Path == "/"+testRepo+"/releases/latest":
+			http.Redirect(w, r, "/"+testRepo+"/releases/tag/v0.8.0", http.StatusFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	src := Source{Repo: testRepo, APIBase: srv.URL, DownloadBase: srv.URL, Client: srv.Client()}
+	got, err := src.Latest(context.Background())
+	if err != nil {
+		t.Fatalf("Latest 出错: %v", err)
+	}
+	if got != "v0.8.0" {
+		t.Fatalf("Latest = %q,想要 v0.8.0", got)
+	}
+}
+
+// 接口和退回都失败时,错误里两种都要提到,别让人以为只是接口的问题。
+func TestLatestBothWaysFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "没有", http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+
+	src := Source{Repo: testRepo, APIBase: srv.URL, DownloadBase: srv.URL, Client: srv.Client()}
+	_, err := src.Latest(context.Background())
+	if err == nil {
+		t.Fatal("两条路都失败时应该报错")
+	}
+	for _, want := range []string{"403", "/releases/latest"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("错误里应提到 %q,得到: %v", want, err)
+		}
+	}
+}
+
 func TestFetchTarGz(t *testing.T) {
 	const want = "linux 可执行文件的内容"
 	name := ArchiveName("linux", "amd64")
