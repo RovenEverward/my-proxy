@@ -249,6 +249,19 @@ type Exposure struct {
 type HostView struct {
 	Host
 	Effective Exposure `json:"effective"`
+	// SubName 是这个入口在订阅里的名字(全部入站都能用的用户看到的那个,含重名
+	// 时加的协议后缀与序号);AutoName 表示没起名、跟随节点显示名。只读、只增,
+	// 只在列表里给。
+	SubName  string `json:"sub_name,omitempty"`
+	AutoName bool   `json:"auto_name,omitempty"`
+}
+
+// InboundView 是入站列表的返回形态:入站本身,另附没有对外入口时订阅里用的名字
+// (SubName / AutoName 同 HostView)。只增字段,入站自己的 JSON 不变。
+type InboundView struct {
+	Inbound
+	SubName  string `json:"sub_name,omitempty"`
+	AutoName bool   `json:"auto_name,omitempty"`
 }
 
 // ResetStrategy 是流量周期重置策略。

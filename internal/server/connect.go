@@ -93,24 +93,61 @@ type connectResponse struct {
 	Token    string `json:"token"`
 }
 
-func tooMany(w http.ResponseWriter, retry time.Duration, msg string) {
+func tooMany(w http.ResponseWriter, retry time.Duration, msg, uiHint string) {
 	w.Header().Set("Retry-After", strconv.Itoa(int(retry.Seconds())+1))
-	writeError(w, http.StatusTooManyRequests, msg)
+	writeErrorHint(w, http.StatusTooManyRequests, msg, uiHint)
+}
+
+// waitText 把还要等多久说成人话:不到一分钟按秒,其余按分钟向上取整。
+func waitText(d time.Duration) string {
+	if d < time.Minute {
+		sec := int((d + time.Second - 1) / time.Second)
+		if sec < 1 {
+			sec = 1
+		}
+		return strconv.Itoa(sec) + " 秒"
+	}
+	return strconv.Itoa(int((d+time.Minute-1)/time.Minute)) + " 分钟"
+}
+
+// 「设备密码不对」与「已锁定」的界面说法。忘了密码的人最需要的是怎么重设,
+// 不是再试一次。
+const (
+	connectResetHint = "忘了密码：在已经接入的设备上打开 设置 → 设备，改一个新的设备密码；" +
+		"一台已接入的设备都没有时，登录 VPS 重设，做法见文档「在多台设备上管理」。"
+	connectLockedNote = "已经接入的设备不受影响。"
+)
+
+// writeConnectLocked 回答「接入已锁定」:error 保持原话,另带 ui_hint 与
+// locked_until(只增的字段),客户端可以换算成本地时间。
+func writeConnectLocked(w http.ResponseWriter, code int, msg string, until time.Time, now time.Time) {
+	left := until.Sub(now)
+	if code == http.StatusTooManyRequests {
+		w.Header().Set("Retry-After", strconv.Itoa(int(left.Seconds())+1))
+	}
+	writeJSON(w, code, map[string]string{
+		"error":        msg,
+		"ui_hint":      "设备密码连续输错太多次，接入已锁定，请 " + waitText(left) + "后再试。" + connectLockedNote + connectResetHint,
+		"locked_until": until.UTC().Format(time.RFC3339),
+	})
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	g := s.connect
 	if ok, retry := g.perIP.take(clientIP(r), now); !ok {
-		tooMany(w, retry, "试得太频繁,请稍后再试")
+		tooMany(w, retry, "试得太频繁,请稍后再试",
+			"试得太频繁：每台电脑每分钟最多试 5 次，请 "+waitText(retry)+"后再试。")
 		return
 	}
 	if ok, retry := g.global.take("*", now); !ok {
-		tooMany(w, retry, "设备接入请求太多,请稍后再试")
+		tooMany(w, retry, "设备接入请求太多,请稍后再试",
+			"这个控制面一分钟内收到的接入请求太多，请 "+waitText(retry)+"后再试。")
 		return
 	}
 	if locked, left := g.locked(now); locked {
-		tooMany(w, left, "设备密码连续输错太多次,接入已锁定,"+left.Round(time.Minute).String()+"后再试")
+		writeConnectLocked(w, http.StatusTooManyRequests,
+			"设备密码连续输错太多次,接入已锁定,"+left.Round(time.Minute).String()+"后再试", now.Add(left), now)
 		return
 	}
 	if r.TLS == nil && !fromLoopback(r) {
@@ -147,11 +184,14 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
+		s.logger.Warn("设备接入:密码错误", "remote", r.RemoteAddr, "device", name)
 		if g.record(false, now) {
 			s.logger.Warn("设备密码连续输错,接入已锁定", "for", connectLockFor)
+			// 这一次正好把锁触发了:原话照旧是「密码不对」,界面要说清已经锁上。
+			writeConnectLocked(w, http.StatusUnauthorized, "设备密码不对", now.Add(connectLockFor), now)
+			return
 		}
-		s.logger.Warn("设备接入:密码错误", "remote", r.RemoteAddr, "device", name)
-		writeError(w, http.StatusUnauthorized, "设备密码不对")
+		writeErrorHint(w, http.StatusUnauthorized, "设备密码不对", "设备密码不对。"+connectResetHint)
 		return
 	}
 	g.record(true, now)

@@ -4,7 +4,9 @@
 #
 #   ① 没有任何配置:应当进入首次安装向导,截图 app-<os>-setup.png;
 #   ② 起了本地控制面并给出 MPX_TOKEN / MPX_SERVER:应当进入主界面,截图
-#      app-<os>-main.png。
+#      app-<os>-main.png;
+#   ③ 同一控制面里登记一台带地区(JP / 东京)的示例节点,跳到节点页,要等到内置
+#      国旗字体加载后才截图 app-<os>-nodes.png —— Windows 上国旗能显示的证据。
 #
 # 由 .github/workflows/ci.yml 的 desktop-smoke job 调用,也可以本地跑。依赖:
 #   - 仓库根已编出 ./mpxbin/mpx,且带 -X .../buildinfo.desktop=1
@@ -39,6 +41,7 @@ esac
 MPX="$BIN_DIR/mpx$EXE"
 SETUP_PNG="$ROOT/app-$OS_NAME-setup.png"
 MAIN_PNG="$ROOT/app-$OS_NAME-main.png"
+NODES_PNG="$ROOT/app-$OS_NAME-nodes.png"
 
 # 临时 HOME / 配置目录,别碰开发者自己的配置。Git Bash 的 mktemp 给的是 MSYS
 # 路径(/tmp/...),原生 Windows 程序不认,过一层 cygpath。
@@ -61,6 +64,7 @@ fi
 SERVE_LOG="$TMP/serve.log"
 SETUP_LOG="$TMP/setup.log"
 MAIN_LOG="$TMP/main.log"
+NODES_LOG="$TMP/nodes.log"
 SERVE_PID=""
 FAIL=0
 
@@ -149,6 +153,30 @@ else
     MPX_TOKEN=ci-token MPX_SERVER=http://127.0.0.1:18080
   MAIN_CODE=$?
   check_result "主界面冒烟" "$MAIN_CODE" "$MAIN_LOG" "$MAIN_PNG"
+
+  # 3) 节点页 + 国旗字体。示例节点:地址用文档保留段 203.0.113.0/24,不 SSH。
+  API=http://127.0.0.1:18080
+  AUTH="Authorization: Bearer ci-token"
+  # 三台:日本(白底红日,小字号下不显眼)、美国、德国,截图里一眼能看出是彩色国旗而不是字母。
+  add_node() { # add_node <内部名> <地址> <地区> <城市>
+    curl -sf -H "$AUTH" -H 'Content-Type: application/json' -X POST "$API/api/nodes" \
+      -d "{\"id\":0,\"name\":\"$1\",\"address\":\"$2\",\"ssh_port\":22,\"ssh_user\":\"root\",\"draining\":false}" >"$TMP/node.json" || return 1
+    nid="$(sed -n 's/^ *"id": *\([0-9][0-9]*\).*/\1/p' "$TMP/node.json" | head -1)"
+    [ -n "$nid" ] || return 1
+    curl -sf -H "$AUTH" -H 'Content-Type: application/json' -X PUT "$API/api/nodes/$nid/metadata" \
+      -d "{\"region\":\"$3\",\"city\":\"$4\"}" >/dev/null
+  }
+  # 城市名写成 JSON 的 \u 转义:Windows 上 Git Bash 把中文参数交给原生 curl 时会变成问号。
+  add_node jp-1 203.0.113.10 JP '\u4e1c\u4eac' && add_node us-1 203.0.113.20 US '\u6d1b\u6749\u77f6' && add_node de-1 203.0.113.30 DE '\u6cd5\u5170\u514b\u798f'
+  if [ $? -ne 0 ]; then
+    echo "登记示例节点失败" >&2; cat "$TMP/node.json" >&2 2>/dev/null; FAIL=1
+  else
+    run_app "$NODES_PNG" "$NODES_LOG" \
+      MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=nodes
+    NODES_CODE=$?
+    check_result "节点页国旗冒烟" "$NODES_CODE" "$NODES_LOG" "$NODES_PNG"
+    grep -q 'flagfont=loaded' "$NODES_LOG" || { echo "节点页冒烟:国旗字体没有加载" >&2; FAIL=1; }
+  fi
 fi
 
 # 3) 收尾。先 kill 再打印现场,失败时 artifact 里能看到全部日志。
@@ -161,6 +189,7 @@ cat "$SERVE_LOG" || true
 # 日志也复制到仓库根,给 upload-artifact 用。
 cp "$SETUP_LOG" "$ROOT/app-$OS_NAME-setup.log" 2>/dev/null || true
 cp "$MAIN_LOG" "$ROOT/app-$OS_NAME-main.log" 2>/dev/null || true
+cp "$NODES_LOG" "$ROOT/app-$OS_NAME-nodes.log" 2>/dev/null || true
 cp "$SERVE_LOG" "$ROOT/app-$OS_NAME-serve.log" 2>/dev/null || true
 
 exit "$FAIL"

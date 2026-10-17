@@ -329,7 +329,7 @@ func diagnoseAllNodes(cmd *cobra.Command, c *Client, cfg diagnostics.Config, net
 	}
 	// The node-list uses its existing array contract and the caller's context.
 	listCtx, listCancel := context.WithTimeout(cmd.Context(), defaultTimeout)
-	rawNodes, _, err := c.doOnce(listCtx, http.MethodGet, "/api/nodes", nil, false)
+	rawNodes, err := c.doRetry(listCtx, http.MethodGet, "/api/nodes", nil, false)
 	listCancel()
 	if err != nil {
 		return err
@@ -467,9 +467,26 @@ func diagnosticRequest(cmd *cobra.Command, c *Client, path string, cfg diagnosti
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), budget)
 	defer cancel()
+	// 限流闸门的 429(带 Retry-After)发生在体检开始之前,等一下重发是安全的,和其他
+	// 命令一样。体检自己的频率限制也回 429 但不带这个头:那是「刚测过」,原样报出来。
+	for attempt := 1; ; attempt++ {
+		raw, retryAfter, err := diagnosticOnce(ctx, c, path, payload)
+		if retryAfter <= 0 || attempt >= apiRetries {
+			return raw, err
+		}
+		select {
+		case <-ctx.Done():
+			return raw, err
+		case <-time.After(max(retryAfter, apiRetryWait)):
+		}
+	}
+}
+
+// diagnosticOnce 发一次体检请求。retryAfter 只在限流闸门的 429 时大于零。
+func diagnosticOnce(ctx context.Context, c *Client, path string, payload []byte) ([]byte, time.Duration, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.server+path, bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
@@ -477,20 +494,26 @@ func diagnosticRequest(cmd *cobra.Command, c *Client, path string, cfg diagnosti
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("执行诊断请求失败: %w", err)
+		return nil, 0, fmt.Errorf("执行诊断请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (256<<10)+4097))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(raw) > (256<<10)+4096 {
-		return nil, fmt.Errorf("诊断响应超过 260 KiB")
+		return nil, 0, fmt.Errorf("诊断响应超过 260 KiB")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return raw, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, raw), UIHint: errorUIHint(raw)}
+		wait := time.Duration(0)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+				wait = time.Duration(s) * time.Second
+			}
+		}
+		return raw, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, raw), UIHint: errorUIHint(raw)}
 	}
-	return raw, nil
+	return raw, 0, nil
 }
 
 func diagnosticLocalOutput(cmd *cobra.Command, report diagnostics.Report) error {

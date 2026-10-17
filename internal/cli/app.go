@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,14 @@ import (
 // appSmokeEnv 让 mpx app 在打开窗口后自动检查页面、截图并退出,给 CI 和本机
 // 穿刺用。值是截图的输出路径。
 const appSmokeEnv = "MPX_APP_SMOKE"
+
+// appSmokeRouteEnv 让冒烟在进入主界面后再跳到某一页(如 nodes)才截图。跳到节点页时
+// 还要等到内置国旗字体真的被加载(页面上有 🇯🇵 这类旗帜),证明 Windows 上国旗能显示。
+const appSmokeRouteEnv = "MPX_APP_SMOKE_ROUTE"
+
+// appSmokeRouteSelector:目标页标题已出现、且国旗字体已加载时返回非空。国旗字体
+// 只覆盖区域指示符(unicode-range),页面上真的出现旗帜时浏览器才会去加载它。
+const appSmokeRouteSelector = `(document.querySelector(".ph h1") && [...document.fonts].some(f => /Twemoji Country Flags/.test(f.family) && f.status === "loaded")) ? document.title + " flagfont=loaded" : ""`
 
 // appNoWebViewExit 是系统缺 WebView 时的退出码:2 与用法错分开,脚本能一眼
 // 认出是环境缺件而不是参数写错。
@@ -150,6 +159,12 @@ func runAppSmoke(win *mygo.Window, out string) {
 		last, lastErr = v, err
 		if err == nil {
 			if state, ok := v.(string); ok && state != "" {
+				if route := os.Getenv(appSmokeRouteEnv); route != "" {
+					state = smokeRoute(win, route, deadline)
+					if state == "" {
+						break
+					}
+				}
 				time.Sleep(appSmokeSettle)
 				if saveAppShot(win, out) {
 					fmt.Printf("APP_SMOKE_OK %s\n", state)
@@ -167,6 +182,21 @@ func runAppSmoke(win *mygo.Window, out string) {
 	saveAppShot(win, out)
 	fmt.Printf("APP_SMOKE_FAIL last=%v err=%v\n", last, lastErr)
 	mygo.App.Exit(1)
+}
+
+// smokeRoute 跳到 #route 并等到 appSmokeRouteSelector 成立;超时返回空串。
+func smokeRoute(win *mygo.Window, route string, deadline time.Time) string {
+	b, _ := json.Marshal("#" + route)
+	_, _ = win.Page().Eval("location.hash = " + string(b) + `; ""`)
+	for time.Now().Before(deadline) {
+		if v, err := win.Page().Eval(appSmokeRouteSelector); err == nil {
+			if st, ok := v.(string); ok && st != "" {
+				return st
+			}
+		}
+		time.Sleep(appSmokeEvery)
+	}
+	return ""
 }
 
 // saveAppShot 截当前窗口并写到 out,报告是否成功。

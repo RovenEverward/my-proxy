@@ -9,7 +9,7 @@ Object.assign(ICONS, {
   dash: '<path d="M6 12h12"/>',
 });
 const X = ic("x"), AN = ["连接", "入站", "安装", "完成"];
-// 向导状态。pw 只在内存里,绝不出现在等价命令或请求体之外。
+// 向导状态。pw 只留在内存和密码框里,只随请求体发出,不拼进其他文字,也不落盘。
 const W = {};
 function steps(st) {
   return H`<div class="wsteps">${AN.map((n, i) => H`${i ? H`<span class="ln ${st[i - 1] === "done" ? "done" : ""}"></span>` : ""}<span class="s ${st[i] || ""}"><i>${st[i] === "done" ? ic("check") : st[i] === "fail" ? X : String(i + 1)}</i><span>${n}</span></span>`)}</div>`;
@@ -23,10 +23,8 @@ function drawer(st, bodyRaw, footRaw) {
   $("#drawer").classList.add("wiz");
 }
 function validate1() {
-  const e = {}, name = String(W.name || "").trim(), port = String(W.sshPort ?? "").trim();
+  const e = {}, port = String(W.sshPort ?? "").trim();
   if (!String(W.address || "").trim()) e.address = "请填写服务器地址";
-  if (!name) e.name = "请填写节点名";
-  else if (/^\d+$/.test(name)) e.name = "节点名不能是纯数字";
   if (!/^\d+$/.test(port) || +port < 1 || +port > 65535) e.sshPort = "端口要在 1–65535 之间";
   if (!W.pw) e.pw = "请输入 SSH 密码";
   return e;
@@ -43,8 +41,7 @@ function render1() {
   const pwBox = H`<div class="pw"><input id="w-pw" type="${W.showPw ? "text" : "password"}" class="in ${e.pw ? "bad" : ""}" autocomplete="off"><button type="button" class="ib" id="w-pw-eye" aria-label="${W.showPw ? "隐藏密码" : "显示密码"}">${ic(W.showPw ? "eyeoff" : "eye")}</button></div>`;
   drawer(["cur", "", "", ""], H`
     <p class="lead">填一台新 VPS 的 SSH 信息。密码只用来装一次控制面的公钥，用完即丢，不保存。<a class="lnk wlnk" data-act="node-new" href="#">已能免密 SSH，直接登记</a></p>
-    <div class="two">${field("服务器地址", H`<input id="w-address" class="in mono ${e.address ? "bad" : ""}" value="${W.address}" placeholder="203.0.113.10" autocomplete="off">`, "", e.address)}
-    ${field("节点名", H`<input id="w-name" class="in mono ${e.name ? "bad" : ""}" value="${W.name}" placeholder="jp-2" autocomplete="off">`, "只用字母、数字和 -，之后会自动识别显示名", e.name)}</div>
+    ${field("服务器地址", H`<input id="w-address" class="in mono ${e.address ? "bad" : ""}" value="${W.address}" placeholder="203.0.113.10" autocomplete="off">`, "显示名(如 🇯🇵 东京 A)按这台机器的 IP 自动识别，之后可在节点页改", e.address)}
     <div class="two">${field("SSH 端口", H`<input id="w-ssh-port" class="in mono ${e.sshPort ? "bad" : ""}" value="${W.sshPort}" placeholder="22" inputmode="numeric" autocomplete="off">`, "", e.sshPort)}
     ${field("SSH 用户", H`<input id="w-ssh-user" class="in mono" value="${W.sshUser}" placeholder="root" autocomplete="off">`, "", "")}</div>
     ${field("SSH 密码", pwBox, "机房给的初始密码即可", e.pw)}`,
@@ -57,7 +54,7 @@ function render1() {
       clearErr(el, key);
     });
   };
-  bind("#w-address", "address"); bind("#w-name", "name"); bind("#w-ssh-port", "sshPort"); bind("#w-ssh-user", "sshUser"); bind("#w-pw", "pw");
+  bind("#w-address", "address"); bind("#w-ssh-port", "sshPort"); bind("#w-ssh-user", "sshUser"); bind("#w-pw", "pw");
   $("#w-pw-eye").addEventListener("click", () => {
     W.pw = $("#w-pw").value; W.showPw = !W.showPw; render1();
     const p = $("#w-pw"); p.focus(); p.setSelectionRange(p.value.length, p.value.length);
@@ -127,7 +124,15 @@ function fmtDur(ms) {
 }
 // 失败行的原话来自控制面,extra 是控制面原话 + 针对这一步的提示。
 function failExtra(stage, msg) {
-  return H`<div class="sub2"><div class="raw">${msg}</div><div class="mt2">${HINTS[stage]}</div></div>`;
+  return H`<div class="sub2"><div class="raw">${msg}</div><div class="mt2">${stage === 0 ? loginHint(msg) : HINTS[stage]}</div></div>`;
+}
+// 第一步失败的原因不止「密码不对」:连不上端口、控制面本机缺 ssh 工具都会落在这一步。
+// 按原话分个大类,别把「连接被拒」也说成密码不对。
+function loginHint(msg) {
+  const m = String(msg || "");
+  if (/refused|timed? ?out|timeout|no route|unreachable|拒绝|超时|连不上/i.test(m)) return "连不上这台机器的 SSH：检查地址和 SSH 端口，以及 VPS 的防火墙或安全组是否放行。节点还没有建，不用回退。";
+  if (/password|permission denied|auth|密码/i.test(m)) return HINTS[0];
+  return "按上面的原话处理后再试。节点还没有建，不用回退。";
 }
 function render3() {
   const t = W.task, stages = t.rows.map(r => r.st);
@@ -145,7 +150,7 @@ function render3() {
   if ($("#w-retry")) $("#w-retry").addEventListener("click", () => runFrom(t.stage));
   if ($("#w-del")) $("#w-del").addEventListener("click", () => {
     const nodeId = t.nodeId;
-    confirmBox({ title: `删除刚加的节点 ${W.name}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
+    confirmBox({ title: `删除刚加的节点 ${W.display || W.address}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
       run: async () => { await api(`/api/nodes/${nodeId}`, { method: "DELETE" }); closeOverlays(); load(true, true); } });
   });
   if ($("#w-later")) $("#w-later").addEventListener("click", () => { closeOverlays(); location.hash = "nodes/" + t.nodeId; });
@@ -156,15 +161,17 @@ async function runFrom(stage) {
   const set = (i, st, extra) => { const r = t.rows[i]; r.st = st; if (extra !== undefined) r.extra = extra; if (st === "fail") r.du = r.du || fmtDur(Date.now() - r._t0); render3(); };
   // 密码只在这一个请求体里出现,请求发出后立刻从内存里清掉。
   if (stage <= 0 && t.rows[0].st !== "done") {
-    const pw = W.pw, name = W.name, address = W.address, sshPort = W.sshPort, sshUser = W.sshUser;
+    const pw = W.pw, address = W.address, sshPort = W.sshPort, sshUser = W.sshUser;
     W.pw = ""; t.rows[0]._t0 = Date.now(); t.rows[0].st = "run";
     try {
+      // 内部名(命令行与数据里用)自动生成,用户不用管:node-1、node-2…取第一个没被占的。
+      const name = W.name = W.name || await autoNodeName();
       const res = await api("/api/nodes", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: 0, name, address, ssh_port: +sshPort, ssh_user: sshUser === "root" ? "" : sshUser, api_port: 0, config_path: "", service_name: "", draining: false, ssh_password: pw }) });
       t.nodeId = res.id; W.display = res.display || ""; W.locateNote = res.locate_note || "";
       const ms = Date.now() - t.rows[0]._t0;
       t.rows[0].st = "done"; t.rows[0].du = fmtDur(ms);
-      t.rows[1].st = "done"; t.rows[1].t = `登记节点 ${name} #${res.id}`; t.rows[1].du = fmtDur(Date.now() - t.rows[0]._t0);
+      t.rows[1].st = "done"; t.rows[1].t = `登记节点 ${W.display || address}`; t.rows[1].du = fmtDur(Date.now() - t.rows[0]._t0);
       render3();
     } catch (e) { set(0, "fail", failExtra(0, e.message)); return; }
   }
@@ -177,7 +184,8 @@ async function runFrom(stage) {
         t.inboundId = inb.id;
       }
       await api(`/api/inbounds/${t.inboundId}/hosts`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: 0, inbound_id: t.inboundId, remark: W.name, address: "", port: 0 }) });
+        // 入口不起名:订阅里跟随节点显示名(以前写成内部名,客户端里就成了 node-1)。
+        body: JSON.stringify({ id: 0, inbound_id: t.inboundId, remark: "", address: "", port: 0 }) });
       t.rows[2].du = fmtDur(Date.now() - t.rows[2]._t0);
       set(2, "done");
     } catch (e) { set(2, "fail", failExtra(2, e.message)); return; }
@@ -212,7 +220,7 @@ async function render4() {
     else subs = H`${allPlans.map(p => p.name).join("、")} · <b>${allPlans.reduce((s, p) => s + (+p.users || 0), 0)}</b> 个用户的订阅会在下次刷新时拿到它`;
   }
   drawer(["done", "done", "done", "cur"], H`
-    <div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>${display || name} 已就绪</h3><p>${name} · ${address} · xray 已安装，配置已下发</p></div></div>
+    <div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>${display || address} 已就绪</h3><p>${address} · xray 已安装，配置已下发</p></div></div>
     <dl class="kvw"><dt>显示名</dt><dd>${display || "—"} <span class="sub">· ${locateNote || "按 IP 自动识别，可在节点页改"}</span></dd>
     <dt>入站</dt><dd class="mono">REALITY · ${W.inbPort} · 1 个入口</dd>
     <dt>进了哪些订阅</dt><dd>${subs}</dd></dl>
@@ -221,6 +229,12 @@ async function render4() {
   $("#w-again").addEventListener("click", () => openNodeWizard());
   $("#w-view").addEventListener("click", () => { closeOverlays(); location.hash = "nodes/" + nodeId; });
   load(true, true); // 刷新背后的节点列表;load 不会关抽屉。
+}
+// autoNodeName:取 node-1、node-2… 里第一个还没被占用的内部名。
+async function autoNodeName() {
+  let names = new Set();
+  try { names = new Set((await api("/api/nodes")).map(n => n.name)); } catch { /* 拉不到就从 1 试,撞名由控制面报 */ }
+  for (let i = 1; ; i++) if (!names.has("node-" + i)) return "node-" + i;
 }
 window.nodeWizardStart = W => { W.task = newTask(); runFrom(0); };
 window.openNodeWizard = () => {

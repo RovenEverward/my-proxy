@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -474,10 +475,17 @@ func (s *Server) handleListInbounds(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入站")
 		return
 	}
-	if inbounds == nil {
-		inbounds = []model.Inbound{}
+	// 显示用的名字算不出来时不影响列表本身:这两个字段是附加的,缺了就不带。
+	names, err := s.subscriptionNames()
+	if err != nil {
+		slog.Warn("算订阅里的名字失败", "error", err)
 	}
-	writeJSON(w, http.StatusOK, inbounds)
+	views := make([]model.InboundView, 0, len(inbounds))
+	for _, in := range inbounds {
+		n := names[subNameKey{in.ID, 0}]
+		views = append(views, model.InboundView{Inbound: in, SubName: n.name, AutoName: n.auto})
+	}
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (s *Server) handleCreateInbound(w http.ResponseWriter, r *http.Request) {
@@ -614,6 +622,11 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "对外入口")
 		return
 	}
+	// 显示用的名字算不出来时不影响列表本身:这两个字段是附加的,缺了就不带。
+	names, err := s.subscriptionNames()
+	if err != nil {
+		slog.Warn("算订阅里的名字失败", "error", err)
+	}
 	views := make([]model.HostView, 0, len(hosts))
 	for _, h := range hosts {
 		v, err := s.hostViewOf(h)
@@ -621,6 +634,8 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 			s.writeStoreError(w, err, "对外入口")
 			return
 		}
+		n := names[subNameKey{h.InboundID, h.ID}]
+		v.SubName, v.AutoName = n.name, n.auto
 		views = append(views, v)
 	}
 	writeJSON(w, http.StatusOK, views)

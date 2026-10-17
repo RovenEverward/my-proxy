@@ -1,5 +1,5 @@
 // 首次安装向导(向导 B)全部 6 屏:欢迎 / 连接 / 检查 / 设置 / 安装 / 完成;
-// 欢迎屏另有「接入已有控制面」一条路(等价 mpx connect)。
+// 欢迎屏另有「接入已有控制面」一条路:填地址、核对证书指纹、输设备密码。
 // 对外暴露 window.openSetup 与 window.setupStartRun;轮询状态挂在 window.__setupPoll。
 "use strict";
 (() => {

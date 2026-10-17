@@ -485,3 +485,26 @@ func TestDiagnosticCLIFusionTableAndJSONPreserveEvidence(t *testing.T) {
 		t.Fatalf("data rendered as text: %s err=%v", out.String(), err)
 	}
 }
+
+// 限流闸门的 429 带 Retry-After,体检根本没开始:和其他命令一样等一下重发。
+// (不带这个头的 429 是体检自己的频率限制,见上面的用例,不重试。)
+func TestDiagnosticCLIRetriesGate429(t *testing.T) {
+	calls := 0
+	reportRaw, _ := json.Marshal(diagnosticFixture())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "请求太频繁,请稍后再试"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(model.DiagnosticRecord{NodeID: 7, Source: "node", CheckedAt: time.Now(), Report: reportRaw})
+	}))
+	defer srv.Close()
+	t.Setenv("MPX_SERVER", srv.URL)
+	out, err := runDiagnosticRoot(t, "node", "diagnose", "7", "--output", "json")
+	if calls != 2 || err != nil || !json.Valid([]byte(out)) {
+		t.Fatalf("calls=%d err=%v out=%s", calls, err, out)
+	}
+}

@@ -6,6 +6,8 @@
 ;     -DOUTFILE="$(pwd)/mpx-desktop_0.7.2_windows_amd64_setup.exe" \
 ;     deploy/windows/mpx-desktop.nsi
 ;
+; 发布前 publish job 会把它改名为 MPX-<ver>-Windows-x64-setup.exe(另有固定名副本)。
+;
 ; 与命令行版的 mpx.nsi 刻意分开:
 ;   - 装的是桌面二进制,改名 MPX.exe(无参数启动就开窗口);
 ;   - RequestExecutionLevel user,只写 HKCU,不需要管理员;

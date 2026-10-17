@@ -30,6 +30,8 @@ test("添加节点:与 mpx node add 一致", async ({ page }) => {
   await page.goto(env.origin + "/#nodes");
   await page.click("[data-act=node-wizard]");
   await page.click("#drawer .wlnk");
+  // 内部名收在「高级」里,可不填(自动生成);这里填上,好和 CLI 的请求逐字对照。
+  await page.click("details.adv summary");
   await page.fill("#n-name", "ui-new");
   await page.fill("#n-address", "198.51.100.7");
   await page.fill("#n-ssh-port", "2222");
@@ -53,7 +55,7 @@ test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
   await page.fill("#n-ssh-user", "deploy");
   await expect(page.locator("#node-form")).not.toContainText("mpx ");
   await page.click("#n-save");
-  await expect(page.locator(".toast")).toContainText("已更新节点 2");
+  await expect(page.locator(".toast")).toContainText("已更新节点 ui-n");
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
@@ -69,7 +71,7 @@ test("出口 IP:与 mpx node edit --outbound-ip 一致", async ({ page }) => {
   await page.selectOption("#n-outbound-ip", "v4");
   await expect(page.locator("#node-form")).not.toContainText("mpx ");
   await page.click("#n-save");
-  await expect(page.locator(".toast")).toContainText("已更新节点 2");
+  await expect(page.locator(".toast")).toContainText("已更新节点 ui-n");
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
@@ -89,9 +91,15 @@ test("显示名:与 mpx node edit --region / --city 一致,只发 metadata", asy
   await page.click("#n-save");
   await expect(page.locator(".toast")).toContainText("🇺🇸 洛杉矶 B");
   expect(take(names, opt)).toEqual(fromCLI);
-  // 列表以显示名为主、内部名为辅。
+  // 列表只显示显示名;内部名只在详情里作为次要信息。
   await page.goto(env.origin + "/#nodes");
-  await expect(page.locator("tbody tr", { hasText: "ui-n" }).first()).toContainText("🇺🇸 洛杉矶 B");
+  const row = page.locator("tbody tr", { hasText: "🇺🇸 洛杉矶 B" }).first();
+  await expect(row).toBeVisible();
+  await expect(row).not.toContainText("ui-n");
+  await expect(row).not.toContainText("#2");
+  await openNode(page, 2);
+  await expect(page.locator("h1")).toContainText("🇺🇸 洛杉矶 B");
+  await expect(page.locator(".ph p").first()).toContainText("内部名 ui-n");
 });
 
 test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致", async ({ page }) => {
@@ -190,7 +198,7 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   await page.check("input[name=mux]");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
   await page.click("#i-save");
-  await expect(page.locator(".toast")).toContainText("要下发节点 2 才生效");
+  await expect(page.locator(".toast")).toContainText("要到节点「🇺🇸 洛杉矶 B」下发配置才生效");
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
@@ -212,26 +220,26 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await page.fill("#h-alpn", "h2,http/1.1");
   await expect(page.locator("#host-form")).not.toContainText("mpx ");
   await page.click("#h-save");
-  await expect(page.locator(".toast")).toContainText("已创建对外入口");
+  await expect(page.locator(".toast")).toContainText("已创建入口「直连」");
   expect(take([], opt)).toEqual(addCLI);
 
   await page.click("[data-act=host-edit][data-id='2']");
-  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口 #2");
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「入口」");
   await page.fill("#h-address", "");
   await page.fill("#h-remark", "备用");
   await expect(page.locator("#host-form")).not.toContainText("mpx ");
   await page.click("#h-save");
-  await expect(page.locator(".toast")).toContainText("已更新对外入口 2");
+  await expect(page.locator(".toast")).toContainText("已更新入口「备用」");
   expect(take([], opt)).toEqual(editCLI);
 
   await page.click("[data-act=host-edit][data-id='2']");
-  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口 #2");
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
   await page.click("[data-act=host-rm]");
   await page.click("[data-act=modal-cancel]");
   expect(env.takeLog()).toEqual([]);
   await page.click("[data-act=host-rm]");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已删除对外入口 2");
+  await expect(page.locator(".toast")).toContainText("已删除入口「备用」");
   expect(take([], opt)).toEqual(rmCLI);
 });
 
@@ -247,7 +255,7 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await expect(page.locator("#okb")).toBeDisabled();
   await page.fill("#typed", "t-2-2000");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已删除入站 4");
+  await expect(page.locator(".toast")).toContainText("已删除入站「t-2-2000」");
   expect(take([], opt)).toEqual(inbCLI);
 
   env.takeLog();
