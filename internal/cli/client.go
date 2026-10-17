@@ -37,6 +37,9 @@ type APIError struct {
 	// UIHint 是控制面给界面的说法(回答里的 ui_hint,只增字段):同一件事,不提命令。
 	// 命令行照旧用 Message;mpx ui / 桌面窗口经 uiError 换成它。
 	UIHint string
+	// Body 是控制面回答的原文(非 2xx 时),给需要读额外字段的调用方(如接入锁定的
+	// locked_until)。
+	Body []byte
 }
 
 // uiError 把控制面错误换成界面说法:是带 ui_hint 的 APIError 就用 ui_hint,
@@ -135,7 +138,11 @@ func (c *Client) doWithin(timeout time.Duration, method, path string, body any) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	return c.doRetry(ctx, method, path, payload, body != nil)
+}
 
+// doRetry 在 ctx 里发请求,撞上限流闸门的 429 就等一下再发。
+func (c *Client) doRetry(ctx context.Context, method, path string, payload []byte, hasBody bool) ([]byte, error) {
 	// 控制面的 /api 是按 IP 令牌桶限流的(apiRate/apiBurst)。一次 bootstrap 要
 	// 连着建节点、入站、入口、用户、下发配置,十来次请求会在几十毫秒内打完,
 	// 正好撞在桶上 —— 那不是使用者在猛刷,而是这一件事本来就要这么多步。
@@ -152,7 +159,7 @@ func (c *Client) doWithin(timeout time.Duration, method, path string, body any) 
 			}
 		}
 
-		data, retryAfter, err := c.doOnce(ctx, method, path, payload, body != nil)
+		data, retryAfter, err := c.doOnce(ctx, method, path, payload, hasBody)
 		if err == nil {
 			return data, nil
 		}
@@ -208,7 +215,7 @@ func (c *Client) doOnce(ctx context.Context, method, path string, payload []byte
 				wait = time.Duration(s) * time.Second
 			}
 		}
-		return nil, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data)}
+		return nil, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data), Body: data}
 	}
 	return data, 0, nil
 }

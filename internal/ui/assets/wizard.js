@@ -9,7 +9,7 @@ Object.assign(ICONS, {
   dash: '<path d="M6 12h12"/>',
 });
 const X = ic("x"), AN = ["连接", "入站", "安装", "完成"];
-// 向导状态。pw 只在内存里,绝不出现在等价命令或请求体之外。
+// 向导状态。pw 只留在内存和密码框里,只随请求体发出,不拼进其他文字,也不落盘。
 const W = {};
 function steps(st) {
   return H`<div class="wsteps">${AN.map((n, i) => H`${i ? H`<span class="ln ${st[i - 1] === "done" ? "done" : ""}"></span>` : ""}<span class="s ${st[i] || ""}"><i>${st[i] === "done" ? ic("check") : st[i] === "fail" ? X : String(i + 1)}</i><span>${n}</span></span>`)}</div>`;

@@ -11,6 +11,7 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const val = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(val).join("") : esc(v);
 function H(strings, ...vals) { let s = strings[0]; vals.forEach((v, i) => { s += val(v) + strings[i + 1]; }); return raw(s); }
 
+let writeGen = 0; // 写请求的代数,见 pageData
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 async function api(path, init = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -18,8 +19,12 @@ async function api(path, init = {}) {
     try {
       res = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...(init.headers || {}) } });
     } catch (e) { throw new APIError(0, "连不上本地服务:MPX 可能已经退出,请重新打开"); }
+    // 写请求回来之后,之前发出的读都可能是旧的:换一代,load 不再复用它们(见 pageData)。
+    if ((init.method || "GET") !== "GET") writeGen++;
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
-    if (res.status === 429 && attempt < 3) { await sleep(1000 * (+res.headers.get("Retry-After") || 2)); continue; }
+    // 只重试限流闸门的 429(带 Retry-After);体检自己的频率限制也回 429,但不带这个头,
+    // 那是「这台刚测过」,重试只会再被拒一次。
+    if (res.status === 429 && res.headers.get("Retry-After") && attempt < 3) { await sleep(1000 * (+res.headers.get("Retry-After") || 2)); continue; }
     const text = await res.text();
     // asText:要原文(模板),不要把看着像 JSON 的正文解析掉。
     if (init.asText && res.ok) return text;
@@ -470,6 +475,17 @@ async function useProfile(name, el) {
 
 /* ---------- 渲染与路由 ---------- */
 let loadSeq = 0;
+// 写操作之后 write() 会排一次刷新,不少调用方又紧跟着 await load():两次 load 各自
+// 把这一页的几个 GET 全发一遍,白白多耗一倍限流桶,连着点两下就会被控制面 429。
+// 同一页、同一代(期间没有写请求回来)还在路上的读直接复用,不再重发。
+let inflight = null;
+function pageData(p, key) {
+  if (inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
+  const promise = p.load(route);
+  const mine = inflight = { key, gen: writeGen, promise };
+  promise.then(() => {}, () => {}).then(() => { if (inflight === mine) inflight = null; });
+  return promise;
+}
 function paint() {
   const p = PAGES[route[0]] || PAGES.overview;
   const crumb = p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`;
@@ -489,7 +505,7 @@ async function load(soft, force) {
   const seq = ++loadSeq;
   if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
   try {
-    const data = await p.load(route);
+    const data = await pageData(p, key);
     if (seq !== loadSeq) return;
     current = { page: p, data, error: null, loading: false, at: new Date() };
     CP_OK = true;
