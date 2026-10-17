@@ -251,13 +251,19 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}.rp-bar .sp{flex:1}
 .rp-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}.rp-side{position:sticky;top:66px}
 .rp-row{display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 6px;border-radius:8px;min-height:46px}.rp-row:hover{background:var(--hover)}
-.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--info) 12%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--info) 6%,transparent)}
+.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:var(--hover)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
 .rp-row.editing{background:var(--canvas)}.rp-row.final{background:var(--canvas)}
 .rp-grip{width:12px;color:var(--faint);font-size:11px;letter-spacing:-2px}.rp-n{width:22px;text-align:right;font:500 11.5px var(--mono);color:var(--faint)}
-.rp-ty{width:84px;flex:none;font-size:12px;color:var(--muted)}.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
+.rp-tyc{width:84px;flex:none;min-width:0}
+/* 规则类型:固定的 84px 列,里面是灰底文字标签,保证后面值列不错位 */
+.rp-ty{display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
 .rp-to{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;font-size:12.5px;font-weight:530;white-space:nowrap;background:var(--stone)}
-/* 去向标签只用黑白:策略组实心墨色,直连浅灰底,拦截只描边(红色只留给错误) */
-.rp-to.dir{color:var(--ink2);background:var(--stone)}.rp-to.rej{color:var(--ink2);background:none;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 22%,transparent)}.rp-to.grp{color:var(--canvas);background:var(--ink)}
+/* 去向一律灰底文字标签:直连、拦截、策略组都用同一种灰底,红色只留给失效的策略组 */
+.rp-to.dir,.rp-to.rej,.rp-to.grp{color:var(--ink2);background:var(--stone)}
+.rp-to.err{color:var(--bad);background:var(--bad-bg)}
+/* 分流页的状态点也走黑白,绿色只留给错误之外的语义由文案表达 */
+.rp-empty .pill.on::before,.rp-row .pill.on::before,.rp-res .pill.on::before,#bi-form .pill.on::before{background:var(--ink)}
 .rp-sec{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:12px;font-weight:560;color:var(--muted)}.rp-sec .sp{flex:1}
 .sw{position:relative;display:inline-block;width:30px;height:18px;flex:none}.sw input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:1}.sw i{position:absolute;inset:0;border-radius:99px;background:color-mix(in srgb,var(--ink) 16%,transparent);transition:background 140ms}
 .sw i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0003;transition:transform 160ms var(--ease)}.sw input:checked+i{background:var(--ink)}.sw input:checked+i::after{background:var(--canvas)}.sw input:checked+i::after{transform:translateX(12px)}
@@ -265,14 +271,14 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-g{cursor:pointer;align-items:flex-start}.rp-g:hover{background:var(--hover)}.rp-gi{font-size:20px;width:28px}.rp-g>svg{width:14px;color:var(--faint);margin-top:4px}
 .rp-empty{padding:30px 28px;text-align:center}.rp-empty h4{margin:22px 0 4px;font-size:15px;font-weight:620}
 .rp-flow{display:flex;align-items:center;justify-content:center;gap:14px}.rp-fb{display:flex;flex-direction:column;gap:5px;padding:12px 14px;border-radius:10px;background:var(--stone);font-size:12px;color:var(--muted);text-align:left;min-width:150px}
-.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--info);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);font-size:18px}
+.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--ink);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);font-size:18px}
 .rp-starts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;text-align:left}
 .rp-start{display:flex;flex-direction:column;gap:6px;padding:16px;border:0;border-radius:12px;background:var(--canvas);cursor:pointer;align-items:flex-start}.rp-start:hover{background:var(--hover)}.rp-start.rec{background:var(--stone)}
 .rp-start b{font-size:13.5px}.rp-start>span:not(.pill){color:var(--muted);font-size:12px;flex:1}.rp-start em{font-style:normal;font-size:12px;font-weight:540;display:flex;align-items:center;gap:4px}.rp-start em svg{width:13px;height:13px}
 .rp-bi{padding:10px 0}.rp-bi .chk{align-items:flex-start}
 @media (max-width:860px){.rp-main,.rp-starts{grid-template-columns:minmax(0,1fr)}.rp-flow{flex-direction:column}.rp-v{max-width:none}}
 .rp-row .sp{flex:1}.rp-start{text-align:left}.rp-try{border:0;cursor:pointer}.rp-try:hover{color:var(--ink);background:var(--hover)}
-.pp-pvr{padding:9px 14px}.pp-pvr.miss{opacity:.55}.pp-mk{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--stone);color:var(--faint)}.pp-mk svg{width:12px;height:12px}.pp-mk.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.pp-pvr{padding:9px 14px}.pp-pvr.miss{opacity:.55}.pp-mk{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--stone);color:var(--faint)}.pp-mk svg{width:12px;height:12px}.pp-mk.ok{background:var(--stone);color:var(--ink2)}
 .rp-row .in{height:30px}.rp-row.editing{flex-wrap:wrap}.rp-warn{margin-bottom:14px}.rp-ic{width:22px;text-align:center}
 /* ---- 套餐 ---- */
 /* 「默认」是灰色文字,不是彩色 pill(与原型一致)。 */
