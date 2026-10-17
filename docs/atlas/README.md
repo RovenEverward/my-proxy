@@ -18,7 +18,7 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 
 判断「做得好」的标准写在决策记录的口吻里：错了也看不出来的问题最优先（静默丢账先于一切）；一份坏配置、一条坏规则不能让整个订阅不可用；能拒绝自己的安装和升级才安全；不可用的用户要看得出来是停用、过期还是超限。
 
-现在做到了：一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流、远程升级与回滚、`mpx ui` 的添加节点和首次安装向导、桌面程序的设计与 Linux 冒烟。接下来的方向见 [路线图](../internal/roadmap.md) 和 [桌面程序方案](../internal/desktop-rfc.md)：补齐 UI 缺口、桌面安装包与自更新、三平台 CI。
+现在做到了：一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流、远程升级与回滚、一键更新三层、桌面程序（三平台安装包、窗口内首次安装与接入、多控制面切换、自更新、三平台 CI 冒烟）。做过的批次和版本见 [路线图](../internal/roadmap.md)；下一步还没定。
 
 ## 思想地图
 
@@ -99,6 +99,7 @@ flowchart LR
 | 关键决策与理由（决策日志） | [docs/internal/decisions.md](../internal/decisions.md) | 开发者、将来的主人 | 守护层，只追加 | 主人 |
 | 现状与验证程度 | [docs/internal/status.md](../internal/status.md) | 开发者 | 活的 | 随版本 |
 | 路线图 | [docs/internal/roadmap.md](../internal/roadmap.md) | 开发者、主人 | 活的 | 主人 |
+| 运维手册（发版、升级、补跑安装脚本） | [docs/internal/runbook.md](../internal/runbook.md) | 维护者 | 活的 | 随版本 |
 | 缺口与待定项 | [docs/internal/open-questions.md](../internal/open-questions.md) | 主人 | 活的 | 主人 |
 | RFC：管理 UI | [ui-rfc.md](../internal/ui-rfc.md) | 开发者 | 冻结（已采纳，已实现） | — |
 | RFC：设备接入 | [device-connect-rfc.md](../internal/device-connect-rfc.md) | 开发者 | 冻结（已实现） | — |
@@ -107,7 +108,7 @@ flowchart LR
 | RFC：分流规则（替代用途） | [routing-rules-rfc.md](../internal/routing-rules-rfc.md) | 开发者 | 冻结（已实现，用途已于 v0.7.0 删除） | — |
 | RFC：套餐 | [plans-rfc.md](../internal/plans-rfc.md) | 开发者 | 冻结（P1–P3 已实现） | — |
 | RFC：两个向导 | [wizard-rfc.md](../internal/wizard-rfc.md) | 开发者 | 冻结（v0.6.4 已实现） | — |
-| RFC：桌面程序 | [desktop-rfc.md](../internal/desktop-rfc.md) | 开发者 | 冻结（已批准，D 批次进行中） | — |
+| RFC：桌面程序 | [desktop-rfc.md](../internal/desktop-rfc.md) | 开发者 | 冻结（D1–D3 已实现，v0.9.0） | — |
 | 验证记录：能力检测、一键体检、QUIC | [capability](../internal/capability-validation.md)、[diagnostic](../internal/diagnostic-validation.md)、[QUIC](../internal/quic-validation.md) | 开发者 | 冻结 | — |
 | 用户文档站（教程、指南、参考、原理） | [首页](../index.md)、[tutorial/](../tutorial/)、[guides/](../guides/)、[reference/](../reference/)、[concepts/](../concepts/)，线上 [RovenEverward.github.io/my-proxy](https://RovenEverward.github.io/my-proxy/) | 用户 | 活的 | 见 doc-user |
 | issue 与讨论 | [GitHub issues](https://github.com/RovenEverward/my-proxy/issues?q=is%3Aissue) | 开发者 | 讨论过程，结论进仓库 | — |
