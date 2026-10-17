@@ -41,7 +41,7 @@ for (const theme of ["light", "dark"]) for (const server of SERVERS) {
     await page.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
     await page.route("**/ui/meta", async r => { const res = await r.fetch(); const j = await res.json(); j.server = server; await r.fulfill({ response: res, json: j }); });
     await login(page, env);
-    for (const h of ["overview", "users", "users/" + encodeURIComponent(LONG_USER), "nodes", "nodes/1", "inbounds", "settings", "settings/templates"]) {
+    for (const h of ["overview", "users", "users/" + encodeURIComponent(LONG_USER), "nodes", "nodes/1", "settings", "settings/templates"]) {
       await page.goto(env.origin + "/#" + h); await page.reload();
       await expect(page.locator(".profile")).toContainText(server.replace(/^https:\/\//, ""));
       await page.waitForTimeout(300);

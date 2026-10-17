@@ -1,4 +1,4 @@
-// 「入站与入口」重设计:按节点分组、默认值与自定义的显示、多入口展开、名称与节点不符提醒、
+// 节点详情的连接方式:默认值与自定义的显示、多入口展开、名称与节点不符提醒、
 // 添加连接抽屉的端口顺延。数据只造 203.0.113.x / 198.51.100.x 与 example.com。
 import { test, expect } from "@playwright/test";
 import { startEnv, login } from "./env.mjs";
@@ -25,34 +25,36 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await env?.stop(); });
 
-const goto = async page => {
+const goto = async (page, id = 1) => {
   await login(page, env);
-  await page.goto(env.origin + "/#inbounds");
-  await expect(page.locator(".ng").first()).toBeVisible();
+  await page.goto(env.origin + "/#nodes/" + id);
+  await expect(page.locator(".conn-card")).toBeVisible();
 };
-const group = (page, name) => page.locator(".ng", { has: page.locator(".ng-n", { hasText: name }) });
+const group = page => page.locator(".conn-card");
 
-test("按节点分组:组头、连接数、空状态与页头", async ({ page }) => {
+// 独立入站页已下线,不再断言整页组头与多节点分组;逐个节点详情验证连接数和空状态。
+test("连接方式只显示当前节点的连接与空状态", async ({ page }) => {
   await goto(page);
-  await expect(page.locator(".ph h1")).toHaveText("连接方式");
-  await expect(page.locator(".ph p")).toHaveText("每条连接会出现在用户的订阅里");
-  await expect(page.locator(".ph [data-act=conn-new]")).toHaveCount(1);
-  await expect(page.locator(".ng")).toHaveCount(3);
-  const jp = group(page, "东京 A");
-  await expect(jp.locator(".ng-n img.flag")).toHaveAttribute("src", "/flags/jp.svg");
-  await expect(jp.locator(".ng-a")).toHaveText("203.0.113.21");
-  await expect(jp.locator(".ng-c")).toHaveText("2 个连接");
-  await expect(jp.locator(".cx-row")).toHaveCount(2);
-  const empty = group(page, "洛杉矶 B");
-  await expect(empty.locator(".cx-row")).toHaveCount(0);
-  await expect(empty.locator(".ng-empty")).toContainText("还没有连接");
-  await expect(empty.locator("[data-act=conn-new]")).toContainText("添加连接");
+  await expect(page.locator(".ph h1")).toContainText("东京 A");
+  await expect(page.locator(".ph h1 img.flag")).toHaveAttribute("src", "/flags/jp.svg");
+  await expect(group(page).locator(".ch")).toContainText("连接方式· 2");
+  await expect(group(page).locator(".cx-row")).toHaveCount(2);
+  await expect(group(page).locator(".ng-h")).toHaveCount(0);
+  await page.goto(env.origin + "/#nodes/2");
+  await expect(page.locator(".ph h1")).toContainText("洛杉矶 A");
+  await expect(group(page).locator(".cx-row")).toHaveCount(1);
+  await expect(group(page).locator(".cx-row")).toHaveAttribute("data-id", "3");
+  await page.goto(env.origin + "/#nodes/3");
+  await expect(page.locator(".ph h1")).toContainText("洛杉矶 B");
+  await expect(group(page).locator(".cx-row")).toHaveCount(0);
+  await expect(group(page).locator(".ng-empty")).toContainText("还没有连接");
+  await expect(group(page).locator(".ng-empty [data-act=conn-new]")).toContainText("添加连接");
 });
 
 test("默认值灰色、自定义带铅笔;只有多入口才可展开", async ({ page }) => {
   await goto(page);
   // 东京 Reality:没有入口 → 名称跟随节点、地址用节点地址。
-  const rows = group(page, "东京 A").locator(".cx-row");
+  const rows = group(page).locator(".cx-row");
   const plain = rows.filter({ has: page.locator('.ptag[title="VLESS Reality"]') });
   await expect(plain.locator(".cx-name .cx-v")).not.toHaveClass(/\bon\b/);
   await expect(plain.locator(".cx-addr .cx-v")).not.toHaveClass(/\bon\b/);
@@ -61,7 +63,7 @@ test("默认值灰色、自定义带铅笔;只有多入口才可展开", async (
   // WS:第一个入口自定义了名字和地址,且有两个入口。
   const ws = rows.filter({ has: page.locator('.ptag[title="VLESS WS"]') });
   // 「N 个入口」展开的是行下面的一段(.cx-subs 与 .cx-row 平级,不在行里面)。
-  const wsCard = group(page, "东京 A").locator(".cx", { hasText: "2 个入口" });
+  const wsCard = group(page).locator(".cx", { hasText: "2 个入口" });
   await expect(ws.locator(".cx-name .cx-v")).toHaveClass(/on/);
   await expect(ws.locator(".cx-name .cx-pen")).toHaveCount(1);
   await expect(ws.locator(".cx-addr .cx-v")).toHaveClass(/on/);
@@ -79,13 +81,13 @@ test("默认值灰色、自定义带铅笔;只有多入口才可展开", async (
 
 test("名称与节点不符:提醒 + 改回跟随节点名发出的 PUT 体 remark 为空", async ({ page }) => {
   await goto(page);
-  const jp = group(page, "东京 A");
+  const jp = group(page);
   const warn = jp.locator(".cx-warn");
   await expect(warn).toHaveCount(1);
   await expect(warn).toContainText("名称写的是美国，节点在东京");
   await warn.locator("[data-act=conn-fix]").click();
   await expect(page.locator(".toast")).toContainText("已改回跟随节点名");
-  await expect(group(page, "东京 A").locator(".cx-warn")).toHaveCount(0, { timeout: 15000 });
+  await expect(group(page).locator(".cx-warn")).toHaveCount(0, { timeout: 15000 });
   // 找那次 PUT /api/hosts/1 的请求体:remark 恰好是空串。
   const put = env.takeLog().find(r => r.method === "PUT" && /^\/api\/hosts\/\d+$/.test(r.path));
   expect(put, "要发出 PUT /api/hosts/{id}").toBeTruthy();
@@ -98,14 +100,14 @@ test("名称与节点不符:提醒 + 改回跟随节点名发出的 PUT 体 rema
 });
 
 test("名称与节点一致时不提醒", async ({ page }) => {
-  await goto(page);
+  await goto(page, 2);
   // 洛杉矶的 Reality 名字是默认的,不提醒。
-  await expect(group(page, "洛杉矶 A").locator(".cx-warn")).toHaveCount(0);
+  await expect(group(page).locator(".cx-warn")).toHaveCount(0);
 });
 
 test("组件可单独渲染:CONN.load([1]) + CONN.groups(d,{node:1}) 只有节点 1 的连接行", async ({ page }) => {
   await goto(page);
-  // 不经过入站页:直接调组件拉数据、渲染一个节点的连接列表(节点详情页以后就是这么用)。
+  // 直接调组件拉数据、渲染一个节点的连接列表,验证节点详情的筛选边界。
   const info = await page.evaluate(async () => {
     const d = await CONN.load([1]);
     const box = document.createElement("div");
@@ -132,7 +134,7 @@ test("组件可单独渲染:CONN.load([1]) + CONN.groups(d,{node:1}) 只有节�
 
 test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着变", async ({ page }) => {
   await goto(page);
-  await group(page, "东京 A").locator("[data-act=conn-new]").click();
+  await group(page).locator(".ch [data-act=conn-new]").click();
   const dr = page.locator("#drawer.open");
   await expect(dr.locator("h2")).toHaveText("添加连接");
   await expect(dr.locator("#a-node")).toHaveValue("1");
@@ -155,17 +157,18 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   // 手改端口后不再自动覆盖。
   await page.fill("#drawer.open #a-port", "2090");
   await expect(page.locator("#drawer.open #pv-a")).toHaveText("203.0.113.21:2090");
-  // 选「稍后应用」:只建不下发,组头亮「有改动未应用」和「应用」。
+  // 选「稍后应用」:只建不下发,卡片亮标签,详情头部出现应用按钮。
   await page.click("#add-form #x-later");
   await expect(page.locator(".toast")).toContainText("显示「有改动未应用」");
-  await expect(group(page, "东京 A").locator(".cx-row")).toHaveCount(3, { timeout: 15000 });
-  await expect(group(page, "东京 A").locator(".ng-h .tag.pend")).toHaveText("有改动未应用");
-  await expect(group(page, "东京 A").locator(".ng-h [data-act=node-sync]")).toHaveText("应用");
+  await expect(group(page).locator(".cx-row")).toHaveCount(3, { timeout: 15000 });
+  await expect(group(page).locator(".ch .tag.pend")).toHaveText("有改动未应用");
+  await expect(group(page).locator("[data-act=node-sync]")).toHaveCount(0);
+  await expect(page.locator(".ph [data-act=node-sync]")).toHaveText("应用到节点");
 });
 
 test("编辑连接:名称与地址在顶上,入站字段在「高级」里", async ({ page }) => {
-  await goto(page);
-  await group(page, "洛杉矶 A").locator(".cx-row").first().click();
+  await goto(page, 2);
+  await group(page).locator(".cx-row").first().click();
   const dr = page.locator("#drawer.open");
   await expect(dr.locator("h2")).toContainText("洛杉矶 A");
   await expect(dr.locator("#d-name")).toBeVisible();

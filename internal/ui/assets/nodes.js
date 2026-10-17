@@ -48,7 +48,7 @@ PAGES.nodes = {
       const id = +r[1];
       // 体检报告没有就是 404,不算页面错误。
       const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
-      // 连接方式用入站页同一个组件(conn.js),数据也由它取。
+      // 连接方式由 conn.js 组件取数与渲染。
       const [node, conn, report] = await Promise.all([api(nodePath(id)), CONN.load([id]), diag]);
       return { node, inbounds: conn.inbounds, conn, report };
     }
@@ -90,10 +90,12 @@ function nodeDetail(d) {
   let summary = [];
   try { const j = rep ? (typeof rep.report === "string" ? JSON.parse(rep.report) : rep.report) : null; summary = (j && j.summary) || []; } catch { summary = []; }
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    <button class="btn" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
-    ${W ? H`<button class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>
-    <button class="btn" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
-    ${can("PUT", "/api/nodes/x") ? H`<button class="btn" data-act="node-edit" data-id="${id}">编辑</button>` : ""}</div>
+    ${W && (INB_PENDING.has(id) || (s?.observed_hash && n.deployed_hash && s.observed_hash !== n.deployed_hash) || !n.deployed_hash) ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
+      <button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
+      ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
+      ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
+    </div></span></div>
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
   ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
@@ -101,7 +103,7 @@ function nodeDetail(d) {
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有 TLS 入站"}</div></div>
   </div>
-  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n)}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
+  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
@@ -262,6 +264,7 @@ async function busy(btn, fn) {
 }
 
 Object.assign(ACTS, {
+  "node-menu": () => { const m = $("#node-menu"); if (m) m.hidden = !m.hidden; },
   "node-new": () => nodeEditor(null),
   "node-wizard": () => openNodeWizard(),
   "relabel-open": () => relabelModal(),
@@ -309,3 +312,6 @@ async function autoNodeNameFor() {
   try { names = new Set((await api("/api/nodes")).map(n => n.name)); } catch { /* 撞名由控制面报 */ }
   for (let i = 1; ; i++) if (!names.has("node-" + i)) return "node-" + i;
 }
+
+// 点菜单外或菜单项后收起。
+document.addEventListener("click", e => { const m = $("#node-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#node-menu button"))) m.hidden = true; });
