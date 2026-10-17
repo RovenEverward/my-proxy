@@ -2,7 +2,9 @@ package ui
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,6 +48,14 @@ func withLocalVersion(t *testing.T, v string) {
 	old := updateLocalVersion
 	updateLocalVersion = func() string { return v }
 	t.Cleanup(func() { updateLocalVersion = old })
+}
+
+// withDesktopBuild 把本进程换成桌面构建的口径,测试结束自动还原。
+func withDesktopBuild(t *testing.T) {
+	t.Helper()
+	old := updateDesktop
+	updateDesktop = func() bool { return true }
+	t.Cleanup(func() { updateDesktop = old })
 }
 
 func TestLocalUpdateNeedsSession(t *testing.T) {
@@ -369,6 +379,110 @@ func TestApplyCLIUpdateRejectedBeforeDownloadNoCallback(t *testing.T) {
 	case call := <-called:
 		t.Fatalf("还没开始下载就失败,不该回调: %+v", call)
 	default:
+	}
+}
+
+// 桌面构建:GET /local/update 带 desktop:true,自更新来源取桌面安装包,本机
+// 升级的文案把那一层叫「桌面程序」。
+func TestLocalUpdateViewDesktop(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	withDesktopBuild(t)
+	s, c := updateRig(t, func(w http.ResponseWriter, r *http.Request) {})
+	w := doJSON(s, http.MethodGet, "/local/update", c, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /local/update 应 200,得到 %d %s", w.Code, w.Body)
+	}
+	var view updateViewBody
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if !view.Desktop {
+		t.Fatalf("桌面构建的 desktop 应为 true: %s", w.Body)
+	}
+	if !updateSource().Desktop {
+		t.Fatal("桌面构建的自更新来源应取桌面安装包(Source.Desktop)")
+	}
+	// 已是最新:那一层的名字切换成「桌面程序」。
+	w = doJSON(s, http.MethodPost, "/local/update/cli", c, `{"version":"v0.6.4"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("已是最新应 200,得到 %d %s", w.Code, w.Body)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["message"] != "桌面程序 已是最新" {
+		t.Fatalf("桌面构建的文案应为「桌面程序 已是最新」: %s", w.Body)
+	}
+}
+
+// 普通构建:desktop 为 false,自更新仍取 CLI 发布件。
+func TestLocalUpdateViewNotDesktop(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	s, c := updateRig(t, func(w http.ResponseWriter, r *http.Request) {})
+	w := doJSON(s, http.MethodGet, "/local/update", c, "")
+	var view updateViewBody
+	if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.Desktop {
+		t.Fatalf("普通构建的 desktop 应为 false: %s", w.Body)
+	}
+	if updateSource().Desktop {
+		t.Fatal("普通构建的自更新来源不该带 Desktop")
+	}
+}
+
+// 桌面构建 + 安装目录没有写权限:回 403 并指引下载安装包,而不是让窗口里的
+// 用户照 CLI 的提示去 sudo。走真实 Install 的权限失败,root 与 Windows 上摆不出
+// 这个状态。
+func TestLocalUpdateCLIDesktopPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("只读目录用的是 Unix 权限位")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("以 root 运行时目录权限不生效")
+	}
+	withLocalVersion(t, "v0.6.4")
+	withDesktopBuild(t)
+
+	// 桌面模式必须过 SHA256SUMS:假发布服务器把清单配对,让流程走到写文件那步。
+	archive := tarGzWithMPX(t, "#!/bin/sh\necho mpx v0.6.5\n")
+	sums := fmt.Sprintf("%x  %s\n", sha256.Sum256(archive), selfupdate.DesktopArchiveName(runtime.GOOS, runtime.GOARCH))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/SHA256SUMS") {
+			_, _ = w.Write([]byte(sums))
+			return
+		}
+		_, _ = w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "mpx")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho mpx v0.6.4\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatalf("设置只读目录失败: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	oldSrc, oldExe := updateSource, selfExecutable
+	updateSource = func() selfupdate.Source {
+		return selfupdate.Source{Repo: "test/mpx", APIBase: srv.URL, DownloadBase: srv.URL, Desktop: true}
+	}
+	selfExecutable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { updateSource, selfExecutable = oldSrc, oldExe })
+
+	s, c, _ := withCLIUpdatedRig(t)
+	w := doJSON(s, http.MethodPost, "/local/update/cli", c, `{"version":"v0.6.5"}`)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("桌面构建安装目录不可写应 403,得到 %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), "桌面程序装在 "+dir) ||
+		!strings.Contains(w.Body.String(), "请下载新版安装包安装") {
+		t.Fatalf("错误应说明安装目录并指引下载安装包: %s", w.Body)
 	}
 }
 
