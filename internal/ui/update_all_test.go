@@ -567,7 +567,7 @@ func TestRestartStateFileRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 文件里是浏览器的登录凭据,只能本人可读。
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("交接文件权限应是 0600,得到 %v", fi.Mode().Perm())
 	}
 	st, err := ReadRestartState(path)
