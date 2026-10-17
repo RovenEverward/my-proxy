@@ -6,8 +6,8 @@
 
 ### 自建多节点代理，在自己电脑上管完。
 
-**一台控制面，若干 Xray / sing-box 节点，一个 MPX 桌面程序。**<br>
-加节点、开账号、改分流、发订阅，都在你自己的电脑上做，装好之后不用再登录 VPS。
+**在自己电脑上管好几台代理 VPS：装机、加人、加服务器、升级都在 MPX 桌面程序里点，不用登 VPS。**<br>
+节点跑 Xray（VLESS + REALITY 等）或 sing-box（Hysteria2 / TUIC），订阅自动适配 Clash、sing-box、v2rayN、Shadowrocket 等客户端。
 
 [![Release](https://img.shields.io/github/v/release/RovenEverward/my-proxy?label=release&color=111111)](https://github.com/RovenEverward/my-proxy/releases/latest) [![Go](https://img.shields.io/github/go-mod/go-version/RovenEverward/my-proxy?color=111111)](go.mod) [![License](https://img.shields.io/badge/license-MIT-111111)](LICENSE)<br>
 ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)
