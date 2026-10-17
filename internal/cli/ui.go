@@ -83,79 +83,22 @@ var uiCmd = &cobra.Command{
   mpx ui --profile prod --addr 127.0.0.1:7480 --no-open`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// 一键更新的重启会把监听地址与会话放进交接文件,用 MPX_UI_RESTART 指过来:
-		// 接着上次的地址与会话跑,浏览器里已打开的页面不用重新登录。
-		addr, session, restarted := uiFlags.addr, "", false
-		if p := os.Getenv(ui.RestartEnv); p != "" {
-			st, rerr := ui.ReadRestartState(p)
-			if rerr != nil {
-				return fmt.Errorf("接续升级前的 mpx ui 失败: %w", rerr)
-			}
-			_ = os.Unsetenv(ui.RestartEnv)
-			addr, session, restarted = st.Addr, st.Session, true
-		}
-		server, token, err := resolve()
-		if err != nil {
-			// 没配置控制面是正常状态(首次安装),不是错误;只有配置存在却读不出
-			// 该用哪个 profile 时才把错误抛出去。
-			cfg, cerr := loadConfig()
-			if cerr != nil || len(cfg.Profiles) > 0 {
-				return err
-			}
-			server, token = "", ""
-		}
-		if !isLoopback(addr) {
-			return fmt.Errorf("mpx ui 只监听回环地址,%s 不是;要在别的设备上看,用 SSH 隧道", addr)
-		}
-
-		setupMode := server == "" || uiFlags.setup
-		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Connect: connectRunner{},
-			Profiles: profilesRunner{}, Relabel: relabelRunner{}, Session: session,
-			// 页面里的本机升级走 ui 包的同一套实现,但 ui 不能引用 cli;把结果
-			// 交回来落 update.json,mpx update show 才看得到这次升级。
-			CLIUpdated: saveCLIStateFromUI}
-		if !setupMode {
-			up, err := url.Parse(server)
-			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
-				return fmt.Errorf("控制面地址 %q 不是 http(s) URL", server)
-			}
-			profile := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"))
-			if profile == "" {
-				if cfg, err := loadConfig(); err == nil {
-					profile = cfg.Current
-				}
-			}
-			tr, err := transportFor(server)
-			if err != nil {
-				return err
-			}
-			pageOpts.Upstream = up
-			pageOpts.Token = token
-			pageOpts.Profile = profile
-			pageOpts.Transport = tr
-		}
-
-		ln, err := listenUI(addr, restarted)
+		l, err := startUI(uiFlags.addr, uiFlags.setup)
 		if err != nil {
 			return err
 		}
-		s, err := ui.New(ln.Addr().String(), pageOpts)
-		if err != nil {
-			ln.Close()
-			return err
-		}
-		if restarted {
+		if l.restarted {
 			// 页面还开着,老会话继续用:不再发一次性链接、不再开新标签。
-			fmt.Printf("mpx ui 已用新版本重启: http://%s/\n", ln.Addr().String())
+			fmt.Printf("mpx ui 已用新版本重启: http://%s/\n", l.listener.Addr().String())
 		} else {
-			link := "http://" + ln.Addr().String() + "/?k=" + s.Key()
+			link := "http://" + l.listener.Addr().String() + "/?k=" + l.server.Key()
 			switch {
 			case uiFlags.setup:
 				fmt.Println("首次安装模式")
-			case setupMode:
+			case l.setupMode:
 				fmt.Println("还没有配置控制面:在打开的页面里完成首次安装")
 			default:
-				fmt.Printf("mpx ui 已启动,连的是 %s\n", pageOpts.Upstream.Redacted())
+				fmt.Printf("mpx ui 已启动,连的是 %s\n", l.pageOpts.Upstream.Redacted())
 			}
 			fmt.Println(link)
 			fmt.Println("这条链接只能打开一次;Ctrl-C 结束。")
@@ -163,21 +106,105 @@ var uiCmd = &cobra.Command{
 				openBrowser(link)
 			}
 		}
-
-		srv := &http.Server{Handler: s, ReadHeaderTimeout: 10 * time.Second}
-		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		go func() {
-			<-ctx.Done()
-			shut, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(shut)
-		}()
-		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
+		return serveUI(cmd.Context(), l)
 	},
+}
+
+// uiLaunch 是 mpx ui 与 mpx app 共用的启动结果:页面服务、绑好的监听、页面
+// 选项,以及启动时是从哪儿接续来的。
+type uiLaunch struct {
+	server    *ui.Server
+	listener  net.Listener
+	pageOpts  ui.Options
+	setupMode bool
+	restarted bool
+}
+
+// startUI 完成两种界面共用的启动:读重启交接、解析配置档、绑回环端口、建页面
+// 服务。它不打印、不开浏览器,也不决定谁来 Serve —— mpx ui 交给浏览器,mpx app
+// 交给窗口,各自的收尾不同。
+func startUI(addr string, forceSetup bool) (*uiLaunch, error) {
+	// 一键更新的重启会把监听地址与会话放进交接文件,用 MPX_UI_RESTART 指过来:
+	// 接着上次的地址与会话跑,浏览器里已打开的页面不用重新登录。
+	session, restarted := "", false
+	if p := os.Getenv(ui.RestartEnv); p != "" {
+		st, rerr := ui.ReadRestartState(p)
+		if rerr != nil {
+			return nil, fmt.Errorf("接续升级前的 mpx ui 失败: %w", rerr)
+		}
+		_ = os.Unsetenv(ui.RestartEnv)
+		addr, session, restarted = st.Addr, st.Session, true
+	}
+	server, token, err := resolve()
+	if err != nil {
+		// 没配置控制面是正常状态(首次安装),不是错误;只有配置存在却读不出
+		// 该用哪个 profile 时才把错误抛出去。
+		cfg, cerr := loadConfig()
+		if cerr != nil || len(cfg.Profiles) > 0 {
+			return nil, err
+		}
+		server, token = "", ""
+	}
+	if !isLoopback(addr) {
+		return nil, fmt.Errorf("mpx ui 只监听回环地址,%s 不是;要在别的设备上看,用 SSH 隧道", addr)
+	}
+
+	setupMode := server == "" || forceSetup
+	pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Connect: connectRunner{},
+		Profiles: profilesRunner{}, Relabel: relabelRunner{}, Session: session,
+		// 页面里的本机升级走 ui 包的同一套实现,但 ui 不能引用 cli;把结果
+		// 交回来落 update.json,mpx update show 才看得到这次升级。
+		CLIUpdated: saveCLIStateFromUI}
+	if !setupMode {
+		up, err := url.Parse(server)
+		if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {
+			return nil, fmt.Errorf("控制面地址 %q 不是 http(s) URL", server)
+		}
+		profile := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"))
+		if profile == "" {
+			if cfg, err := loadConfig(); err == nil {
+				profile = cfg.Current
+			}
+		}
+		tr, err := transportFor(server)
+		if err != nil {
+			return nil, err
+		}
+		pageOpts.Upstream = up
+		pageOpts.Token = token
+		pageOpts.Profile = profile
+		pageOpts.Transport = tr
+	}
+
+	ln, err := listenUI(addr, restarted)
+	if err != nil {
+		return nil, err
+	}
+	s, err := ui.New(ln.Addr().String(), pageOpts)
+	if err != nil {
+		ln.Close()
+		return nil, err
+	}
+	return &uiLaunch{server: s, listener: ln, pageOpts: pageOpts,
+		setupMode: setupMode, restarted: restarted}, nil
+}
+
+// serveUI 用浏览器的方式跑 mpx ui:收到 Ctrl-C / SIGTERM 时先停 HTTP,等手上的
+// 请求做完再退出。
+func serveUI(parent context.Context, l *uiLaunch) error {
+	srv := &http.Server{Handler: l.server, ReadHeaderTimeout: 10 * time.Second}
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		shut, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shut)
+	}()
+	if err := srv.Serve(l.listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // listenUI 绑定页面端口。重启接续时多试几秒:Windows 上是先起新进程再退出旧

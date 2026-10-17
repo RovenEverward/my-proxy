@@ -96,6 +96,10 @@ func Execute() int {
 		if errors.Is(err, errDoctorFailed) {
 			return doctorFailExit
 		}
+		// 缺 WebView 的提示已经打过了(Windows 还弹过对话框),这里只负责退出码。
+		if errors.Is(err, errAppNoWebView) {
+			return appNoWebViewExit
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

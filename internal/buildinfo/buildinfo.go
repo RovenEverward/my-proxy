@@ -22,6 +22,14 @@ import (
 // 留空表示没注入,这时去问 build info。
 var version = ""
 
+// desktop 由桌面版发布流程注入 "1":
+//
+//	go build -ldflags "-X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1"
+//
+// 留空表示这是普通 CLI 构建。桌面构建仍然可以当 CLI 用,只是不带参数启动时
+// 等价于 `mpx app`,自更新也取桌面归档。
+var desktop = ""
+
 // repo 是本项目的仓库,自动更新检查要拿它去问 GitHub。
 const repo = "RovenEverward/my-proxy"
 
@@ -41,6 +49,10 @@ func Version() string {
 
 // Known 报告我们是否真的知道自己的版本。
 func Known() bool { return Version() != "" }
+
+// Desktop 报告这是不是桌面构建。发布流程用 -ldflags -X 注入 desktop=1;
+// 从源码直接编出来的是普通 CLI 构建。
+func Desktop() bool { return strings.TrimSpace(desktop) == "1" }
 
 var (
 	once          sync.Once
