@@ -2,6 +2,22 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.9.0 (2026-10-17)
+
+### 新增
+- **桌面程序 MPX**(desktop-rfc D2):原生窗口(MyGo,系统 WebView),安装后双击即开,不开浏览器;页面与 `mpx ui` 同一套。也可以 `mpx app` 启动。
+  - 安装包(均未签名):macOS `MPX_<版本>_darwin_universal.dmg`;Windows `MPX_<版本>_windows_amd64_setup.exe`(按用户安装,开始菜单/桌面有 MPX);Linux `mpx-desktop_<版本>_{amd64,arm64}.deb` 与 `MPX_<版本>_linux_{amd64,arm64}.tar.gz`(`./install.sh`)。Linux 需要 WebKitGTK 4.1。
+  - 未接入控制面时,窗口里可做首次安装,或用设备密码接入已有控制面(代替 `mpx connect`)。
+  - 设置页可修改设备密码、关闭设备密码接入。
+- **桌面程序自更新**(D3):一键更新的本机一层升级桌面程序本身,取 `mpx_desktop_*` 归档,必须通过 SHA256SUMS 校验;安装目录没有写权限(如 .deb 装在 /opt/mpx)时提示改用安装包。
+
+### 修复
+- 节点核心是否跳过改按升级前现场查到的版本判断,不再信缓存。
+- 在页面里升级本机后,`mpx update show` 的记录同步更新(trigger 记为 ui)。
+
+### 兼容性
+- 控制面 API 无变更;命令行压缩包与安装包的名字、内容不变。CI 在三平台跑桌面开窗冒烟。
+
 ## v0.8.2 (2026-10-17)
 
 ### 修复
