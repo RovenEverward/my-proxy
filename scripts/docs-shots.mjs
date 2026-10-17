@@ -243,6 +243,54 @@ const SHOTS = [
     },
   },
   {
+    // 添加节点向导第 3 步:自己填的 443 被别的程序占着,建入站那步停下,底部出现「改端口」。
+    // 登记节点、查端口都用路由摆成示例,不连任何机器。
+    name: "node-wizard-port", crop: "#drawer",
+    routes: async page => {
+      // 登记节点停 3.2 秒,图里的耗时像真的一样。
+      await page.route("**/api/nodes", async r => {
+        if (r.request().method() !== "POST") return r.fallback();
+        await new Promise(res => setTimeout(res, 3200));
+        await r.fulfill({ json: { id: 99, name: "node-5", address: "203.0.113.40", display: "🇯🇵 东京 C" } });
+      });
+      await page.route("**/api/nodes/99/ports", async r => { await new Promise(res => setTimeout(res, 700)); await r.fulfill({ json: { tcp: [
+        { port: 22, owner: "sshd(进程 812)", core: false },
+        { port: 443, owner: "nginx(进程 1234)", core: false },
+      ] } }); });
+    },
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#nodes");
+      await page.click('button[data-act="node-wizard"]');
+      await page.waitForSelector("#w-address");
+      await page.fill("#w-address", "203.0.113.40");
+      await page.fill("#w-pw", "Example-Root-Pass");
+      await page.click("#w-next");
+      await page.waitForSelector("#w-opt-custom");
+      await page.click("#w-opt-custom");
+      await page.waitForSelector("#w-inb-port");
+      await page.fill("#w-inb-port", "443");
+      await page.click("#w-start");
+      await page.waitForSelector("#w-port");
+      await page.waitForTimeout(350);
+    },
+  },
+  {
+    // 「切换控制面」弹窗:列表用路由摆两套示例控制面(当前这套 + 给家人的一套)。
+    name: "profiles", crop: "#modal",
+    routes: async page => {
+      await page.route("**/local/profiles", r => r.fulfill({ json: [
+        { name: "default", server: "https://203.0.113.10:8080", current: true },
+        { name: "family", server: "https://198.51.100.20:8080", current: false },
+      ] }));
+    },
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#overview");
+      await page.click('[data-act="profile-open"]');
+      await page.waitForSelector("#modal.open .pflist");
+      await page.waitForTimeout(300);
+    },
+  },
+  {
     // 节点详情 tokyo-a:巡检状态和在线用户都要现场连节点,测试环境拿不到,
     // 路由补示例(核心 26.3.27、配置一致、证书剩 47 天、在线用户 2)。只拍
     // 详情页本身,不开在线用户抽屉。
@@ -331,6 +379,28 @@ const SHOTS = [
       await page.waitForSelector("#s-host");
       await page.fill("#s-host", "203.0.113.10");
       await page.fill("#s-port", "22");
+    },
+  },
+  {
+    // 第 2 步「检查」:控制面默认的 8080 被 nginx 占着,向导自动改用 28080 并说明。
+    name: "setup-check-port", setup: true, crop: ".scard",
+    routes: async page => {
+      await page.route("**/local/setup/check", async r => {
+        await new Promise(res => setTimeout(res, 2400)); // 耗时显示成约 2.4 秒
+        await r.fulfill({ json: { probe: {
+          os: "Linux", arch: "x86_64", uid: 0, fetch: "/usr/bin/curl",
+          api_port: 8080, api_busy: "nginx(进程 1234)", api_suggest: 28080,
+        } } });
+      });
+    },
+    run: async page => {
+      await page.click("#s-start");
+      await page.waitForSelector("#s-host");
+      await page.fill("#s-host", "203.0.113.10");
+      await page.fill("#s-port", "22");
+      await page.fill("#s-pw", "Example-Root-Pass");
+      await page.click("#s-check");
+      await page.waitForSelector("#s-ports");
     },
   },
   {
