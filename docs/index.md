@@ -9,10 +9,11 @@ title: MPX
 <h1>在自己电脑上，<br>管好你那几台 <em>VPS</em></h1>
 <p class="lede">装在 VPS 上的面板，得先登上去装，再开浏览器连过去配。MPX 是装在你自己电脑上的程序：填上 VPS 的 IP 和密码，它替你装好。之后开账号、加服务器、升级，都在这个窗口里点。</p>
 <div class="cta">
-<a class="btn btn-lg" href="./tutorial/quickstart#第-1-步-安装-mpx">下载 MPX</a>
-<a class="btn-ghost" href="./tutorial/quickstart">安装步骤 →</a>
+<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe">下载 Windows 版</a>
+<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg">下载 macOS 版</a>
+<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb">下载 Linux 版（.deb）</a>
 </div>
-<p class="dl-note">macOS、Windows、Linux 都有，下载以 <code>mpx-desktop_</code> 开头的安装包。打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。AI 友好，也有命令行版。</p>
+<p class="dl-note">打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。ARM、其他 Linux 和命令行版见<a href="./tutorial/quickstart">快速开始</a>。安装包没有签名，第一次打开要放行一次，做法也在快速开始里。</p>
 </div>
 <figure class="tile hero-fig shot"><img class="only-light" src="/ui/setup-host.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码"><img class="only-dark" src="/ui/setup-host-dark.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码（深色）"><figcaption>首次安装：填 VPS<span>MPX 桌面窗口</span></figcaption></figure>
 </section>
@@ -47,7 +48,7 @@ title: MPX
 <li>页面底部可以自己换订阅地址，换之前会先确认；换完旧地址立刻失效</li>
 </ul>
 </div>
-<figure class="tile shot"><img class="only-light" src="/subscription-dashboard.png" width="1360" height="1882" alt="浏览器中的订阅页"><img class="only-dark" src="/subscription-dashboard-dark.png" width="1360" height="1882" alt="浏览器中的订阅页（深色）"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/subscription-dashboard.png" width="1360" height="1884" alt="浏览器中的订阅页"><img class="only-dark" src="/subscription-dashboard-dark.png" width="1360" height="1884" alt="浏览器中的订阅页（深色）"><figcaption>订阅页<span>实测截图</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">
@@ -55,7 +56,7 @@ title: MPX
 <h2>加一台服务器：填 IP 和密码</h2>
 <p>节点页点「添加节点」，填地址和 root 密码。装核心、建入站、起名一路做完，完成页告诉你这台进了哪些订阅。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 桌面窗口</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">
