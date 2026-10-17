@@ -10,7 +10,7 @@ export default defineConfig({
 
   lang: 'zh-CN',
   title: 'MPX',
-  description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，本地命令行是全部入口。',
+  description: '自建 xray 多节点代理的控制面：一台控制面管住所有节点，在 MPX 桌面程序里管理。',
   head: [
     ['link', { rel: 'icon', href: '/my-proxy/favicon.svg', type: 'image/svg+xml' }],
     ['link', { rel: 'icon', href: '/my-proxy/favicon.ico', sizes: 'any' }],
@@ -27,7 +27,7 @@ export default defineConfig({
     nav: [
       { text: '教程', link: '/tutorial/quickstart' },
       { text: '指南', link: '/guides/add-users' },
-      { text: '参考', link: '/reference/cli' },
+      { text: '参考', link: '/reference/interface' },
       { text: '原理', link: '/concepts/architecture' }
     ],
 
@@ -36,27 +36,29 @@ export default defineConfig({
     sidebar: [
       {
         text: '教程',
-        items: [
-          { text: '快速开始', link: '/tutorial/quickstart' },
-          { text: '在本机试用', link: '/tutorial/local-trial' }
-        ]
+        items: [{ text: '快速开始', link: '/tutorial/quickstart' }]
       },
       {
         text: '指南',
         items: [
           { text: '添加用户并分发订阅', link: '/guides/add-users' },
+          { text: '添加节点', link: '/guides/add-nodes' },
+          { text: '用套餐分配节点', link: '/guides/plans' },
+          { text: '设置分流规则', link: '/guides/routing' },
           { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
-          { text: '在多台设备上管理控制面', link: '/guides/devices' },
-          { text: '用 mpx doctor 排查', link: '/guides/troubleshoot' },
-          { text: '用 mpx ui 在浏览器里管理', link: '/guides/web-ui' }
+          { text: '在多台设备上管理', link: '/guides/devices' },
+          { text: '一键更新', link: '/guides/update' },
+          { text: '备份控制面', link: '/guides/backup' },
+          { text: '用自检排查', link: '/guides/troubleshoot' }
         ]
       },
       {
         text: '参考',
         items: [
-          { text: '命令行', link: '/reference/cli' },
+          { text: '界面', link: '/reference/interface' },
           { text: '订阅设置', link: '/reference/settings' },
-          { text: '订阅接口', link: '/reference/subscription' }
+          { text: '订阅接口', link: '/reference/subscription' },
+          { text: '命令行', link: '/reference/cli' }
         ]
       },
       {

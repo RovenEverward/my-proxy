@@ -2,23 +2,23 @@
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/public/lockup-dark.svg"><img src="docs/public/lockup-light.svg" height="48" alt="MPX"></picture>
 
-# mpx
+# MPX
 
 ### 自建多节点代理，在自己电脑上管完。
 
-**一台控制面，若干 Xray / sing-box 节点，一个本地命令行 `mpx`。**<br>
+**一台控制面，若干 Xray / sing-box 节点，一个 MPX 桌面程序。**<br>
 加节点、开账号、改分流、发订阅，都在你自己的电脑上做，装好之后不用再登录 VPS。
 
 [![Release](https://img.shields.io/github/v/release/RovenEverward/my-proxy?label=release&color=111111)](https://github.com/RovenEverward/my-proxy/releases/latest) [![Go](https://img.shields.io/github/go-mod/go-version/RovenEverward/my-proxy?color=111111)](go.mod) [![License](https://img.shields.io/badge/license-MIT-111111)](LICENSE)<br>
 ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)
 
-**[文档](https://RovenEverward.github.io/my-proxy/)** &nbsp;·&nbsp; **[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)** &nbsp;·&nbsp; **[命令行参考](https://RovenEverward.github.io/my-proxy/reference/cli)** &nbsp;·&nbsp; **[更新记录](CHANGELOG.md)**
+**[文档](https://RovenEverward.github.io/my-proxy/)** &nbsp;·&nbsp; **[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)** &nbsp;·&nbsp; **[下载](https://github.com/RovenEverward/my-proxy/releases/latest)** &nbsp;·&nbsp; **[更新记录](CHANGELOG.md)**
 
 <br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/rules-dark.png">
-  <img src="docs/assets/readme/rules-light.png" width="900" alt="mpx ui 的分流规则页：规则从上往下匹配，每条指向直连、拦截或一个策略组，右侧可以测试一个网址会走哪里">
+  <img src="docs/assets/readme/rules-light.png" width="900" alt="MPX 桌面程序的分流规则页：规则从上往下匹配，每条指向直连、拦截或一个策略组，右侧可以测试一个网址会走哪里">
 </picture>
 
 </div>
@@ -27,9 +27,9 @@
 
 ## 适合你吗？
 
-手上有几台 VPS，想给自己和几个朋友用，又不想每次加人、换节点都 SSH 上去改 JSON。mpx 把这些事收进一个控制面，你在自己电脑上用 `mpx` 或 `mpx ui` 操作：
+手上有几台 VPS，想给自己和几个朋友用，又不想每次加人、换节点都 SSH 上去改 JSON。MPX 把这些事收进一个控制面，你在自己电脑上的 MPX 桌面程序里操作：
 
-- **一条命令起步**：`mpx init` 把一台新 VPS 装成控制面加节点，最后打印一条能直接用的订阅地址。
+- **一个向导起步**：打开 MPX，填 VPS 的 IP 和 root 密码，向导把它装成控制面加节点，最后给出一条能直接用的订阅链接和二维码。
 - **人和流量分开管**：每个人有自己的订阅、流量上限、重置周期和到期日；改完 30 秒内同步到节点，不重启。
 - **订阅自动适配客户端**：同一条地址，Clash Meta、sing-box、v2rayN 各自拿到认识的格式，浏览器打开是用量页。
 
@@ -37,9 +37,29 @@
 
 ## 快速开始
 
-准备一台能用 root SSH 登录的 Linux VPS，和你自己的电脑（macOS、Linux 或 Windows）。
+准备一台能用 root SSH 登录的 Linux VPS，和你自己的电脑（macOS、Windows 或 Linux）。
 
-**1 · 装命令行。**
+**1 · 安装 MPX。** 在[最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载桌面安装包：
+
+| 系统 | 安装包 |
+| :--- | :--- |
+| macOS（Intel 与 Apple 芯片） | `mpx-desktop_<版本>_darwin_universal.dmg`，打开后把 MPX 拖进「应用程序」 |
+| Windows（64 位） | `mpx-desktop_<版本>_windows_amd64_setup.exe` |
+| Debian / Ubuntu | `mpx-desktop_<版本>_amd64.deb`（ARM 用 `arm64`） |
+| 其他 Linux | `mpx-desktop_<版本>_linux_amd64.tar.gz`，解压后运行 `./install.sh` |
+
+<sub>安装包没有签名。macOS 第一次打开时右键 MPX →「打开」；Windows 的 SmartScreen 提示时选「仍要运行」。Linux 桌面版需要 WebKitGTK 4.1。</sub>
+
+**2 · 打开 MPX，点「首次安装（新服务器）」。** 填 VPS 的 IP 和 root 密码，设一个**设备密码**（以后别的电脑接入时用，不是 VPS 密码），点「开始安装」。向导装好控制面、第一个节点和第一个用户，全程不用登录 VPS。
+
+**3 · 填进客户端。** 完成页给出订阅链接和二维码，导入 Clash Verge、sing-box、v2rayN 或 Shadowrocket。
+
+完整步骤和截图见[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)。
+
+<details>
+<summary>用命令行代替桌面程序</summary>
+
+**1 · 装命令行。** 在[发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载 `mpx_` 开头的命令行安装包，或者：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash
@@ -62,10 +82,9 @@ mpx init --host 203.0.113.10 --ssh-password
 
 **3 · 填进客户端。** 把输出里 `auto` 那条订阅地址导入 Clash Verge、sing-box、v2rayN 或 Shadowrocket。
 
-重复跑 `mpx init` 是安全的，已有的节点、入站、用户都会复用。不想敲命令也可以直接运行 `mpx ui`：还没配置控制面时，它打开的就是首次安装向导，步骤和 `mpx init` 一样。
+重复跑 `mpx init` 是安全的，已有的节点、入站、用户都会复用。
 
-<details>
-<summary><code>mpx init</code> 的常用参数</summary>
+**`mpx init` 的常用参数**
 
 | 参数 | 默认 | 说明 |
 | :--- | :--- | :--- |
@@ -81,9 +100,7 @@ mpx init --host 203.0.113.10 --ssh-password
 
 非交互运行时用环境变量 `MPX_DEVICE_PASSWORD` 给出设备密码。`mpx init` 只做单机全包（控制面和节点在同一台）；要分开部署或加更多节点，看 `mpx node add`、`mpx inbound add`、`mpx host add` 的 `--help`，里面有能直接跑的例子。
 
-</details>
-
-之后的日常操作：
+命令行的日常操作：
 
 ```bash
 mpx status                                     # 总览：控制面、节点、版本、有没有新发布
@@ -92,27 +109,30 @@ mpx user add bob --limit 100GB --reset-strategy monthly --expire 2026-12-31
 mpx user links bob                             # 拿他的订阅地址
 mpx node drain la-1                            # 维护前排空：不踢活跃连接，新订阅不再给它
 mpx doctor                                     # 只读自检：控制面、每台节点、各种订阅格式
-mpx ui                                         # 在本机浏览器里打开管理界面
+mpx ui                                         # 没有桌面环境时，在本机浏览器里打开同一套管理界面
 ```
+
+
+</details>
 
 ## 能做什么
 
-### 在浏览器里管，和命令行一一对应
+### 在桌面窗口里管
 
-`mpx ui` 在本机起一个只给自己用的管理界面。每个按钮都对应一条 `mpx` 命令，表单底部实时显示等价命令；token 不进浏览器，删除这类危险操作要逐字输入名字确认。
+MPX 桌面程序双击就打开一个窗口，不经过浏览器。用户、套餐、节点、分流规则、设置都在里面改；表单底部实时显示等价的 `mpx` 命令，删除这类危险操作要逐字输入名字确认。没有桌面环境时，`mpx ui` 在浏览器里打开同一套页面。
 
 <table>
 <tr>
 <td width="50%">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/nodes-dark.png">
-  <img src="docs/assets/readme/nodes-light.png" alt="节点页：每台节点以旗帜加城市加字母命名，显示状态、核心和 SSH">
+  <img src="docs/assets/readme/nodes-light.png" alt="节点页：每台节点的地址、状态、核心版本、配置是否已下发和 SSH">
 </picture>
 </td>
 <td width="50%">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/users-dark.png">
-  <img src="docs/assets/readme/users-light.png" alt="用户页：每个人的用量、到期日、重置周期和可用入站">
+  <img src="docs/assets/readme/users-light.png" alt="用户页：每个人的状态、套餐、用量、到期日和重置周期">
 </picture>
 </td>
 </tr>
@@ -146,7 +166,7 @@ mpx ui                                         # 在本机浏览器里打开管�
 ## 它怎么连起来
 
 ```
-  mpx CLI / mpx ui (你的电脑)                 客户端 (mihomo / sing-box / v2rayN)
+  MPX 桌面程序 / mpx CLI (你的电脑)          客户端 (mihomo / sing-box / v2rayN)
          │                                               │
          │ /api (设备 token, HTTPS)                      │ /sub/<token> (订阅)
          ▼                                               ▼
@@ -165,7 +185,9 @@ mpx ui                                         # 在本机浏览器里打开管�
 
 ## 升级
 
-从 v0.6.1 起，升级都在本机（装了 `mpx` 的那台电脑）上做，不用再登录 VPS：
+有新版本时，MPX 窗口右上角出现「更新」按钮。点一次，依次升级控制面、各节点的代理核心和桌面程序本身，完成后自动重启。见[一键更新](https://RovenEverward.github.io/my-proxy/guides/update)。
+
+用命令行升级：
 
 ```bash
 mpx update show                  # 看本机 CLI、控制面、各节点核心的当前版本和最新版本（只读）
@@ -177,8 +199,6 @@ mpx update rollback cli          # 本机 CLI 退回上一版
 
 `--version v0.6.1` 指定版本，`-y` 跳过确认（脚本里必须加）。升级控制面时，`mpx update apply control` 会一路报告下载、校验、切换、健康检查各阶段；控制面重启的几秒里连不上属于正常，命令会继续等。数据库、token 和密钥都不会动，升级前仍建议备份数据库。
 
-有新版本时，`mpx ui` 顶栏会出现「更新」按钮，弹窗里可以看说明并一键升级（等价于上面的 `apply control` / `apply cli`）。本机 CLI 升级后需要关掉终端里的 `mpx ui` 再开一次。
-
 **从 v0.6.0 及以前升级时**，还要在 VPS 上跑一次安装脚本，装上本机升级需要的组件，之后就能在本机升级了：
 
 ```bash
@@ -188,7 +208,7 @@ curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/
 每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
 
 <details>
-<summary>Tab 补全、本地试用</summary>
+<summary>Tab 补全、本地跑控制面</summary>
 
 节点名、入站、用户名都能按 Tab 补全：
 
@@ -205,15 +225,13 @@ go build -o mpx ./cmd/mpx
 ./mpx serve --db ~/mpx.db
 ```
 
-完整步骤见[在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)。
-
 </details>
 
 ## 文档
 
-- **教程**：[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart) ｜ [在本机试用](https://RovenEverward.github.io/my-proxy/tutorial/local-trial)
-- **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [在多台设备上管理](https://RovenEverward.github.io/my-proxy/guides/devices) ｜ [用 mpx ui 在浏览器里管理](https://RovenEverward.github.io/my-proxy/guides/web-ui) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [用 mpx doctor 排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
-- **参考**：[命令行](https://RovenEverward.github.io/my-proxy/reference/cli) ｜ [订阅设置](https://RovenEverward.github.io/my-proxy/reference/settings) ｜ [订阅接口](https://RovenEverward.github.io/my-proxy/reference/subscription)
+- **教程**：[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)
+- **指南**：[添加用户并分发订阅](https://RovenEverward.github.io/my-proxy/guides/add-users) ｜ [添加节点](https://RovenEverward.github.io/my-proxy/guides/add-nodes) ｜ [用套餐分配节点](https://RovenEverward.github.io/my-proxy/guides/plans) ｜ [设置分流规则](https://RovenEverward.github.io/my-proxy/guides/routing) ｜ [让某个客户端拿到指定格式](https://RovenEverward.github.io/my-proxy/guides/client-format) ｜ [在多台设备上管理](https://RovenEverward.github.io/my-proxy/guides/devices) ｜ [一键更新](https://RovenEverward.github.io/my-proxy/guides/update) ｜ [备份控制面](https://RovenEverward.github.io/my-proxy/guides/backup) ｜ [用自检排查](https://RovenEverward.github.io/my-proxy/guides/troubleshoot)
+- **参考**：[界面](https://RovenEverward.github.io/my-proxy/reference/interface) ｜ [订阅设置](https://RovenEverward.github.io/my-proxy/reference/settings) ｜ [订阅接口](https://RovenEverward.github.io/my-proxy/reference/subscription) ｜ [命令行](https://RovenEverward.github.io/my-proxy/reference/cli)
 - **原理**：[控制面与节点](https://RovenEverward.github.io/my-proxy/concepts/architecture)
 - **开发者入口**（只在仓库里）：[docs/atlas](docs/atlas/README.md)：MPX 由哪几块组成、怎么配合，以及设计、决策、RFC 等全部内部文档的地图。
 
