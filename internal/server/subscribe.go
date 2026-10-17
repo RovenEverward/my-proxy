@@ -256,7 +256,7 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, err := s.store.ListPurposeMetadata("nodes")
+	meta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return nil, err
 	}

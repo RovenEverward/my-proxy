@@ -7,7 +7,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-func TestPurposeMetadataPersistsReopensAndCascades(t *testing.T) {
+func TestLocationMetadataPersistsReopensAndCascades(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "purpose.db")
 	s, err := Open(path)
 	if err != nil {
@@ -19,9 +19,9 @@ func TestPurposeMetadataPersistsReopensAndCascades(t *testing.T) {
 	if err = s.CreateHost(h); err != nil {
 		t.Fatal(err)
 	}
-	m := model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "A"}
+	m := model.LocationMetadata{Region: "US", City: "洛杉矶", Letter: "A"}
 	for kind, id := range map[string]int64{"nodes": n.ID, "hosts": h.ID} {
-		if err = s.SavePurposeMetadata(kind, id, m); err != nil {
+		if err = s.SaveLocationMetadata(kind, id, m); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -33,14 +33,14 @@ func TestPurposeMetadataPersistsReopensAndCascades(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if got, err := s.GetPurposeMetadata("nodes", n.ID); err != nil || got.Region != "US" {
+	if got, err := s.GetLocationMetadata("nodes", n.ID); err != nil || got.Region != "US" {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if err = s.DeleteNode(n.ID); err != nil {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{"nodes", "hosts"} {
-		items, e := s.ListPurposeMetadata(kind)
+		items, e := s.ListLocationMetadata(kind)
 		if e != nil || len(items) != 0 {
 			t.Fatalf("cascade %s %v %v", kind, items, e)
 		}

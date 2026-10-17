@@ -25,7 +25,7 @@ func (f *fakeRelabel) Plan(_ context.Context, _ *url.URL, _ string, _ http.Round
 	f.plans = append(f.plans, req)
 	f.mu.Unlock()
 	return []RelabelRow{{ID: 1, Name: "n1", Old: "n1", New: "🇺🇸 洛杉矶 A", Note: "ipwho.is 1.2.3.4"}},
-		[]RelabelPlanItem{{ID: 1, Name: "n1", Metadata: model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "A"}}}, nil
+		[]RelabelPlanItem{{ID: 1, Name: "n1", Metadata: model.LocationMetadata{Region: "US", City: "洛杉矶", Letter: "A"}}}, nil
 }
 
 func (f *fakeRelabel) Apply(_ context.Context, _ *url.URL, _ string, _ http.RoundTripper, plans []RelabelPlanItem) ([]RelabelResult, error) {

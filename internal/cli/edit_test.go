@@ -417,7 +417,7 @@ func TestUserRowNormalizesEmptyResetStrategy(t *testing.T) {
 func TestNodeEditDisplayOnly(t *testing.T) {
 	resetEditFlags(t)
 	view := model.NodeView{Node: model.Node{ID: 2, Name: "la-2", Address: "1.2.3.4"}}
-	meta := model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "B"}
+	meta := model.LocationMetadata{Region: "US", City: "洛杉矶", Letter: "B"}
 	calls := recordEdit(t, func(method, path string) []byte {
 		if path == "/api/nodes/2/metadata" {
 			return mustJSON(t, meta)

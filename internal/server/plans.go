@@ -224,7 +224,7 @@ func (s *Server) handlePreviewPlan(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
-	meta, err := s.store.ListPurposeMetadata("nodes")
+	meta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		s.writeStoreError(w, err, "节点元数据")
 		return

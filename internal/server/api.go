@@ -60,7 +60,7 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta, err := s.store.ListPurposeMetadata("nodes")
+	meta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := model.NodeView{Node: *n}
-	if m, err := s.store.GetPurposeMetadata("nodes", n.ID); err == nil {
+	if m, err := s.store.GetLocationMetadata("nodes", n.ID); err == nil {
 		view.Display = model.NodeDisplay(m)
 	}
 	view.Capabilities, err = s.capabilityResults(*n, time.Now())

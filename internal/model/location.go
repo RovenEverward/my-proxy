@@ -7,21 +7,21 @@ import (
 	"unicode/utf8"
 )
 
-// PurposeMetadata belongs to one node or host. Nonempty host fields override node fields.
+// LocationMetadata belongs to one node or host. Nonempty host fields override node fields.
 //
 // v0.7.0 删掉了 line 与 purposes:老客户端写进来的这两个字段解不出来,直接忽略;
 // 库里残留的 JSON 也一样,读出时自然丢弃。现在只认 region / city / letter。
-type PurposeMetadata struct {
+type LocationMetadata struct {
 	Region string `json:"region"`
 	// City 与 Letter 只用于节点,拼显示名:旗帜 + 城市(缺省为国家中文名) + 字母。
 	City   string `json:"city,omitempty"`
 	Letter string `json:"letter,omitempty"`
 }
 
-var purposeSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
+var tagSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 var nodeLetter = regexp.MustCompile(`^[A-Z]{1,2}$`)
 
-func (m PurposeMetadata) Validate() error {
+func (m LocationMetadata) Validate() error {
 	if len(m.Region) > 80 {
 		return fmt.Errorf("地区最多 80 字节")
 	}
@@ -33,13 +33,13 @@ func (m PurposeMetadata) Validate() error {
 	}
 	return nil
 }
-func EffectivePurposeMetadata(node, host PurposeMetadata) PurposeMetadata {
+func EffectiveLocationMetadata(node, host LocationMetadata) LocationMetadata {
 	if host.Region != "" {
 		node.Region = host.Region
 	}
 	return node
 }
-func containsPurpose(items []string, v string) bool {
+func containsString(items []string, v string) bool {
 	for _, x := range items {
 		if x == v {
 			return true

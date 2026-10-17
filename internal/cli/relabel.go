@@ -35,7 +35,7 @@ type relabelRow struct {
 type relabelPlanItem struct {
 	ID       int64                 `json:"id"`
 	Name     string                `json:"name"`
-	Metadata model.PurposeMetadata `json:"metadata"`
+	Metadata model.LocationMetadata `json:"metadata"`
 }
 
 // relabelResult 是 apply 里一个节点的结果。Skipped 为真时 Reason 说明原因。
@@ -54,14 +54,14 @@ func relabelPlan(c doer, views, targets []model.NodeView) ([]relabelRow, []relab
 	sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
 
 	// 字母要和控制面分配的一致:先收齐各组已用的字母,再按 ID 顺序模拟。
-	meta := map[int64]model.PurposeMetadata{}
+	meta := map[int64]model.LocationMetadata{}
 	used := map[string]map[string]bool{}
 	for _, v := range views {
 		raw, err := c.do("GET", nodePath(v.ID)+"/metadata", nil)
 		if err != nil {
 			return nil, nil, err
 		}
-		m, err := decode[model.PurposeMetadata](raw)
+		m, err := decode[model.LocationMetadata](raw)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -124,7 +124,7 @@ func relabelApply(c doer, plans []relabelPlanItem) ([]relabelResult, error) {
 		if err != nil {
 			return results, err
 		}
-		cur, err := decode[model.PurposeMetadata](raw)
+		cur, err := decode[model.LocationMetadata](raw)
 		if err != nil {
 			return results, err
 		}
@@ -136,7 +136,7 @@ func relabelApply(c doer, plans []relabelPlanItem) ([]relabelResult, error) {
 		if err != nil {
 			return results, fmt.Errorf("节点 %d(%s)写入失败: %w", p.ID, p.Name, err)
 		}
-		saved, err := decode[model.PurposeMetadata](raw)
+		saved, err := decode[model.LocationMetadata](raw)
 		if err != nil {
 			return results, err
 		}

@@ -8,32 +8,32 @@ import (
 	"sync"
 )
 
-func (s *Server) purposeRoutes(api *http.ServeMux) {
-	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetPurposeMetadata)
-	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutPurposeMetadata)
+func (s *Server) metadataRoutes(api *http.ServeMux) {
+	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetMetadata)
+	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutMetadata)
 	api.HandleFunc("POST /api/nodes/{id}/locate", s.handleLocateNode)
-	api.HandleFunc("GET /api/hosts/{id}/metadata", s.handleGetPurposeMetadata)
-	api.HandleFunc("PUT /api/hosts/{id}/metadata", s.handlePutPurposeMetadata)
+	api.HandleFunc("GET /api/hosts/{id}/metadata", s.handleGetMetadata)
+	api.HandleFunc("PUT /api/hosts/{id}/metadata", s.handlePutMetadata)
 }
-func purposeMetadataKind(r *http.Request) string {
+func metadataKind(r *http.Request) string {
 	if strings.HasPrefix(r.URL.Path, "/api/nodes/") {
 		return "nodes"
 	}
 	return "hosts"
 }
-func (s *Server) handleGetPurposeMetadata(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetMetadata(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
 		return
 	}
-	m, err := s.store.GetPurposeMetadata(purposeMetadataKind(r), id)
+	m, err := s.store.GetLocationMetadata(metadataKind(r), id)
 	if err != nil {
 		s.writeStoreError(w, err, "元数据")
 		return
 	}
 	writeJSON(w, 200, m)
 }
-func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePutMetadata(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
 		return
@@ -41,14 +41,14 @@ func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request
 	// city / letter 用指针判断「有没有带」:只认识 region 的老客户端整份 PUT 时,
 	// 不能把已分配的城市和字母冲掉。老客户端带来的 line / purposes 字段会被忽略。
 	var in struct {
-		model.PurposeMetadata
+		model.LocationMetadata
 		City   *string `json:"city"`
 		Letter *string `json:"letter"`
 	}
 	if !decodeBody(w, r, &in) {
 		return
 	}
-	m := in.PurposeMetadata
+	m := in.LocationMetadata
 	if in.City != nil {
 		m.City = strings.TrimSpace(*in.City)
 	}
@@ -59,7 +59,7 @@ func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, err.Error())
 		return
 	}
-	kind := purposeMetadataKind(r)
+	kind := metadataKind(r)
 	metadataMu.Lock()
 	defer metadataMu.Unlock()
 	if kind == "hosts" {
@@ -74,7 +74,7 @@ func (s *Server) handlePutPurposeMetadata(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	if err := s.store.SavePurposeMetadata(kind, id, m); err != nil {
+	if err := s.store.SaveLocationMetadata(kind, id, m); err != nil {
 		s.writeStoreError(w, err, "元数据")
 		return
 	}
@@ -88,8 +88,8 @@ var metadataMu sync.Mutex
 // fillNodeLetter 补齐节点元数据里省略的 city / letter,并按 (地区, 城市) 分配字母
 // (docs/internal/node-naming-rfc.md):显式给的字母撞了就拒绝;沿用旧字母但换了分组
 // 撞了就重新分配;没有字母就取该分组最小的空闲字母。删掉节点不让别人重排。
-func (s *Server) fillNodeLetter(id int64, m *model.PurposeMetadata, citySet, letterSet bool) (int, string) {
-	all, err := s.store.ListPurposeMetadata("nodes")
+func (s *Server) fillNodeLetter(id int64, m *model.LocationMetadata, citySet, letterSet bool) (int, string) {
+	all, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return 500, err.Error()
 	}

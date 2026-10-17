@@ -178,7 +178,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
-	s.purposeRoutes(api)
+	s.metadataRoutes(api)
 	s.routingRoutes(api)
 	s.planRoutes(api)
 	s.diagnosticRoutes(api)

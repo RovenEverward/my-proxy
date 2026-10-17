@@ -18,7 +18,7 @@ func TestSubscriptionUsesNodeDisplay(t *testing.T) {
 	in3 := e.createInbound(n.ID, "ws-c", 8445)
 	e.createHost(in3.ID, "{NODE_DISPLAY} 手写", "la.example.com")
 	user := e.createUser("alice")
-	if code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), model.PurposeMetadata{Region: "US", City: "洛杉矶"}); code != 200 {
+	if code, b := e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), model.LocationMetadata{Region: "US", City: "洛杉矶"}); code != 200 {
 		t.Fatalf("metadata %d %s", code, b)
 	}
 	code, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng/1.8")

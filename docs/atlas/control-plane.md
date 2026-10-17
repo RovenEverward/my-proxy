@@ -43,5 +43,5 @@ sequenceDiagram
 
 - 想给接口改字段语义 → 旧 CLI、旧 `mpx ui` 会静默出错 → 只加新字段或新路径；确实要破坏兼容，先停下来问主人。
 - 建用户时不带 `enabled` → 零值会被当成停用 → 必须显式传（decisions 第 35 条）。
-- 文件名还叫 `purpose.go`（model、store、server 各一个），但里面现在只是节点和入口的地区元数据（region / city / letter），「用途」本身已在 v0.7.0 删除 → 别按文件名以为用途还在。
+- 节点和入口的地区元数据（region / city / letter）在 `metadata.go`（server、store）和 `model/location.go`，类型叫 `LocationMetadata`；v0.9.2 前这些文件叫 `purpose.go`。代码里剩下的 `purposes` 字样只在迁移和兼容旧报告的地方（`dropPurposes`、`LegacyPurposeCount`、`PurposeOutcome`），「用途」本身已在 v0.7.0 删除。
 - 仍是 `template` 分流模式的老库 → v0.7.0 起控制面拒绝启动 → 先用 v0.6.6 跑 `mpx rule migrate`（见 [CHANGELOG](../../CHANGELOG.md) v0.7.0）。

@@ -14,7 +14,7 @@ import (
 
 func TestNodeRelabel(t *testing.T) {
 	var mu sync.Mutex
-	meta := map[int64]model.PurposeMetadata{
+	meta := map[int64]model.LocationMetadata{
 		3: {Region: "US", City: "洛杉矶", Letter: "A"}, // 已有显示名:跳过,占住 A
 	}
 	nodes := []model.Node{{ID: 1, Name: "la-1"}, {ID: 2, Name: "la-2"}, {ID: 3, Name: "la-old"}, {ID: 4, Name: "lab"}}
@@ -41,7 +41,7 @@ func TestNodeRelabel(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/metadata"):
 			fmt.Sscanf(r.URL.Path, "/api/nodes/%d/metadata", &id)
 			if r.Method == "PUT" {
-				var m model.PurposeMetadata
+				var m model.LocationMetadata
 				json.NewDecoder(r.Body).Decode(&m)
 				meta[id] = m
 				puts = append(puts, id)
@@ -76,7 +76,7 @@ func TestNodeRelabel(t *testing.T) {
 type fakeDoer struct {
 	mu    sync.Mutex
 	calls []string
-	meta  map[int64]model.PurposeMetadata
+	meta  map[int64]model.LocationMetadata
 }
 
 func (f *fakeDoer) do(method, path string, body any) ([]byte, error) {
@@ -92,7 +92,7 @@ func (f *fakeDoer) do(method, path string, body any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var m model.PurposeMetadata
+	var m model.LocationMetadata
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
@@ -113,13 +113,13 @@ func (f *fakeDoer) has(s string) bool {
 
 // apply 只写计划里的那份 metadata,绝不重新 locate;节点中途被别人改过就跳过。
 func TestRelabelApplyNoLocateAndSkipsChanged(t *testing.T) {
-	f := &fakeDoer{meta: map[int64]model.PurposeMetadata{
+	f := &fakeDoer{meta: map[int64]model.LocationMetadata{
 		1: {},                                      // 干净:按计划写
 		2: {Region: "JP", City: "东京", Letter: "A"}, // 已被改过:跳过
 	}}
 	plans := []relabelPlanItem{
-		{ID: 1, Name: "n1", Metadata: model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "B"}},
-		{ID: 2, Name: "n2", Metadata: model.PurposeMetadata{Region: "US", City: "洛杉矶", Letter: "C"}},
+		{ID: 1, Name: "n1", Metadata: model.LocationMetadata{Region: "US", City: "洛杉矶", Letter: "B"}},
+		{ID: 2, Name: "n2", Metadata: model.LocationMetadata{Region: "US", City: "洛杉矶", Letter: "C"}},
 	}
 	results, err := relabelApply(f, plans)
 	if err != nil {

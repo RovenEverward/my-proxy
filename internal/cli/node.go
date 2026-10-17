@@ -963,7 +963,7 @@ func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 	if err != nil {
 		return err
 	}
-	m, err := decode[model.PurposeMetadata](raw)
+	m, err := decode[model.LocationMetadata](raw)
 	if err != nil {
 		return err
 	}
@@ -986,7 +986,7 @@ func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 	if opts.output == outputJSON {
 		return emitJSON(raw)
 	}
-	saved, err := decode[model.PurposeMetadata](raw)
+	saved, err := decode[model.LocationMetadata](raw)
 	if err != nil {
 		return err
 	}
@@ -997,12 +997,12 @@ func editNodeMetadata(c *Client, id int64, region, city, letter bool) error {
 	return report(raw, "节点 %d 的显示名:%s", id, display)
 }
 
-// explicitMetadata 让 PUT 体里总是带上 city 和 letter:model.PurposeMetadata 对这两个
+// explicitMetadata 让 PUT 体里总是带上 city 和 letter:model.LocationMetadata 对这两个
 // 字段是 omitempty,而控制面把「没带」理解成「保留原值」—— 想清空城市、或让控制面
 // 在新分组里重新取字母,就必须显式发空串。
-func explicitMetadata(m model.PurposeMetadata) any {
+func explicitMetadata(m model.LocationMetadata) any {
 	return struct {
-		model.PurposeMetadata
+		model.LocationMetadata
 		City   string `json:"city"`
 		Letter string `json:"letter"`
 	}{m, m.City, m.Letter}

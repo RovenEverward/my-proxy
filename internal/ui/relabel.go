@@ -28,7 +28,7 @@ type RelabelRow struct {
 type RelabelPlanItem struct {
 	ID       int64                 `json:"id"`
 	Name     string                `json:"name"`
-	Metadata model.PurposeMetadata `json:"metadata"`
+	Metadata model.LocationMetadata `json:"metadata"`
 }
 
 // RelabelResult 是 apply 里一个节点的结果。Skipped 为真时 Reason 说明原因。

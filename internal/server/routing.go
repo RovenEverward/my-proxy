@@ -62,11 +62,11 @@ func (s *Server) routingPlan(user *model.User, eps []render.Endpoint) (render.Ro
 // (入口上非空的字段覆盖节点),协议用订阅名后缀同一套短名,能力取已稳定的结果。
 // v0.7.0 起 metadata 不再有标签来源,所以候选的 Tags 恒为空。
 func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGroup) ([]model.GroupCandidate, error) {
-	nodeMeta, err := s.store.ListPurposeMetadata("nodes")
+	nodeMeta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return nil, err
 	}
-	hostMeta, err := s.store.ListPurposeMetadata("hosts")
+	hostMeta, err := s.store.ListLocationMetadata("hosts")
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGrou
 	}
 	out := make([]model.GroupCandidate, len(eps))
 	for i, ep := range eps {
-		m := model.EffectivePurposeMetadata(nodeMeta[ep.NodeID], hostMeta[ep.HostID])
+		m := model.EffectiveLocationMetadata(nodeMeta[ep.NodeID], hostMeta[ep.HostID])
 		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep), Capabilities: caps[[2]int64{ep.InboundID, ep.HostID}]}
 	}
 	return out, nil

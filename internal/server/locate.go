@@ -111,7 +111,7 @@ func parseLocate(raw string) (LocateSuggestion, error) {
 		return LocateSuggestion{}, fmt.Errorf("ipwho.is 没给出结果:%s", msg)
 	}
 	sg := LocateSuggestion{Region: strings.ToUpper(g.CountryCode), CityEn: g.City, City: model.CityZh(g.City), IP: g.IP, Source: "ipwho.is"}
-	sg.Display = model.NodeDisplay(model.PurposeMetadata{Region: sg.Region, City: sg.City})
+	sg.Display = model.NodeDisplay(model.LocationMetadata{Region: sg.Region, City: sg.City})
 	return sg, nil
 }
 
@@ -140,7 +140,7 @@ func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, not
 	}
 	metadataMu.Lock()
 	defer metadataMu.Unlock()
-	m, err := s.store.GetPurposeMetadata("nodes", n.ID)
+	m, err := s.store.GetLocationMetadata("nodes", n.ID)
 	if err != nil {
 		return "", "自动识别后写入失败(" + err.Error() + ")," + manual
 	}
@@ -151,7 +151,7 @@ func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, not
 	if code, msg := s.fillNodeLetter(n.ID, &m, true, true); code != 0 {
 		return "", "自动识别后分配字母失败(" + msg + ")," + manual
 	}
-	if err := s.store.SavePurposeMetadata("nodes", n.ID, m); err != nil {
+	if err := s.store.SaveLocationMetadata("nodes", n.ID, m); err != nil {
 		return "", "自动识别后写入失败(" + err.Error() + ")," + manual
 	}
 	s.invalidateSubCache()
