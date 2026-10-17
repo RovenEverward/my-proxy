@@ -582,9 +582,15 @@ jobs:
             echo "annotated=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # 「我该下哪个」放在正文最前面,只链接桌面安装包;命令行安装包、压缩包等收进
-      # <details> 折叠。只在有 tag 消息时拼:轻量 tag 走自动生成正文那条路。文件名
-      # 里的版本号去掉 v,与上面改名那步一致。
+      # 正文结构(v0.9.5 起):
+      #   ## 更新要点   ← tag 消息(CHANGELOG)里「### 要点」那几条
+      #   tag 消息其余部分(新增 / 改进 / 修复 / 兼容性)
+      #   ## 我该下哪个 ← 下载表 + 未签名放行说明 + <details> 折叠的其他文件
+      # 下载表放最后:v0.9.3 及更早的桌面端更新弹窗会把正文前约 2000 字原样显示
+      # (表格不渲染,满屏 | --- |),要点放最前面,老弹窗打开先看到的是几行中文更新要点;
+      # 正文够长时下载表正好落在被截掉的部分。新弹窗只取「## 更新要点」。
+      # 只在有 tag 消息时拼:轻量 tag 走自动生成正文那条路。文件名里的版本号去掉 v,
+      # 与上面改名那步一致。
       - name: 正文开头加「我该下哪个」
         if: steps.notes.outputs.annotated == 'true'
         run: |
@@ -635,8 +641,20 @@ jobs:
           </details>
 
           EOF
-          # 下载表放在最前面:大多数人点进发布页只想知道下哪个。tag 消息(更新内容)接在后面。
-          cat DL.md NOTES.md > NOTES.new && mv NOTES.new NOTES.md
+          # 「### 要点」提到最前面改成「## 更新要点」,其余 tag 消息接着,下载表放最后。
+          awk '
+            /^### 要点[[:space:]]*$/ { hl = 1; next }
+            hl && /^#/ { hl = 0 }
+            hl { print > "HL.body"; next }
+            { print > "REST.md" }
+          ' NOTES.md
+          : > HL.md
+          if [ -s HL.body ] && [ -n "$(tr -d '[:space:]' < HL.body)" ]; then
+            { printf '## 更新要点\n\n'; sed -e '/./,$!d' HL.body; printf '\n'; } > HL.md
+          fi
+          touch REST.md
+          cat HL.md REST.md DL.md > NOTES.new && mv NOTES.new NOTES.md
+          rm -f HL.md HL.body REST.md
           echo "拼接后的正文:"
           cat NOTES.md
 

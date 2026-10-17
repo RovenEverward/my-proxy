@@ -15,7 +15,7 @@ import (
 type relabelRunner struct{}
 
 // uiClient 用一个临时的 Client 打这一次请求:地址/凭据/传输都是页面传进来的
-// 当前值(配置档切换后跟着变),不影响 CLI 自己的配置解析。
+// 当前值(切换控制面后跟着变),不影响 CLI 自己的配置解析。
 func uiClient(up *url.URL, token string, tr http.RoundTripper) *Client {
 	return &Client{
 		server: strings.TrimSuffix(up.String(), "/"),

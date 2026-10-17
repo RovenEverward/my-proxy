@@ -346,6 +346,12 @@ func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "核心只能是 xray / sing-box")
 		return
 	}
+	// 先看入站端口有没有被别的程序占着:占着就停在这里说清楚,不装到一半。
+	if conflicts := s.inboundPortConflicts(r.Context(), *n); len(conflicts) > 0 {
+		msg, hint := portConflictMessage(*n, conflicts)
+		writeErrorHint(w, http.StatusConflict, msg, hint)
+		return
+	}
 	var installed string
 	if installer, ok := s.nodeOps.(CoreInstaller); ok {
 		installed, err = installer.InstallNodeCore(context.Background(), *n, core, version)

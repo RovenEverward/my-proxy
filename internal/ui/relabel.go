@@ -43,7 +43,7 @@ type RelabelResult struct {
 // RelabelRunner 由 cli 实现:对照表的计算与写入都在 cli 那一份 relabelPlan /
 // relabelApply 里,CLI 与页面共用同一套行为。ui 包不 import cli,靠这个接口解耦。
 //
-// upstream/token/transport 由调用方传当前值(配置档切换后要跟着变):页面永远
+// upstream/token/transport 由调用方传当前值(切换控制面后要跟着变):页面永远
 // 打的是这个 mpx ui 进程此刻连着的那个控制面。
 type RelabelRunner interface {
 	Plan(ctx context.Context, up *url.URL, token string, tr http.RoundTripper, req RelabelRequest) ([]RelabelRow, []RelabelPlanItem, error)

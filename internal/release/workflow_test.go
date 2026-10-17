@@ -193,7 +193,39 @@ func TestReleaseNotesTable(t *testing.T) {
 			t.Errorf("发布说明要写清未签名安装包怎么放行,缺「%s」", w)
 		}
 	}
-	if !strings.Contains(run, "cat DL.md NOTES.md") {
-		t.Error("下载表要放在正文最前面")
+	if !strings.Contains(run, "cat HL.md REST.md DL.md") {
+		t.Error("正文顺序要是:更新要点、其余说明、下载表")
+	}
+}
+
+// 真跑一遍拼正文那步:「### 要点」提到最前面成「## 更新要点」,下载表在最后。
+func TestReleaseNotesOrder(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("需要 bash")
+	}
+	root := t.TempDir()
+	notes := "### 要点\n- 安装向导不再问节点名\n- 总览用中文单位\n\n### 修复\n- 修了一个问题\n\n### 兼容性\n- 控制面 API 只加不改\n"
+	if err := os.WriteFile(filepath.Join(root, "NOTES.md"), []byte(notes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := stepRun(t, publishSteps(t), "正文开头加「我该下哪个」")
+	run = strings.NewReplacer("${{ steps.ver.outputs.ver }}", "0.9.5", "${{ github.repository }}", "o/r", "${{ github.ref_name }}", "v0.9.5").Replace(run)
+	if out, err := runScript(t, root, run); err != nil {
+		t.Fatalf("拼正文失败: %v\n%s", err, out)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "NOTES.md"))
+	got := string(b)
+	if !strings.HasPrefix(got, "## 更新要点\n\n- 安装向导不再问节点名\n- 总览用中文单位\n") {
+		t.Errorf("正文要以「## 更新要点」开头:\n%s", got)
+	}
+	if strings.Contains(got, "### 要点") {
+		t.Error("原来的「### 要点」应被提走")
+	}
+	iFix, iDL := strings.Index(got, "### 修复"), strings.Index(got, "## 我该下哪个")
+	if iFix < 0 || iDL < iFix {
+		t.Errorf("下载表要在更新说明之后:\n%s", got)
+	}
+	if strings.Count(got, "## 我该下哪个") != 1 {
+		t.Error("下载表只出现一次")
 	}
 }

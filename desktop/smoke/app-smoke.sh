@@ -6,7 +6,10 @@
 #   ② 起了本地控制面并给出 MPX_TOKEN / MPX_SERVER:应当进入主界面,截图
 #      app-<os>-main.png;
 #   ③ 同一控制面里登记一台带地区(JP / 东京)的示例节点,跳到节点页,要等到内置
-#      国旗字体加载后才截图 app-<os>-nodes.png —— Windows 上国旗能显示的证据。
+#      国旗字体加载后才截图 app-<os>-nodes.png —— Windows 上国旗能显示的证据;
+#   ④ 同样的数据截总览 app-<os>-overview.png,再用示例数据打开更新弹窗截
+#      app-<os>-update.png —— 确认中文(「可升级」徽章、要点列表)没有掉成宋体,
+#      日志里打印实际字体栈(tagfont=…)。
 #
 # 由 .github/workflows/ci.yml 的 desktop-smoke job 调用,也可以本地跑。依赖:
 #   - 仓库根已编出 ./mpxbin/mpx,且带 -X .../buildinfo.desktop=1
@@ -42,6 +45,8 @@ MPX="$BIN_DIR/mpx$EXE"
 SETUP_PNG="$ROOT/app-$OS_NAME-setup.png"
 MAIN_PNG="$ROOT/app-$OS_NAME-main.png"
 NODES_PNG="$ROOT/app-$OS_NAME-nodes.png"
+OVERVIEW_PNG="$ROOT/app-$OS_NAME-overview.png"
+UPDATE_PNG="$ROOT/app-$OS_NAME-update.png"
 
 # 临时 HOME / 配置目录,别碰开发者自己的配置。Git Bash 的 mktemp 给的是 MSYS
 # 路径(/tmp/...),原生 Windows 程序不认,过一层 cygpath。
@@ -65,6 +70,8 @@ SERVE_LOG="$TMP/serve.log"
 SETUP_LOG="$TMP/setup.log"
 MAIN_LOG="$TMP/main.log"
 NODES_LOG="$TMP/nodes.log"
+OVERVIEW_LOG="$TMP/overview.log"
+UPDATE_LOG="$TMP/update.log"
 SERVE_PID=""
 FAIL=0
 
@@ -176,6 +183,16 @@ else
     NODES_CODE=$?
     check_result "节点页国旗冒烟" "$NODES_CODE" "$NODES_LOG" "$NODES_PNG"
     grep -q 'flagfont=loaded' "$NODES_LOG" || { echo "节点页冒烟:国旗字体没有加载" >&2; FAIL=1; }
+
+    # 4) 总览 + 更新弹窗(示例数据)。
+    run_app "$OVERVIEW_PNG" "$OVERVIEW_LOG" \
+      MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=overview
+    check_result "总览冒烟" "$?" "$OVERVIEW_LOG" "$OVERVIEW_PNG"
+    run_app "$UPDATE_PNG" "$UPDATE_LOG" \
+      MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=update
+    check_result "更新弹窗冒烟" "$?" "$UPDATE_LOG" "$UPDATE_PNG"
+    grep -q 'modal=open' "$UPDATE_LOG" || { echo "更新弹窗冒烟:弹窗没打开" >&2; FAIL=1; }
+    grep -q 'tagfont=.*Microsoft YaHei UI' "$UPDATE_LOG" || { echo "更新弹窗冒烟:徽章字体栈里没有中文无衬线回退" >&2; FAIL=1; }
   fi
 fi
 
@@ -190,6 +207,8 @@ cat "$SERVE_LOG" || true
 cp "$SETUP_LOG" "$ROOT/app-$OS_NAME-setup.log" 2>/dev/null || true
 cp "$MAIN_LOG" "$ROOT/app-$OS_NAME-main.log" 2>/dev/null || true
 cp "$NODES_LOG" "$ROOT/app-$OS_NAME-nodes.log" 2>/dev/null || true
+cp "$OVERVIEW_LOG" "$ROOT/app-$OS_NAME-overview.log" 2>/dev/null || true
+cp "$UPDATE_LOG" "$ROOT/app-$OS_NAME-update.log" 2>/dev/null || true
 cp "$SERVE_LOG" "$ROOT/app-$OS_NAME-serve.log" 2>/dev/null || true
 
 exit "$FAIL"

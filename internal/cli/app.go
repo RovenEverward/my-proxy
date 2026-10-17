@@ -57,7 +57,7 @@ var appCmd = &cobra.Command{
 	Short: "打开桌面窗口(和 mpx ui 同一套页面)",
 	Long: `在本机开一个桌面窗口,里面就是 mpx ui 的页面。
 
-它和 mpx ui 用同一份配置档、同一个本地转发层、同一条一次性登录链接,区别只是
+它和 mpx ui 用同一份配置、同一个本地转发层、同一条一次性登录链接,区别只是
 把页面放进系统 WebView 的窗口里,不打开浏览器。窗口关掉,本地服务随之停止。
 
 桌面版安装包不带参数启动时自动进入这个命令。没有图形环境、或系统缺 WebView
@@ -184,14 +184,46 @@ func runAppSmoke(win *mygo.Window, out string) {
 	mygo.App.Exit(1)
 }
 
+// appSmokeUpdateJS 用示例数据打开更新弹窗(冒烟专用,不连 GitHub):Windows 上要截图
+// 确认「可升级」徽章、要点列表这些文字没有掉成宋体。
+const appSmokeUpdateJS = `(() => {
+  const part = (cur, lat) => ({ current: cur, latest: lat, behind: 1, available: true, release_url: "https://github.com/RovenEverward/my-proxy/releases/tag/" + lat, error: "" });
+  UPDATE = { desktop: true, cli: part("v0.9.4", "v0.9.5"), control: part("v0.9.4", "v0.9.5"),
+    nodes: [{ name: "jp-1", display: "\u{1F1EF}\u{1F1F5} 东京 A", core: "xray", current: "26.3.27", target: "26.4.1", upgrade: true },
+            { name: "us-1", display: "\u{1F1FA}\u{1F1F8} 洛杉矶 A", core: "xray", current: "26.4.1", target: "26.4.1", upgrade: false }],
+    notes: "## 更新要点\n\n- 首次安装向导不再问内部的节点名\n- 总览的用时改成中文单位\n- 端口被占用时提前说清楚是哪个程序,并换一个空闲端口\n\n## 我该下哪个\n\n| a | b |\n| --- | --- |\n" };
+  openUpdateModal();
+  return "";
+})()`
+
+// appSmokeFontJS 报出几处中文文字实际用的字体栈,写进冒烟日志。
+const appSmokeFontJS = `(() => { const f = s => { const e = document.querySelector(s); return e ? getComputedStyle(e).fontFamily : "-"; };
+  return "tagfont=" + f("#modal .tag") + " | bodyfont=" + f("body"); })()`
+
 // smokeRoute 跳到 #route 并等到 appSmokeRouteSelector 成立;超时返回空串。
+// route 为 update 时停在总览,再用示例数据打开更新弹窗。
 func smokeRoute(win *mygo.Window, route string, deadline time.Time) string {
-	b, _ := json.Marshal("#" + route)
+	hash := route
+	if route == "update" {
+		hash = "overview"
+	}
+	b, _ := json.Marshal("#" + hash)
 	_, _ = win.Page().Eval("location.hash = " + string(b) + `; ""`)
 	for time.Now().Before(deadline) {
 		if v, err := win.Page().Eval(appSmokeRouteSelector); err == nil {
 			if st, ok := v.(string); ok && st != "" {
-				return st
+				if route != "update" {
+					return st
+				}
+				_, _ = win.Page().Eval(appSmokeUpdateJS)
+				for time.Now().Before(deadline) {
+					if v, err := win.Page().Eval(`document.querySelector("#modal.open .upd-hl li") ? "1" : ""`); err == nil && v == "1" {
+						font, _ := win.Page().Eval(appSmokeFontJS)
+						return fmt.Sprintf("%s modal=open %v", st, font)
+					}
+					time.Sleep(appSmokeEvery)
+				}
+				return ""
 			}
 		}
 		time.Sleep(appSmokeEvery)

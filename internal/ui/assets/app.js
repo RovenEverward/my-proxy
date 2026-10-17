@@ -78,6 +78,8 @@ const DAY = 864e5;
 // 到期日以「当地日历日」计:23:59:59 到期的那天还算剩 0 天。
 const daysLeft = iso => { if (!iso) return null; const e = new Date(iso), n = new Date(); const a = new Date(e.getFullYear(), e.getMonth(), e.getDate()), b = new Date(n.getFullYear(), n.getMonth(), n.getDate()); return Math.round((a - b) / DAY); };
 const fmtDur = s => { s = Math.floor(+s || 0); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} 天 ${h} 小时` : h ? `${h} 小时 ${m} 分` : `${m} 分钟`; };
+// fmtSecs:秒数写成中文单位,不到 0.01 秒不写成「0.00 秒」。
+const fmtSecs = v => { v = +v || 0; if (v < 0.01) return "不到 0.01 秒"; if (v < 60) return `${v.toFixed(v < 10 ? 2 : 1)} 秒`; return fmtDur(v); };
 const sinceText = iso => { if (!iso) return "—"; const d = new Date(iso), s = (Date.now() - d) / 1e3; if (s < 60) return "刚刚"; if (s < 3600) return `${Math.floor(s / 60)} 分钟前`; if (s < 86400) return hm(d); return ymd(d); };
 
 const USER_ST = { active: ["ok", "正常"], disabled: ["", "已停用"], expired: ["bad", "已过期"], limited: ["warn", "已超限"] };
@@ -208,7 +210,7 @@ function openUpdateModal() {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
-  ${releaseNotesBody(u.notes) ? H`<div class="upd-notes">${raw(renderMarkdown(releaseNotesBody(u.notes)))}</div>` : ""}
+  ${releaseHighlights(u.notes).length ? H`<div class="upd-notes"><div class="upd-hl-t">这次更新</div><ul class="upd-hl">${releaseHighlights(u.notes).map(t => H`<li>${raw(inlineMd(t))}</li>`)}</ul></div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
   <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
@@ -334,7 +336,7 @@ function shell(page, body, crumb) {
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
-  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换配置档"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${META.profile || "default"}">${META.profile || "default"}</b><span title="${META.server}">${META.server.replace(/^https?:\/\//, "")}</span></div>${META.profiles ? ic("down", "pf-car") : ""}</div>
+  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -347,7 +349,7 @@ function shell(page, body, crumb) {
 
 /* ---------- 总览 ---------- */
 let STATUS = null;
-// 最近一次读控制面成没成:侧栏配置档圆点的颜色(未知时灰)。
+// 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
 PAGES.overview = {
   title: "总览", nav: ["", "home", 0],
@@ -371,7 +373,7 @@ PAGES.overview = {
     const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
     const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
     const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
-    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))},用时 ${(+s.last_tick_seconds).toFixed(2)}s` : "还没跑过一轮";
+    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))},用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
     const upd = s.update || {}, behind = upd.behind > 0;
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
@@ -408,6 +410,26 @@ function releaseNotesBody(md) {
   s = s.replace(/^## 我该下哪个[\s\S]*?<\/details>\s*/m, "");
   s = s.replace(/^## 下载\s*$[\s\S]*/m, "");
   return s.trim();
+}
+
+// releaseHighlights:更新弹窗只列这一版的要点,不展示整份发布说明。v0.9.5 起发布说明开头是
+// 「## 更新要点」一节(取自 CHANGELOG 的「### 要点」);更早的发布没有这一节,就从下载表 /
+// 「## 下载」之前的正文里取前几条列表项。下载表、安装说明、折叠的文件清单一律不要。
+const HL_MAX = 8;
+function releaseHighlights(md) {
+  const s = String(md || "").replace(/\r\n/g, "\n");
+  const items = text => text.split("\n").map(l => /^\s{0,1}[-*]\s+(.+)$/.exec(l)).filter(Boolean).map(m => m[1].trim());
+  const sec = /^##\s+(?:v[\d.]+\s+)?更新要点[ \t]*$([\s\S]*?)(?=^#{1,6}\s|(?![\s\S]))/m.exec(s);
+  if (sec) return items(sec[1]).slice(0, HL_MAX);
+  const body = releaseNotesBody(s).replace(/^##\s+我该下哪个[\s\S]*$/m, "");
+  const li = items(body);
+  if (li.length) return li.slice(0, HL_MAX);
+  // 连列表都没有(很老的发布):取前几行正文,标题、表格、代码围栏、HTML 都跳过。
+  return body.split("\n").map(l => l.trim()).filter(l => l && !/^(#|\||```|<)/.test(l)).slice(0, 3);
+}
+// inlineMd:要点里只认 `代码` 和 **粗体**,其余原样转义。
+function inlineMd(t) {
+  return esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
 }
 
 /* ---------- 抽屉、确认框、提示 ---------- */
@@ -448,28 +470,31 @@ function confirmBox({ title, text, ok, danger, typed, run, extra }) {
   });
 }
 
-/* ---------- 配置档切换 ---------- */
-// 点左上角的配置档卡片:拉一次列表。有多个档,或者能在页面里接入新控制面时,
+/* ---------- 切换控制面 ---------- */
+// 控制面在界面上的叫法:名称是自动生成的 default 时直接用地址,否则用名称。
+const cpAddr = server => String(server || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
+const cpName = (name, server) => (!name || name === "default") ? (cpAddr(server) || "default") : name;
+// 点左上角的控制面卡片:拉一次列表。有多个档,或者能在页面里接入新控制面时,
 // 弹窗列出全部(当前档打勾,每项带指纹前 16 位);点别的就 POST 切换,成功后整页
 // reload。只有一个档又接不了新控制面时,不弹,只提示一句。
 async function openProfiles() {
   if (!META.profiles) return;
   let list;
   try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
-  catch (e) { toast("读不到配置档:" + e.message, true); return; }
+  catch (e) { toast("读不到控制面列表:" + e.message, true); return; }
   if (!Array.isArray(list)) list = [];
   const canAdd = !!META.connect && typeof window.openConnectForm === "function";
   if (list.length <= 1 && !canAdd) {
-    toast(H`只有一个配置档 ${list[0]?.name || "default"};这里不能添加新的控制面`);
+    toast(H`只有一个控制面 ${cpName(list[0]?.name, list[0]?.server)};这里不能添加新的控制面`);
     return;
   }
-  // 指纹只摆前 16 位(核对用的那几位),完整的在设置页「当前控制面」里。
-  const fp16 = p => String(p.fingerprint || "").slice(0, 16);
+  // 每项只摆名称和地址;证书指纹在设置页「当前控制面」里看。
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>切换配置档</h2>
-  <p>只影响这次打开的界面;配置文件里的当前配置档不动。</p>
-  <div class="pflist">${list.map(p => H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
-    <span class="dot ${p.current ? "ok" : ""}"></span><span class="pf-t"><b>${p.name}</b><span>${String(p.server || "").replace(/^https?:\/\//, "")}</span>${fp16(p) ? H`<span title="${p.fingerprint}">${fp16(p)}…</span>` : ""}</span>${p.current ? ic("check") : ""}</button>`)}</div>
+  m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
+  <p>切换后会记住，下次打开仍连你选的这个。</p>
+  <div class="pflist">${list.map(p => { const addr = cpAddr(p.server), name = cpName(p.name, p.server);
+    return H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
+    <span class="dot ${p.current ? "ok" : ""}"></span><span class="pf-t"><b>${name}</b>${name !== addr ? H`<span>${addr}</span>` : ""}</span>${p.current ? ic("check") : ""}</button>`; })}</div>
   <div class="err" id="prof-err" role="alert"></div></div>
   <div class="mf">${canAdd ? H`<button type="button" class="btn" data-act="profile-add">${ic("plus")}添加控制面…</button><span class="sp" style="flex:1"></span>` : ""}<button class="btn" data-act="modal-cancel">取消</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
@@ -527,7 +552,7 @@ async function load(soft, force) {
   } catch (e) {
     if (seq !== loadSeq) return;
     current = { ...current, error: e, loading: false };
-    // 连不上控制面(本地服务没了或网关 5xx)时,侧栏配置档的绿点不能还亮着。
+    // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
     if (current.data) toast("刷新失败:" + e.message, true);
   }
@@ -547,7 +572,7 @@ const ACTS = {
   "update-apply": (d, el) => applyUpdate(el),
   "profile-open": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
-  // 设备密码的手续,存成新配置档再切过去)。
+  // 设备密码的手续,存成新控制面再切过去)。
   "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败,请手动选中复制", true); } },
 };

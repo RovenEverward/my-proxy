@@ -27,6 +27,7 @@ type fakeRemote struct {
 	fp          string
 	setPWErr    error
 	connectErr  error
+	ss          string // 探路时 ss -Hltnp 的输出(端口占用)
 }
 
 func (f *fakeRemote) record(script string) { f.calls = append(f.calls, script) }
@@ -45,8 +46,14 @@ func (f *fakeRemote) Run(ctx context.Context, n model.Node, a node.Auth, script 
 	f.record(script)
 	switch {
 	case strings.Contains(script, "uname -s"):
-		return fmt.Sprintf("os=%s\narch=%s\nuid=%s\nfetch=%s\n",
-			f.osName, f.arch, f.uid, f.fetch), nil
+		out := fmt.Sprintf("os=%s\narch=%s\nuid=%s\nfetch=%s\n",
+			f.osName, f.arch, f.uid, f.fetch)
+		for _, l := range strings.Split(f.ss, "\n") {
+			if l != "" {
+				out += "ss=" + l + "\n"
+			}
+		}
+		return out, nil
 	case strings.Contains(script, "bootstrap --help"):
 		if f.bootstrapOK {
 			return "MPX_BOOTSTRAP_OK\n", nil

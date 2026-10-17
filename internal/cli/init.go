@@ -217,7 +217,8 @@ func probeRemote(ctx context.Context, n model.Node, a node.Auth) (map[string]str
 printf 'arch=%s\n' "$(uname -m)"
 printf 'uid=%s\n' "$(id -u)"
 printf 'fetch=%s\n' "$(command -v curl || command -v wget || echo)"
-printf 'mpx=%s\n' "$(command -v mpx || echo)"`
+printf 'mpx=%s\n' "$(command -v mpx || echo)"
+` + probeListenScript
 
 	out, err := initSSH.Run(ctx, n, a, script)
 	if err != nil {
@@ -226,9 +227,15 @@ printf 'mpx=%s\n' "$(command -v mpx || echo)"`
 	info := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
-		if ok {
-			info[k] = v
+		if !ok {
+			continue
 		}
+		if k == "ss" { // 监听端口一行一条,攒起来
+			if info[k] != "" {
+				v = info[k] + "\n" + v
+			}
+		}
+		info[k] = v
 	}
 	return info, nil
 }

@@ -108,15 +108,15 @@ PAGES.settings = {
 };
 
 /* ---- 当前控制面 ---- */
-// 设置页开头先摆清「这个窗口在对谁说话」:地址、配置档名、证书指纹。指纹等宽并
+// 设置页开头先摆清「这个窗口在对谁说话」:地址、控制面名、证书指纹。指纹等宽并
 // 带复制,方便跟 mpx init 打印的、别的设备上 mpx status 里的那行对上;http 控制面
-// 没有指纹,明说。地址、档名与指纹都来自 /ui/meta(切换配置档后整页刷新,自然
+// 没有指纹,明说。地址、档名与指纹都来自 /ui/meta(切换控制面后整页刷新,自然
 // 是新的)。
 function controlPlaneCard() {
   const fp = META.fingerprint || "";
   return H`<div class="card mb"><div class="ch">当前控制面</div>
     <dl class="kv"><dt>地址</dt><dd class="mono ell" title="${META.server}">${META.server || "—"}</dd>
-    <dt>配置档</dt><dd class="mono">${META.profile || "default"}</dd>
+    <dt>名称</dt><dd>${cpName(META.profile, META.server)}</dd>
     <dt>证书指纹</dt><dd>${fp ? H`<span class="cmdc"><span class="cmd" title="${fp}">${fp}</span><button type="button" class="ib" data-act="copy" data-text="${fp}" aria-label="复制指纹">${ic("copy")}</button></span>` : H`<span class="sub">未使用 HTTPS 指纹</span>`}</dd></dl></div>`;
 }
 
