@@ -1003,8 +1003,24 @@ func (s *Server) handleRevokeSub(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
+	// 换了 token 就是一条新链接:拉取记录清掉,让它重新等第一次拉取。
+	if err := s.store.ClearSubPull(u.ID); err != nil {
+		s.logger.Warn("清除订阅拉取记录失败", "username", u.Username, "error", err)
+	}
+	s.forgetSubPull(u.ID)
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, toUserView(*u))
+}
+
+// handleListSubPulls 返回全部用户的订阅拉取记录,没有记录时回 []。
+// 权限与 GET /api/users 相同:都挂在 /api 的管理 token 之下。
+func (s *Server) handleListSubPulls(w http.ResponseWriter, r *http.Request) {
+	pulls, err := s.store.ListSubPulls()
+	if err != nil {
+		s.writeStoreError(w, err, "订阅拉取记录")
+		return
+	}
+	writeJSON(w, http.StatusOK, pulls)
 }
 
 // handleUserLinks 给出该用户在各格式下的订阅地址。

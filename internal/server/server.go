@@ -110,6 +110,10 @@ type Server struct {
 	subCache subCache
 	ruleSets ruleSetCache // 「测试一个网址」用的上游规则集缓存,见 routing_match.go
 
+	// subPulls 是订阅拉取记录的写库节流状态(按 user id 记上次写入时间),
+	// 见 recordSubPull。只在内存里,重启即清空。
+	subPulls subPullState
+
 	// subLimiter 与 apiLimiter 是两个独立的令牌桶:订阅公网可达且无鉴权,
 	// 是扫描器与定时刷新的主战场;管理面有鉴权,但仍值得防暴力撞 token。
 	// 速率与突发见 ratelimit.go 的常数,按真实使用拍,不做配置项。
@@ -229,6 +233,7 @@ func (s *Server) routes() {
 	api.HandleFunc("PUT /api/hosts/{id}", s.handleUpdateHost)
 	api.HandleFunc("DELETE /api/hosts/{id}", s.handleDeleteHost)
 
+	api.HandleFunc("GET /api/sub-pulls", s.handleListSubPulls)
 	api.HandleFunc("GET /api/users", s.handleListUsers)
 	api.HandleFunc("POST /api/users", s.handleCreateUser)
 	api.HandleFunc("GET /api/users/{username}", s.handleGetUser)

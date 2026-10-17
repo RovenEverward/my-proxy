@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"rsc.io/qr"
 )
@@ -30,18 +34,70 @@ func qrSVG(text string) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
-// serveQR:GET /local/qr.svg?d=<文本>。会话与来源校验在外层已经做过。
+// qrFetchTimeout 是 qr.svg?u= 问一次控制面上限。它只是一次小查询,不该让页面
+// 挂太久;真正的传输复用控制面已经配好的 token / 证书指纹。
+const qrFetchTimeout = 10 * time.Second
+
+// serveQR:GET /local/qr.svg?d=<文本> 或 ?u=<用户名>。会话与来源校验在外层已经
+// 做过。
+//
+// d 是页面手里的现成文本,原样画码;u 是本机进程按用户名去控制面取 auto 那条
+// 订阅地址再画 —— 页面不必知道控制面地址与 token。
 func (s *Server) serveQR(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "这个接口只接受 GET")
 		return
 	}
 	d := r.URL.Query().Get("d")
+	u := r.URL.Query().Get("u")
+	if d == "" && u != "" {
+		link, code, err := s.autoSubLink(r.Context(), u)
+		if err != nil {
+			writeError(w, code, err.Error())
+			return
+		}
+		s.writeQRSVG(w, link)
+		return
+	}
 	if d == "" || len(d) > 2048 {
 		writeError(w, http.StatusBadRequest, "d 必须是 1–2048 字节的文本")
 		return
 	}
-	svg, err := qrSVG(d)
+	s.writeQRSVG(w, d)
+}
+
+// autoSubLink 用本机进程已有的上游客户端取某个用户 auto 格式的订阅地址。
+// 用户不存在回 404,其余上游问题回 502。
+func (s *Server) autoSubLink(ctx context.Context, username string) (string, int, error) {
+	ctx, cancel := context.WithTimeout(ctx, qrFetchTimeout)
+	defer cancel()
+
+	path := "/api/users/" + url.PathEscape(username) + "/links"
+	data, code, err := s.controlCall(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", http.StatusBadGateway, fmt.Errorf("读取用户订阅地址失败: %w", err)
+	}
+	switch code {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return "", http.StatusNotFound, fmt.Errorf("用户不存在")
+	default:
+		return "", http.StatusBadGateway, fmt.Errorf("控制面返回 %d: %s", code, briefBody(data))
+	}
+
+	var links map[string]string
+	if err := json.Unmarshal(data, &links); err != nil {
+		return "", http.StatusBadGateway, fmt.Errorf("控制面返回的订阅地址不是合法 JSON")
+	}
+	link := links["auto"]
+	if link == "" {
+		return "", http.StatusBadGateway, fmt.Errorf("控制面没有返回 auto 订阅地址")
+	}
+	return link, http.StatusOK, nil
+}
+
+func (s *Server) writeQRSVG(w http.ResponseWriter, text string) {
+	svg, err := qrSVG(text)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "这段文本画不成二维码")
 		return
