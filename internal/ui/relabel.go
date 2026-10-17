@@ -26,8 +26,8 @@ type RelabelRow struct {
 // RelabelPlanItem 是一条待写入计划。页面把 plan 返回的这份原样回传,apply 只写它,
 // 绝不重新 locate。
 type RelabelPlanItem struct {
-	ID       int64                 `json:"id"`
-	Name     string                `json:"name"`
+	ID       int64                  `json:"id"`
+	Name     string                 `json:"name"`
 	Metadata model.LocationMetadata `json:"metadata"`
 }
 

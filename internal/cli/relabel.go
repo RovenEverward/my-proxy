@@ -33,8 +33,8 @@ type relabelRow struct {
 
 // relabelPlanItem 是一条待写入计划:apply 只写这份 metadata,绝不重新 locate。
 type relabelPlanItem struct {
-	ID       int64                 `json:"id"`
-	Name     string                `json:"name"`
+	ID       int64                  `json:"id"`
+	Name     string                 `json:"name"`
 	Metadata model.LocationMetadata `json:"metadata"`
 }
 
