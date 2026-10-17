@@ -39,7 +39,7 @@ test("按节点分组:组头、连接数、空状态与页头", async ({ page })
   await expect(page.locator(".ph [data-act=conn-new]")).toHaveCount(1);
   await expect(page.locator(".ng")).toHaveCount(3);
   const jp = group(page, "东京 A");
-  await expect(jp.locator(".ng-n")).toContainText("🇯🇵");
+  await expect(jp.locator(".ng-n img.flag")).toHaveAttribute("src", "/flags/jp.svg");
   await expect(jp.locator(".ng-a")).toHaveText("203.0.113.21");
   await expect(jp.locator(".ng-c")).toHaveText("2 个连接");
   await expect(jp.locator(".cx-row")).toHaveCount(2);
@@ -137,8 +137,8 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   await expect(dr.locator("h2")).toHaveText("添加连接");
   await expect(dr.locator("#a-node")).toHaveValue("1");
   await expect(dr.locator("#a-port")).toHaveValue("8444");
-  await expect(dr.locator("#a-port-h")).toHaveText("🇯🇵 东京 A 上 8443 已经在用，自动换成 8444");
-  await expect(dr.locator(".pv-r")).toContainText("🇯🇵 东京 A · Reality");
+  await expect(dr.locator("#a-port-h")).toContainText("东京 A 上 8443 已经在用，自动换成 8444");
+  await expect(dr.locator(".pv-r")).toContainText("东京 A · Reality");
   await expect(dr.locator("#pv-a")).toHaveText("203.0.113.21:8444");
   // 切到 WS:走 2087,已被占 → 2088。
   await dr.locator("[data-act=conn-add-proto][data-k=ws]").click();
