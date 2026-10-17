@@ -29,7 +29,9 @@ test("点控制面卡片:列出全部,当前档打勾,点别的会切换并刷�
   await mockProfiles(page, list, useCalls);
   await login(page, env);
 
-  await page.click(".profile[data-act=profile-open]");
+  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
+  await page.click(".profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=cp-switch]");
   await expect(page.locator("#modal.open")).toBeVisible();
   await expect(page.locator(".pfitem")).toHaveCount(2);
   await expect(page.locator("#modal h2")).toHaveText("切换控制面");
@@ -39,7 +41,7 @@ test("点控制面卡片:列出全部,当前档打勾,点别的会切换并刷�
   await expect(page.locator(".pfitem.on")).not.toContainText("default");
   await expect(page.locator(".pfitem:not(.on) b")).toHaveText("prod");
   await expect(page.locator(".pfitem:not(.on)")).toContainText("cp.example.net");
-  // 指纹不进列表(在设置页看);地址里的 scheme 不显示,token 不在弹窗里。
+  // 指纹不进列表(在控制面卡片的面板里看);地址里的 scheme 不显示,token 不在弹窗里。
   await expect(page.locator("#modal")).not.toContainText("SHA256");
   await expect(page.locator("#modal")).not.toContainText("配置档");
   await expect(page.locator("#modal")).not.toContainText("http://");
@@ -58,7 +60,9 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   await page.route("**/local/profiles/connect/probe", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ server: "https://203.0.113.10:8080", fingerprint: FP }) }));
   await login(page, env);
 
-  await page.click(".profile[data-act=profile-open]");
+  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
+  await page.click(".profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=cp-switch]");
   await page.click("[data-act=profile-add]");
   // 模态关掉,换成全屏的接入表单;控制面名是正常模式多出来的必填项。
   await expect(page.locator("#modal.open")).toBeHidden();
@@ -79,7 +83,9 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
 test("只有一个控制面:也弹窗,好从这加新的", async ({ page }) => {
   await mockProfiles(page, [list[0]], null);
   await login(page, env);
-  await page.click(".profile[data-act=profile-open]");
+  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
+  await page.click(".profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=cp-switch]");
   await expect(page.locator("#modal.open")).toBeVisible();
   await expect(page.locator(".pfitem")).toHaveCount(1);
   await expect(page.locator("[data-act=profile-add]")).toBeVisible();

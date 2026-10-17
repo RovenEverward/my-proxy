@@ -12,7 +12,7 @@ const groupPath = id => "/api/proxy-groups/" + id;
 const groupID = t => /^group:(\d+)$/.test(t || "") ? +t.slice(6) : 0;
 
 PAGES.rules = {
-  title: "分流规则", nav: ["配置", "tpl", 39], closeTo: "rules",
+  title: "分流", closeTo: "rules",
   crumb: () => H`<b>分流规则</b>`,
   async load(r) {
     if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1];
@@ -27,7 +27,7 @@ PAGES.rules = {
     return { routing, rules, groups, catalog, members, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
-    const head = H`<div class="ph"><div><h1>分流规则</h1><p>决定每个网站怎么走:直连、走代理还是拦截。从上往下比对,第一条对上的生效 · 改完客户端更新订阅即可</p></div></div>`;
+    const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走:直连、走代理还是拦截。从上往下比对,第一条对上的生效 · 改完客户端更新订阅即可</p></div></div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     RP.d = d;
     const R = d.rules, G = d.groups;

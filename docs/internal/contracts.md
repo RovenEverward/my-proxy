@@ -196,7 +196,7 @@ $ mpx host edit 13 --inbound 2 --remark "东京 WS 备用"
 `host edit` 需要 `--inbound`:控制面没有「按 id 读一个入口」的接口,只能把那个入站的入口列出来再找。
 
 改 `node` 的地址、或改 `host` 的地址/端口,会改变订阅里发出去的入口,用户下次刷新订阅就跟着变;
-改 `inbound` 的端口/传输/安全层动的是节点上的配置,要跑 `mpx node sync <id>` 才生效(会重启 xray)。
+改 `inbound` 的端口/传输/安全层动的是节点上的配置,要跑 `mpx node sync <id>` 才生效(会重启 xray)。控制面会记下哪些节点有这样没应用的改动(`GET /api/nodes/pending`,新增/删除入站与改了用户数上限、客户端指纹以外的字段时记,sync / install 成功后清),界面据此显示「有改动未应用」。
 `--max-users` 只在订阅层算,不用下发。
 
 ```console

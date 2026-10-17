@@ -57,17 +57,22 @@ const ICONS = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>', check: '<path d="m5 12 5 5 9-10"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
   warn: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
   copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
   dl: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>', term: '<path d="m4 17 6-5-6-5M12 19h8"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-  arrow: '<path d="M9 6l6 6-6 6"/>', check: '<path d="M5 12.5 10 17 19 7"/>',
+  arrow: '<path d="M9 6l6 6-6 6"/>', chevup: '<path d="m6 15 6-6 6 6"/>', check: '<path d="M5 12.5 10 17 19 7"/>',
   tpl: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   plan: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   down: '<path d="m6 9 6 6 6-6"/>',
+  sub: '<path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4"/>',
+  split: '<path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4M18 3v6a4 4 0 0 1-4 4"/><path d="m3 6 3-3 3 3M15 6l3-3 3 3"/>',
+  pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6H21"/>',
+  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
 };
 const ic = (n, cls = "") => raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
@@ -103,9 +108,9 @@ function expireCell(u) {
 }
 const avatar = n => H`<span class="av">${[...String(n)][0]?.toUpperCase() || "?"}</span>`;
 function nodeSt(n) {
-  if (!n.status) return n.draining ? stBadge("info", "排水中") : stBadge("", "未巡检");
+  if (!n.status) return n.draining ? stBadge("info", "已暂停分配") : stBadge("", "未巡检");
   if (!n.status.reachable) return stBadge("bad", "连不上");
-  if (n.draining) return stBadge("info", "排水中");
+  if (n.draining) return stBadge("info", "已暂停分配");
   if (!n.status.active) return stBadge("warn", "核心未运行");
   return stBadge("ok", "运行中");
 }
@@ -147,6 +152,8 @@ function cmpVer(a, b) {
   for (let i = 0; i < Math.max(A.length, B.length); i++) { const d = (A[i] || 0) - (B[i] || 0); if (d) return d; }
   return 0;
 }
+// isDevVer:开发版(v0.0.0-…、带 dev 的、空的)没有可比的发布号,不提示「有新版本」。
+function isDevVer(v) { v = String(v || "").trim().toLowerCase(); return !v || /^v?0\.0\.0(\b|[-+.]|$)/.test(v) || /(^|[^a-z])dev([^a-z]|$)/.test(v); }
 // updLatest 取 cli/control 里较新且非空的 latest;都空时返回 ""。skip 以它为准。
 function updLatest(u) {
   let out = "";
@@ -161,15 +168,17 @@ function sameVer(a, b) {
   b = String(b || "").trim().replace(/^v/, "");
   return a !== "" && a === b;
 }
-// 节点核心这一行有没有得升:target 为空(没查到或没钉版本)或已等于 target 都算没有。
-function nodeUpgradable(n) { return !!n.target && !sameVer(n.current, n.target); }
+// 节点核心这一行有没有得升:target 为空(没查到或没钉版本)、还不知道节点上是哪一版(没巡检过)、
+// 或已等于 target 都算没有 —— 不知道现状就不催人更新。
+function nodeUpgradable(n) { return !!n.target && !!String(n.current || "").trim() && !sameVer(n.current, n.target); }
 // 有可升级项、且本会话没对这个版本点过「稍后」时才显示 pill。可升级 = 本机 /
 // 控制面有新发布,或任一节点核心不在推荐版本上。
 function showUpdatePill(u) {
   if (!u) return false;
   const c = u.control || {}, l = u.cli || {};
   const nodes = Array.isArray(u.nodes) ? u.nodes : [];
-  if (!(c.available || l.available || nodes.some(nodeUpgradable))) return false;
+  const cAvail = c.available && !isDevVer(c.current), lAvail = l.available && !isDevVer(l.current);
+  if (!(cAvail || lAvail || nodes.some(nodeUpgradable))) return false;
   const latest = updLatest(u);
   return !(latest && updSkipped() === latest);
 }
@@ -377,26 +386,56 @@ function updRestartWait() {
   setTimeout(tick, 1000);
 }
 
+// 侧栏按「使用顺序」排(先有节点,再有用户,最后发订阅),不再按数据表分组。
+// 每项:[路由, 名字, 图标];null 是分隔线。套餐在用户页里当第二个页签,
+// 「入站与入口」并进节点详情的「连接方式」,都不再占一级。
+const NAV = [["overview", "总览", "home"], ["nodes", "节点", "nodes"], ["users", "用户", "users"], ["sub", "订阅", "sub"], ["rules", "分流", "split"], null, ["doctor", "体检", "pulse"], ["system", "系统", "set"]];
+// 当前页在侧栏里算哪一项:套餐页(#users/plans)亮「用户」,旧的入站页亮「节点」。
+const navKey = () => PAGES[route[0]]?.navAs || route[0];
+let CP_OPEN = false, CP_DEVICE;  // CP_DEVICE:这台电脑在控制面上登记的设备名(展开卡片时才去查)
+const fpGroups = fp => String(fp).replace(/^SHA256:/, "").match(/.{1,4}/g) || [];
+function cpCard() {
+  const name = cpName(META.profile, META.server), addr = cpAddr(META.server), fp = META.fingerprint || "";
+  // 连上是墨色点,连不上才红;还没探过是灰的。
+  const dot = CP_OK === true ? "ok" : CP_OK === false ? "bad" : "";
+  return H`<div class="cpw"><div class="profile" data-act="cp-toggle" role="button" tabindex="0" aria-expanded="${CP_OPEN}" title="控制面"><span class="dot ${dot}"></span><div class="pf-t"><b title="${name === addr ? META.server : name}">${name}</b>${name !== addr ? H`<span title="${META.server}">${addr}</span>` : ""}</div>${ic("down", "pf-car" + (CP_OPEN ? " up" : ""))}</div>
+  ${CP_OPEN ? H`<div class="cp-pop"><dl class="kv flat cp-kv"><dt>地址</dt><dd class="mono">${META.server || "—"}</dd>
+    <dt>证书指纹</dt><dd class="mono fp" title="${fp}">${fp ? fpGroups(fp).map(g => H`<i>${g}</i>`) : H`<span class="sub">未使用 HTTPS 指纹</span>`}</dd>
+    ${CP_DEVICE ? H`<dt>这台电脑</dt><dd>${CP_DEVICE}</dd>` : ""}</dl>
+    <div class="cp-acts">${fp ? H`<button type="button" class="btn sm" data-act="copy" data-text="${fp}">${ic("copy")}复制指纹</button>` : ""}${META.profiles ? H`<button type="button" class="btn sm" data-act="cp-switch">${ic("swap")}切换控制面</button>` : ""}</div>
+    <p class="sub cp-note">只在这台电脑上能打开,别的设备需要单独接入。</p></div>` : ""}</div>`;
+}
 function shell(page, body, crumb) {
-  const dark = document.documentElement.dataset.theme === "dark";
-  const items = Object.entries(PAGES).filter(([, p]) => p.nav).sort((a, b) => a[1].nav[2] - b[1].nav[2]);
-  let lastGroup = null, nav = "";
-  for (const [k, p] of items) {
-    if (p.nav[0] && p.nav[0] !== lastGroup) { nav += H`<div class="navg">${p.nav[0]}</div>`; }
-    lastGroup = p.nav[0];
-    nav += H`<a class="nav ${route[0] === k ? "on" : ""}" href="#${k}">${ic(p.nav[1])}${p.title}${p.count ? H`<span class="ct">${p.count()}</span>` : ""}</a>`;
-  }
+  const dark = document.documentElement.dataset.theme === "dark", on = navKey();
+  // 数字只给用户、节点;总览只在有节点连不上(退避中)时亮一个红点。
+  const cnt = { users: PAGES.users?.count?.(), nodes: PAGES.nodes?.count?.() };
+  const warn = { overview: !!STATUS?.backoffs?.length };
+  const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}">${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
+  const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
-  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server) === cpAddr(META.server) ? META.server : cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
-  ${raw(nav)}
-  <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
+  ${cpCard()}
+  ${nav}</aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
   <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
   <div class="page" id="page">${body}</div></main></div>
-  <nav class="mnav">${items.map(([k, p]) => H`<a href="#${k}" class="${route[0] === k ? "on" : ""}">${ic(p.nav[1])}${p.short || p.title}</a>`)}</nav>`;
+  <nav class="mnav">${mob.map(x => H`<a href="#${x[0]}" class="${on === x[0] ? "on" : ""}">${ic(x[2])}${x[1]}</a>`)}<a href="#system" class="${["rules", "doctor", "system"].includes(on) ? "on" : ""}">${ic("more")}更多</a></nav>`;
+}
+
+// 旧地址(书签、文档、别处的链接)跳到新位置。只换地址不留历史,后退不会又跳回来。
+const OLD_ROUTES = { settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients", "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans" };
+function migrateKey(key) {
+  if (OLD_ROUTES[key]) return OLD_ROUTES[key];
+  if (key.startsWith("plans/")) return "users/" + key;
+  return key;
+}
+// 地址 → 页面路由。#users/plans[/<id>] 由套餐页渲染,路由写成 ["plans", id]。
+function routeOf(key) {
+  const r = key.split("/").map(decodeURIComponent);
+  if (r[0] === "users" && r[1] === "plans") return r.slice(1);
+  return r;
 }
 
 /* ---------- 总览 ---------- */
@@ -404,7 +443,7 @@ let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
 PAGES.overview = {
-  title: "总览", nav: ["", "home", 0],
+  title: "总览",
   async load() {
     const [status, nodes, settings, users] = await Promise.all([
       api("/api/status"), api("/api/nodes"), api("/api/settings"), api("/api/users?limit=1000"),
@@ -426,7 +465,7 @@ PAGES.overview = {
     const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
     const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
     const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))},用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
-    const upd = s.update || {}, behind = upd.behind > 0;
+    const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
     return H`<div class="ph"><div><h1>总览</h1><p>后台循环每 ${s.interval_seconds} 秒一轮 · ${tick}</p></div></div>
@@ -434,9 +473,9 @@ PAGES.overview = {
       : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
     <div class="grid g4">
       ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
-      ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 排水 · ${down} 连不上`)}
-      ${stat("入站 / 入口", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, "入口决定订阅里发什么地址")}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="c-warn">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, behind ? "warn" : "ok")}
+      ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
+      ${stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, "入口决定订阅里发什么地址")}
+      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink")}
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
@@ -487,6 +526,52 @@ function inlineMd(t) {
 /* ---------- 抽屉、确认框、提示 ---------- */
 // 抽屉在下一帧才加 open(让过渡动画生效)。期间如果已经关掉了,这一帧不能再把它和
 // 遮罩打开,否则会留下一层没有抽屉的遮罩挡住整页。
+// Windows 桌面窗口的最小化/最大化/关闭画在窗口右上角(--mygo-titlebar-inset-right 是它们占的宽)。
+// 有这块时给 <html> 加 tb-right:顶栏移到卡片外、和这三个按钮同一行,内容卡片从标题栏下面开始。
+function syncTitlebarRoom() {
+  const r = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--mygo-titlebar-inset-right")) || 0;
+  document.documentElement.classList.toggle("tb-right", r > 0);
+}
+syncTitlebarRoom(); addEventListener("load", syncTitlebarRoom); addEventListener("resize", syncTitlebarRoom); for (const t of [300, 1200, 3000]) setTimeout(syncTitlebarRoom, t);
+/* ---------- 下拉:灰底,弹出我们自己的列表 ---------- */
+// 原生 <select> 留着(表单取值、键盘上下键、测试的 selectOption 都照旧),只是鼠标按下时不弹系统的
+// 列表,改弹 .selmenu。选中后写回 select.value 并派发 input / change。
+let SELMENU = null;
+function closeSelMenu() { if (SELMENU) { SELMENU.el.remove(); SELMENU = null; } }
+function openSelMenu(sel) {
+  closeSelMenu();
+  const r = sel.getBoundingClientRect(), el = document.createElement("div");
+  el.className = "selmenu"; el.setAttribute("role", "listbox");
+  for (const o of sel.options) {
+    if (o.hidden) continue;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "selopt" + (o.selected ? " on" : ""); b.disabled = o.disabled;
+    b.setAttribute("role", "option"); b.setAttribute("aria-selected", o.selected); b.dataset.v = o.value;
+    b.innerHTML = val(H`<span>${o.textContent}</span>${o.selected ? ic("check") : ""}`);
+    el.append(b);
+  }
+  document.body.append(el);
+  const h = Math.min(el.scrollHeight, 300), below = innerHeight - r.bottom - 8;
+  el.style.minWidth = r.width + "px"; el.style.left = Math.min(r.left, innerWidth - el.offsetWidth - 8) + "px";
+  el.style.top = (below >= h || below >= r.top ? r.bottom + 4 : Math.max(8, r.top - 4 - h)) + "px";
+  el.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+  el.addEventListener("mousedown", e => e.preventDefault());
+  el.addEventListener("click", e => {
+    const b = e.target.closest(".selopt"); if (!b || b.disabled) return;
+    closeSelMenu();
+    if (sel.value !== b.dataset.v) { sel.value = b.dataset.v; sel.dispatchEvent(new Event("input", { bubbles: true })); sel.dispatchEvent(new Event("change", { bubbles: true })); }
+    sel.focus();
+  });
+  SELMENU = { el, sel };
+}
+document.addEventListener("mousedown", e => {
+  if (SELMENU && !SELMENU.el.contains(e.target)) { const was = SELMENU.sel; closeSelMenu(); if (e.target === was) { e.preventDefault(); return; } }
+  const sel = e.target.closest && e.target.closest("select.in");
+  if (!sel || sel.disabled || sel.multiple || e.button !== 0) return;
+  e.preventDefault(); sel.focus(); openSelMenu(sel);
+}, true);
+document.addEventListener("keydown", e => { if (SELMENU && e.key === "Escape") { e.stopPropagation(); const s = SELMENU.sel; closeSelMenu(); s.focus(); } }, true);
+addEventListener("resize", closeSelMenu); document.addEventListener("scroll", e => { if (SELMENU && !SELMENU.el.contains(e.target)) closeSelMenu(); }, true);
 let DRAWER_RAF = 0;
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
@@ -511,20 +596,22 @@ async function write(method, path, body, okText) {
 function afterWrite() { setTimeout(() => load(true, true), 0); }
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单。
-function confirmBox({ title, text, ok, danger, typed, run, extra }) {
+// alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
+function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
-  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button><button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
+  <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
-  const okb = $("#okb"), t = $("#typed");
-  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
-  okb.addEventListener("click", async () => {
-    okb.disabled = true; okb.classList.add("busy");
-    try { await run(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
-    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; okb.classList.remove("busy"); }
+  const okb = $("#okb"), altb = $("#altb"), t = $("#typed");
+  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
+  const go = (b, fn) => b && b.addEventListener("click", async () => {
+    okb.disabled = true; if (altb) altb.disabled = true; b.classList.add("busy");
+    try { await fn(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); }
   });
+  go(okb, run); go(altb, alt && alt.run);
 }
 
 /* ---------- 切换控制面 ---------- */
@@ -545,7 +632,7 @@ async function openProfiles() {
     toast(H`只有一个控制面 ${cpName(list[0]?.name, list[0]?.server)};这里不能添加新的控制面`);
     return;
   }
-  // 每项只摆名称和地址;证书指纹在设置页「当前控制面」里看。
+  // 每项只摆名称和地址;证书指纹在侧栏控制面卡片的展开面板里看。
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
   <p>切换后会记住，下次打开仍连你选的这个。</p>
@@ -589,17 +676,22 @@ function paint() {
   let body;
   if (current.error && !current.data) body = H`<div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
   else body = p.render(current.loading && !current.data ? null : current.data, route);
-  const y = scrollY;
+  // 滚动的是内容区 main,不是整页。
+  const y = $("main")?.scrollTop || 0;
   $("#root").innerHTML = val(shell(p, body, crumb));
-  scrollTo(0, y);
+  const m = $("main"); if (m) m.scrollTop = y;
   p.after?.(current.data, route);
 }
 async function load(soft, force) {
-  const key = (location.hash.slice(1) || "overview");
-  route = key.split("/").map(decodeURIComponent);
+  let key = (location.hash.slice(1) || "overview");
+  const moved = migrateKey(key);
+  if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
+  route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
+  // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
+  document.documentElement.dataset.loading = "1";
   if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
   try {
     const data = await pageData(p, key);
@@ -614,6 +706,7 @@ async function load(soft, force) {
     if (current.data) toast("刷新失败:" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
+  if (seq === loadSeq) delete document.documentElement.dataset.loading;
   if (!current.error) refreshUpdatePill();
 }
 
@@ -651,6 +744,16 @@ const ACTS = {
     updPollStart();
   },
   "profile-open": () => openProfiles(),
+  "cp-toggle": async () => {
+    CP_OPEN = !CP_OPEN; paint();
+    // 设备名只在本机是「接入的设备」时才有(本机控制面直连时没有,就不显示这一行)。
+    if (CP_OPEN && CP_DEVICE === undefined && can("GET", "/api/devices")) {
+      CP_DEVICE = "";
+      try { CP_DEVICE = ((await api("/api/devices")) || []).find(x => x.current)?.name || ""; } catch {}
+      if (CP_DEVICE && CP_OPEN) paint();
+    }
+  },
+  "cp-switch": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
   "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
@@ -662,7 +765,10 @@ document.addEventListener("click", e => {
   const tr = e.target.closest("tr[data-href]");
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeOverlays(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeOverlays();
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".profile[data-act=cp-toggle]")) { e.preventDefault(); ACTS["cp-toggle"](); }
+});
 // 一键更新轮询随页面可见性走:藏起来停拍,回到可见立刻补一次。
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || !updAll) return;
@@ -672,7 +778,7 @@ document.addEventListener("visibilitychange", () => {
 // 换到别的页(侧栏、浏览器后退、页面里的链接)时把抽屉和确认框收起来,不然上一页的抽屉
 // 会盖在新页面上。同一页里换子路由(如 #users/alice)不动,由各页自己开关抽屉。
 addEventListener("hashchange", () => {
-  if ((location.hash.slice(1).split("/")[0] || "overview") !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
+  if (routeOf(migrateKey(location.hash.slice(1) || "overview"))[0] !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。

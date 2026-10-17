@@ -139,7 +139,7 @@ test("装核心失败:给出原因和重试", async ({ page }) => {
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
   await page.click("#w-start");
-  await expect(page.locator(".plist li.fail")).toContainText("装核心并下发");
+  await expect(page.locator(".plist li.fail")).toContainText("装核心并应用配置");
   await expect(page.locator("#w-retry")).toContainText("重试安装");
   await expect(page.locator("#w-later")).toBeVisible();
   const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "node-2");
@@ -173,9 +173,12 @@ test("端口:默认 443 被占时自动换 2087", async ({ page }) => {
   await stubNodePost(page);
   await page.route("**/api/nodes/*/ports", route => route.fulfill({ json: busyPorts }));
   const ports = [];
+  // 被控制面限流(429)的那次页面会自己重发,不算一次创建。
   await page.route("**/api/inbounds", async route => {
-    if (route.request().method() === "POST") ports.push(route.request().postDataJSON().port);
-    await route.continue();
+    if (route.request().method() !== "POST") return route.continue();
+    const res = await route.fetch();
+    if (res.status() !== 429) ports.push(route.request().postDataJSON().port);
+    await route.fulfill({ response: res });
   });
   await openWizard(page);
   await page.fill("#w-address", "127.0.0.1");

@@ -25,11 +25,11 @@ async function openNode(page, id) {
 // 会落空。
 async function openConnEdit(page, id) {
   await expect(page.locator("#drawer.open")).toHaveCount(0);
-  // 只点一次;页面上一直有轮询,不能等 networkidle。连点或旧请求晚回来时由 conn.js 只认最后一次打开。
+  // 保存后整页重画:按下和松开要是落在新旧两个元素上,浏览器就不发 click。所以等这一轮取数、
+  // 重画结束(<html data-loading> 摘掉)再点,只点一次 —— 连点会多耗限流桶,控制面回 429 反而更慢。
   // 点行尾的铅笔:行中间可能正好是「N 个入口」展开按钮。
-  const pen = page.locator(`.cx-row[data-id='${id}'] button[data-act=conn-edit]`);
-  await expect(pen).toBeVisible();
-  await pen.click();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
+  await page.locator(`.cx-row[data-id='${id}'] button[data-act=conn-edit]`).click();
   await expect(page.locator("#drawer.open #conn-form")).toBeVisible({ timeout: 20000 });
   await page.click("#conn-form details.adv2 > summary");
 }
@@ -134,10 +134,10 @@ test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致",
   expect(env.takeLog()).toEqual([]);
   await page.click("[data-act=node-drain]");
   await page.click("#okb");
-  await expect(page.locator("h1")).toContainText("排水中");
+  await expect(page.locator("h1")).toContainText("已暂停分配");
   expect(take([], opt)).toEqual(drainCLI);
-  await page.click("[data-act=node-drain]"); // 结束排水不用确认
-  await expect(page.locator("[data-act=node-drain]")).toHaveText("排水");
+  await page.click("[data-act=node-drain]"); // 恢复分配不用确认
+  await expect(page.locator("[data-act=node-drain]")).toHaveText("暂停分配");
   expect(take([], opt)).toEqual(undrainCLI);
 });
 
@@ -176,17 +176,20 @@ test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async
   await env.cli("inbound", "add", "--node", "1", "--protocol", "vless", "--port", "8080", "--network", "ws", "--ws-path", "/ws", "--max-users", "50");
   await env.cli("inbound", "add", "--node", "1", "--protocol", "hysteria2", "--port", "8443", "--sni", "hy.example.com", "--cert-file", "/etc/c.pem", "--key-file", "/etc/k.pem");
   const fromCLI = take([], opt);
+  // 节点详情的「连接方式」卡片:添加连接 → 其他协议… 打开完整入站表单。
   await page.goto(env.origin + "/#nodes/2");
-  await page.click("[data-act=inb-new]");
+  await page.click(".conn-card [data-act=conn-new]");
+  await page.click("#drawer.open [data-act=conn-other]");
   await page.fill("#i-port", "8080");
   await page.selectOption("#i-network", "ws");
   await page.fill("#i-ws_path", "/ws");
   await page.click("details.adv summary");
   await page.fill("#i-max_users", "50");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
-  await page.click("#i-save");
+  await page.click("#x-later");
   await expect(page.locator(".toast")).toContainText("已创建入站");
-  await page.click("[data-act=inb-new]");
+  await page.click(".conn-card [data-act=conn-new]");
+  await page.click("#drawer.open [data-act=conn-other]");
   await expect(page.locator("#drawer.open #i-port")).toHaveValue(""); // 旧抽屉关上后还在 DOM 里,等新表单
   await page.selectOption("#i-protocol", "hysteria2");
   await expect(page.locator("#i-network")).toHaveValue("udp");
@@ -196,7 +199,7 @@ test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async
   await page.fill("#i-cert_file", "/etc/c.pem");
   await page.fill("#i-key_file", "/etc/k.pem");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
-  await page.click("#i-save");
+  await page.click("#x-later");
   await expect(page.locator(".toast")).toContainText("已创建入站");
   expect(take([], opt)).toEqual(fromCLI);
 });
@@ -217,11 +220,10 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   await page.fill("#i-max_users", "10");
   await page.check("input[name=mux]");
   await expect(page.locator("#conn-form")).not.toContainText("mpx ");
-  await page.click("#i-save");
-  // 节点显示名里的国旗也换成了 SVG;toast 文本里只剩城市与字母。
-  // 国旗换成了 img,文本里旗后留一个空格当间距,所以从城市名开始比。
-  await expect(page.locator(".toast")).toContainText("洛杉矶 B」下发配置才生效");
-  await expect(page.locator(".toast img.flag")).toHaveAttribute("src", "/flags/us.svg");
+  await expect(page.locator("#i-save")).toHaveText("保存并应用到节点");
+  await page.click("#x-later");
+  // 提示里的节点名不带国旗。
+  await expect(page.locator(".toast")).toContainText("洛杉矶 B 显示「有改动未应用」");
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
@@ -281,8 +283,10 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await page.click("#conn-form details.adv2 > summary");
   await page.click("[data-act=conn-rm]");
   await expect(page.locator("#okb")).toBeDisabled();
+  await expect(page.locator("#okb")).toHaveText("删除并应用到节点");
+  await expect(page.locator("#altb")).toBeDisabled();
   await page.fill("#typed", "t-2-2000");
-  await page.click("#okb");
+  await page.click("#altb");
   await expect(page.locator(".toast")).toContainText("已删除入站「t-2-2000」");
   expect(take([], opt)).toEqual(inbCLI);
 
@@ -299,4 +303,24 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   expect(take([], opt)).toEqual(nodeCLI);
   const r = await cpFetch(env.cpURL + "/api/nodes/4", { headers: { Authorization: "Bearer " + env.token } });
   expect(r.status).toBe(404);
+});
+
+// 「创建并应用到节点」:先建入站再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
+// 应用失败要把原因告诉使用者,入站照样建好,组头留着「有改动未应用 · 应用」可以重试。
+test("创建并应用到节点:应用失败时入站保留,组头可重试", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#nodes/1");
+  await page.click(".conn-card [data-act=conn-new]");
+  const dr = page.locator("#drawer.open");
+  await expect(dr.locator("#a-save")).toHaveText("创建并应用到节点");
+  await dr.locator("#a-port").fill("18443");
+  const sync = page.waitForRequest(r => r.method() === "POST" && /\/api\/nodes\/1\/sync$/.test(r.url()));
+  await dr.locator("#a-save").click();
+  await sync;
+  await expect(page.locator(".toast")).toContainText("但应用到");
+  await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
+  await expect(page.locator(".conn-card .ch [data-act=node-sync]")).toHaveText("应用");
+  await page.click(".conn-card .ch [data-act=node-sync]");
+  await expect(page.locator("#modal.open")).toContainText("把配置应用到");
+  await page.click("[data-act=modal-cancel]");
 });

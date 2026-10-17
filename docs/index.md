@@ -86,7 +86,7 @@ title: MPX
 <tr><td>决定哪些网站走代理</td><td><a href="./guides/routing">设置分流规则</a></td><td>指南</td></tr>
 <tr><td>在另一台电脑上管理</td><td><a href="./guides/devices">在多台设备上管理</a></td><td>指南</td></tr>
 <tr><td>升级</td><td><a href="./guides/update">点一次更新</a></td><td>指南</td></tr>
-<tr><td>有东西不工作</td><td><a href="./guides/troubleshoot">用自检排查</a></td><td>指南</td></tr>
+<tr><td>有东西不工作</td><td><a href="./guides/troubleshoot">用体检排查</a></td><td>指南</td></tr>
 <tr><td>查页面、设置项、订阅格式</td><td><a href="./reference/interface">界面</a> · <a href="./reference/settings">订阅设置</a> · <a href="./reference/subscription">订阅接口</a></td><td>参考</td></tr>
 <tr><td>想知道原理（证书、订阅格式、流量怎么走）</td><td><a href="./concepts/architecture">控制面与节点</a></td><td>原理</td></tr>
 </table></div>

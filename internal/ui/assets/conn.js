@@ -36,6 +36,9 @@ const QUIC = p => p === "hysteria2" || p === "tuic";
 const PROTOCOLS = ["vless", "vmess", "trojan", "shadowsocks", "wireguard", "hysteria2", "tuic"];
 const NETWORKS = ["tcp", "ws", "grpc", "xhttp", "splithttp", "httpupgrade", "udp"];
 const SECURITIES = ["none", "tls", "reality"];
+// 下拉里给人看的名字;value 仍是控制面认的小写值。
+const OPT_NAME = { vless: "VLESS", vmess: "VMess", trojan: "Trojan", shadowsocks: "Shadowsocks", wireguard: "WireGuard", hysteria2: "Hysteria2", tuic: "TUIC",
+  tcp: "TCP", ws: "WebSocket", grpc: "gRPC", xhttp: "XHTTP", splithttp: "SplitHTTP", httpupgrade: "HTTPUpgrade", udp: "UDP", none: "无", tls: "TLS", reality: "REALITY" };
 // 入站的可编辑字段:[JSON 键, CLI flag, 种类, 什么时候显示]。种类 s=字符串 i=整数 l=逗号列表 b=开关。
 const INB_FIELDS = [
   ["tag", "--tag", "s"], ["listen", "--listen", "s"],
@@ -59,7 +62,7 @@ const INB_FIELDS = [
   ["mux", "--mux", "b"], ["fragment", "--fragment", "b"],
 ];
 const INB_LABEL = { tag: ["标签", "留空按「协议-端口」生成"], listen: ["监听地址", "留空 0.0.0.0"], ws_path: ["WS 路径", "/ws"], grpc_service: ["gRPC serviceName", ""], xhttp_path: ["xhttp 路径", ""], xhttp_host: ["xhttp Host", ""], xhttp_mode: ["xhttp mode", "auto / packet-up / stream-up / stream-one"],
-  sni: ["SNI", "www.cloudflare.com"], reality_dest: ["REALITY 回落目标", "www.cloudflare.com:443"], short_ids: ["shortId", "逗号分隔"], alpn: ["ALPN", "h2,http/1.1"], cert_file: ["证书路径(节点上)", "/etc/ssl/fullchain.pem"], key_file: ["私钥路径(节点上)", "/etc/ssl/privkey.pem"], fingerprint: ["uTLS 指纹", "留空 chrome"],
+  sni: ["SNI", "www.cloudflare.com"], reality_dest: ["REALITY 回落目标", "www.cloudflare.com:443"], short_ids: ["Short ID", "逗号分隔"], alpn: ["ALPN", "h2,http/1.1"], cert_file: ["证书路径(节点上)", "/etc/ssl/fullchain.pem"], key_file: ["私钥路径(节点上)", "/etc/ssl/privkey.pem"], fingerprint: ["uTLS 指纹", "留空 chrome"],
   flow: ["VLESS flow", "xtls-rprx-vision"], wg_address: ["wireguard 隧道地址", "10.0.0.1/24"], wg_mtu: ["wireguard MTU", "1420"], congestion_control: ["TUIC 拥塞控制", "bbr / cubic / new_reno"], max_users: ["用户数上限", "0 不限"], mux: ["订阅里开 mux"], fragment: ["订阅里开分片(仅 xray)"] };
 // asModelInbound:摆成 model.Inbound 的 JSON 形状(同样的 omitempty)。
 function asModelInbound(v) {
@@ -164,7 +167,7 @@ function inbRow(i, hs, n) {
 function inbGroup(n, list) {
   const W = inbW(), WH = inbWH();
   return H`<section class="ng">
-  <div class="ng-h"><b class="ng-n">${nodeLabel(n)}</b><span class="mono ng-a">${n.address}</span><span class="ng-c">${list.length} 个连接</span><span class="sp"></span>${list.length && W ? H`<button class="btn sm" data-act="conn-new" data-node="${n.id}">${ic("plus")}连接</button>` : ""}</div>
+  <div class="ng-h"><b class="ng-n">${nodeLabel(n)}</b><span class="mono ng-a">${n.address}</span><span class="ng-c">${list.length} 个连接</span><span class="sp"></span>${connPending(n)}${list.length && W ? H`<button class="btn sm" data-act="conn-new" data-node="${n.id}">${ic("plus")}连接</button>` : ""}</div>
   ${list.length ? H`<div class="cx-list">${list.map(i => inbRow(i, INB_HOSTS[i.id] || [], n))}</div>`
     : H`<div class="ng-empty"><div class="ill">${ic("inb")}</div><div><b>这台节点上还没有连接</b><span>加一条，用户刷新订阅后就能用这台节点</span></div><span class="sp"></span>${W || WH ? H`<button class="btn sm pri" data-act="conn-new" data-node="${n.id}">${ic("plus")}添加连接</button>` : ""}</div>`}
   </section>`;
@@ -172,6 +175,33 @@ function inbGroup(n, list) {
 
 // connLoad(nodeIds):拉组件要的全部数据。nodeIds 给了就只留这些节点的入站,
 // 但节点列表里没有连接的节点也照样返回(节点详情要显示「还没有连接」)。
+let INB_PENDING = new Set();
+// 节点组头 / 节点详情里的「有改动未应用 · 应用」。「应用」走节点页同一个 node-sync(确认后 POST /sync)。
+function connPending(n) {
+  if (!INB_PENDING.has(n.id)) return "";
+  return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
+}
+// 给灰字说明用的节点名:不带国旗。
+const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";
+const restartNote = n => `会重启${plainNodeName(n)}上的代理，已连着的用户会断开几秒`;
+// 抽屉底部:次要「只…，稍后应用」+ 主按钮「…并应用到节点」,主按钮下面一行灰字。
+function applyFoot(n, main, later, id = "i-save") {
+  return H`<div class="df df-apply"><div class="df-row"><button type="button" class="btn" id="x-later">${later}</button><button type="submit" class="btn pri" id="${id}">${main}</button></div><p class="df-note" id="x-note">${restartNote(n)}</p></div>`;
+}
+// 和控制面的判断一致(server/nodepending.go):只改用户数上限、客户端指纹不用应用。
+function inbNeedsApply(a, b) {
+  const strip = v => { const o = asModelInbound(v); delete o.max_users; delete o.fingerprint; return JSON.stringify(o); };
+  return strip(a) !== strip(b);
+}
+// 写完之后应用到节点;失败不回滚,节点组头会留着「有改动未应用」可重试。
+async function applyAfterWrite(n, done) {
+  try {
+    await write("POST", `/api/nodes/${n.id}/sync`);
+    toast(`${done}，已应用到 ${plainNodeName(n)}`);
+  } catch (e) {
+    toast(`${done}，但应用到 ${plainNodeName(n)} 失败:${e.message}`, true);
+  }
+}
 async function connLoad(nodeIds) {
   const all = await api("/api/inbounds");
   const want = Array.isArray(nodeIds) && nodeIds.length ? new Set(nodeIds.map(Number)) : null;
@@ -181,10 +211,13 @@ async function connLoad(nodeIds) {
   // 入口按入站各取一次:控制面没有「全部入口」的接口。
   // 节点的 region / city 只在 metadata 里(节点 JSON 只给拼好的显示名),名称与
   // 节点所在地的对照要用它们;读不到就当没有地区,不提醒。
-  const [hosts, metas] = await Promise.all([
+  // 有未应用改动的节点(老控制面没有这个接口,当作没有)。
+  const [hosts, metas, pend] = await Promise.all([
     Promise.all(inbounds.map(i => api(inbPath(i.id) + "/hosts"))),
     Promise.all(picked.map(n => api(`/api/nodes/${n.id}/metadata`).catch(() => null))),
+    api("/api/nodes/pending").catch(() => []),
   ]);
+  INB_PENDING = new Set((pend || []).map(p => p.node_id));
   const nodes = picked.map((n, k) => ({ ...n, region: metas[k]?.region || "", city: metas[k]?.city || "" }));
   INB_TOTAL = all.length;
   INB_CACHE = { inbounds, nodes, all };
@@ -214,7 +247,7 @@ function connGroups(d, opts = {}) {
   return H`<div class="ngs" data-conn-groups>${nodes.map(n => inbGroup(n, byNode.get(n.id) || []))}${orphan.length ? H`<section class="ng"><div class="ng-h"><b class="ng-n">未知节点</b><span class="ng-c">${orphan.length} 个连接</span></div><div class="cx-list">${orphan.map(i => inbRow(i, hosts[i.id] || [], { address: "", id: i.node_id }))}</div></section>` : ""}</div>`;
 }
 
-const CONN = { load: connLoad, groups: connGroups, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
+const CONN = { load: connLoad, groups: connGroups, pending: connPending, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
 window.CONN = CONN;
 
 /* ---------- 入站字段:完整编辑器与「高级」共用 ---------- */
@@ -226,7 +259,7 @@ function inbFieldInput(base, k) {
     : H`<div class="field" data-f="${k}"><label for="i-${k}">${l}</label><input class="in mono" id="i-${k}" name="${k}" value="${fv}" placeholder="${ph}" autocomplete="off" ${t === "i" ? raw('inputmode="numeric"') : ""}></div>`;
 }
 function inbFormFields(base, nodes, isNew) {
-  const opt = (list, cur) => list.map(x => H`<option value="${x}" ${x === cur ? raw("selected") : ""}>${x}</option>`);
+  const opt = (list, cur) => list.map(x => H`<option value="${x}" ${x === cur ? raw("selected") : ""}>${OPT_NAME[x] || x}</option>`);
   const more = ["tag", "listen", "max_users"].map(k => inbFieldInput(base, k));
   return H`<div class="two"><div class="field"><label for="i-node">节点</label><select class="in" id="i-node" name="node_id" ${isNew ? "" : raw("disabled")}>${nodes.map(n => H`<option value="${n.id}" ${n.id === base.node_id ? raw("selected") : ""}>${nodeLabel(n)}</option>`)}</select></div>
     <div class="field"><label for="i-port">端口</label><input class="in mono" id="i-port" name="port" value="${base.port || ""}" placeholder="443" inputmode="numeric"></div></div>
@@ -266,6 +299,25 @@ function inbBind(form, base, isNew) {
 }
 
 /* ---------- 完整入站编辑器(节点页 / 其他协议) ---------- */
+// applyMode(form, probe, verb):管底部两个按钮。probe() 回 { need, node }:need 为假(比如只改了名称)
+// 时只剩一个「保存」,灰字也藏起来。点「稍后应用」= 只写不应用;回车和主按钮 = 写完应用。
+function applyMode(form, probe, verb) {
+  let now = true, st = { need: true, node: {} };
+  const later = form.querySelector("#x-later"), note = form.querySelector("#x-note"), main = form.querySelector(".df-apply button[type=submit]");
+  const mainText = main.textContent, laterText = later.textContent;
+  const sync = () => {
+    try { st = probe(); } catch { /* 表单还没填完 */ }
+    // .btn 自带 display,hidden 属性压不住,直接改 display。
+    later.style.display = st.need ? "" : "none"; note.style.display = st.need ? "" : "none";
+    main.textContent = st.need ? mainText : verb;
+    later.textContent = laterText; note.textContent = restartNote(st.node);
+  };
+  form.addEventListener("input", sync); form.addEventListener("change", sync);
+  later.addEventListener("click", () => { now = false; form.requestSubmit(main); });
+  main.addEventListener("click", () => { now = true; });
+  sync();
+  return { now: () => { const v = now; now = true; return v; }, state: () => (sync(), st), btn: () => now ? main : later };
+}
 async function inboundEditor(id, presetNode) {
   let v = null, nodes = [];
   try { [v, nodes] = await Promise.all([id ? api(inbPath(id)) : null, api("/api/nodes")]); } catch (e) { toast(e.message, true); return; }
@@ -274,29 +326,35 @@ async function inboundEditor(id, presetNode) {
   openDrawer(H`<form id="inb-form" novalidate><div class="dh"><h2>${isNew ? "添加入站" : "编辑入站 " + inbTitle(v, nodes.find(n => n.id === v.node_id))}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     ${inbFormFields(base, nodes, isNew)}
-    <p class="sub">${isNew ? "REALITY 的密钥对由控制面生成。" : "只改用户数上限不用下发;"}改端口、协议、传输、安全层、证书后要下发节点配置才生效,下发会重启核心。</p>
+    <p class="sub">${isNew ? "REALITY 的密钥对由控制面生成。" : "只改用户数上限不用应用到节点。"}</p>
     <div class="err" id="i-err" role="alert"></div>
     ${!isNew && can("DELETE", "/api/inbounds/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入站</b><div class="sub">挂在它上面的入口一起删掉。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-rm" data-id="${id}" data-tag="${inbTag(v)}" data-title="${inbTitle(v, nodes.find(n => n.id === v.node_id))}">删除</button></div></div>` : ""}
-  </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="i-save">${isNew ? "创建" : "保存"}</button></div></form>`);
+  </div>${applyFoot(nodes.find(n => n.id === base.node_id) || {}, isNew ? "创建并应用到节点" : "保存并应用到节点", isNew ? "只创建，稍后应用" : "只保存，稍后应用")}</form>`);
   const form = $("#inb-form");
   inbBind(form, base, isNew);
+  const nodeOf = c => nodes.find(n => n.id === (isNew ? +c.out.node_id || base.node_id : base.node_id)) || { id: base.node_id };
+  // 和刚打开时的表单比(表单取值和库里的原值写法不完全一样,直接和 base 比会误报)。
+  const c0 = inbCollect(form, base, isNew).out;
+  const mode = applyMode(form, () => { const c = inbCollect(form, base, isNew); return { need: isNew || inbNeedsApply({ ...base, ...c0 }, { ...base, ...c.out }), node: nodeOf(c) }; }, isNew ? "创建" : "保存");
   form.addEventListener("submit", async e => {
     e.preventDefault();
-    const c = inbCollect(form, base, isNew), btn = $("#i-save");
+    const c = inbCollect(form, base, isNew), btn = mode.btn();
     $("#i-err").textContent = c.err.join("\n");
     if (c.err.length) return;
     btn.disabled = true; btn.classList.add("busy");
     try {
+      const st = mode.state(), now = mode.now();
+      let done;
       if (isNew) {
         const created = await write("POST", "/api/inbounds", asModelInbound({ ...c.out, id: 0 }));
-        toast(`已创建入站 ${inbTitle(created, nodes.find(n => n.id === created.node_id))}`);
+        done = `已创建入站 ${inbTitle(created, nodes.find(n => n.id === created.node_id))}`;
       } else {
         const fresh = asModelInbound(await api(inbPath(id)));
         const updated = await write("PUT", inbPath(id), asModelInbound({ ...fresh, ...c.out, node_id: fresh.node_id }));
-        const structural = updated.port !== base.port || updated.network !== base.network || updated.security !== base.security;
-        const un = nodes.find(n => n.id === updated.node_id);
-        toast(structural ? `已更新入站 ${inbTitle(updated, un)};要到节点「${nodeLabel(un) || "所在节点"}」下发配置才生效` : `已更新入站 ${inbTitle(updated, un)}`);
+        done = `已更新入站 ${inbTitle(updated, nodes.find(n => n.id === updated.node_id))}`;
       }
+      if (st.need && now) await applyAfterWrite(st.node, done);
+      else toast(st.need ? `${done}；${plainNodeName(st.node)} 显示「有改动未应用」，随时可以应用` : done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -325,16 +383,18 @@ async function connectionEditor(inbID) {
         ${h ? H`<div class="ae-h">入口<span>${hosts.length} 个 · 订阅里每个入口一行</span><span class="sp"></span>${inbWH() ? H`<button type="button" class="btn sm ghost" data-act="conn-host-new" data-inb="${inb.id}">${ic("plus")}入口</button>` : ""}</div>
           <div class="ae">${hosts.map(x => H`<div class="ae-r"><div><b class="${customName(x) ? "" : "dim"}">${nameOfHost(inb, x, n)}</b><span class="mono">${addrOfHost(inb, x, n)}</span></div><span class="ptag lite">${x.address ? "自定义地址" : "节点地址"}</span><button type="button" class="ib" title="编辑这个入口" data-act="conn-host-edit" data-inb="${inb.id}" data-id="${x.id}">${ic("pen")}</button></div>`)}</div>`
           : H`<div class="ae-h">入口<span>还没有入口 · 订阅会用入站自己的地址</span><span class="sp"></span>${inbWH() ? H`<button type="button" class="btn sm ghost" data-act="conn-host-new" data-inb="${inb.id}">${ic("plus")}入口</button>` : ""}</div>`}
-        <p class="sub">改端口或协议后要下发节点配置;改名称和地址不用。</p>
         ${can("DELETE", "/api/inbounds/x") ? H`<div class="dz"><div><b>删除连接</b><span>它的 ${hosts.length} 个入口一起删掉</span></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-rm" data-id="${inb.id}" data-tag="${inbTag(inb)}" data-title="${inbName}">删除</button></div>` : ""}
         <div class="err" id="i-err" role="alert"></div>
       </div></details>
-  </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="i-save">保存</button></div></form>`);
+  </div>${applyFoot(n, "保存并应用到节点", "只保存，稍后应用")}</form>`);
   const form = $("#conn-form");
   inbBind(form, base, false);
+  // 只改名称、地址(入口)不碰节点;改了协议、端口这些才要应用。
+  const c0 = inbCollect(form, base, false).out;
+  const mode = applyMode(form, () => ({ need: inbNeedsApply({ ...base, ...c0 }, { ...base, ...inbCollect(form, base, false).out }), node: n }), "保存");
   form.addEventListener("submit", async e => {
     e.preventDefault();
-    const c = inbCollect(form, base, false), btn = $("#i-save");
+    const c = inbCollect(form, base, false), btn = mode.btn();
     $("#i-err").textContent = c.err.join("\n");
     if (c.err.length) return;
     const name = String(new FormData(form).get("d_name") || "").trim();
@@ -347,9 +407,7 @@ async function connectionEditor(inbID) {
       if (JSON.stringify(next) !== JSON.stringify(asModelInbound(base))) {
         const fresh = asModelInbound(await api(inbPath(inb.id)));
         updated = await write("PUT", inbPath(inb.id), asModelInbound({ ...fresh, ...c.out, node_id: fresh.node_id }));
-        const structural = updated.port !== base.port || updated.network !== base.network || updated.security !== base.security;
-        if (structural) msgs.push(`已更新入站 ${inbTitle(updated, n)};要到节点「${nodeLabel(n) || "所在节点"}」下发配置才生效`);
-        else msgs.push(`已更新入站 ${inbTitle(updated, n)}`);
+        msgs.push(`已更新入站 ${inbTitle(updated, n)}`);
       }
       const cur = asModelHost(h || { inbound_id: inb.id });
       const changed = h ? (name !== (h.remark || "") || addr !== (h.address || "")) : !!(name || addr);
@@ -362,7 +420,9 @@ async function connectionEditor(inbID) {
           msgs.push(`已${name ? "创建入口「" + name + "」" : "创建入口,名字跟随节点名"}`);
         }
       }
-      toast(msgs.length ? msgs.join("；") : "已保存");
+      const st = mode.state(), done = msgs.length ? msgs.join("；") : "已保存";
+      if (st.need && mode.now()) await applyAfterWrite(n, done);
+      else toast(st.need ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，随时可以应用` : done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -388,23 +448,23 @@ function drawAddConnection() {
     <div class="field"><label for="a-node">节点</label><select class="in" id="a-node">${nodes.map(x => H`<option value="${x.id}" ${x.id === node.id ? raw("selected") : ""}>${nodeLabel(x)}　${x.address}</option>`)}</select></div>
     <div class="field"><label>协议</label><div class="opts">${opt("reality", "VLESS Reality", "不需要域名和证书，伪装成访问普通网站，最省心", true)}${opt("ws", "VLESS WS", "可以套 CDN 隐藏节点地址，需要一个域名")}</div></div>
     <div class="field"><label for="a-port">端口</label><input class="in mono" id="a-port" value="${INB_ADD.port}" inputmode="numeric">
-      <span class="h" id="a-port-h">${INB_ADD.portTouched ? "已手动修改" : auto !== want ? `${nodeLabel(node)} 上 ${want} 已经在用，自动换成 ${auto}` : "自动选的常用端口，可以改"}</span></div>
+      <span class="h hi" id="a-port-h">${ic("info")}<span>${INB_ADD.portTouched ? "已手动修改" : auto !== want ? `这台节点上 ${want} 已经在用，自动换成 ${auto}` : "自动选的常用端口，可以改"}</span></span></div>
     <div class="pv"><span class="pv-l">订阅里会显示成</span><div class="pv-r"><b id="pv-n">${nodeLabel(node)} · ${CONN_KIND[INB_ADD.proto]}</b><span class="mono" id="pv-a">${node.address}:${INB_ADD.port}</span></div><span class="pv-h">名称跟着节点名走，节点改名这里一起变</span></div>
-    <p class="sub">创建后要到节点页下发一次配置才生效，下发会重启节点上的核心。</p>
     <p class="sub"><a class="lnk" data-act="conn-other" data-node="${node.id}">其他协议…</a></p>
     <div class="err" id="add-err" role="alert"></div>
-  </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri">创建连接</button></div></form>`);
+  </div>${applyFoot(node, "创建并应用到节点", "只创建，稍后应用", "a-save")}</form>`);
   const form = $("#add-form");
+  const mode = applyMode(form, () => ({ need: true, node }), "创建");
   form.querySelector("#a-node").onchange = e => { INB_ADD.node = +e.target.value; INB_ADD.portTouched = false; drawAddConnection(); };
   const port = form.querySelector("#a-port");
   port.oninput = () => {
     INB_ADD.port = +port.value || ""; INB_ADD.portTouched = true;
-    form.querySelector("#a-port-h").textContent = "已手动修改";
+    form.querySelector("#a-port-h span").textContent = "已手动修改";
     form.querySelector("#pv-a").textContent = `${node.address}:${INB_ADD.port}`;
   };
   form.addEventListener("submit", async e => {
     e.preventDefault();
-    const err = $("#add-err"), btn = form.querySelector("button[type=submit]");
+    const err = $("#add-err"), btn = mode.btn();
     const p = +port.value;
     if (!(p >= 1 && p <= 65535)) { err.textContent = "端口必须在 1-65535 之间"; return; }
     btn.disabled = true; btn.classList.add("busy");
@@ -419,7 +479,9 @@ function drawAddConnection() {
     });
     try {
       const created = await write("POST", "/api/inbounds", body);
-      toast(`已添加 ${inbTitle(created, node)}；创建后要到节点页下发一次配置才生效`);
+      const done = `已添加 ${inbTitle(created, node)}`;
+      if (mode.now()) await applyAfterWrite(node, done);
+      else toast(`${done}；${plainNodeName(node)} 显示「有改动未应用」，随时可以应用`);
       closeOverlays(); load(true, true);
     } catch (e2) { err.textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -444,7 +506,7 @@ async function hostEditor(inbID, hostID) {
   openDrawer(H`<form id="host-form" novalidate><div class="dh"><h2>${isNew ? `给「${inbTitleById(inbID)}」加入口` : `编辑入口「${hostName}」`}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     ${F.map(([k, , l, ph, hint]) => H`<div class="field"><label for="h-${k}">${l}</label><input class="in ${k === "remark" ? "" : "mono"}" id="h-${k}" name="${k}" value="${fv(k)}" placeholder="${ph}" autocomplete="off">${hint ? H`<span class="h">${hint}</span>` : ""}</div>`)}
-    ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口,用户下次刷新订阅就跟着变;不用下发。</p>` : H`<p class="sub">入口只影响订阅里写什么,不用下发节点配置。</p>`}
+    ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口,用户下次刷新订阅就跟着变;不用应用到节点。</p>` : H`<p class="sub">入口只影响订阅里写什么,不用下发节点配置。</p>`}
     <div class="err" id="h-err" role="alert"></div>
     ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口,订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="h-save">${isNew ? "创建" : "保存"}</button></div></form>`);
@@ -519,8 +581,21 @@ const CONN_ACTS = {
       closeOverlays(); load(true, true);
     } catch (e) { toast(e.message, true); }
   },
-  "conn-rm": d => confirmBox({ title: `删除连接「${d.title || inbTitleById(+d.id)}」?`, text: "不可恢复:挂在它上面的入口一起删掉,用它的客户端下次刷新订阅后就没了这个入口。节点上的核心要等下次下发才停止监听。", ok: "删除连接", danger: true, typed: d.tag,
-    run: async () => { await write("DELETE", inbPath(d.id), undefined, `已删除入站「${d.title || inbTitleById(+d.id)}」`); closeOverlays(); load(true, true); } }),
+  "conn-rm": d => {
+    const inb = (INB_CACHE.all || INB_CACHE.inbounds || []).find(i => i.id === +d.id);
+    const n = (INB_CACHE.nodes || []).find(x => x.id === inb?.node_id) || (inb ? { id: inb.node_id } : null);
+    const title = d.title || inbTitleById(+d.id), done = `已删除入站「${title}」`;
+    const del = async now => {
+      await write("DELETE", inbPath(d.id));
+      if (n && now) await applyAfterWrite(n, done);
+      else toast(n ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，应用后节点才停止监听` : done);
+      closeOverlays(); load(true, true);
+    };
+    confirmBox({ title: `删除连接「${title}」?`, text: H`不可恢复:挂在它上面的入口一起删掉,用它的客户端下次刷新订阅后就没了这个入口。${n ? H`<br><span class="sub">${restartNote(n)}</span>` : ""}`,
+      ok: n ? "删除并应用到节点" : "删除连接", danger: true, typed: d.tag,
+      alt: n ? { label: "只删除，稍后应用", run: () => del(false) } : null,
+      run: () => del(true) });
+  },
   "conn-host-new": d => hostEditor(+d.inb, 0),
   "conn-host-edit": d => hostEditor(+d.inb, +d.id),
   "conn-host-rm": d => confirmBox({ title: `删除入口「${d.remark || "入口"}」?`, text: "客户端下次刷新订阅后这个地址就没了;节点和已连着的用户不受影响。", ok: "删除入口", danger: true,

@@ -48,10 +48,12 @@ test("通用设置:只改一项,其余字段、规则、模板都不丢;与 sett
   const before = await getSettings();
   const edited = { ...JSON.parse(await env.cli("-o", "json", "settings", "show")), notify_days_left: 5 };
   const { reqs: fromCLI } = await viaCLI("settings", "set", "-f", file("s.json", JSON.stringify(edited)));
-  await page.goto(env.origin + "/#settings/general");
+  // 通知在「系统」页(原设置 → 通用),只改这一项,订阅那几项和规则、底稿都要原样带回。
+  await page.goto(env.origin + "/#system");
+  await expect(page.locator("#s-sub_url_prefix")).toHaveCount(0);
   await page.fill("#s-notify_days_left", "5");
   await page.click("#s-save");
-  await expect(page.locator(".toast")).toContainText("已保存订阅设置");
+  await expect(page.locator(".toast")).toContainText("已保存通知设置");
   expect(normalize(env.takeLog(), [])).toEqual(fromCLI);
   const after = await getSettings();
   expect(after).toEqual({ ...before, notify_days_left: 5 });
@@ -120,14 +122,14 @@ test("模板:set / del 与 CLI 一致(正文原样发出)", async ({ page }) => 
   await ta.fill(body);
   await expect(page.locator("#tpl-save")).toBeEnabled();
   await page.click("#tpl-save");
-  await expect(page.locator(".toast")).toContainText("已保存 sing-box 模板");
+  await expect(page.locator(".toast")).toContainText("已保存 sing-box 订阅底稿");
   expect(normalize(env.takeLog(), [])).toEqual(setCLI);
   await expect(page.locator("tr[data-f='sing-box']")).toContainText("自定义");
   await page.click("button[data-act=tpl-del][data-f='sing-box']");
   await expect(page.locator("#okb")).toBeDisabled(); // 危险操作:要输入格式名
   await page.fill("#typed", "sing-box");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已恢复 sing-box 为内置模板");
+  await expect(page.locator(".toast")).toContainText("已恢复 sing-box 为内置订阅底稿");
   expect(normalize(env.takeLog(), [])).toEqual(delCLI);
 });
 

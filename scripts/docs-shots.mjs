@@ -129,6 +129,8 @@ async function polish(page, setup = false) {
     j.version = "v0.9.5";
     await r.fulfill({ response: res, json: j });
   });
+  // 示例数据的入站是直接建的、没应用过,每台节点都会显示「有改动未应用」;文档图里按已应用的样子摆。
+  await page.route("**/api/nodes/pending", r => r.fulfill({ json: [] }));
   // 测试环境没真的 SSH 上节点巡检过,列表里会全是「未巡检」;给每台补一份
   // 正常的状态,总览与节点页都显示「运行中」。页面可能接连请求几次(登录后
   // 一次、goto 再一次),控制面有限流:取一次成功就缓存着用,429 就等等重试,
@@ -197,7 +199,7 @@ const SHOTS = [
   },
   {
     name: "settings-general",
-    run: async (page, env) => { await page.goto(env.origin + "/#settings/general"); },
+    run: async (page, env) => { await page.goto(env.origin + "/#sub"); },
   },
   { name: "users", run: async (page, env) => { await page.goto(env.origin + "/#users"); } },
   {
@@ -213,12 +215,12 @@ const SHOTS = [
     },
   },
   { name: "user-detail", run: async (page, env) => { await page.goto(env.origin + "/#users/alice"); await page.waitForSelector("#drawer.open"); await page.waitForTimeout(350); } },
-  { name: "plans", run: async (page, env) => { await page.goto(env.origin + "/#plans"); } },
+  { name: "plans", run: async (page, env) => { await page.goto(env.origin + "/#users/plans"); } },
   {
     // 编辑套餐「标准」:点那一行打开抽窗。
     name: "plan-detail",
     run: async (page, env) => {
-      await page.goto(env.origin + "/#plans");
+      await page.goto(env.origin + "/#users/plans");
       const r = await cpFetch(env.cpURL + "/api/plans", { headers: { Authorization: "Bearer " + env.token } });
       if (!r.ok) throw new Error("GET /api/plans -> " + r.status);
       const data = await r.json();
@@ -286,7 +288,8 @@ const SHOTS = [
     },
     run: async (page, env) => {
       await page.goto(env.origin + "/#overview");
-      await page.click('[data-act="profile-open"]');
+      await page.click('[data-act="cp-toggle"]');
+      await page.click('[data-act="cp-switch"]');
       await page.waitForSelector("#modal.open .pflist");
       await page.waitForTimeout(300);
     },
@@ -367,10 +370,11 @@ const SHOTS = [
         await r.fulfill({ response: res, json: j });
       });
     },
-    run: async (page, env) => { await page.goto(env.origin + "/#settings/devices"); await page.waitForSelector(".pill.on"); },
+    run: async (page, env) => { await page.goto(env.origin + "/#system/devices"); await page.waitForSelector(".pill.on"); },
   },
-  { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#settings/backup"); } },
-  { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#settings/rules"); } },
+  { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#system/backup"); } },
+  { name: "system-notify", run: async (page, env) => { await page.goto(env.origin + "/#system"); } },
+  { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#sub/clients"); } },
   // 首次安装(setup 模式:配置为空的 mpx ui)。
   { name: "setup-welcome", setup: true, crop: ".scard", run: async page => { await page.waitForSelector("#s-start"); } },
   {

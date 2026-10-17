@@ -60,7 +60,8 @@ const planCountText = (users, active) => `${users}（活跃 ${active}）`;
 
 /* ---- 套餐列表 ---- */
 PAGES.plans = {
-  title: "套餐", nav: ["管理", "plan", 15], closeTo: "plans",
+  title: "套餐", navAs: "users", closeTo: "users/plans",
+  crumb: () => H`<a href="#users">用户</a><i>/</i><b>套餐</b>`,
   count: () => PLAN_CACHE.plans.length || "",
   async load() {
     const [plans, nodes, inbounds, users] = await Promise.all([
@@ -75,8 +76,8 @@ PAGES.plans = {
   },
   render(d) {
     const W = can("POST", "/api/plans");
-    const head = H`<div class="ph"><div><h1>套餐</h1><p>决定用户能用哪些节点。挂了套餐的用户只拿得到套餐里的节点</p></div><span class="sp"></span>
-      ${W ? H`<button class="btn pri" data-act="pl-edit" data-id="">${ic("plus")}新建套餐</button>` : ""}</div>`;
+    const head = H`<div class="ph"><div><h1>用户</h1><p>套餐决定用户能用哪些节点。挂了套餐的用户只拿得到套餐里的节点</p></div><span class="sp"></span>
+      ${W ? H`<button class="btn pri" data-act="pl-edit" data-id="">${ic("plus")}新建套餐</button>` : ""}</div>${userTabs(true)}`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(4, 3)}</tbody></table></div>`;
     const plans = d.plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id));
     const list = H`<div class="card">${plans.map(p => plRow(p, d))}</div>`;
@@ -133,7 +134,7 @@ function plWarnTags(p, d) {
     const nodes = new Set(p.node_ids || []);
     for (const inb of d.inbounds || []) if ((p.inbound_ids || []).includes(inb.id)) nodes.add(inb.node_id);
     const draining = (d.nodes || []).some(n => n.draining && nodes.has(n.id));
-    if (draining) out.push(H`<span class="tag g">含排水中的节点</span>`);
+    if (draining) out.push(H`<span class="tag g">含暂停分配的节点</span>`);
   }
   return out;
 }
@@ -264,7 +265,7 @@ function plPreview(users) {
   const auth = e.all_nodes ? PLAN_CACHE.inbounds.slice() : PLAN_CACHE.inbounds.filter(i => e.sel[i.node_id] === "all" || (Array.isArray(e.sel[i.node_id]) && e.sel[i.node_id].includes(i.id)));
   const occ = activeOccupancy(PLAN_CACHE.inbounds, PLAN_CACHE.users, PLAN_CACHE.plans);
   const nodeSet = [...new Set(auth.map(i => i.node_id))];
-  const why = i => { const n = PLAN_CACHE.nodes.find(x => x.id === i.node_id); if (n && n.draining) return "排水中"; if (i.max_users && occ[i.id] >= i.max_users) return "满员"; return ""; };
+  const why = i => { const n = PLAN_CACHE.nodes.find(x => x.id === i.node_id); if (n && n.draining) return "暂停分配"; if (i.max_users && occ[i.id] >= i.max_users) return "满员"; return ""; };
   const ulist = users.length ? H`<div class="pl-sub"><div class="pl-sec">在用的用户</div><div class="pl-users">${users.slice(0, 12).map(u => H`<span class="tag">${u.username}</span>`)}${users.length > 12 ? H`<span class="tag g">+${users.length - 12}</span>` : ""}</div></div>` : "";
   return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${auth.length} 个入口` : ""}</small></h5>
     ${auth.length ? nodeSet.map(nid => { const n = PLAN_CACHE.nodes.find(x => x.id === nid); return H`<div class="pl-g"><b>${planNodeName(n) || "节点"}</b>${auth.filter(i => i.node_id === nid).map(i => { const w = why(i); return H`<div class="pl-e ${w ? "dim" : ""}"><span class="pp-mk ${w ? "" : "ok"}">${ic(w ? "ban" : "check")}</span>${planInflightName(n, i)}<span class="sp"></span><span class="why">${w}</span></div>`; })}</div>`; })

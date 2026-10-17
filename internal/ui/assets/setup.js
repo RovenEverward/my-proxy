@@ -95,7 +95,7 @@ function renderConnectCP() {
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
   ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
   <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
-  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「设置 → 设备」里重设")}` : ""}
+  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「系统 → 设备与接入」里重设")}` : ""}
   <p class="sub">接入时会核对证书指纹，设备密码只用于这一次接入。</p>`,
   H`${btn(add ? "取消" : "上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
   $("#s-cp-addr").value = CN.addr; $("#s-cp-name").value = CN.name;
@@ -263,8 +263,8 @@ function applyPortProbe(p) {
   if (p.api_busy) {
     if (p.api_suggest) {
       if (S.portProbe !== p) S.addr = String(S.addr || "0.0.0.0:8080").replace(/:\d+$/, ":" + p.api_suggest);
-      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在「设置 → 高级 → 监听地址」里改。`);
-    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在「设置 → 高级 → 监听地址」里换一个端口。`);
+      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在下面「高级 → 监听地址」里改。`);
+    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在下面「高级 → 监听地址」里换一个端口。`);
   }
   if (p.inbound_busy && p.inbound_suggest) {
     if (S.portProbe !== p) S.inboundPort = +p.inbound_suggest;
@@ -305,8 +305,9 @@ function renderSettings() {
   <div class="two"><div class="field"><label>设备密码</label>${pwBox("s-dpw", S.dpwShown)}<div class="meter" id="s-meter">${raw(meterHtml(S.dpw))}</div><span class="h" id="s-str">强度：${SW[strength(S.dpw)]}</span>${e.dpw ? H`<span class="fe">${e.dpw}</span>` : ""}</div>
   <div class="field"><label>再输一次</label>${pwBox("s-dpw2", S.dpwShown)}${e.dpw2 ? H`<span class="fe">${e.dpw2}</span>` : ""}</div></div>
   <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
+  ${field("订阅地址", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
   <details class="adv"><summary>高级</summary>
-   <div class="two">${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("订阅前缀", H`<input id="s-sub" class="in mono" autocomplete="off">`)}</div>${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个入站用的 REALITY SNI")}</details>
+   ${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个入站用的 REALITY SNI")}</details>
   `,
   H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("开始安装", "pri", "", "s-run")}`);
   $("#s-username").value = S.username;
