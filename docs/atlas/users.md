@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/model/plan.go, internal/model/traffic.go, internal/model/reset.go, internal/store/user.go, internal/store/plan.go, internal/store/traffic.go, internal/cli/user.go, internal/cli/plan.go]
-verified: 2026-10-17 @ 36a3f1f
+verified: 2026-10-17 @ 626beea
 ---
 # 用户、套餐与计量
 

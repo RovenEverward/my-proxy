@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/control/, internal/node/, internal/render/xray.go, internal/render/serverconfig.go, internal/render/singbox_server.go, internal/xrayrelease/, internal/singboxbuild/]
-verified: 2026-10-17 @ 36a3f1f
+verified: 2026-10-17 @ 626beea
 ---
 # 节点：下发、收敛与巡检
 
@@ -10,7 +10,7 @@ verified: 2026-10-17 @ 36a3f1f
 
 ## 边界
 
-负责：装核心、渲染并下发节点配置、周期收敛用户名单、采样流量、巡检与告警、不通节点的退避。
+负责：装核心与升级核心、渲染并下发节点配置、周期收敛用户名单、采样流量、巡检与告警、不通节点的退避。升级 xray 时由节点自己从 GitHub 拉官方包，控制面只递 URL 和取自官方 `.dgst` 的摘要，新核心先过 `xray run -test` 再顶替、失败回滚（v0.8.0 起，编排见 [安装与升级](install-update.md)）。
 
 不负责：决定谁该在哪（读 [用户、套餐与计量](users.md) 的结果）；证书签发（假定证书已在节点上）；自己编译 xray（只推官方发布包；sing-box 用官方源码带统计标签在控制面编）。
 

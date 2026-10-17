@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go]
-verified: 2026-10-17 @ 36a3f1f
+verified: 2026-10-17 @ 626beea
 ---
 # 体检与诊断
 
