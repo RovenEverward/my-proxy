@@ -272,6 +272,7 @@ GET|POST         /api/users          GET|PUT|DELETE  /api/users/{username}
 POST             /api/users/{username}/reset-traffic
 POST             /api/users/{username}/revoke-sub
 GET              /api/users/{username}/links
+GET              /api/sub-pulls              每个用户第一次 / 最近一次拉取订阅(v0.9.8 起,只增)
 
 GET|PUT          /api/settings
 POST             /api/settings/test-webhook   往当前 webhook_url 发一条测试事件
@@ -293,6 +294,8 @@ $ curl -H 'Authorization: Bearer demo-token' \
 ```
 
 归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**(见 [decisions.md](decisions.md) 第 16 条)。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
+
+`sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
 
 `status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/model.go` 里的 `ControlStatus`。
 

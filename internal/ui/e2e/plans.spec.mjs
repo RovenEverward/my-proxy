@@ -222,7 +222,7 @@ test("用户改套餐:与 mpx user edit --plan 一致", async ({ page }) => {
 
   await page.goto(env.origin + "/#users/ui-move-user");
   await page.click("[data-act=user-edit]");
-  await page.selectOption("#f-plan", String(planB.id));
+  await page.click(`#f-plans .plan:has(input[value="${planB.id}"])`);
   await page.click("#f-save");
   await expect(page.locator(".toast")).toContainText("已更新用户 ui-move-user");
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);

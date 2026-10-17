@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -71,9 +72,11 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 	if e := s.subCache.get(key); e != nil && e.user.Status(time.Now()) == user.Status(time.Now()) && e.user.UsedTraffic == user.UsedTraffic && e.user.Enabled == user.Enabled && user.Status(time.Now()) == model.StatusActive {
 		if r.Header.Get("If-None-Match") == e.etag {
 			w.WriteHeader(http.StatusNotModified)
+			s.recordSubPull(user, format, r)
 			return
 		}
 		writeSubEntry(w, r, e)
+		s.recordSubPull(user, format, r)
 		return
 	}
 
@@ -105,9 +108,80 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
+		s.recordSubPull(user, format, r)
 		return
 	}
 	writeSubEntry(w, r, entry)
+	s.recordSubPull(user, format, r)
+}
+
+// subPullState 是订阅拉取记录的写库节流:每个用户 60 秒最多写一次。
+//
+// 节流只在内存里:控制面重启后第一次拉取会再写一次,那只是多一行"最近一次"
+// 的更新,不影响 first_at。now 与 every 可在测试里替换,便于验证节流边界。
+type subPullState struct {
+	mu    sync.Mutex
+	last  map[int64]time.Time
+	every time.Duration
+	now   func() time.Time
+}
+
+// subPullEvery 是默认的写库间隔:客户端刷新订阅可能很频繁,每次都写库没有意义。
+const subPullEvery = time.Minute
+
+// recordSubPull 在订阅成功回了 200/304 之后记一次拉取。写库失败只记日志,
+// 绝不影响已经发出去的订阅响应。
+func (s *Server) recordSubPull(user *model.User, format model.ClientFormat, r *http.Request) {
+	st := &s.subPulls
+	now := time.Now
+	if st.now != nil {
+		now = st.now
+	}
+	every := st.every
+	if every <= 0 {
+		every = subPullEvery
+	}
+	at := now()
+
+	st.mu.Lock()
+	if last, ok := st.last[user.ID]; ok && at.Sub(last) < every {
+		st.mu.Unlock()
+		return
+	}
+	if st.last == nil {
+		st.last = map[int64]time.Time{}
+	}
+	st.last[user.ID] = at
+	st.mu.Unlock()
+
+	if err := s.store.RecordSubPull(user.ID, string(format), subPullClient(r.UserAgent()), at); err != nil {
+		s.logger.Warn("记录订阅拉取失败", "username", user.Username, "format", format, "error", err)
+	}
+}
+
+// forgetSubPull 丢掉内存里的节流时间戳。吊销 token 清掉库里的记录后要一并清掉
+// 它,否则新链接在 60 秒内拉一次也不会落库,看起来像没生效。
+func (s *Server) forgetSubPull(userID int64) {
+	s.subPulls.mu.Lock()
+	delete(s.subPulls.last, userID)
+	s.subPulls.mu.Unlock()
+}
+
+// subPullClient 从 User-Agent 里取产品名:第一个 / 或空格之前的部分,截到 64
+// 个字符;空 UA 记 unknown。
+func subPullClient(ua string) string {
+	end := len(ua)
+	if i := strings.IndexAny(ua, "/ "); i >= 0 {
+		end = i
+	}
+	client := strings.TrimSpace(ua[:end])
+	if client == "" {
+		return "unknown"
+	}
+	if r := []rune(client); len(r) > 64 {
+		client = string(r[:64])
+	}
+	return client
 }
 
 // writeSubEntry 把一条缓存好的订阅写出去:头重放、ETag 挂上、body 原样发。

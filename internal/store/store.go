@@ -204,6 +204,17 @@ var schema = []string{
 		templates       TEXT    NOT NULL DEFAULT '{}'
 	)`,
 
+	// sub_pulls 是每个用户最近一次订阅拉取的记录:一人一行,user_id 是主键也
+	// 是外键,用户删掉时记录跟着走。first_at 只在第一次拉取时写入,之后只更新
+	// last_at / format / client;吊销订阅 token 时整行清掉,新链接重新等第一次。
+	`CREATE TABLE IF NOT EXISTS sub_pulls (
+		user_id  INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+		first_at INTEGER NOT NULL,
+		last_at  INTEGER NOT NULL,
+		format   TEXT    NOT NULL DEFAULT '',
+		client   TEXT    NOT NULL DEFAULT ''
+	)`,
+
 	// user_notices 是"这条用户通知已经发过了"的流水账,一条 (user_id, kind)
 	// 一行。它让用户侧提醒精确地只发一次:巡检每轮都看用户,不记账的话一轮漏跑
 	// 或窗口横跨多轮就会重复发;记下之后,同一用户同一类提醒只在条件消失(续费/

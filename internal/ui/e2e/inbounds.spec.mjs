@@ -144,7 +144,7 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   // 底部:主按钮「创建并应用到节点」+ 次要「只创建，稍后应用」+ 一行灰字。
   await expect(dr.locator("#a-save")).toHaveText("创建并应用到节点");
   await expect(dr.locator("#x-later")).toHaveText("只创建，稍后应用");
-  await expect(dr.locator("#x-note")).toHaveText("会重启东京 A上的代理，已连着的用户会断开几秒");
+  await expect(dr.locator("#x-note")).toHaveText("会重启东京 A 上的代理，已连着的用户会断开几秒");
   await expect(dr).not.toContainText("创建后要到节点页");
   await expect(dr.locator(".pv-r")).toContainText("东京 A · Reality");
   await expect(dr.locator("#pv-a")).toHaveText("203.0.113.21:8444");
@@ -187,6 +187,12 @@ test("编辑连接:名称与地址在顶上,入站字段在「高级」里", asy
   const menu = page.locator(".selmenu");
   await expect(menu).toBeVisible();
   await expect(menu.locator(".selopt.on")).toHaveText("TCP");
+  // 聚焦框黑白:浅色 2px #111 外描边;弹层不要 1px 边框,靠高一层的底色加阴影。
+  const ring = await dr.locator("#i-network").evaluate(el => { const c = getComputedStyle(el); return [c.outlineStyle, c.outlineWidth, c.outlineColor]; });
+  expect(ring).toEqual(["solid", "2px", "rgb(17, 17, 17)"]);
+  const pop = await menu.evaluate(el => { const c = getComputedStyle(el); return [c.borderTopWidth, c.boxShadow]; });
+  expect(pop[0]).toBe("0px");
+  expect(pop[1]).not.toBe("none");
   await menu.locator(".selopt", { hasText: "WebSocket" }).click();
   await expect(menu).toHaveCount(0);
   await expect(dr.locator("#i-network")).toHaveValue("ws");

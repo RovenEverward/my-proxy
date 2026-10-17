@@ -638,6 +638,18 @@ type UserNotice struct {
 	SentAt time.Time `json:"sent_at"`
 }
 
+// SubPull 是一个用户最近一次订阅拉取的记录。
+//
+// 首次拉到的时间只在真正"第一次"时写,之后只更新最近一次的时间与客户端信息;
+// 吊销订阅 token 后会清掉,新链接重新从第一次开始等。
+type SubPull struct {
+	Username      string    `json:"username"`
+	FirstPulledAt time.Time `json:"first_pulled_at"`
+	LastPulledAt  time.Time `json:"last_pulled_at"`
+	Format        string    `json:"format"`
+	Client        string    `json:"client"`
+}
+
 // Alert 是一条告警。
 //
 // Key 是这条告警的身份:同一个 Key 在冷却期内只报一次,条件消失时用同一个 Key

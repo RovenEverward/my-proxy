@@ -42,14 +42,13 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(rows.nth(1)).toContainText("到节点页点「应用到节点」覆盖回去");
   await expect(rows.nth(2)).toContainText("订阅 xray");
   await expect(rows.nth(2).locator(".st")).toHaveText("失败");
-  await expect(rows.nth(2).locator(".dot")).toHaveClass(/bad/);
-  // 顶部汇总:ok/warn/fail 各一项。颜色沿用状态点(绿/黄/红)。
+  // 状态点黑白:失败和警告一样是空心圈,靠文字区分;红色只留给「连不上」。
+  await expect(rows.nth(2).locator(".dot")).toHaveClass(/warn/);
+  // 顶部汇总:ok/warn/fail 各一项,数字一律正文色。
   await expect(page.locator("[data-sum=ok]")).toHaveText("1");
   await expect(page.locator("[data-sum=warn]")).toHaveText("1");
   await expect(page.locator("[data-sum=fail]")).toHaveText("1");
-  await expect(page.locator("[data-sum=ok]")).toHaveClass(/c-ok/);
-  await expect(page.locator("[data-sum=warn]")).toHaveClass(/c-warn/);
-  await expect(page.locator("[data-sum=fail]")).toHaveClass(/c-bad/);
+  for (const k of ["ok", "warn", "fail"]) await expect(page.locator(`[data-sum=${k}]`)).not.toHaveClass(/c-(ok|warn|bad)/);
 });
 
 test("接口报错时把控制面的原话显示出来", async ({ page }) => {

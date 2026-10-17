@@ -119,13 +119,17 @@ PAGES.users = {
     });
     const plans = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.plans) : api("/api/plans");
     const inbounds = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.inbounds) : api("/api/inbounds");
-    const detail = r[1] ? Promise.all([api(userPath(r[1])), api(userPath(r[1]) + "/links")]) : null;
+    // 详情还要:拉取记录(「发给他」标题右边的状态;老控制面没有这个接口就当没有)、
+    // 订阅前缀(没设时提示链接里是 IP)、节点数(套餐「N 个节点」)。
+    const detail = r[1] ? Promise.all([api(userPath(r[1])), api(userPath(r[1]) + "/links"),
+      api("/api/sub-pulls").catch(() => null), api("/api/settings").catch(() => null), api("/api/nodes").catch(() => [])]) : null;
     const [page, cs, pl, ib, d] = await Promise.all([api("/api/users?" + q), counts, plans, inbounds, detail]);
     USERS_TOTAL = cs[""];
     PLAN_CACHE.plans = pl || [];
     PLAN_CACHE.inbounds = ib || [];
     PLAN_CACHE.loaded = true;
-    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, user: d && d[0], links: d && d[1] };
+    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, user: d && d[0], links: d && d[1],
+      pull: d && d[2] ? d[2].find(p => p.username === r[1]) || null : null, pullsKnown: !!(d && d[2]), settings: d && d[3], nodes: d ? d[4] : [] };
   },
   render(d) {
     const head = H`<tr><th>用户</th><th>状态</th><th>套餐</th><th>本期用量</th><th class="hide-m">到期</th><th class="hide-m">重置</th></tr>`;
@@ -155,38 +159,89 @@ PAGES.users = {
     if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
     if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
-    if (d && r[1] && d.user) userDrawer(d.user, d.links);
+    if (d && r[1] && d.user) userDrawer(d.user, d.links, d);
   },
 };
 let USERS_TOTAL = null;
 
 /* ---- 详情抽屉 ---- */
-function userDrawer(u, links) {
+// 套餐里有几台节点:全部节点套餐 = 现有节点数;否则是勾选节点和单独勾选入站所在节点的并集。
+function planNodeCount(p, nodes, inbounds) {
+  if (!p) return 0;
+  const ids = new Set((nodes || []).map(n => n.id));
+  if (p.all_nodes) return ids.size;
+  const got = new Set((p.node_ids || []).filter(id => ids.has(id)));
+  for (const iid of p.inbound_ids || []) { const i = (inbounds || []).find(x => x.id === iid); if (i && ids.has(i.node_id)) got.add(i.node_id); }
+  return got.size;
+}
+// 控制面记的是 User-Agent 第一段,常见的换成客户端自己的写法;认不出的照原样。
+const CLIENT_NAMES = { "clash-verge": "Clash Verge", "clash.meta": "Clash Meta", mihomo: "Mihomo", clash: "Clash", shadowrocket: "Shadowrocket", stash: "Stash", "sing-box": "sing-box", sfa: "sing-box", sfi: "sing-box", sfm: "sing-box", v2rayn: "v2rayN", v2rayng: "v2rayNG", karing: "Karing", hiddify: "Hiddify", nekobox: "NekoBox", quantumult: "Quantumult X", surge: "Surge", loon: "Loon" };
+const clientLabel = c => !c || c === "unknown" ? "客户端" : CLIENT_NAMES[c.toLowerCase()] || c;
+// 「sing-box 在 14:37 拉取过」;一分钟内写「刚刚」,一小时内写「N 分钟前」。
+function pullText(p) {
+  const d = new Date(p.last_pulled_at), sec = (Date.now() - d) / 1e3, who = clientLabel(p.client);
+  if (sec < 60) return `${who} 刚刚拉取过`;
+  if (sec < 3600) return `${who} ${Math.floor(sec / 60)} 分钟前拉取过`;
+  return `${who} 在 ${sec < 86400 ? hm(d) : ymd(d)} 拉取过`;
+}
+const SEND_FORMATS = [["links", "分享链接", "一行一个节点,粘贴进 v2rayN、Shadowrocket"], ["base64-links", "Base64", "老客户端认的订阅格式"], ["clash-meta", "Clash Meta", "Clash Verge、Mihomo"], ["clash", "Clash", "老版 Clash 内核"], ["sing-box", "sing-box", "sing-box 官方客户端、Karing"], ["xray", "Xray", "Xray 内核的 JSON 配置"]];
+// 「发给他」:创建后和用户详情共用。二维码由本机 /local/qr.svg 画,永远放在白底上(暗色也一样),保证能扫。
+function sendBlock(u, links, d) {
+  const name = u.username, L = (links && links.auto) || "";
+  // 按稿子用 ?u=<名字>,由本机进程向控制面取链接再画;v 让换了新链接后不吃旧图。
+  // 本机取不到(比如撞上控制面限流)时,改用页面手里现成的链接 ?d= 画,见 userDrawer。
+  // 「保存二维码」直接用 ?d=:点的时候不必再问一次控制面。
+  const qr = `/local/qr.svg?u=${encodeURIComponent(name)}&v=${encodeURIComponent(L.slice(-10))}`, qrD = `/local/qr.svg?d=${encodeURIComponent(L)}`;
+  const noPrefix = d && d.settings && !d.settings.sub_url_prefix;
+  const pull = d && d.pull;
+  return H`<section class="send" id="send">
+    <div class="send-h"><h3>发给他</h3><span class="sub" id="send-pull">${pull ? pullText(pull) : d && d.pullsKnown ? "还没有客户端导入过" : ""}</span></div>
+    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" data-fb="${qrD}" alt="${name} 的订阅二维码"></div>
+      <div class="send-r">
+        <button type="button" class="btn pri send-copy" data-act="copy" data-text="${L}">${ic("copy")}复制订阅链接</button>
+        <div class="send-link mono" title="${L}">${L.replace(/^https?:\/\//, "")}</div>
+        <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
+        <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入,会自动拿到适合它的格式。</p>
+      </div></div>
+    ${noPrefix ? H`<div class="send-ip">${ic("warn")}<span>链接里是服务器 IP。设好订阅地址后,新旧链接都能用。</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
+    <details class="fmts"><summary>${ic("arrow", "car")}其他格式<span class="sub">客户端不认自动识别时再用</span></summary>
+      <div class="fmt-l">${SEND_FORMATS.filter(([k]) => links && links[k]).map(([k, n, t]) => H`<div class="fmt"><div class="fmt-t"><b>${n}</b><span class="sub">${t}</span></div><button type="button" class="ib" data-act="copy" data-text="${links[k]}" title="复制 ${n} 链接" aria-label="复制 ${n} 链接">${ic("copy")}</button></div>`)}</div>
+    </details></section>`;
+}
+let JUST_CREATED = "";  // 刚建好的用户:详情顶上多一行「已创建 X」
+function userDrawer(u, links, d) {
   const W = can("PUT", "/api/users/x"), name = u.username;
-  const fmtOrder = [["auto", "自动识别"], ["links", "分享链接"], ["base64-links", "Base64"], ["clash-meta", "Clash Meta"], ["clash", "Clash"], ["sing-box", "sing-box"], ["xray", "Xray"]];
-  openDrawer(H`<div class="dh">${avatar(name)}<div style="min-width:0"><h2 class="ell">${name}</h2><div class="sub">${u.note || "无备注"}</div></div><span class="sp" style="flex:1"></span>${userSt(u.status)}<button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
-  <div class="db">
-    <div class="card mb" style="padding:14px"><div class="sub">本期用量</div><div class="f22">${fmtBytes(u.used_traffic)} <span class="sub">/ ${u.data_limit ? fmtBytes(u.data_limit) : "不限"}</span></div>
-      ${u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div>` : ""}<div class="sub mt8">累计 ${fmtBytes(u.lifetime_used_traffic)}</div></div>
-    <dl class="kv flat"><dt>到期</dt><dd>${expireCell(u)}</dd><dt>重置</dt><dd>${RESET[u.reset_strategy] || u.reset_strategy}</dd>
-      <dt>套餐</dt><dd>${userPlanDetail(u)}</dd>
-      <dt>额外授权</dt><dd>${u.inbound_ids?.length ? u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `) : H`<span class="sub">无</span>`}</dd><dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd></dl>
-    <div class="sub mb8">订阅地址</div>
-    <div class="links mb">${links ? fmtOrder.filter(([k]) => links[k]).map(([k, t]) => H`<div class="lk"><span>${t}</span><code title="${links[k]}">${links[k]}</code><button class="ib sm" data-act="copy" data-text="${links[k]}" aria-label="复制${t}地址">${ic("copy", "sm")}</button></div>`) : ""}</div>
-    ${W ? H`<div class="sub mb8">操作</div><div class="stack8">
-      <button class="btn" data-act="user-edit" data-name="${name}">编辑…</button>
-      <div class="two g8"><button class="btn" data-act="user-renew" data-name="${name}">续期 30 天</button><button class="btn" data-act="user-reset" data-name="${name}">重置流量</button></div>
-      <button class="btn" data-act="user-toggle" data-name="${name}" data-on="${u.enabled ? "1" : ""}">${u.enabled ? "停用" : "启用"}</button></div>
-    <div class="sub c-bad mt22 mb8">危险操作</div>
-    <div class="card danger-zone">
-      <div class="row"><div><b class="bold">吊销订阅</b><div class="sub">换一个新 token,旧地址立刻 404。</div></div><span class="sp"></span><button class="btn sm" data-act="user-revoke" data-name="${name}">吊销</button></div>
-      <div class="row"><div><b class="bold">删除用户</b><div class="sub">协议凭证与订阅一起删掉,不可恢复。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="user-rm" data-name="${name}">删除</button></div>
-    </div>` : ""}
+  const p = (d && d.plans || PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
+  const nn = p ? planNodeCount(p, d && d.nodes, d && d.inbounds || PLAN_CACHE.inbounds) : 0;
+  const created = JUST_CREATED === name; JUST_CREATED = "";
+  const pull = d && d.pull;
+  const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div><div class="sub mt8">${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
+  openDrawer(H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
+    ${W ? H`<button class="ib" title="编辑" aria-label="编辑" data-act="user-edit" data-name="${name}">${ic("pen")}</button>
+    <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="user-menu">${ic("more")}</button><div class="menu" role="menu" id="user-menu" hidden>
+      <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期 30 天</button>
+      <button type="button" data-act="user-reset" data-name="${name}">${ic("undo")}清零本期用量</button>
+      <button type="button" data-act="user-toggle" data-name="${name}" data-on="${u.enabled ? "1" : ""}">${ic("pause")}${u.enabled ? "停用" : "启用"}</button>
+      <div class="msep"></div>
+      <button type="button" data-act="user-revoke" data-name="${name}">${ic("key")}换一条新链接</button>
+      <button type="button" class="dg" data-act="user-rm" data-name="${name}">${ic("trash")}删除用户</button></div></span>` : ""}
+    <button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  <div class="db ud-b">${created ? H`<div class="created">${ic("check")}<span>已创建 <b>${name}</b>。把下面的二维码或链接发给他就行。</span></div>` : ""}
+    ${sendBlock(u, links, d)}
+    <section class="ud-use"><div class="sub">本期用量</div><div class="ud-v">${fmtBytes(u.used_traffic)}</div>${use}</section>
+    <dl class="kv flat ud-kv"><dt>套餐</dt><dd>${p ? H`${p.name} <span class="sub">· ${nn ? `${nn} 个节点` : "没有节点"}</span>` : userPlanDetail(u)}</dd>
+      ${u.inbound_ids?.length ? H`<dt>额外授权</dt><dd>${u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `)}</dd>` : ""}
+      <dt>到期</dt><dd>${expireCell(u)}</dd>
+      <dt>最近导入</dt><dd>${pull ? pullText(pull) : "还没有"}</dd>
+      <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
   </div>`);
+  const img = $("#send .qrs");
+  img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
 }
 async function refreshDrawer(name) {
   await load(true, true);
-  if (route[0] === "users" && route[1] === name && current.data?.user) userDrawer(current.data.user, current.data.links);
+  const d = current.data;
+  if (route[0] === "users" && route[1] === name && d?.user) userDrawer(d.user, d.links, d);
 }
 
 /* ---- 编辑器 ---- */
@@ -202,22 +257,24 @@ async function userEditor(name) {
   const currentPlan = u.plan_id != null ? String(u.plan_id) : "";
   let plan = isNew ? (defPlan ? String(defPlan.id) : "") : currentPlan;
   const sel = new Set(u.inbound_ids || []);
+  const allPlan = planList.find(p => p.all_nodes && planNodeCount(p, nodes, inbounds));
   const limitText = u.data_limit ? (u.data_limit % 2 ** 30 === 0 ? u.data_limit / 2 ** 30 + "GB" : u.data_limit + "B") : "";
   openDrawer(H`<form id="user-form" novalidate><div class="dh"><h2>${isNew ? "添加用户" : "编辑 " + u.username}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     <div class="field"><label for="f-name">用户名</label><input class="in" id="f-name" name="username" value="${u.username}" ${isNew ? raw("autofocus") : raw("disabled")} placeholder="alice" autocomplete="off"><span class="h">字母、数字、下划线、点和减号,1–64 位${isNew ? "" : ";建好后不能改"}</span></div>
-    <div class="field"><label for="f-plan">套餐</label><select class="in" id="f-plan" name="plan">
-      ${!isNew && u.plan_id == null ? H`<option value="" selected disabled>未挂套餐(单独授权)</option>` : ""}
-      ${planList.map(p => H`<option value="${p.id}" ${raw(plan === String(p.id) ? "selected" : "")}>${p.name}</option>`)}</select>
-      <span class="h">必选。要把权限放宽到全部节点,挂「默认套餐」;不能把用户移出套餐</span></div>
+    <div class="field"><label id="f-plan-l">套餐</label><div class="plans" role="radiogroup" aria-labelledby="f-plan-l" id="f-plans">
+      ${!isNew && u.plan_id == null ? H`<label class="plan"><input type="radio" name="plan" value="" checked disabled><span class="rd"></span><span class="plan-t"><b>未挂套餐</b><span class="sub">单独授权;选一个套餐后不能再移出</span></span></label>` : ""}
+      ${planList.map(p => { const n = planNodeCount(p, nodes, inbounds); return H`<label class="plan"><input type="radio" name="plan" value="${p.id}" ${raw(plan === String(p.id) ? "checked" : "")}><span class="rd"></span><span class="plan-t"><b>${p.name}</b>${p.note || p.is_default ? H`<span class="sub">${p.note || "新用户默认挂这个"}</span>` : ""}</span><span class="plan-n ${n ? "" : "zero"}">${n ? `${n} 个节点` : "没有节点"}</span></label>`; })}</div>
+      ${planList.filter(p => !planNodeCount(p, nodes, inbounds)).map(p => H`<div class="block" role="alert" data-plan="${p.id}" hidden>${ic("warn")}<div><b>「${p.name}」里还没有节点</b><p>挂在它上面的用户什么都连不上。先给套餐加节点,或者换一个套餐。</p><div class="block-a"><a class="btn sm" href="#users/plans">${ic("plus")}给「${p.name}」加节点</a>${allPlan ? H`<button type="button" class="btn sm ghost" data-act="f-plan-all">换成「${allPlan.name}」</button>` : ""}</div></div></div>`)}</div>
     <div class="two"><div class="field"><label for="f-limit">流量上限</label><input class="in" id="f-limit" name="limit" value="${limitText}" placeholder="100GB,留空不限"><span class="h">B / KB / MB / GB / TB,按 1024 进位</span></div>
     <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD,留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
+    <details class="fmts more" id="f-more"><summary>${ic("arrow", "car")}更多选项<span class="sub">清零周期、额外授权、备注</span></summary><div class="more-b">
     <div class="field"><label>流量重置</label><div class="chips">${Object.entries(RESET).map(([k, t]) => H`<label class="chip"><input type="radio" name="reset" value="${k}" ${(u.reset_strategy || "none") === k ? raw("checked") : ""}>${t}</label>`)}</div></div>
     <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${inbTitle(i, null)}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
     <div class="field"><label for="f-note">备注</label><input class="in" id="f-note" name="note" value="${u.note || ""}" placeholder="可选"></div>
-    ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 建好后先停用</label>` : ""}
+    ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 先不启用(建好后手动启用)</label>` : ""}</div></details>
     <div class="err" id="f-err" role="alert"></div>
-  </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="f-save">${isNew ? "创建" : "保存"}</button></div></form>`);
+  </div><div class="df"><span class="sub df-why" id="f-why" hidden>${ic("warn")}选的套餐没有节点</span><span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="f-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#user-form");
   // 表单 → { ... }:collect 同时把套餐三态收出来 —— 没变就不发 plan_id,变了才发具体 id。
   // 挂的是 all_nodes 套餐时额外授权没有意义:勾了和它一起提交会被控制面摘掉
@@ -245,6 +302,10 @@ async function userEditor(name) {
     const allNodes = !!p && !!p.all_nodes;
     // all_nodes 套餐下额外授权不可选(见 collect),切回普通套餐恢复。
     document.querySelectorAll('#user-form input[name="inb"]').forEach(el => { el.disabled = allNodes; });
+    // 选了没有节点的套餐:灰色提示块 + 创建按钮置灰(原因写在底栏)。编辑老用户不拦保存。
+    const empty = !!p && !planNodeCount(p, nodes, inbounds);
+    form.querySelectorAll(".block[data-plan]").forEach(b => { b.hidden = b.dataset.plan !== c.planVal; });
+    if (isNew) { $("#f-why").hidden = !empty; $("#f-save").disabled = empty; }
     const label = $("#f-inb-label"), hint = $("#f-inb-h");
     if (label && hint) {
       if (!p) { label.textContent = "可用入站"; hint.textContent = "一个都不选 = 全部入站,含以后新加的"; }
@@ -253,9 +314,16 @@ async function userEditor(name) {
     }
   };
   form.addEventListener("input", sync); form.addEventListener("change", sync); sync();
+  // 有已填的低频字段时「更多选项」默认展开,免得编辑时看不到。
+  if (!isNew && (u.reset_strategy && u.reset_strategy !== "none" || u.inbound_ids?.length || u.note)) $("#f-more").open = true;
+  form.querySelector('[data-act="f-plan-all"]') && form.addEventListener("click", e => {
+    if (!e.target.closest('[data-act="f-plan-all"]')) return;
+    const r = form.querySelector(`input[name="plan"][value="${allPlan.id}"]`); r.checked = true; r.focus(); sync();
+  });
   form.addEventListener("submit", async e => {
     e.preventDefault();
     const c = collect(), btn = $("#f-save");
+    if (btn.disabled) return;
     $("#f-err").textContent = c.err.join("\n");
     if (c.err.length) return;
     btn.disabled = true; btn.classList.add("busy");
@@ -265,8 +333,10 @@ async function userEditor(name) {
         // 显式带上 plan_id。
         const body = asModelUser({ username: c.username, enabled: !c.disabled, reset_strategy: c.reset, note: c.note, data_limit: c.limit, expire_at: c.exp, inbound_ids: c.inb });
         if (c.planChanged) body.plan_id = +c.planVal;
-        await write("POST", "/api/users", body, `已创建用户 ${c.username}`);
-        closeOverlays(); location.hash = "users/" + encodeURIComponent(c.username);
+        await write("POST", "/api/users", body);
+        // 同一个抽屉直接切到这个用户的详情,顶上写「已创建」,下面就是「发给他」。
+        JUST_CREATED = c.username;
+        location.hash = "users/" + encodeURIComponent(c.username);
       } else {
         await readModify(u.username, m => {
           m.data_limit = c.limit;
@@ -306,9 +376,13 @@ Object.assign(ACTS, {
   },
   "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量?`, text: "本期用量清零,累计用量不变。超限的用户会在下一轮收敛时恢复。", ok: "重置流量",
     run: async () => { await write("POST", userPath(d.name) + "/reset-traffic", undefined, `已重置用户 ${d.name} 的流量`); await refreshDrawer(d.name); } }),
-  "user-revoke": d => confirmBox({ title: `吊销 ${d.name} 的订阅?`, text: "换一个新的订阅 token:旧地址立刻 404,已经连上的客户端不受影响。新地址要重新发给他。", ok: "吊销订阅", danger: true,
-    run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换新订阅地址,旧地址已失效"); await refreshDrawer(d.name); } }),
+  // 换链接不是删除:不用红色,但要确认 —— 旧链接马上失效,他得重新导入。
+  "user-revoke": d => confirmBox({ title: `给 ${d.name} 换一条新链接?`, text: "旧链接马上失效,他的客户端要重新扫码或粘贴新链接才能更新订阅。已经连着的不会断。", ok: "换一条新链接",
+    run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换成新链接,旧链接已失效"); await refreshDrawer(d.name); } }),
+  // ⋯ 菜单:点按钮开合;点菜单里的项或别处就收起。
+  "user-menu": () => { const m = $("#user-menu"); if (m) m.hidden = !m.hidden; },
   "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复:协议凭证与订阅 token 一起删掉,已经连上的客户端会断开,订阅地址立刻 404。只想让人连不上,用「停用」。", ok: "删除用户", danger: true, typed: d.name,
     run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });
+document.addEventListener("click", e => { const m = $("#user-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#user-menu button"))) m.hidden = true; });

@@ -32,7 +32,7 @@ test("删除用户:列表里立刻没了这个人", async ({ page }) => {
   await page.goto(env.origin + "/#users");
   await expect(userRow(page, "r-rm")).toHaveCount(1);
   await userRow(page, "r-rm").click();
-  await page.click("[data-act=user-rm]");
+  await page.click("[data-act=user-menu]"); await page.click("[data-act=user-rm]");
   await expect(page.locator("#modal.open")).toContainText("删除 r-rm?");
   await page.fill("#typed", "r-rm");
   await page.click("#okb");
@@ -45,12 +45,12 @@ test("停用 / 启用用户:关掉抽屉,列表里状态已经变了", async ({ 
   await login(page, env);
   await page.goto(env.origin + "/#users");
   await userRow(page, "r-toggle").click();
-  await page.click("[data-act=user-toggle]");
+  await page.click("[data-act=user-menu]"); await page.click("[data-act=user-toggle]");
   await page.click("#okb");
   await page.keyboard.press("Escape");
   await expect(userRow(page, "r-toggle")).toContainText("已停用", NOW);
   await userRow(page, "r-toggle").click();
-  await page.click("[data-act=user-toggle]");
+  await page.click("[data-act=user-menu]"); await page.click("[data-act=user-toggle]");
   if (await page.locator("#modal.open").count()) await page.click("#okb");
   await expect(page.locator(".toast")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -62,7 +62,7 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
   await page.goto(env.origin + "/#users");
   const before = await userRow(page, "r-renew").textContent();
   await userRow(page, "r-renew").click();
-  await page.click("[data-act=user-renew]");
+  await page.click("[data-act=user-menu]"); await page.click("[data-act=user-renew]");
   await expect(page.locator(".toast")).toContainText("到期日");
   await page.keyboard.press("Escape");
   await expect(userRow(page, "r-renew")).not.toHaveText(before, NOW);
