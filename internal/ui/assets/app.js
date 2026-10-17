@@ -849,8 +849,8 @@ setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) ref
 /* ---------- 国旗 ---------- */
 // 区域指示符国旗(🇯🇵 = 两个 U+1F1E6–U+1F1FF)在 Windows 上会显示成两个字母。
 // 这里把文本里的成对指示符换成本地 /flags/<xx>.svg;服务端 model 里的 emoji 不动。
-// 自己插入的 <img class="flag"> 没有文本子节点,再次扫描也不会再动它;文本被拆成
-// 「普通文本 + img」后普通文本里已没有指示符,所以替换是幂等的,不会来回触发。
+// 插入的旗帜容器不含文本,回退的地区代码也没有指示符,再次扫描不会再动它们。
+// 文本拆开后已没有指示符,所以替换是幂等的,不会来回触发。
 // flagHost 判断文本所在的位置:drop = 放不了图片,直接删掉旗帜(连同后面一个空格);
 // skip = 根本不碰;"" = 正常替换。
 function flagHost(el) {
@@ -878,13 +878,24 @@ function flagText(node) {
   while ((m = RI_PAIR.exec(text))) {
     found = true;
     if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+    const code = riCode(m[1], m[2]);
+    const wrap = document.createElement("span");
+    wrap.className = "flag-w";
+    wrap.dataset.flag = "1";
     const img = document.createElement("img");
     img.className = "flag";
-    img.src = "/flags/" + riCode(m[1], m[2]) + ".svg";
     img.alt = m[0];
     img.draggable = false;
-    img.dataset.flag = "1"; // 自己插入的节点,再遇到时不再处理
-    frag.append(img);
+    img.addEventListener("error", () => {
+      const fallback = document.createElement("span");
+      fallback.className = "flag-code";
+      fallback.textContent = code.toUpperCase();
+      fallback.title = "地区 " + fallback.textContent;
+      wrap.replaceWith(fallback);
+    }, { once: true });
+    wrap.append(img);
+    img.src = "/flags/" + code + ".svg";
+    frag.append(wrap);
     last = RI_PAIR.lastIndex;
   }
   if (!found) return;
