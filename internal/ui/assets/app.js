@@ -168,8 +168,9 @@ function sameVer(a, b) {
   b = String(b || "").trim().replace(/^v/, "");
   return a !== "" && a === b;
 }
-// 节点核心这一行有没有得升:target 为空(没查到或没钉版本)或已等于 target 都算没有。
-function nodeUpgradable(n) { return !!n.target && !sameVer(n.current, n.target); }
+// 节点核心这一行有没有得升:target 为空(没查到或没钉版本)、还不知道节点上是哪一版(没巡检过)、
+// 或已等于 target 都算没有 —— 不知道现状就不催人更新。
+function nodeUpgradable(n) { return !!n.target && !!String(n.current || "").trim() && !sameVer(n.current, n.target); }
 // 有可升级项、且本会话没对这个版本点过「稍后」时才显示 pill。可升级 = 本机 /
 // 控制面有新发布,或任一节点核心不在推荐版本上。
 function showUpdatePill(u) {

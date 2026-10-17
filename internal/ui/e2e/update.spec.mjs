@@ -290,7 +290,8 @@ test("开发版:v0.0.0 与 dev 不显示「更新」入口", async ({ page }) =>
     await mockUpdate(page, {
       cli: part({ current: cur, latest: "v0.9.7", available: true }),
       control: part({ current: "dev", latest: "v0.9.7", available: true }),
-      nodes: [node({ current: "26.4.1" })],
+      // 没巡检过的节点(current 空)不知道是哪一版,也不催更新。
+      nodes: [node({ current: "26.4.1" }), node({ id: 2, name: "hk-2", current: "" })],
       notes: "",
     });
     await login(page, env);
