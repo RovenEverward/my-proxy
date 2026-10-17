@@ -53,18 +53,41 @@ PAGES.settings = {
     if (t === "templates") return templatesTab(head, s, d.tpl || {});
     if (t === "devices") {
       const D = d.devices || [], X = can("DELETE", "/api/devices");
+      const PW = can("PUT", "/api/device-password"), PWOFF = can("DELETE", "/api/device-password");
       return H`${head}<div class="card"><div class="ch">接入的设备<small>· 共 ${D.length} 台 · 对应 <code>mpx device list</code></small></div>
         ${D.length ? D.map(x => H`<div class="row"><span class="sub mono w18">${x.id}</span><b class="ell grow">${x.name}</b>${x.current ? H`<span class="pill on">这台</span>` : ""}
           <span class="sub">${x.last_used_at ? "上次 " + sinceText(x.last_used_at) : "未用过"}${x.last_ip ? " · " + x.last_ip : ""}</span>
           ${X && !x.current ? H`<button class="btn sm danger" data-act="dev-revoke" data-id="${x.id}" data-name="${x.name}">吊销</button>` : ""}</div>`) : H`<div class="row sub">还没有设备用 <code>mpx connect</code> 接入。</div>`}
-        <div class="row sub">「这台」就是 mpx ui 正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销请在终端 <code>mpx device revoke &lt;id&gt;</code>。</div></div>`;
+        <div class="row sub">「这台」就是 mpx ui 正在用的设备,界面里不让吊销它,免得把自己踢下线;要吊销请在终端 <code>mpx device revoke &lt;id&gt;</code>。</div></div>
+        ${PW || PWOFF ? devicePasswordCard(PW, PWOFF) : ""}`;
     }
     return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥,打包成一个归档。里面有全部用户的订阅 token,妥善保管。等价于 <code>mpx backup</code>。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
       <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">恢复会整库替换、要重启控制面,只在终端里做,界面里不提供。</p><div class="cmd">mpx restore mpx-backup.tar.gz</div></div></div>`;
   },
   after(d, r) {
+    if (!d) return;
+    const dpw = $("#dpw-form");
+    if (dpw) {
+      dpw.addEventListener("submit", async e => {
+        e.preventDefault();
+        const pw = $("#dpw1").value, again = $("#dpw2").value, revoke = $("#dpw-revoke").checked;
+        const err = [];
+        if ([...pw].length < 12) err.push("设备密码至少 12 个字符");
+        if (pw !== again) err.push("两次输入不一致");
+        $("#dpw-err").textContent = err.join("\n");
+        if (err.length) return;
+        const btn = $("#dpw-save"); btn.disabled = true; btn.classList.add("busy");
+        try {
+          const res = await api("/api/device-password", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw, revoke_all: revoke }) });
+          toast(revoke ? `设备密码已更新,吊销了 ${(res && res.revoked) || 0} 台设备(这台也要重新接入)` : "设备密码已更新;已接入的设备不受影响");
+          $("#dpw1").value = ""; $("#dpw2").value = ""; $("#dpw-revoke").checked = false;
+          afterWrite();
+        } catch (e2) { $("#dpw-err").textContent = e2.message; }
+        btn.disabled = false; btn.classList.remove("busy");
+      });
+    }
     const form = $("#set-form");
-    if (!form || !d) return;
+    if (!form) return;
     form.addEventListener("submit", async e => {
       e.preventDefault();
       const fd = new FormData(form), err = [], vals = {};
@@ -83,6 +106,25 @@ PAGES.settings = {
     });
   },
 };
+
+/* ---- 设备密码 ---- */
+// 设备密码一节:新设备 mpx connect 时输入它。改密码不影响已接入的设备;勾上吊销
+// 会把所有设备(包括这台)踢下线;关闭则不再受理新设备接入。
+function devicePasswordCard(PW, PWOFF) {
+  return H`<form class="card pad18 mt" id="dpw-form" novalidate>
+    <b class="b6">设备密码</b><p class="sub mt6 mb14">新设备运行 <code>mpx connect</code> 时输入它,对应 <code>mpx device password</code>。改密码不影响已接入的设备。</p>
+    <div class="two">
+      <div class="field"><label for="dpw1">新密码</label><input class="in" id="dpw1" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}><span class="h">至少 12 个字符</span></div>
+      <div class="field"><label for="dpw2">再输一次</label><input class="in" id="dpw2" type="password" autocomplete="new-password" ${PW ? "" : raw("readonly")}></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="dpw-revoke" ${PW ? "" : raw("disabled")}> 同时吊销所有已接入设备(包括这台,之后要重新 mpx connect)</label>
+    <div class="err mt8" id="dpw-err" role="alert"></div>
+    <div class="flex8 end mt">
+      ${PWOFF ? H`<button type="button" class="btn danger" data-act="dpw-off">关闭设备密码接入</button>` : ""}
+      ${PW ? H`<button type="submit" class="btn pri" id="dpw-save">保存设备密码</button>` : ""}
+    </div>
+    <p class="sub mt8">关闭后新设备不能再接入,已接入的设备不受影响;要再开,在这里设一个新密码。</p></form>`;
+}
 
 /* ---- 模板 ---- */
 // 每种格式的真实含义,出自 internal/render 与 internal/server/templates.go。
@@ -196,6 +238,8 @@ Object.assign(ACTS, {
   "set-test": (d, b) => busy(b, async () => { await write("POST", "/api/settings/test-webhook", undefined, "测试通知已送到"); }),
   "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效,要再用得在那台机器上重新 mpx connect。", cmd: `mpx device revoke ${d.id}`, ok: "吊销", danger: true,
     run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
+  "dpw-off": () => confirmBox({ title: "关闭设备密码接入?", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开,在这里设一个新密码即可。", cmd: "mpx device password --disable", ok: "关闭设备密码接入", danger: true,
+    run: async () => { await write("DELETE", "/api/device-password", undefined, "已关闭设备密码接入;已接入的设备不受影响"); } }),
   "rule-add": () => confirmBox({ title: "加一条识别规则", text: "PATTERN 是 Go 正则,不区分大小写就以 (?i) 开头。顺序即优先级:宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
     extra: H`<div class="field"><label for="r-pat">User-Agent 正则</label><input class="in mono" id="r-pat" placeholder="(?i)karing" autocomplete="off"></div>
       <div class="two"><div class="field"><label for="r-res">命中后返回</label><select class="in" id="r-res">${RULE_RESULTS.map(x => H`<option>${x}</option>`)}</select></div>

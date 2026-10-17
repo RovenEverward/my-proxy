@@ -48,8 +48,10 @@ var uiAllow = []string{
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",
 	"POST /api/settings/test-webhook",
-	// 设备:device revoke
+	// 设备:device revoke;device password / --disable(设置页「设备密码」一节)
 	"DELETE /api/devices",
+	"PUT /api/device-password",
+	"DELETE /api/device-password",
 	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate;
 	// group add / edit / rm / preview
 	"PUT /api/rules",
@@ -107,8 +109,8 @@ var uiCmd = &cobra.Command{
 		}
 
 		setupMode := server == "" || uiFlags.setup
-		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{},
-			Relabel: relabelRunner{}, Session: session}
+		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Connect: connectRunner{},
+			Profiles: profilesRunner{}, Relabel: relabelRunner{}, Session: session}
 		if !setupMode {
 			up, err := url.Parse(server)
 			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {

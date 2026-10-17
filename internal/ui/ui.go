@@ -45,6 +45,9 @@ type Options struct {
 	Transport http.RoundTripper
 	// Setup 非空时启用 /local/setup/*;Upstream 为空时页面进入首次安装模式。
 	Setup SetupRunner
+	// Connect 非空时启用 /local/setup/connect*(setup 模式下接入已有控制面,等价
+	// mpx connect)。为 nil 时两个接口都 404。
+	Connect ConnectRunner
 	// Profiles 非空时启用 /local/profiles(列出)与 /local/profiles/use(切换)。
 	// 为 nil 时两个接口都 404。
 	Profiles ProfileSource

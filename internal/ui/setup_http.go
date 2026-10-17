@@ -13,6 +13,8 @@ const (
 	setupBodyMax    = 16 << 10 // 请求体上限 16KB
 	setupCheckLimit = 60 * time.Second
 	setupRunLimit   = 30 * time.Minute
+	connectProLimit = 30 * time.Second // 取指纹:一次 TLS 握手
+	connectLimit    = 60 * time.Second // 换 token + 写配置档
 )
 
 // serveSetup 处理 /local/setup*。调用前会话与来源已经校验过。
@@ -22,7 +24,8 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	want := http.MethodGet
-	if r.URL.Path == "/local/setup/check" || r.URL.Path == "/local/setup/run" {
+	if r.URL.Path == "/local/setup/check" || r.URL.Path == "/local/setup/run" ||
+		r.URL.Path == "/local/setup/connect" || r.URL.Path == "/local/setup/connect/probe" {
 		want = http.MethodPost
 	}
 	if r.Method != want {
@@ -36,6 +39,10 @@ func (s *Server) serveSetup(w http.ResponseWriter, r *http.Request) {
 		s.setupCheck(w, r)
 	case r.URL.Path == "/local/setup/run":
 		s.setupRun(w, r)
+	case r.URL.Path == "/local/setup/connect/probe":
+		s.setupConnectProbe(w, r)
+	case r.URL.Path == "/local/setup/connect":
+		s.setupConnect(w, r)
 	case strings.HasPrefix(r.URL.Path, "/local/setup/jobs/"):
 		s.setupJobStatus(w, r, strings.TrimPrefix(r.URL.Path, "/local/setup/jobs/"))
 	default:
@@ -186,4 +193,96 @@ func readSetupParams(w http.ResponseWriter, r *http.Request) (SetupParams, bool)
 		return p, false
 	}
 	return p, true
+}
+
+// setupMode 说「现在能不能走接入」:已经连着控制面(正常模式)时这两个接口都 409。
+func (s *Server) setupConnectOK(w http.ResponseWriter) bool {
+	if s.opts.Connect == nil {
+		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持接入控制面")
+		return false
+	}
+	s.mu.Lock()
+	proxy := s.proxy
+	s.mu.Unlock()
+	if proxy != nil {
+		writeError(w, http.StatusConflict, "已经接入控制面了;刷新页面进入管理界面")
+		return false
+	}
+	return true
+}
+
+// setupConnectProbe:POST /local/setup/connect/probe {addr} → {server, fingerprint}。
+// 指纹交页面上的人核对(TOFU),不在这里做任何判断。
+func (s *Server) setupConnectProbe(w http.ResponseWriter, r *http.Request) {
+	if !s.setupConnectOK(w) {
+		return
+	}
+	var body struct {
+		Addr string `json:"addr"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, setupBodyMax)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "请求体不是合法的 JSON")
+		return
+	}
+	if strings.TrimSpace(body.Addr) == "" {
+		writeError(w, http.StatusBadRequest, "请填写控制面地址")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), connectProLimit)
+	defer cancel()
+	server, fp, err := s.opts.Connect.Probe(ctx, body.Addr)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"server": server, "fingerprint": fp})
+}
+
+// setupConnect:POST /local/setup/connect {server, fingerprint, password, name}。
+// 成功即切到正常模式(等价装完向导的最后一步),返回 {ok:true, profile}。
+// 密码只在这一次请求里用,不回显、不进任何日志。
+func (s *Server) setupConnect(w http.ResponseWriter, r *http.Request) {
+	if !s.setupConnectOK(w) {
+		return
+	}
+	var body struct {
+		Server      string `json:"server"`
+		Fingerprint string `json:"fingerprint"`
+		Password    string `json:"password"`
+		Name        string `json:"name"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, setupBodyMax)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "请求体不是合法的 JSON")
+		return
+	}
+	switch {
+	case strings.TrimSpace(body.Server) == "":
+		writeError(w, http.StatusBadRequest, "缺少控制面地址,先取指纹")
+		return
+	case strings.TrimSpace(body.Fingerprint) == "":
+		writeError(w, http.StatusBadRequest, "缺少证书指纹,先取指纹并核对")
+		return
+	case body.Password == "":
+		writeError(w, http.StatusBadRequest, "请输入设备密码")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), connectLimit)
+	defer cancel()
+	res, err := s.opts.Connect.Connect(ctx, body.Server, body.Fingerprint, body.Password, body.Name)
+	body.Password = ""
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if res == nil || res.Upstream == nil || res.Upstream.Host == "" {
+		writeError(w, http.StatusBadGateway, "接入没有返回控制面地址")
+		return
+	}
+	s.setUpstream(res.Upstream, res.Token, res.Transport)
+	s.mu.Lock()
+	s.opts.Profile = res.Profile
+	s.mu.Unlock()
+	writeJSON(w, map[string]any{"ok": true, "profile": res.Profile})
 }
