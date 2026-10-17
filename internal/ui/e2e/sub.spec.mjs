@@ -180,7 +180,7 @@ test("用户可用节点按套餐和额外授权合并，排除排水与满员�
   ];
   const nodes = [
     { id: 1, name: "full", display: "已满 A" }, { id: 2, name: "draining", display: "排水 A", draining: true },
-    { id: 3, name: "extra", display: "东京 A" }, { id: 4, name: "other", display: "其他 A" },
+    { id: 3, name: "extra", display: "🇯🇵 东京 A" }, { id: 4, name: "other", display: "其他 A" },
   ];
   const inbounds = [1, 2, 3, 4].map(id => ({ id, node_id: id, protocol: "vless", security: "reality", max_users: id === 1 ? 2 : 0 }));
   await page.route("**/api/users?*", r => r.fulfill({ json: { users, total: users.length } }));
@@ -191,7 +191,110 @@ test("用户可用节点按套餐和额外授权合并，排除排水与满员�
   await open(page);
   await expect(page.locator(".pv-node")).toContainText("东京 A");
   await expect(page.locator(".pv-node")).toContainText("VLESS");
+  // 节点名里的地区旗帜走 .flag-w/.flag 的矩形 SVG,节点名旁边没有自绘的地区点。
+  await expect(page.locator(".pv-node .flag-w img.flag")).toHaveAttribute("src", "/flags/jp.svg");
+  await expect(page.locator(".pv-node .dot")).toHaveCount(0);
+  expect(await page.evaluate(() => document.querySelector(".pv-node").innerText)).not.toMatch(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
   await expect(page.locator(".pv-m")).toContainText("1.0 KB / 2.0 KB");
   await page.selectOption("#pv-user", "bob");
   await expect(page.locator(".pv-node")).toContainText("其他 A");
+});
+
+test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) => {
+  await open(page);
+  await page.fill("#f-title", "改过的名字 {USERNAME}");
+  await page.fill("#f-int", "48");
+  await expect(page.locator("#sb")).toContainText("有 2 处改动");
+  const items = await page.locator("#sb .s5-bar-t .sub").textContent();
+  expect(items).toContain("订阅名");
+  expect(items).toContain("刷新间隔");
+  await page.click("[data-act=s5-discard]");
+  await expect(page.locator("#sb")).toBeEmpty();
+  await expect(page.locator(".toast")).toContainText("已放弃改动");
+  await page.locator(".toast .toast-act").click();
+  await expect(page.locator("#sb")).toContainText("有 2 处改动");
+  await expect(page.locator("#sb .s5-bar-t .sub")).toHaveText(items);
+  await expect(page.locator("#f-title")).toHaveValue("改过的名字 {USERNAME}");
+  await expect(page.locator("#f-int")).toHaveValue("48");
+});
+
+test("有改动离开订阅页弹应用内对话框，可留下、不保存、保存并离开", async ({ page }) => {
+  const native = [];
+  page.on("dialog", d => { native.push(d.type()); d.dismiss().catch(() => {}); });
+  const puts = [];
+  page.on("request", r => { if (r.method() === "PUT" && r.url().endsWith("/api/settings")) puts.push(r.postDataJSON()); });
+  await open(page);
+  await page.fill("#f-title", "别丢了 {USERNAME}");
+  await expect(page.locator("#sb")).toContainText("有 1 处改动");
+
+  // 点侧栏「节点」:地址被拦回 #sub,弹应用内对话框,不是原生弹窗。
+  await page.click('.side a.nav[href="#nodes"]');
+  await expect(page.locator("#modal.open h2")).toContainText("有 1 处改动还没保存");
+  await expect(page.locator("#modal.open")).toContainText("订阅名");
+  expect(native).toEqual([]);
+  await expect(page).toHaveURL(/#sub$/);
+
+  // 留下:关对话框,还在订阅页,草稿还在。
+  await page.getByRole("button", { name: "留下" }).click();
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await expect(page).toHaveURL(/#sub$/);
+  await expect(page.locator("#sb")).toContainText("有 1 处改动");
+  await expect(page.locator("#f-title")).toHaveValue("别丢了 {USERNAME}");
+
+  // 不保存:丢掉草稿到节点页;回到订阅页没有保存条。
+  await page.click('.side a.nav[href="#nodes"]');
+  await expect(page.locator("#modal.open h2")).toContainText("有 1 处改动还没保存");
+  await page.getByRole("button", { name: "不保存" }).click();
+  await expect(page).toHaveURL(/#nodes$/);
+  await page.click('.side a.nav[href="#sub"]');
+  await expect(page.locator("#f-title")).toBeVisible();
+  await expect(page.locator("#sb")).toBeEmpty();
+
+  // 保存并离开:发出 PUT,到达目标页,控制面已保存。
+  await page.fill("#f-title", "这次保存 {USERNAME}");
+  await page.click('.side a.nav[href="#nodes"]');
+  await expect(page.locator("#modal.open h2")).toContainText("有 1 处改动还没保存");
+  await page.getByRole("button", { name: "保存并离开" }).click();
+  await expect(page).toHaveURL(/#nodes$/);
+  await expect.poll(async () => (await settings()).profile_title).toBe("这次保存 {USERNAME}");
+  expect(puts.length).toBeGreaterThan(0);
+  expect(puts[puts.length - 1].profile_title).toBe("这次保存 {USERNAME}");
+  expect(native).toEqual([]);
+});
+
+test("同页锚点 #sub/clients 不算离开，不弹对话框", async ({ page }) => {
+  const native = [];
+  page.on("dialog", d => { native.push(d.type()); d.dismiss().catch(() => {}); });
+  await open(page);
+  await page.fill("#f-title", "保持 {USERNAME}");
+  await page.evaluate(() => { location.hash = "sub/clients"; });
+  await expect(page).toHaveURL(/#sub\/clients$/);
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await expect(page.locator("#sb")).toContainText("有 1 处改动");
+  expect(native).toEqual([]);
+});
+
+test("规则抽屉 UA 试用提示与黑白焦点环", async ({ page }) => {
+  await open(page);
+  await page.click("[data-act=s5-rules]");
+  await expect(page.locator("#rd-ua")).toBeVisible();
+  await expect(page.locator("#rd-ruling")).toHaveCount(0);
+  await page.fill("#rd-ua", "clash-verge/v2.0.3");
+  await expect(page.locator("#rd-ruling")).toHaveText("实际以控制面判断为准");
+  await page.focus("#rd-ua");
+  const ring = await page.locator("#rd-ua").evaluate(e => { const s = getComputedStyle(e); return [s.outlineColor, s.boxShadow]; });
+  expect(ring[0]).toBe("rgb(17, 17, 17)");
+  expect(ring[1]).toBe("none");
+});
+
+test("底稿抽屉「语法正确」用墨色不是绿色", async ({ page }) => {
+  await open(page, "sub/templates");
+  await page.click(".zr-tpl");
+  await expect(page.locator("#tpl-ok")).toContainText("语法正确", { timeout: 10000 });
+  const color = await page.locator("#tpl-ok span").evaluate(e => getComputedStyle(e).color);
+  const m = /rgb\((\d+), (\d+), (\d+)\)/.exec(color);
+  expect(m).not.toBeNull();
+  const [r, g, b] = m.slice(1).map(Number);
+  expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThan(16);
+  expect(Math.max(r, g, b)).toBeLessThan(64);
 });

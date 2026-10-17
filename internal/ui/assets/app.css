@@ -164,6 +164,8 @@ textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:12.5px;li
 .u-link{text-decoration:underline;text-underline-offset:2px}
 a.row{color:inherit}
 .toast.bad{background:var(--bad);color:#fff}
+.toast-act{border:0;background:none;color:inherit;font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;padding:0}
+.toast-act:hover{opacity:.8}
 .toast svg{width:14px;height:14px}
 .ro svg{width:12px;height:12px}
 .ell{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -225,7 +227,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 /* 模板页 + 代码编辑器 */
 :root{--t-k:#0b57d0;--t-s:#067d4a;--t-n:#b4530a;--t-b:#8a3ffc;--t-c:#8b8d94}
 [data-theme=dark]{--t-k:#7cacf8;--t-s:#6dd39e;--t-n:#f0a868;--t-b:#c4a5ff;--t-c:#6b6e76}
-.c-ok{color:var(--ok)}.mt4{margin-top:4px}.c-ok svg,.c-bad svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+.c-ok{color:var(--ok)}.mt4{margin-top:4px}.c-ok svg,.c-bad svg,.c-ink svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .fi{flex:none;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:var(--stone);color:var(--ink2)}.fi svg{width:16px;height:16px}.fi.lg{width:38px;height:38px;border-radius:10px}.fi.lg svg{width:19px;height:19px}
 .tpl-intro .u{align-items:flex-start}.tpl-intro p{margin-bottom:0;max-width:760px;line-height:1.6}
 .tpl-t td{white-space:normal}.tpl-t td:first-child{min-width:260px}.tpl-how{max-width:520px;line-height:1.5;margin-top:2px}
@@ -595,6 +597,8 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .s5-bar-t{display:flex;align-items:baseline;gap:10px;min-width:0;flex:0 1 auto}.s5-bar-t b{font-weight:600;white-space:nowrap}
 .s5-bar .sp{flex:1}
 .s5-bar-err{color:var(--bad);font-size:12.5px;min-width:0}
+/* 离开确认:列出还没保存的改动项 */
+.s5-leave-list{margin:0 0 6px;padding-left:20px;color:var(--ink2);font-size:12.5px}.s5-leave-list li{margin:2px 0}
 @keyframes s5up{from{transform:translateY(8px);opacity:0}}
 
 /* 规则抽屉 */
@@ -602,6 +606,9 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .rd-test{padding:12px 14px;border-radius:10px;background:var(--panel);margin:0}
 .rd-test label{display:flex;align-items:center;gap:6px}.rd-test label svg{width:14px;height:14px}
 .rd-test .in{background:var(--canvas)}.rd-test .h b{color:var(--ink);font-weight:600}
+/* 「试一个客户端」的输入框走和下拉一样的黑白焦点环,不用蓝色。 */
+.rd-test .in:focus,.rd-test .in:focus-visible{outline:2px solid #111;outline-offset:0;box-shadow:none}
+[data-theme=dark] .rd-test .in:focus,[data-theme=dark] .rd-test .in:focus-visible{outline-color:#f2f2f2}
 .rd-list{display:grid}
 .rd-row{display:grid;grid-template-columns:24px minmax(0,1fr) 16px 168px auto;align-items:start;gap:10px;padding:8px;border-radius:9px}
 .rd-list>.rd-row:nth-child(odd){background:var(--panel)}

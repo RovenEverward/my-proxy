@@ -205,7 +205,7 @@ async function templateDrawer(f) {
     $("#tpl-size").textContent = `${tplLines(v)} 行 · ${tplSize(tplBytes(v))}`;
     $("#tpl-dirty").textContent = dirty ? "● 未保存" : "";
     if ($("#tpl-revert")) $("#tpl-revert").disabled = !dirty;
-    clearTimeout(t); t = setTimeout(() => { const r = validateTpl(f, ed.value); $("#tpl-ok").innerHTML = val(r ? H`<span class="c-bad">${ic("warn", "sm")}有错误</span>` : H`<span class="c-ok">${ic("check", "sm")}语法正确</span>`); if (save) save.disabled = !dirty || !!r; showErr(r, false, false); }, 400);
+    clearTimeout(t); t = setTimeout(() => { const r = validateTpl(f, ed.value); $("#tpl-ok").innerHTML = val(r ? H`<span class="c-bad">${ic("warn", "sm")}有错误</span>` : H`<span class="c-ink">${ic("check", "sm")}语法正确</span>`); if (save) save.disabled = !dirty || !!r; showErr(r, false, false); }, 400);
   };
   const ed = codeEditor($("#tpl-ed"), { text, lang: m.lang, readOnly: !W, onChange: status });
   status();
@@ -269,9 +269,11 @@ const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.lengt
 const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
 const clone = v => JSON.parse(JSON.stringify(v));
 
-let SUB = null;          // { orig, draft, err, saving, pv }
+let SUB = null;          // { orig, draft, err, saving, pv, leaveTarget }
 let RD = null;           // 规则抽屉里的草稿 { rules, ua }
 let ADV_OPEN = false;
+// 应用内对话框自己收:不碰抽屉,和 modal-cancel 行为一致。
+const subCloseModal = () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); };
 
 const FIELDS = [["sub_url_prefix", "订阅地址"], ["profile_title", "订阅名"], ["update_interval", "刷新间隔"], ["support_link", "支持链接"]];
 function changes() {
@@ -387,6 +389,45 @@ function refresh() {
   const sb = $("#sb"); if (sb) sb.innerHTML = val(saveBar());
 }
 
+/* ---- 保存 ---- */
+// saveSub 是保存条和「保存并离开」共用的那段:校验、先读后写、失败把错误留在保存条。
+// 成功返回 true(页面随后会自己重载);失败返回 false。
+async function saveSub() {
+  if (!can("PUT", "/api/settings") || SUB.saving || !changes().length) return false;
+  const d = SUB.draft, errors = {};
+  if (d.sub_url_prefix && !/^https?:\/\//.test(d.sub_url_prefix)) errors.sub_url_prefix = "订阅地址要以 http:// 或 https:// 开头";
+  if (!/^\d+$/.test(String(d.update_interval)) || !Number.isSafeInteger(+d.update_interval)) errors.update_interval = "刷新间隔要是非负整数";
+  SUB.fieldErrors = errors;
+  if (Object.keys(errors).length) { SUB.err = Object.values(errors).join("；"); refresh(); return false; }
+  SUB.saving = true; SUB.err = ""; refresh();
+  const ks = FIELDS.map(x => x[0]).filter(k => String(d[k] ?? "") !== String(SUB.orig[k] ?? ""));
+  const rules = !sameRules(d.rules, SUB.orig.rules), n = changes().length;
+  try {
+    await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
+    SUB = null; toast(`已保存 ${n} 处改动`); await load(true, true);
+    return true;
+  } catch (e) {
+    SUB.saving = false;
+    if (e.status === 400 && e.message.includes("订阅地址")) SUB.fieldErrors.sub_url_prefix = e.message;
+    SUB.err = `没保存上：${e.message.replace(/[。.]$/, "")}。改动还在，可以再点一次保存。`; refresh();
+    return false;
+  }
+}
+
+// 离开确认:有未保存改动去别的页时,拦下来弹应用内对话框;同页锚点(#sub/clients 等)不算离开。
+function subLeaveModal(target) {
+  const c = changes();
+  SUB.leaveTarget = target;
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>有 ${c.length} 处改动还没保存</h2>
+    <p>离开「订阅」页这些改动就会丢：</p>
+    <ul class="s5-leave-list">${c.map(x => H`<li>${x}</li>`)}</ul>
+    <div class="err" id="modal-err" role="alert"></div></div>
+    <div class="mf"><button class="btn" data-act="sub-leave-stay">留下</button><button class="btn" data-act="sub-leave-drop">不保存</button><button class="btn pri" id="sub-leave-ok" data-act="sub-leave-save">保存并离开</button></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  setTimeout(() => $("#sub-leave-ok")?.focus(), 50);
+}
+
 PAGES.sub = {
   title: "订阅",
   crumb: () => H`<b>订阅</b>`,
@@ -407,7 +448,7 @@ PAGES.sub = {
     const head = H`<div class="ph"><div><h1>订阅</h1><p>用户拿到的链接、客户端里的显示，和不同客户端拿到的格式</p></div></div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
-    if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0 };
+    if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0, leaveTarget: null };
     // 刷新不丢草稿，已经打开的底稿与用户数据仍取最新值。
     Object.assign(SUB, { builtin: d.builtin, users: d.users, preview: d.preview });
     const W = can("PUT", "/api/settings");
@@ -424,6 +465,11 @@ PAGES.sub = {
       SUB.draft[k] = v; SUB.err = ""; SUB.fieldErrors = {}; refresh();
     });
   },
+  canLeave(nextKey) {
+    if (!SUB || !changes().length || String(nextKey || "").split("/")[0] === "sub") return true;
+    subLeaveModal(nextKey);
+    return false;
+  },
 };
 
 /* ---- 「自定义规则」抽屉 ---- */
@@ -431,7 +477,7 @@ function rulesBody() {
   const R = RD.rules, h = hit(R, RD.ua);
   return H`<div class="field rd-test"><label for="rd-ua">${ic("flask")}试一个客户端</label>
       <input class="in mono" id="rd-ua" value="${RD.ua}" placeholder="粘贴 User-Agent，比如 clash-verge/v2.0.3" autocomplete="off" spellcheck="false">
-      <span class="h" id="rd-hit">${RD.ua ? (h < R.length ? H`命中第 <b>${h + 1}</b> 条，拿到 <b>${FMT[R[h].result]?.[0] || R[h].result}</b>。` : H`一条都没命中，拿到 <b>节点链接</b>。`) : "看看它会命中哪一条。"}</span></div>
+      <span class="h" id="rd-hit">${RD.ua ? (h < R.length ? H`命中第 <b>${h + 1}</b> 条，拿到 <b>${FMT[R[h].result]?.[0] || R[h].result}</b>。` : H`一条都没命中，拿到 <b>节点链接</b>。`) : "看看它会命中哪一条。"}</span>${RD.ua ? H`<span class="sub" id="rd-ruling">实际以控制面判断为准</span>` : ""}</div>
     <div class="rd-list">${R.map((r, i) => { const e = reErr(r.pattern);
       return H`<div class="rd-row ${i === h ? "hit" : ""} ${RD.focus === i ? "focus" : ""}" data-i="${i}"><span class="zr-n">${i + 1}</span>
         <div class="rd-main"><input class="in mono" data-rp="${i}" value="${r.pattern}" aria-label="第 ${i + 1} 条的 User-Agent 正则" spellcheck="false">
@@ -472,26 +518,17 @@ Object.assign(ACTS, {
     }
   },
   "s5-rules": d => { if (can("PUT", "/api/settings") && !SUB.saving) rulesDrawer(d.i != null ? +d.i : undefined); },
-  "s5-discard": () => { if (SUB.saving) return; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; paint(); },
-  "s5-save": async () => {
-    if (!can("PUT", "/api/settings") || SUB.saving || !changes().length) return;
-    const d = SUB.draft, errors = {};
-    if (d.sub_url_prefix && !/^https?:\/\//.test(d.sub_url_prefix)) errors.sub_url_prefix = "订阅地址要以 http:// 或 https:// 开头";
-    if (!/^\d+$/.test(String(d.update_interval)) || !Number.isSafeInteger(+d.update_interval)) errors.update_interval = "刷新间隔要是非负整数";
-    SUB.fieldErrors = errors;
-    if (Object.keys(errors).length) { SUB.err = Object.values(errors).join("；"); refresh(); return; }
-    SUB.saving = true; SUB.err = ""; refresh();
-    const ks = FIELDS.map(x => x[0]).filter(k => String(d[k] ?? "") !== String(SUB.orig[k] ?? ""));
-    const rules = !sameRules(d.rules, SUB.orig.rules), n = changes().length;
-    try {
-      await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
-      SUB = null; toast(`已保存 ${n} 处改动`); await load(true, true);
-    } catch (e) {
-      SUB.saving = false;
-      if (e.status === 400 && e.message.includes("订阅地址")) SUB.fieldErrors.sub_url_prefix = e.message;
-      SUB.err = `没保存上：${e.message.replace(/[。.]$/, "")}。改动还在，可以再点一次保存。`; refresh();
-    }
+  "s5-discard": () => {
+    if (!SUB || SUB.saving) return;
+    const dropped = clone(SUB.draft);
+    SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; paint();
+    toast("已放弃改动", false, { label: "撤销", run: () => { SUB.draft = dropped; SUB.err = ""; SUB.fieldErrors = {}; paint(); } });
   },
+  "s5-save": () => saveSub(),
+  // 离开确认的三个选择:留下(地址已由 hashchange 守卫换回)、不保存直接走、保存成功再走。
+  "sub-leave-stay": () => subCloseModal(),
+  "sub-leave-drop": () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; if (t) location.hash = t; else paint(); },
+  "sub-leave-save": async () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; if (await saveSub() && t) location.hash = t; },
   "rd-mv": d => { const i = +d.i, to = +d.to; const [x] = RD.rules.splice(i, 1); RD.rules.splice(to, 0, x); rdPaint(); },
   "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },
   "rd-add": () => { RD.rules.push({ pattern: "(?i)", result: "clash-meta" }); rdPaint(); const els = document.querySelectorAll("[data-rp]"); const el = els[els.length - 1]; el.focus(); el.setSelectionRange(4, 4); },
@@ -512,7 +549,7 @@ function subTemplates() {
   return Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
 }
 async function subPreview(u, data) {
-  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "东京 A", proto: "VLESS · Reality", more: 3 };
+  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3 };
   const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0 };
   try { const links = await api(userPath(u.username) + "/links"); out.token = (links.auto || "").split("/sub/")[1] || ""; }
   catch (e) { toast(e.message, true); }

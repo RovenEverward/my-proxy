@@ -143,7 +143,7 @@ const PAGES = {};
 let META = { server: "", profile: "", allow: ["GET /api"] };
 // 页面只在转发层放行时才显示写操作(放行规则见 internal/cli/ui.go)。
 const can = (method, path) => META.allow.some(a => { const [m, p] = a.split(" "); return m === method && (path === p || path.startsWith(p.replace(/\/$/, "") + "/")); });
-let route = [], current = { page: null, data: null, error: null, loading: true, at: null };
+let route = [], here = "overview", current = { page: null, data: null, error: null, loading: true, at: null };
 
 /* ---------- 更新 pill ---------- */
 // GET /local/update 的最近一次结论;null 表示还没问过。弹窗读它,不重复请求。
@@ -640,7 +640,22 @@ function closeOverlays() {
   updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
 }
-function toast(text, bad) { document.querySelector(".toast")?.remove(); const e = document.createElement("div"); e.className = "toast" + (bad ? " bad" : ""); e.setAttribute("role", "status"); e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`); document.body.append(e); setTimeout(() => e.remove(), bad ? 6000 : 2600); }
+// action:{ label, run } 给 toast 加一个按钮(比如「放弃」后的「撤销」);有按钮时多停一会儿。
+function toast(text, bad, action) {
+  document.querySelector(".toast")?.remove();
+  const e = document.createElement("div");
+  e.className = "toast" + (bad ? " bad" : "");
+  e.setAttribute("role", "status");
+  e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`);
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-act"; b.textContent = action.label;
+    b.addEventListener("click", () => { e.remove(); try { action.run(); } catch { /* 按钮自己的事,报错也不影响页面 */ } });
+    e.append(b);
+  }
+  document.body.append(e);
+  setTimeout(() => e.remove(), bad || action ? 6000 : 2600);
+}
 
 // 写操作:发出请求、成功后提示并刷新当前页;失败把控制面原话报出来。
 async function write(method, path, body, okText) {
@@ -748,6 +763,7 @@ async function load(soft, force) {
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
   route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
+  here = route[0] === "overview" ? "overview" : key;
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
   // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
@@ -840,8 +856,17 @@ document.addEventListener("visibilitychange", () => {
 });
 // 换到别的页(侧栏、浏览器后退、页面里的链接)时把抽屉和确认框收起来,不然上一页的抽屉
 // 会盖在新页面上。同一页里换子路由(如 #users/alice)不动,由各页自己开关抽屉。
-addEventListener("hashchange", () => {
-  if (routeOf(migrateKey(location.hash.slice(1) || "overview"))[0] !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
+// 页面可以实现 canLeave(nextKey):返回 false 表示有未保存的改动不放行,由页面自己弹
+// 应用内对话框;这里把地址改回当前页(replaceState 不触发新的 hashchange),也不加载新页。
+addEventListener("hashchange", async () => {
+  const nextKey = migrateKey(location.hash.slice(1) || "overview");
+  const p = PAGES[route[0]];
+  if (p?.canLeave) {
+    let ok = true;
+    try { ok = await p.canLeave(nextKey); } catch { ok = true; }
+    if (!ok) { history.replaceState(null, "", "#" + here); return; }
+  }
+  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
