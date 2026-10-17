@@ -534,3 +534,4 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .cl-done>svg{width:15px;height:15px;color:var(--ink)}.cl-done b{color:var(--ink);font-weight:580}
 .cl-done .ib{width:30px;height:30px}
 @media (max-width:760px){.ck{grid-template-columns:28px minmax(0,1fr)}.ck-a{grid-column:2;justify-content:flex-start}}
+.doc-d [data-act=doc-apply]{margin-left:10px;vertical-align:baseline}
