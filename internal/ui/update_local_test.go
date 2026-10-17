@@ -1,12 +1,19 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 )
 
 // updateRig 起一个假控制面(按 /api/update、/api/status 给不同响应)与一个正常的
@@ -193,6 +200,175 @@ func TestLocalUpdateControlNoUpstream(t *testing.T) {
 	}
 	if w := doJSON(s, http.MethodPost, "/local/update/control", c, "{}"); w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("没有控制面应 503,得到 %d %s", w.Code, w.Body)
+	}
+}
+
+// cliUpdateCall 记下一次 CLIUpdated 回调收到的参数。
+type cliUpdateCall struct {
+	from, to string
+	started  time.Time
+	err      error
+}
+
+// withCLIUpdatedRig 起一个带 CLIUpdated 回调的 ui.Server,回调把每次调用送进
+// 返回的通道。控制面只用来完成会话登录,不参与本机升级。
+func withCLIUpdatedRig(t *testing.T) (*Server, *http.Cookie, <-chan cliUpdateCall) {
+	t.Helper()
+	called := make(chan cliUpdateCall, 4)
+	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	t.Cleanup(cp.Close)
+	up, _ := url.Parse(cp.URL)
+	s, err := New("127.0.0.1:7480", Options{
+		Upstream: up, Token: "secret-token", Allow: []string{"GET /api"},
+		CLIUpdated: func(from, to string, started time.Time, err error) {
+			called <- cliUpdateCall{from: from, to: to, started: started, err: err}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := do(s, "GET", "/?k="+s.Key(), nil)
+	var c *http.Cookie
+	for _, x := range w.Result().Cookies() {
+		c = x
+	}
+	if c == nil {
+		t.Fatal("没拿到会话 cookie")
+	}
+	return s, c, called
+}
+
+// withFakeCLIRelease 把发布件来源指向假服务器、可执行文件指向临时目录里的一份,
+// 让 /local/update/cli 真的走完下载与替换。返回假服务器地址。
+func withFakeCLIRelease(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("本机自更新测试用的是 shell 脚本,只在类 unix 上跑")
+	}
+	archive := tarGzWithMPX(t, "#!/bin/sh\necho mpx v0.6.5\n")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			_, _ = w.Write([]byte(`{"tag_name":"v0.6.5"}`))
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+			// 旧发布没有清单:走"未校验也继续"的分支。
+			http.NotFound(w, r)
+		default:
+			_, _ = w.Write(archive)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	exe := filepath.Join(t.TempDir(), "mpx")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho mpx v0.6.4\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldSrc, oldExe := updateSource, selfExecutable
+	updateSource = func() selfupdate.Source {
+		return selfupdate.Source{Repo: "test/mpx", APIBase: srv.URL, DownloadBase: srv.URL}
+	}
+	selfExecutable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { updateSource, selfExecutable = oldSrc, oldExe })
+	return srv.URL
+}
+
+// 页面发起本机升级成功后,CLIUpdated 要拿到 from/to/开始时间,且 err 为 nil ——
+// cli 侧靠它写 update.json,mpx update show 才看得到这次升级。
+func TestLocalUpdateCLIReportsSuccess(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	withFakeCLIRelease(t)
+	s, c, called := withCLIUpdatedRig(t)
+
+	w := doJSON(s, http.MethodPost, "/local/update/cli", c, `{}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("升级成功应 200,得到 %d %s", w.Code, w.Body)
+	}
+	select {
+	case call := <-called:
+		if call.from != "v0.6.4" || call.to != "v0.6.5" {
+			t.Errorf("回调的版本 = %s → %s, 想要 v0.6.4 → v0.6.5", call.from, call.to)
+		}
+		if call.err != nil {
+			t.Errorf("成功时 err 应为 nil,得到 %v", call.err)
+		}
+		if call.started.IsZero() {
+			t.Error("回调没带上开始时间")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("升级成功了却没调用 CLIUpdated")
+	}
+}
+
+// 下载失败时同样要回调,把失败原因带过去:update.json 里记 failed 而不是悄悄不记。
+func TestLocalUpdateCLIReportsFailure(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 问最新版就失败。
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	oldSrc := updateSource
+	updateSource = func() selfupdate.Source {
+		return selfupdate.Source{Repo: "test/mpx", APIBase: srv.URL, DownloadBase: srv.URL}
+	}
+	t.Cleanup(func() { updateSource = oldSrc })
+	s, c, called := withCLIUpdatedRig(t)
+
+	// 显式版本 + 假可执行文件:让流程走到下载那一步再失败。
+	exe := filepath.Join(t.TempDir(), "mpx")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldExe := selfExecutable
+	selfExecutable = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { selfExecutable = oldExe })
+
+	w := doJSON(s, http.MethodPost, "/local/update/cli", c, `{"version":"v0.6.5"}`)
+	if w.Code == http.StatusOK {
+		t.Fatalf("下载失败不该回 200: %s", w.Body)
+	}
+	select {
+	case call := <-called:
+		if call.from != "v0.6.4" || call.to != "v0.6.5" {
+			t.Errorf("回调的版本 = %s → %s, 想要 v0.6.4 → v0.6.5", call.from, call.to)
+		}
+		if call.err == nil {
+			t.Error("失败时应把错误带给回调")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("升级失败了却没调用 CLIUpdated")
+	}
+}
+
+// 已是最新时没换二进制,不算一次升级尝试,不该写状态。
+func TestLocalUpdateCLIAlreadyLatestDoesNotReport(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	s, c, called := withCLIUpdatedRig(t)
+
+	w := doJSON(s, http.MethodPost, "/local/update/cli", c, `{"version":"v0.6.4"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("已是最新应 200,得到 %d %s", w.Code, w.Body)
+	}
+	select {
+	case call := <-called:
+		t.Fatalf("没升级却回调了: %+v", call)
+	default:
+	}
+}
+
+// applyCLIUpdate 的早退路径:目标版本比当前旧、又不允许降级时,在下载之前就失败,
+// 不回调 —— 那不是一次升级尝试,不该覆盖掉 update.json 里上一次的结果。
+func TestApplyCLIUpdateRejectedBeforeDownloadNoCallback(t *testing.T) {
+	withLocalVersion(t, "v0.6.4")
+	s, _, called := withCLIUpdatedRig(t)
+	_, _, changed, _, code, err := s.applyCLIUpdate(context.Background(), "v0.6.3")
+	if err == nil || changed || code != http.StatusBadRequest {
+		t.Fatalf("降级应被拒: changed=%v code=%d err=%v", changed, code, err)
+	}
+	select {
+	case call := <-called:
+		t.Fatalf("还没开始下载就失败,不该回调: %+v", call)
+	default:
 	}
 }
 

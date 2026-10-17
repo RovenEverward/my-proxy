@@ -189,7 +189,7 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), updateInstallTimeout)
 	defer cancel()
 
-	from, to, changed, _, code, err := applyCLIUpdate(ctx, body.Version)
+	from, to, changed, _, code, err := s.applyCLIUpdate(ctx, body.Version)
 	if err != nil {
 		writeError(w, code, err.Error())
 		return
@@ -210,7 +210,11 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 // 这次实际写入的新二进制路径(升级前问到的目标路径,已去掉可能的 .prev 后缀),一键
 // 更新拿它去重启,免得重启时 os.Executable() 指到刚改名的 <exe>.prev。出错时 code
 // 是该回给页面的 HTTP 状态码,与 updateCLI 原来的口径一一对应。
-func applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
+//
+// 真正动手(开始下载)之后的成功与失败都会通过 Options.CLIUpdated 记一笔,让
+// mpx update show 能看到页面发起的这次升级;还没开始下载就失败的(版本号不合法、
+// 问不到最新版)不算一次升级尝试,不记。
+func (s *Server) applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
 	current := updateLocalVersion()
 	target := strings.TrimSpace(version)
 	explicit := target != ""
@@ -238,18 +242,31 @@ func applyCLIUpdate(ctx context.Context, version string) (from, to string, chang
 	// 升级前问到的就是新二进制的目标路径;万一已经是改名后的 .prev(重复升级或
 	// 别的调用时机),兜底去掉后缀,保证写入与重启都落在真正的新二进制上。
 	path = stripPrevSuffix(path)
+	started := time.Now()
 	bin, _, ferr := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
 	if ferr != nil {
+		s.noteCLIUpdate(current, target, started, ferr)
 		return current, target, false, path, http.StatusBadGateway, ferr
 	}
 	if ierr := selfupdate.Install(path, bin, target); ierr != nil {
+		s.noteCLIUpdate(current, target, started, ierr)
 		ic := http.StatusInternalServerError
 		if errors.Is(ierr, selfupdate.ErrNeedSudo) {
 			ic = http.StatusForbidden
 		}
 		return current, target, false, path, ic, ierr
 	}
+	s.noteCLIUpdate(current, target, started, nil)
 	return current, target, true, path, 0, nil
+}
+
+// noteCLIUpdate 把一次本机 CLI 升级的结果交给 cli 侧的回调去落 update.json。
+// 回调为空时什么也不做 —— 这是 ui 包不认识 cli 包的地方。
+func (s *Server) noteCLIUpdate(from, to string, started time.Time, err error) {
+	if s.opts.CLIUpdated == nil {
+		return
+	}
+	s.opts.CLIUpdated(from, to, started, err)
 }
 
 // updateControl:POST /local/update/control,把请求原样转给控制面。

@@ -211,7 +211,7 @@ func (s *Server) upgradeNodeCore(ctx context.Context, n model.Node, row model.Up
 // 发生(见 node.UpgradeXray)。已经是推荐版本就记一条 skip,连摘要都不去取。
 func (s *Server) upgradeNodeXray(ctx context.Context, n model.Node, row model.UpdateNodeCore) error {
 	target := xrayrelease.RecommendedVersion
-	from := row.Current
+	from := s.liveCoreVersion(ctx, n, row.Current, xrayVersion)
 	if sameCoreVersion(from, target) {
 		s.addNodeUpdateEvent(row, "skip", from, target, "已是目标版本")
 		return nil
@@ -246,7 +246,7 @@ func (s *Server) upgradeNodeXray(ctx context.Context, n model.Node, row model.Up
 // 已经是钉死版本就 skip;先把这句话写回来,省掉一次编译与推送。
 func (s *Server) upgradeNodeSingBox(ctx context.Context, n model.Node, row model.UpdateNodeCore) error {
 	target := singboxbuild.DefaultVersion
-	from := row.Current
+	from := s.liveCoreVersion(ctx, n, row.Current, singBoxVersion)
 	if sameCoreVersion(from, target) {
 		s.addNodeUpdateEvent(row, "skip", from, target, "已是目标版本")
 		return nil
@@ -297,6 +297,27 @@ func (s *Server) defaultUpgradeXray(ctx context.Context, n model.Node, version, 
 		return node.UpgradeResult{}, errNoNodeUpgrader
 	}
 	return up.UpgradeXray(ctx, n, version, assetURL, sha256)
+}
+
+// liveCoreVersion 在升级前现场问一次节点,取这个核心此刻报的版本;问不到就退回
+// 缓存里的 cached。
+//
+// 缓存是上一轮巡检的结论:节点在两次巡检之间被手工换过核心时,缓存会说"已是目标
+// 版本",照着 skip 就把一台旧核心的节点永远留在旧版。所以跳不跳过要看现场。
+// 查失败、或现场没报版本时仍用缓存 —— 不能因为一次 SSH 不通就把整轮判死,也不
+// 能把"不知道"当成"已是目标版本"(空版本在 sameCoreVersion 里本来就不算相同)。
+func (s *Server) liveCoreVersion(ctx context.Context, n model.Node, cached string, pick func(model.NodeStatus) string) string {
+	if s.nodeOps == nil {
+		return cached
+	}
+	st, err := s.freshNodeStatus(ctx, n, time.Now())
+	if err != nil {
+		return cached
+	}
+	if live := strings.TrimSpace(pick(st)); live != "" {
+		return live
+	}
+	return cached
 }
 
 // sameCoreVersion 比较两个版本号是否相同,忽略打头的 v 与空白。

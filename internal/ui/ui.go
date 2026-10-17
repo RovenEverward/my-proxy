@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 )
@@ -53,6 +54,10 @@ type Options struct {
 	// Session 非空时沿用这个会话值,而不是新发一个:一键更新重启 mpx ui 时的交接
 	// 用(见 restart.go),让浏览器的 cookie 不作废。为空时行为与从前完全一样。
 	Session string
+	// CLIUpdated 非空时,本机 CLI 的升级尝试(换掉了二进制,或下载/替换失败)结束
+	// 后调用一次。ui 包不能引用 cli 包(cli 依赖 ui),update.json 由 cli 侧在这个
+	// 回调里写;为 nil 时什么也不记。
+	CLIUpdated func(from, to string, started time.Time, err error)
 }
 
 // Server 是一个已经绑定好端口的页面服务。

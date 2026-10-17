@@ -221,9 +221,27 @@ func rollbackCLI() error {
 	return nil
 }
 
-// saveCLIState 把一次自更新的结果写进 update.json。写失败只字不提:升级本身
-// 已经成功或失败,状态文件是附带信息,不该反过来把结果变成一个错误。
+// saveCLIState 把命令行发起的一次自更新结果写进 update.json。写失败只字不提:
+// 升级本身已经成功或失败,状态文件是附带信息,不该反过来把结果变成一个错误。
 func saveCLIState(from, to string, started time.Time, result string, cause error) {
+	saveCLIStateWithTrigger("manual", from, to, started, result, cause)
+}
+
+// saveCLIStateFromUI 记下 mpx ui 发起的一次本机 CLI 升级。
+//
+// 页面走的是 ui 包里的同一套下载与替换,但那条路不认识 cli 包;ui.Options.CLIUpdated
+// 把它交回这里,好让 mpx update show 看得到页面点出来的这次升级。成功与失败的
+// result 与命令行完全一致("ok"/"failed"),只有 trigger 不同。
+func saveCLIStateFromUI(from, to string, started time.Time, cause error) {
+	result := "ok"
+	if cause != nil {
+		result = "failed"
+	}
+	saveCLIStateWithTrigger("ui", from, to, started, result, cause)
+}
+
+// saveCLIStateWithTrigger 是 saveCLIState 与 saveCLIStateFromUI 的共同实现。
+func saveCLIStateWithTrigger(trigger, from, to string, started time.Time, result string, cause error) {
 	path, err := cliStatePath()
 	if err != nil {
 		return
@@ -236,7 +254,7 @@ func saveCLIState(from, to string, started time.Time, result string, cause error
 		StartedAt:  started,
 		FinishedAt: time.Now(),
 		Result:     result,
-		Trigger:    "manual",
+		Trigger:    trigger,
 	}
 	if cause != nil {
 		st.Error = cause.Error()

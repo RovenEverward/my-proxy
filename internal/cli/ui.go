@@ -108,7 +108,10 @@ var uiCmd = &cobra.Command{
 
 		setupMode := server == "" || uiFlags.setup
 		pageOpts := ui.Options{Allow: uiAllow, Setup: setupRunner{}, Profiles: profilesRunner{},
-			Relabel: relabelRunner{}, Session: session}
+			Relabel: relabelRunner{}, Session: session,
+			// 页面里的本机升级走 ui 包的同一套实现,但 ui 不能引用 cli;把结果
+			// 交回来落 update.json,mpx update show 才看得到这次升级。
+			CLIUpdated: saveCLIStateFromUI}
 		if !setupMode {
 			up, err := url.Parse(server)
 			if err != nil || (up.Scheme != "http" && up.Scheme != "https") || up.Host == "" {

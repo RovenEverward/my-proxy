@@ -397,7 +397,7 @@ func nodeEventMsg(ev model.UpdateNodeEvent) string {
 // 以及新二进制实际写入的路径 exe —— 重启要用它,不能等到重启时再问 selfExecutable
 // (那时旧二进制已改名成 .prev,os.Executable 会指回旧版)。
 func (s *Server) updateAllCLI(ctx context.Context) (changed bool, exe string, err error) {
-	from, to, changed, exe, _, err := applyCLIUpdate(ctx, "")
+	from, to, changed, exe, _, err := s.applyCLIUpdate(ctx, "")
 	if err != nil {
 		return false, "", err
 	}
