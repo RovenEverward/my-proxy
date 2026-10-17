@@ -115,7 +115,7 @@ async function polish(page, setup = false) {
   await page.route("**/ui/meta", async r => {
     const res = await r.fetch();
     const j = await res.json();
-    j.cli_version = "v0.9.4";
+    j.cli_version = "v0.9.5";
     if (!setup) {
       j.server = "203.0.113.10:8080";
       j.fingerprint = EXAMPLE_FP;
@@ -126,7 +126,7 @@ async function polish(page, setup = false) {
   await page.route("**/api/status", async r => {
     const res = await r.fetch();
     const j = await res.json();
-    j.version = "v0.9.4";
+    j.version = "v0.9.5";
     await r.fulfill({ response: res, json: j });
   });
   // 测试环境没真的 SSH 上节点巡检过,列表里会全是「未巡检」;给每台补一份
@@ -175,19 +175,19 @@ const doctorReport = () => {
   ] };
 };
 
-// 更新弹窗的示例结论:桌面程序与控制面 v0.9.3 → v0.9.4 可升级,四个节点的
-// xray 都已在推荐版本上;notes 是 v0.9.4 发版说明的节选,弹窗里按 Markdown 渲染。
+// 更新弹窗的示例结论:桌面程序与控制面 v0.9.4 → v0.9.5 可升级,四个节点的
+// xray 都已在推荐版本上;notes 按 v0.9.5 起的发布说明结构写(弹窗只取「## 更新要点」)。
 const UPDATE_INFO = {
   desktop: true,
-  cli: { current: "v0.9.3", latest: "v0.9.4", available: true, release_url: "" },
-  control: { current: "v0.9.3", latest: "v0.9.4", available: true, release_url: "" },
+  cli: { current: "v0.9.4", latest: "v0.9.5", available: true, release_url: "" },
+  control: { current: "v0.9.4", latest: "v0.9.5", available: true, release_url: "" },
   nodes: [
     { name: "tokyo-a", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "tokyo-b", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "frankfurt-a", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "sanjose-a", core: "xray", current: "26.3.27", target: "26.3.27" },
   ],
-  notes: "### 改进\n- 窗口里提到节点的地方一律用显示名(如 🇯🇵 东京 A)\n- 添加节点向导不再要求填内部名\n\n### 修复\n- 切到别的页时上一页的抽屉没有收起",
+  notes: "## 更新要点\n\n- 首次安装向导不再问内部的「节点名」,显示名按 IP 自动识别\n- 装控制面、装节点前先检查端口,被占用时自动换一个空闲端口\n- 更新弹窗只列这一版的要点\n- 总览「用时」等改用中文单位\n\n### 修复\n- 切换控制面后会记住,下次打开仍连上次选的\n\n## 我该下哪个\n\n| 系统 | 文件 |\n| :--- | :--- |",
 };
 
 const SHOTS = [
@@ -335,7 +335,7 @@ const SHOTS = [
   },
   {
     // 第 3 步「设置」:检查结果用路由摆成示例(Linux / x86_64 / root / curl),
-    // 填好第一个用户、节点名和设备密码,停在「开始安装」前。
+    // 填好第一个用户和设备密码(节点名不用填,显示名按 IP 自动识别),停在「开始安装」前。
     name: "setup-settings", setup: true, crop: ".scard",
     routes: async page => {
       await page.route("**/local/setup/check", r => r.fulfill({ json: { probe: { os: "Linux", arch: "x86_64", uid: 0, fetch: "/usr/bin/curl" } } }));
@@ -351,7 +351,6 @@ const SHOTS = [
       await page.click("#s-next");
       await page.waitForSelector("#s-username");
       await page.fill("#s-username", "alice");
-      await page.fill("#s-name", "tokyo");
       await page.fill("#s-dpw", "Docs-Device-2026-Example");
       await page.dispatchEvent("#s-dpw", "input");
       await page.fill("#s-dpw2", "Docs-Device-2026-Example");

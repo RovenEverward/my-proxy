@@ -56,7 +56,7 @@ title: MPX
 <h2>加一台服务器：填 IP 和密码</h2>
 <p>节点页点「添加节点」，填地址和 root 密码。装核心、建入站、起名一路做完，完成页告诉你这台进了哪些订阅。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 桌面窗口</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">
