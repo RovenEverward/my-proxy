@@ -69,6 +69,13 @@ main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14p
 .btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:8px;background:var(--stone);font-weight:520;font-size:13px;cursor:pointer;white-space:nowrap;transition:transform 140ms var(--ease),background 120ms}
 .btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}.btn svg{width:14px;height:14px}
 .btn.pri{background:var(--ink);color:var(--canvas)}.btn.pri:hover{opacity:.9}
+/* aria-disabled 的按钮仍可聚焦(读屏读得到),但不许再看起来能按:去掉悬停高亮和点击缩放,
+   悬停/键盘聚焦时用 data-tip 显示原因。 */
+.btn[aria-disabled=true]:hover{background:var(--stone)}
+.menu button[aria-disabled=true]:hover{background:none}
+[aria-disabled=true]:active{transform:none}
+[aria-disabled=true][data-tip]{position:relative}
+[aria-disabled=true][data-tip]:hover::after,[aria-disabled=true][data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);z-index:60;padding:5px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:12px;font-weight:400;line-height:1.4;white-space:nowrap;box-shadow:0 4px 14px #0003}
 .btn.danger{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
 .btn.sm{height:28px;padding:0 10px;font-size:12.5px}
 /* cards */
@@ -187,7 +194,8 @@ a.row{color:inherit}
 .bar.tall{height:6px}.mt8{margin-top:8px}.mb8{margin-bottom:8px}.mt22{margin-top:22px}
 .kv.flat{padding:0 0 14px}.stack8{display:grid;gap:8px}.g8{gap:8px}
 .danger-zone{background:color-mix(in srgb,var(--bad) 5%,var(--panel))}
-.dis-tip{display:inline-flex}.dis-tip>button[disabled]{pointer-events:none;opacity:.45}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[aria-disabled=true]{opacity:.45;cursor:not-allowed}
 .search.in-card{width:220px;height:30px}
 .chk{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink2)}
 tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
@@ -258,12 +266,12 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}.rp-bar .sp{flex:1}
 .rp-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}.rp-side{position:sticky;top:66px}
 .rp-row{display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 6px;border-radius:8px;min-height:46px}.rp-row:hover{background:var(--hover)}
-.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:var(--hover)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--ink) 10%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
 .rp-row.editing{background:var(--canvas)}.rp-row.final{background:var(--canvas)}
 .rp-grip{width:12px;color:var(--faint);font-size:11px;letter-spacing:-2px}.rp-n{width:22px;text-align:right;font:500 11.5px var(--mono);color:var(--faint)}
 .rp-tyc{width:84px;flex:none;min-width:0}
 /* 规则类型:固定的 84px 列,里面是灰底文字标签,保证后面值列不错位 */
-.rp-ty{display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rp-ty{display:inline-block;line-height:22px;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 .rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
 .rp-to{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;font-size:12.5px;font-weight:530;white-space:nowrap;background:var(--stone)}
 /* 去向一律灰底文字标签:直连、拦截、策略组都用同一种灰底,红色只留给失效的策略组 */
@@ -635,3 +643,4 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .s5-field-err{display:block;color:var(--bad);font-size:12.5px}.s5-field-err:empty{display:none}
 .s5-warn svg{color:var(--muted)}.pv-h #pv-user{display:inline-block;width:auto;height:28px;padding:2px 24px 2px 6px;font:inherit}
 @media(max-width:860px){.zr-tpl{grid-template-columns:minmax(0,1fr) auto auto}.s5-bar-t .sub{display:inline;white-space:normal}.s5-bar-t{flex-wrap:wrap}}
+.doc-d [data-act=doc-apply]{margin-left:10px;vertical-align:baseline}

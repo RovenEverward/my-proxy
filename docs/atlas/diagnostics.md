@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go]
-verified: 2026-10-17 @ 626beea
+verified: 2026-10-18 @ 95c78cd
 ---
 # 体检与诊断
 
@@ -19,6 +19,7 @@ verified: 2026-10-17 @ 626beea
 1. 能力检测在控制面起临时 SOCKS 客户端，经指定入站或入口发请求，检测流量计入那个用户的配额；检测器版本是证据指纹的一部分，升级后旧结果显示未知（[能力检测验证](../internal/capability-validation.md)）。
 2. 一键体检默认引擎是固定版本的官方 Go ECS 融合怪，经 SSH 在节点上跑，报告受传输预算约束（[一键体检验证](../internal/diagnostic-validation.md)）。
 3. 自检只有 fail 才让退出码非 0（固定为 3，warn 不算），可以直接当健康检查脚本用（decisions 第 23 条，[internal/cli/doctor.go](../../internal/cli/doctor.go)）。`mpx ui` 的「自检」页走本地接口，由操作机上的 `mpx` 执行。
+4. 控制面给有漂移的节点检查项带 `node_id` 与 `ui_action: "apply"`（只增，v0.9.10 起）。界面据此在体检页放行内「应用到<节点>」：点击只记一个 10 秒有效的标记并跳到节点详情，由详情页弹确认框，用户确认才真的下发；节点连不上时详情头部的「应用到节点」是 `aria-disabled`（仍可聚焦、读屏读得到原因，点击被界面统一拦下），提示先点「刷新状态」。
 
 ## 坑
 

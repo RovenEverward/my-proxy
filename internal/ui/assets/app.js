@@ -764,6 +764,9 @@ async function load(soft, force) {
   route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
   here = route[0] === "overview" ? "overview" : key;
+  // 体检页带过来的 AUTO_APPLY 只对它指向的那台节点有效:换了页、换到别的节点都
+  // 丢掉,免得下次进来突然弹出「应用到节点」。
+  if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
   // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
@@ -776,6 +779,8 @@ async function load(soft, force) {
     CP_OK = true;
   } catch (e) {
     if (seq !== loadSeq) return;
+    // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
+    window.AUTO_APPLY = null;
     current = { ...current, error: e, loading: false };
     // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
@@ -840,6 +845,8 @@ const ACTS = {
 };
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
+  // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
+  if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
   if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a, e); return; }
   const tr = e.target.closest("tr[data-href]");
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;

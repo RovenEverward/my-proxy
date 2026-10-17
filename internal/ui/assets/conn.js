@@ -327,7 +327,7 @@ async function inboundEditor(id, presetNode) {
     ${inbFormFields(base, nodes, isNew)}
     <p class="sub">${isNew ? "REALITY 的密钥对由控制面生成。" : "只改用户数上限不用应用到节点。"}</p>
     <div class="err" id="i-err" role="alert"></div>
-    ${!isNew && can("DELETE", "/api/inbounds/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入站</b><div class="sub">挂在它上面的入口一起删掉。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-rm" data-id="${id}" data-tag="${inbTag(v)}" data-title="${inbTitle(v, nodes.find(n => n.id === v.node_id))}">删除</button></div></div>` : ""}
+    ${!isNew && can("DELETE", "/api/inbounds/x") ? H`<div class="card mt"><div class="row"><div><b class="bold">删除入站</b><div class="sub">挂在它上面的入口一起删掉。</div></div><span class="sp"></span><button type="button" class="btn sm" data-act="conn-rm" data-id="${id}" data-tag="${inbTag(v)}" data-title="${inbTitle(v, nodes.find(n => n.id === v.node_id))}">删除</button></div></div>` : ""}
   </div>${applyFoot(nodes.find(n => n.id === base.node_id) || {}, isNew ? "创建并应用到节点" : "保存并应用到节点", isNew ? "只创建，稍后应用" : "只保存，稍后应用")}</form>`);
   const form = $("#inb-form");
   inbBind(form, base, isNew);
@@ -382,7 +382,7 @@ async function connectionEditor(inbID) {
         ${h ? H`<div class="ae-h">入口<span>${hosts.length} 个 · 订阅里每个入口一行</span><span class="sp"></span>${inbWH() ? H`<button type="button" class="btn sm ghost" data-act="conn-host-new" data-inb="${inb.id}">${ic("plus")}入口</button>` : ""}</div>
           <div class="ae">${hosts.map(x => H`<div class="ae-r"><div><b class="${customName(x) ? "" : "dim"}">${nameOfHost(inb, x, n)}</b><span class="mono">${addrOfHost(inb, x, n)}</span></div><span class="ptag lite">${x.address ? "自定义地址" : "节点地址"}</span><button type="button" class="ib" title="编辑这个入口" data-act="conn-host-edit" data-inb="${inb.id}" data-id="${x.id}">${ic("pen")}</button></div>`)}</div>`
           : H`<div class="ae-h">入口<span>还没有入口 · 订阅会用入站自己的地址</span><span class="sp"></span>${inbWH() ? H`<button type="button" class="btn sm ghost" data-act="conn-host-new" data-inb="${inb.id}">${ic("plus")}入口</button>` : ""}</div>`}
-        ${can("DELETE", "/api/inbounds/x") ? H`<div class="dz"><div><b>删除连接</b><span>它的 ${hosts.length} 个入口一起删掉</span></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-rm" data-id="${inb.id}" data-tag="${inbTag(inb)}" data-title="${inbName}">删除</button></div>` : ""}
+        ${can("DELETE", "/api/inbounds/x") ? H`<div class="dz"><div><b>删除连接</b><span>它的 ${hosts.length} 个入口一起删掉</span></div><span class="sp"></span><button type="button" class="btn sm" data-act="conn-rm" data-id="${inb.id}" data-tag="${inbTag(inb)}" data-title="${inbName}">删除</button></div>` : ""}
         <div class="err" id="i-err" role="alert"></div>
       </div></details>
   </div>${applyFoot(n, "保存并应用到节点", "只保存，稍后应用")}</form>`);
@@ -507,7 +507,7 @@ async function hostEditor(inbID, hostID) {
     ${F.map(([k, , l, ph, hint]) => H`<div class="field"><label for="h-${k}">${l}</label><input class="in ${k === "remark" ? "" : "mono"}" id="h-${k}" name="${k}" value="${fv(k)}" placeholder="${ph}" autocomplete="off">${hint ? H`<span class="h">${hint}</span>` : ""}</div>`)}
     ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口，用户下次刷新订阅就跟着变;不用应用到节点。</p>` : H`<p class="sub">入口只影响订阅里写什么，不用下发节点配置。</p>`}
     <div class="err" id="h-err" role="alert"></div>
-    ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card danger-zone mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口，订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
+    ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card mt"><div class="row"><div><b class="bold">删除入口</b><div class="sub">只影响订阅;删掉最后一个入口，订阅回落到入站自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="h-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#host-form");
   const collect = () => {
