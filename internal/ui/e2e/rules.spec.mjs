@@ -185,3 +185,101 @@ test("策略组:界面不再有「标签」条件;旧数据里的标签原样保
   expect((await getJSON("/api/proxy-groups")).find(g => g.id === id).tags || []).toEqual([]);
   await cp("/api/proxy-groups/" + id, { method: "DELETE" });
 });
+
+test("普通删除不刺眼:编辑行和策略组抽屉的删除都不是红按钮,删除卡也不是红卡;确认框仍是红的", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+  await page.locator("[data-act=rp-edit]").first().click();
+  const del = page.locator(".rp-row.editing [data-act=rp-del]");
+  await expect(del).toBeVisible();
+  await expect(del).not.toHaveClass(/c-bad/);
+
+  await page.goto(env.origin + "/#rules/groups");
+  await page.locator(".rp-g").first().click();
+  await expect(page.locator("#gp-form")).toBeVisible();
+  const gpDel = page.locator("#gp-form [data-act=gp-rm]");
+  await expect(gpDel).toBeVisible();
+  await expect(gpDel).not.toHaveClass(/c-bad/);
+  // 删除卡是普通灰卡,不再用 danger-zone。
+  await expect(page.locator("#gp-form .danger-zone")).toHaveCount(0);
+  const card = page.locator("#gp-form .card").filter({ hasText: "删除策略组" });
+  await expect(card).toHaveCount(1);
+  await expect(card).not.toHaveClass(/danger-zone/);
+  // 确认弹窗保持红色。
+  await gpDel.click();
+  await expect(page.locator("#modal.open #okb")).toHaveClass(/danger/);
+  await page.click("#modal [data-act=modal-cancel]");
+});
+
+test("规则类型标签能省略,拖拽目标比悬停更明显", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+  // .rp-ty 必须是能触发 text-overflow 的 display(inline-block),不是 inline-flex。
+  const ty = await page.locator(".rp-row").first().locator(".rp-ty").evaluate(el => {
+    const s = getComputedStyle(el);
+    return { display: s.display, overflow: s.overflow, ellipsis: s.textOverflow };
+  });
+  expect(ty.display).toBe("inline-block");
+  expect(ty.ellipsis).toBe("ellipsis");
+  expect(ty.overflow).toBe("hidden");
+  // 拖动悬停的行要比普通悬停更明显:两个背景色不能一样。
+  const first = page.locator(".rp-row").first();
+  await first.hover();
+  const hoverBG = await first.evaluate(el => getComputedStyle(el).backgroundColor);
+  const second = page.locator(".rp-row").nth(1);
+  await second.dispatchEvent("dragover");
+  await expect(second).toHaveClass(/over/);
+  const overBG = await second.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(overBG).not.toBe(hoverBG);
+});
+
+test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色", async ({ page }) => {
+  const rgb = s => s.match(/[\d.]+/g).map(Number);
+  const gray = (c, tol) => Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) <= tol;
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+
+  // 规则类型:不透明灰底标签,文字也是灰(不用彩色/强调徽章)。
+  const ty = await page.locator(".rp-row").first().locator(".rp-ty").evaluate(el => {
+    const s = getComputedStyle(el); return { bg: s.backgroundColor, color: s.color };
+  });
+  const tbg = rgb(ty.bg), tbgA = rgb(ty.bg)[3] ?? 1;
+  expect(tbgA).toBe(1);
+  expect(gray(tbg, 3)).toBe(true);
+  expect(gray(rgb(ty.color), 10)).toBe(true);
+
+  // 所有去向都是灰底标签,没有墨黑实心强调徽章。
+  const tos = await page.locator(".rp-to").evaluateAll(els => els.map(el => getComputedStyle(el).backgroundColor));
+  expect(tos.length).toBeGreaterThan(0);
+  for (const bg of tos) {
+    const c = rgb(bg);
+    expect(gray(c, 3)).toBe(true);
+    expect(c[0] + c[1] + c[2]).toBeGreaterThan(120);
+  }
+
+  // 把第一条规则指向一个已不存在的策略组:只有它是红的。数据由 Node 侧先取好
+  // (cpFetch 自带 429 重试),路由只回这一份,不再额外打控制面。
+  const shown = await getJSON("/api/rules");
+  expect(Array.isArray(shown.global) && shown.global.length > 0).toBe(true);
+  shown.global[0].target = "group:9999";
+  await page.route(url => url.pathname === "/api/rules", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shown) }));
+  await page.reload();
+  const err = page.locator(".rp-row").first().locator(".rp-to.err");
+  await expect(err).toBeVisible();
+  await expect(err).toHaveAttribute("title", "这个策略组已不存在");
+  // 不只靠颜色:读屏/键盘拿得到的文字也标出「已不存在」。
+  await expect(err.locator(".vh")).toHaveText("（已不存在）");
+  const ec = rgb(await err.evaluate(el => getComputedStyle(el).color));
+  expect(ec[0]).toBeGreaterThan(ec[1] + 40);
+  expect(ec[0]).toBeGreaterThan(ec[2] + 40);
+
+  // 其它去向没有红色。
+  const rest = await page.locator(".rp-to:not(.err)").evaluateAll(els => els.map(el => getComputedStyle(el).color));
+  for (const co of rest) {
+    const c = rgb(co);
+    expect(c[0] - Math.max(c[1], c[2])).toBeLessThan(40);
+  }
+});

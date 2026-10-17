@@ -1,16 +1,20 @@
 @font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
 @font-face{font-family:"Mona Sans Mono VF";src:url(/fonts/MonaSansMonoVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
 :root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#0a0a0a;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
---lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--info) 30%,transparent);
+--lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--info) 30%,transparent);--flag-edge:rgba(0,0,0,.14);
 --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#fffbeb;
 --ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF","OPPO Sans 4.0","PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC",monospace}
 [data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#ededef;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
---lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;
+--lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;--flag-edge:rgba(255,255,255,.22);
 --ok:#3fb950;--warn:#e3a008;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#271d08}
 *{box-sizing:border-box}html,body,#root{height:100%}html,body{overflow:hidden}
 body{margin:0;background:var(--base);color:var(--ink);font:13.5px/1.55 var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"kern","tnum"}
 /* 国旗:app.js 把区域指示符 emoji 换成本地 /flags/<xx>.svg;高度跟着字号走。 */
-.flag{height:.82em;width:auto;aspect-ratio:4/3;vertical-align:-.08em;border-radius:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+.flag-w{position:relative;display:inline-flex;vertical-align:-.1em;border-radius:2px;line-height:0}
+.flag-w::after{content:"";position:absolute;inset:0;border-radius:2px;box-shadow:inset 0 0 0 1px var(--flag-edge);pointer-events:none}
+.flag{height:.9em;width:auto;aspect-ratio:4/3;border-radius:2px;display:block}
+/* 字号缩到 .62 倍,高度和基线偏移按比例还原,与旗帜的 .9em / -.1em 一致。 */
+.flag-code{display:inline-flex;align-items:center;justify-content:center;height:1.451613em;vertical-align:-.16129em;padding:0 .3em;border-radius:2px;background:var(--stone);color:var(--ink2);font-size:.62em;font-weight:600;letter-spacing:.02em;line-height:1}
 button,input,select,textarea{font:inherit;color:inherit}a{color:inherit;text-decoration:none}
 code,.mono{font-family:var(--mono);font-size:12.5px}
 .app{display:grid;grid-template-columns:232px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%}
@@ -65,6 +69,13 @@ main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14p
 .btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:0;border-radius:8px;background:var(--stone);font-weight:520;font-size:13px;cursor:pointer;white-space:nowrap;transition:transform 140ms var(--ease),background 120ms}
 .btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}.btn svg{width:14px;height:14px}
 .btn.pri{background:var(--ink);color:var(--canvas)}.btn.pri:hover{opacity:.9}
+/* aria-disabled 的按钮仍可聚焦(读屏读得到),但不许再看起来能按:去掉悬停高亮和点击缩放,
+   悬停/键盘聚焦时用 data-tip 显示原因。 */
+.btn[aria-disabled=true]:hover{background:var(--stone)}
+.menu button[aria-disabled=true]:hover{background:none}
+[aria-disabled=true]:active{transform:none}
+[aria-disabled=true][data-tip]{position:relative}
+[aria-disabled=true][data-tip]:hover::after,[aria-disabled=true][data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);z-index:60;padding:5px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:12px;font-weight:400;line-height:1.4;white-space:nowrap;box-shadow:0 4px 14px #0003}
 .btn.danger{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
 .btn.sm{height:28px;padding:0 10px;font-size:12.5px}
 /* cards */
@@ -181,6 +192,8 @@ a.row{color:inherit}
 .bar.tall{height:6px}.mt8{margin-top:8px}.mb8{margin-bottom:8px}.mt22{margin-top:22px}
 .kv.flat{padding:0 0 14px}.stack8{display:grid;gap:8px}.g8{gap:8px}
 .danger-zone{background:color-mix(in srgb,var(--bad) 5%,var(--panel))}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[aria-disabled=true]{opacity:.45;cursor:not-allowed}
 .search.in-card{width:220px;height:30px}
 .chk{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink2)}
 tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
@@ -251,13 +264,19 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}.rp-bar .sp{flex:1}
 .rp-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start}.rp-side{position:sticky;top:66px}
 .rp-row{display:flex;align-items:center;gap:10px;padding:9px 8px;margin:0 6px;border-radius:8px;min-height:46px}.rp-row:hover{background:var(--hover)}
-.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--info) 12%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--info) 6%,transparent)}
+.rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--ink) 10%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
 .rp-row.editing{background:var(--canvas)}.rp-row.final{background:var(--canvas)}
 .rp-grip{width:12px;color:var(--faint);font-size:11px;letter-spacing:-2px}.rp-n{width:22px;text-align:right;font:500 11.5px var(--mono);color:var(--faint)}
-.rp-ty{width:84px;flex:none;font-size:12px;color:var(--muted)}.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
+.rp-tyc{width:84px;flex:none;min-width:0}
+/* 规则类型:固定的 84px 列,里面是灰底文字标签,保证后面值列不错位 */
+.rp-ty{display:inline-block;line-height:22px;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
 .rp-to{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;font-size:12.5px;font-weight:530;white-space:nowrap;background:var(--stone)}
-/* 去向标签只用黑白:策略组实心墨色,直连浅灰底,拦截只描边(红色只留给错误) */
-.rp-to.dir{color:var(--ink2);background:var(--stone)}.rp-to.rej{color:var(--ink2);background:none;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 22%,transparent)}.rp-to.grp{color:var(--canvas);background:var(--ink)}
+/* 去向一律灰底文字标签:直连、拦截、策略组都用同一种灰底,红色只留给失效的策略组 */
+.rp-to.dir,.rp-to.rej,.rp-to.grp{color:var(--ink2);background:var(--stone)}
+.rp-to.err{color:var(--bad);background:var(--bad-bg)}
+/* 分流页的状态点也走黑白,绿色只留给错误之外的语义由文案表达 */
+.rp-empty .pill.on::before,.rp-row .pill.on::before,.rp-res .pill.on::before,#bi-form .pill.on::before{background:var(--ink)}
 .rp-sec{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:12px;font-weight:560;color:var(--muted)}.rp-sec .sp{flex:1}
 .sw{position:relative;display:inline-block;width:30px;height:18px;flex:none}.sw input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:1}.sw i{position:absolute;inset:0;border-radius:99px;background:color-mix(in srgb,var(--ink) 16%,transparent);transition:background 140ms}
 .sw i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0003;transition:transform 160ms var(--ease)}.sw input:checked+i{background:var(--ink)}.sw input:checked+i::after{background:var(--canvas)}.sw input:checked+i::after{transform:translateX(12px)}
@@ -265,14 +284,14 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-g{cursor:pointer;align-items:flex-start}.rp-g:hover{background:var(--hover)}.rp-gi{font-size:20px;width:28px}.rp-g>svg{width:14px;color:var(--faint);margin-top:4px}
 .rp-empty{padding:30px 28px;text-align:center}.rp-empty h4{margin:22px 0 4px;font-size:15px;font-weight:620}
 .rp-flow{display:flex;align-items:center;justify-content:center;gap:14px}.rp-fb{display:flex;flex-direction:column;gap:5px;padding:12px 14px;border-radius:10px;background:var(--stone);font-size:12px;color:var(--muted);text-align:left;min-width:150px}
-.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--info);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);font-size:18px}
+.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--ink);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);font-size:18px}
 .rp-starts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;text-align:left}
 .rp-start{display:flex;flex-direction:column;gap:6px;padding:16px;border:0;border-radius:12px;background:var(--canvas);cursor:pointer;align-items:flex-start}.rp-start:hover{background:var(--hover)}.rp-start.rec{background:var(--stone)}
 .rp-start b{font-size:13.5px}.rp-start>span:not(.pill){color:var(--muted);font-size:12px;flex:1}.rp-start em{font-style:normal;font-size:12px;font-weight:540;display:flex;align-items:center;gap:4px}.rp-start em svg{width:13px;height:13px}
 .rp-bi{padding:10px 0}.rp-bi .chk{align-items:flex-start}
 @media (max-width:860px){.rp-main,.rp-starts{grid-template-columns:minmax(0,1fr)}.rp-flow{flex-direction:column}.rp-v{max-width:none}}
 .rp-row .sp{flex:1}.rp-start{text-align:left}.rp-try{border:0;cursor:pointer}.rp-try:hover{color:var(--ink);background:var(--hover)}
-.pp-pvr{padding:9px 14px}.pp-pvr.miss{opacity:.55}.pp-mk{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--stone);color:var(--faint)}.pp-mk svg{width:12px;height:12px}.pp-mk.ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.pp-pvr{padding:9px 14px}.pp-pvr.miss{opacity:.55}.pp-mk{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--stone);color:var(--faint)}.pp-mk svg{width:12px;height:12px}.pp-mk.ok{background:var(--stone);color:var(--ink2)}
 .rp-row .in{height:30px}.rp-row.editing{flex-wrap:wrap}.rp-warn{margin-bottom:14px}.rp-ic{width:22px;text-align:center}
 /* ---- 套餐 ---- */
 /* 「默认」是灰色文字,不是彩色 pill(与原型一致)。 */
@@ -522,3 +541,4 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .cl-done>svg{width:15px;height:15px;color:var(--ink)}.cl-done b{color:var(--ink);font-weight:580}
 .cl-done .ib{width:30px;height:30px}
 @media (max-width:760px){.ck{grid-template-columns:28px minmax(0,1fr)}.ck-a{grid-column:2;justify-content:flex-start}}
+.doc-d [data-act=doc-apply]{margin-left:10px;vertical-align:baseline}

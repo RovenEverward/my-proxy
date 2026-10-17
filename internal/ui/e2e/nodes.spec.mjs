@@ -269,6 +269,10 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
+  // 删除入口和节点详情一样是灰卡灰按钮,红色只留给确认框里最后那下。
+  const hzone = page.locator("#drawer.open .card").filter({ hasText: "删除入口" });
+  await expect(hzone).not.toHaveClass(/danger-zone/);
+  await expect(page.locator("[data-act=conn-host-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-host-rm]");
   await page.click("[data-act=modal-cancel]");
   expect(env.takeLog()).toEqual([]);
@@ -287,6 +291,9 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='4']");
   await page.click("#conn-form details.adv2 > summary");
+  // 删除入站也是灰卡灰按钮(这里打开的是「编辑连接」抽屉),不再用 danger-zone / c-bad。
+  const izone = page.locator("#drawer.open .dz").filter({ hasText: "删除连接" });
+  await expect(izone.locator("[data-act=conn-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-rm]");
   await expect(page.locator("#okb")).toBeDisabled();
   await expect(page.locator("#okb")).toHaveText("删除并应用到节点");
@@ -312,9 +319,16 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
 });
 
 // 「创建并应用到节点」:先建入站再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
-// 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,详情头部可以重试。
-test("创建并应用到节点:应用失败时入站保留,详情头部可重试", async ({ page }) => {
+// 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,头部换成刷新状态。
+test("创建并应用到节点:应用失败时入站保留,连不上时头部换成刷新", async ({ page }) => {
   await login(page, env);
+  // 节点 1 的巡检状态取决于后台那一轮跑没跑到,这里固定成「连不上」,断言才稳。
+  await page.route("**/api/nodes/1", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.status = { ...(n.status || {}), node_id: 1, checked_at: new Date().toISOString(), reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
   await page.goto(env.origin + "/#nodes/1");
   await page.click(".conn-card [data-act=conn-new]");
   const dr = page.locator("#drawer.open");
@@ -326,10 +340,15 @@ test("创建并应用到节点:应用失败时入站保留,详情头部可重试
   await expect(page.locator(".toast")).toContainText("但应用到");
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
   await expect(page.locator(".conn-card [data-act=node-sync]")).toHaveCount(0);
-  await expect(page.locator(".ph [data-act=node-sync]")).toHaveText("应用到节点");
-  await page.click(".ph [data-act=node-sync]");
-  await expect(page.locator("#modal.open")).toContainText("把配置应用到");
-  await page.click("[data-act=modal-cancel]");
+  // 节点连不上:头部主按钮是「刷新状态」,「应用到节点」灰掉带提示。
+  await expect(page.locator(".ph .btn.pri")).toHaveText("刷新状态");
+  const dis = page.locator(".ph [data-act=node-sync]");
+  await expect(dis).toHaveAttribute("aria-disabled", "true");
+  // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
+  expect(await dis.evaluate(el => el.disabled)).toBe(false);
+  await expect(dis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
+  await expect(page.locator(".ph .vh")).toHaveText("节点连不上，连上后再应用");
+  await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
 });
 
 test("旧入站地址与子路径跳到节点列表", async ({ page }) => {
@@ -350,7 +369,7 @@ for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
       const response = await route.fetch();
       const n = await response.json();
       n.deployed_hash = state === "从未应用" ? "" : "deployed";
-      n.status = { ...n.status, observed_hash: state === "漂移" ? "changed" : "deployed" };
+      n.status = { ...n.status, observed_hash: state === "漂移" ? "changed" : "deployed", reachable: true, error: "" };
       await route.fulfill({ response, json: n });
     });
     await page.route("**/api/nodes/pending", route => route.fulfill({
@@ -393,7 +412,7 @@ test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此�
     const response = await route.fetch();
     const n = await response.json();
     n.deployed_hash = "";
-    n.status = { ...n.status, observed_hash: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
+    n.status = { ...n.status, observed_hash: "", reachable: true, error: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
     await route.fulfill({ response, json: n });
   });
   await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
@@ -403,3 +422,122 @@ test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此�
   await page.click("[data-act=node-menu]");
   await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveText("应用到节点");
 });
+
+test("节点详情文案:证书卡、在线用户、安装与体检按钮", async ({ page }) => {
+  await login(page, env);
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  const cert = page.locator(".card.stat").filter({ hasText: "证书" });
+  await expect(cert.locator(".s")).toHaveText("没有用到 TLS 的连接方式");
+  const online = page.locator(".row").filter({ hasText: "在线用户" });
+  await expect(online.locator(".sub")).toHaveText("实时查看每个用户连着几个 IP");
+  const install = page.locator(".row").filter({ hasText: "安装核心" });
+  await expect(install.locator(".sub")).toHaveText("把核心装到这台节点上并启动，会用当前配置");
+  await expect(install.locator("[data-act=node-install]")).toHaveText("安装");
+  await expect(page.locator("[data-act=node-diagnose]")).toHaveText("开始体检");
+});
+
+test("危险操作是灰卡,只有确认框里是红按钮", async ({ page }) => {
+  await login(page, env);
+  await openNode(page, 2);
+  const zone = page.locator(".node-danger");
+  await expect(zone).toHaveCount(1);
+  await expect(zone).not.toHaveClass(/danger-zone/);
+  await expect(zone.locator(".ch")).not.toHaveClass(/c-bad/);
+  const rm = zone.locator("[data-act=node-rm]");
+  await expect(rm).toHaveText("删除节点");
+  await expect(rm).not.toHaveClass(/c-bad/);
+  await rm.click();
+  await expect(page.locator("#modal.open #okb")).toHaveClass(/danger/);
+});
+
+test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", async ({ page }) => {
+  await login(page, env);
+  let pending = [{ node_id: 2, since: new Date().toISOString() }];
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...n.status, observed_hash: "deployed", reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: pending }));
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  // pending 非空:头部主按钮是「刷新状态」,灰的「应用到节点」在它左边,提示用 aria-describedby 关联。
+  const primary = page.locator(".ph .btn.pri");
+  await expect(primary).toHaveText("刷新状态");
+  await expect(primary).toHaveAttribute("data-act", "node-check");
+  const dis = page.locator(".ph [data-act=node-sync]");
+  await expect(dis).toHaveAttribute("aria-disabled", "true");
+  // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
+  expect(await dis.evaluate(el => el.disabled)).toBe(false);
+  await expect(dis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
+  // 键盘/读屏:按钮可聚焦,aria-describedby 指向视觉隐藏的提示文字。
+  await dis.focus();
+  expect(await dis.evaluate(el => document.activeElement === el)).toBe(true);
+  const whyID = await dis.getAttribute("aria-describedby");
+  await expect(page.locator("#" + whyID)).toHaveText("节点连不上，连上后再应用");
+  // 悬停/键盘聚焦时,提示真的画出来(data-tip 的 ::after),不是只有一个属性。
+  await dis.focus();
+  expect(await dis.evaluate(el => getComputedStyle(el, "::after").content)).toContain("节点连不上");
+  // 点击/回车都不能触发下发(不弹确认框,也不发请求)。
+  // Playwright 把 aria-disabled 也当不可点,这里直接派发 click 事件,测的是页面自己的分发。
+  await dis.dispatchEvent("click");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await expect(page.locator(".conn-card .tag.pend")).toHaveText("有改动未应用");
+
+  // pending 为空:没有未应用改动,禁用项落进「⋯」菜单,菜单里不再有「刷新状态」。
+  pending = [];
+  await page.reload();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator(".ph .btn.pri")).toHaveText("刷新状态");
+  await page.click("[data-act=node-menu]");
+  const menu = page.locator("#node-menu");
+  await expect(menu).toBeVisible();
+  const mdis = menu.locator("[data-act=node-sync]");
+  await expect(mdis).toHaveAttribute("aria-disabled", "true");
+  expect(await mdis.evaluate(el => el.disabled)).toBe(false);
+  await expect(mdis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
+  const mwhyID = await mdis.getAttribute("aria-describedby");
+  await expect(page.locator("#" + mwhyID)).toHaveText("节点连不上，连上后再应用");
+  await mdis.dispatchEvent("click");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await expect(menu.locator("[data-act=node-check]")).toHaveCount(0);
+});
+
+// 只有读权限(GET /api)时,连不上的节点仍要能「刷新状态」——那是 GET ?fresh=1,不是写操作。
+test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
+  // 权限来自 /ui/meta,必须在页面第一次加载前就把写权限摘掉。
+  await page.route("**/ui/meta", async route => {
+    const response = await route.fetch();
+    const m = await response.json();
+    m.allow = (m.allow || []).filter(a => a.startsWith("GET "));
+    await route.fulfill({ response, json: m });
+  });
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...n.status, observed_hash: "deployed", reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
+  await login(page, env);
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  const primary = page.locator(".ph .btn.pri");
+  await expect(primary).toHaveText("刷新状态");
+  await expect(primary).toHaveAttribute("data-act", "node-check");
+  await expect(primary).toBeEnabled();
+  // 菜单里不再重复放刷新项(主按钮已经换成「刷新状态」了)。
+  await page.click("[data-act=node-menu]");
+  await expect(page.locator("#node-menu [data-act=node-check]")).toHaveCount(0);
+  // 写操作按钮因为没写权限都不出现。
+  await expect(page.locator(".ph [data-act=node-sync]")).toHaveCount(0);
+  await primary.click();
+  await expect(page.locator(".toast")).toContainText("状态已刷新", { timeout: 30_000 });
+});
+

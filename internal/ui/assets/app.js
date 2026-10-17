@@ -745,6 +745,9 @@ async function load(soft, force) {
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
   route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
+  // 体检页带过来的 AUTO_APPLY 只对它指向的那台节点有效:换了页、换到别的节点都
+  // 丢掉,免得下次进来突然弹出「应用到节点」。
+  if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
   // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
@@ -757,6 +760,8 @@ async function load(soft, force) {
     CP_OK = true;
   } catch (e) {
     if (seq !== loadSeq) return;
+    // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
+    window.AUTO_APPLY = null;
     current = { ...current, error: e, loading: false };
     // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
@@ -821,6 +826,8 @@ const ACTS = {
 };
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
+  // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
+  if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
   if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a, e); return; }
   const tr = e.target.closest("tr[data-href]");
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;
@@ -849,8 +856,8 @@ setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) ref
 /* ---------- 国旗 ---------- */
 // 区域指示符国旗(🇯🇵 = 两个 U+1F1E6–U+1F1FF)在 Windows 上会显示成两个字母。
 // 这里把文本里的成对指示符换成本地 /flags/<xx>.svg;服务端 model 里的 emoji 不动。
-// 自己插入的 <img class="flag"> 没有文本子节点,再次扫描也不会再动它;文本被拆成
-// 「普通文本 + img」后普通文本里已没有指示符,所以替换是幂等的,不会来回触发。
+// 插入的旗帜容器不含文本,回退的地区代码也没有指示符,再次扫描不会再动它们。
+// 文本拆开后已没有指示符,所以替换是幂等的,不会来回触发。
 // flagHost 判断文本所在的位置:drop = 放不了图片,直接删掉旗帜(连同后面一个空格);
 // skip = 根本不碰;"" = 正常替换。
 function flagHost(el) {
@@ -878,13 +885,24 @@ function flagText(node) {
   while ((m = RI_PAIR.exec(text))) {
     found = true;
     if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+    const code = riCode(m[1], m[2]);
+    const wrap = document.createElement("span");
+    wrap.className = "flag-w";
+    wrap.dataset.flag = "1";
     const img = document.createElement("img");
     img.className = "flag";
-    img.src = "/flags/" + riCode(m[1], m[2]) + ".svg";
     img.alt = m[0];
     img.draggable = false;
-    img.dataset.flag = "1"; // 自己插入的节点,再遇到时不再处理
-    frag.append(img);
+    img.addEventListener("error", () => {
+      const fallback = document.createElement("span");
+      fallback.className = "flag-code";
+      fallback.textContent = code.toUpperCase();
+      fallback.title = "地区 " + fallback.textContent;
+      wrap.replaceWith(fallback);
+    }, { once: true });
+    wrap.append(img);
+    img.src = "/flags/" + code + ".svg";
+    frag.append(wrap);
     last = RI_PAIR.lastIndex;
   }
   if (!found) return;

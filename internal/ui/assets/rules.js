@@ -62,8 +62,12 @@ function rpTargetName(t, d = RP.d) {
   const g = d.groups.find(x => x.id === groupID(t)); return g ? g.name : t;
 }
 function rpPill(t, d = RP.d) {
-  const g = d.groups.find(x => x.id === groupID(t)), k = t === "DIRECT" ? "dir" : t === "REJECT" ? "rej" : "grp";
-  return H`<span class="rp-to ${k}">${k === "dir" ? "↗ " : k === "rej" ? "⦸ " : g?.icon ? g.icon + " " : ""}${rpTargetName(t, d)}</span>`;
+  const g = d.groups.find(x => x.id === groupID(t));
+  // 指向一个已不存在的策略组才是错误,用红色;直连/拦截/正常策略组一律灰底。
+  const gone = !!t && t !== "DIRECT" && t !== "REJECT" && !g;
+  const k = gone ? "err" : t === "DIRECT" ? "dir" : t === "REJECT" ? "rej" : "grp";
+  const icon = k === "dir" ? "↗ " : k === "rej" ? "⦸ " : !gone && g?.icon ? g.icon + " " : "";
+  return H`<span class="rp-to ${k}"${raw(gone ? ' title="这个策略组已不存在"' : "")}>${icon}${rpTargetName(t, d)}${gone ? H`<span class="vh">（已不存在）</span>` : ""}</span>`;
 }
 const rpSet = (k, d = RP.d) => d.catalog.find(s => s.key === k);
 const rpValText = (r, d = RP.d) => r.type === "set" ? rpSet(r.value, d)?.name || r.value : r.type === "geoip" ? RULE_REGIONS[r.value] || r.value : r.value;
@@ -102,7 +106,7 @@ function rpRow(r, i, own, editable) {
   const set = r.type === "set" ? rpSet(r.value) : null;
   return H`<div class="rp-row ${r.enabled ? "" : "off"} ${own && RP.scope ? "own" : ""}" ${raw(editable ? "draggable=\"true\"" : "")} data-i="${i}">
     <span class="rp-grip" title="拖动排序">${editable ? "⋮⋮" : ""}</span><span class="rp-n">${i + 1}</span>
-    <span class="rp-ty">${RULE_TYPES[r.type] || r.type}</span><span class="rp-v ${r.type === "set" ? "" : "mono"}" title="${rpValText(r)}">${rpValText(r)}${set ? H` <span class="sub">${set.desc}</span>` : ""}${r.note ? H` <span class="sub">· ${r.note}</span>` : ""}</span>
+    <span class="rp-tyc"><span class="rp-ty">${RULE_TYPES[r.type] || r.type}</span></span><span class="rp-v ${r.type === "set" ? "" : "mono"}" title="${rpValText(r)}">${rpValText(r)}${set ? H` <span class="sub">${set.desc}</span>` : ""}${r.note ? H` <span class="sub">· ${r.note}</span>` : ""}</span>
     <span class="rp-a">→</span>${rpPill(r.target)}
     <span class="sp"></span>${own && RP.scope ? H`<span class="pill on">仅 ${RP.scope}</span>` : ""}
     ${editable ? H`<label class="sw" title="${r.enabled ? "停用" : "启用"}"><input type="checkbox" data-act="rp-toggle" data-i="${i}" aria-label="启用第 ${i + 1} 条" ${raw(r.enabled ? "checked" : "")}><i></i></label>
@@ -116,7 +120,7 @@ function rpEditRow() {
   return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : "✎"}</span>
     <select class="in w140" id="re-type" aria-label="类型">${Object.entries(RULE_TYPES).map(([k, t]) => H`<option value="${k}" ${raw(k === e.type ? "selected" : "")}>${t}</option>`)}</select>
     <div class="grow">${valIn}</div><span class="rp-a">→</span><select class="in w220" id="re-to" aria-label="去向">${rpTargetOptions(e.target)}</select>
-    <button class="btn pri sm" data-act="rp-save">${e.isNew ? "添加" : "保存"}</button><button class="btn ghost sm" data-act="rp-cancel">取消</button>${e.isNew ? "" : H`<button class="ib sm c-bad" data-act="rp-del" title="删除" aria-label="删除这条">${ic("x")}</button>`}
+    <button class="btn pri sm" data-act="rp-save">${e.isNew ? "添加" : "保存"}</button><button class="btn ghost sm" data-act="rp-cancel">取消</button>${e.isNew ? "" : H`<button class="ib sm" data-act="rp-del" title="删除" aria-label="删除这条">${ic("x")}</button>`}
     <div class="err" id="re-err" role="alert" style="flex-basis:100%"></div></div>`;
 }
 function rpRulesCard(d) {
@@ -128,7 +132,7 @@ function rpRulesCard(d) {
   const finalSel = sc ? R.user_final || "" : R.final;
   return H`<div class="card">${sc ? "" : H`<div class="ch">从上往下匹配，第一条对上的生效<span class="sp"></span>${W ? H`<button class="btn sm" data-act="rp-builtin">${ic("plus")}内置规则组</button><button class="btn pri sm" data-act="rp-add">${ic("plus")}添加规则</button>` : ""}</div>${RP.edit?.isNew ? rpEditRow() : ""}`}
     <div class="rp-list">${own}${R.global.map((r, i) => sc ? rpRow({ ...r }, base + i, false, false) : rpRow(r, i, true, W))}
-    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-ty">兜底</span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">→</span>
+    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">→</span>
       ${W ? H`<select class="in w220" id="rp-final" aria-label="其他全部的去向">${rpTargetOptions(finalSel, d, sc ? `跟随全局(${rpTargetName(R.final)})` : null)}</select>` : rpPill(finalSel || R.final)}<span class="sp"></span></div></div></div>`;
 }
 
@@ -187,7 +191,7 @@ async function groupEditor(id) {
     <div class="field"><label>怎么选</label><div class="seg" id="gp-mode"><button type="button" class="${g.mode === "auto" ? "on" : ""}" data-m="auto">自动选最快</button><button type="button" class="${g.mode === "manual" ? "on" : ""}" data-m="manual">我手动选</button></div><span class="h">自动：客户端定时测网页延迟，挑最快的。手动：用户在客户端里自己选。</span></div>
     <div class="card mt"><div class="ch">现在会收进来<small id="gp-cnt"></small></div><div id="gp-pv"></div></div>
     <div class="err" id="gp-err" role="alert"></div>
-    ${g0 && can("DELETE", "/api/proxy-groups/x") ? H`<div class="card danger-zone mt22"><div class="row"><div><b class="bold">删除策略组</b><div class="sub">还有规则指向它时删不掉，先改掉那些规则。</div></div><span class="sp"></span><button type="button" class="btn sm c-bad" data-act="gp-rm" data-id="${g0.id}" data-name="${g0.name}">删除</button></div></div>` : ""}</div>
+    ${g0 && can("DELETE", "/api/proxy-groups/x") ? H`<div class="card mt22"><div class="row"><div><b class="bold">删除策略组</b><div class="sub">还有规则指向它时删不掉，先改掉那些规则。</div></div><span class="sp"></span><button type="button" class="btn sm" data-act="gp-rm" data-id="${g0.id}" data-name="${g0.name}">删除</button></div></div>` : ""}</div>
     <div class="df"><button type="button" class="btn" data-act="close">取消</button>${W ? H`<button class="btn pri" id="gp-save">保存</button>` : ""}</div></form>`);
   const f = $("#gp-form");
   const read = () => {

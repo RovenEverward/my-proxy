@@ -30,6 +30,23 @@ const docStat = (checks, k, label) => {
   <div class="s">${k === "ok" ? "没有毛病" : k === "warn" ? "该看一眼，不算坏" : "要看，系统确实有毛病"}</div></div>`;
 };
 
+// doctorApplyDetail:ui_action==="apply" 的漂移行换成界面说法。xray 的漂移一定是
+// 控制面观测到的「不一致」;sing-box 那句「未读取或与下发内容不一致」两种可能都
+// 有,所以只有在 xray 不在场(此时 ui_action=apply 只可能来自 sing-box)时才敢按
+// 「不一致」讲;xray 也在场时保持原句,免得把「没读到」说成「被改过」。
+function doctorApplyDetail(detail) {
+  const XRAY = "配置和下发的不一致(节点上被改过)";
+  const SINGBOX = "sing-box 配置未读取或与下发内容不一致";
+  const MERGED = "节点上的配置和控制面不一致";
+  const parts = String(detail).split(";");
+  const hasXray = parts.some(p => p.includes(XRAY));
+  return parts.map(p => {
+    if (p.includes(XRAY)) return p.split(XRAY).join(MERGED);
+    if (p.includes(SINGBOX) && !hasXray) return p.split(SINGBOX).join("节点上的 sing-box 配置和控制面不一致");
+    return p;
+  }).join(";");
+}
+
 function doctorPage() {
   const head = H`<div class="ph"><div><h1>体检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>
     ${DOC_RUNNING ? H`<button class="btn pri busy" disabled>开始体检</button>` : H`<button class="btn pri" data-act="doc-run">${ic("check")}开始体检</button>`}</div>`;
@@ -48,8 +65,16 @@ function doctorPage() {
     // 控制面给的提示里还是旧按钮名;界面上已改叫「应用到节点」「暂停分配」(控制面接口不改)。
     const hint = (c.ui_hint || c.hint || "").replace(/下发配置/g, "应用到节点").replace(/排水/g, "暂停分配");
     const shown = nm && lb !== nm ? hint.split(`打开 ${nm}`).join(`打开 ${lb}`) : hint;
+    // 漂移警告:文案换成界面说法,后面跟一个行内「应用到节点」按钮。按钮本身不在这里
+    // 下发,只是跳到节点详情并记下要自动触发的节点(nodes.js 画好后打开确认弹窗)。
+    const apply = c.ui_action === "apply" && c.node_id;
+    const applyBtn = apply && can("POST", "/api/nodes/x")
+      ? H`<button type="button" class="btn sm" data-act="doc-apply" data-id="${c.node_id}">应用到${lb || nm}</button>` : "";
+    const detail = apply ? doctorApplyDetail(c.detail) : c.detail;
+    // 建议里讲的就是「应用到节点」时按钮已经说明白了,不再重复一行。
+    const advice = applyBtn && shown.includes("应用到节点") ? "" : shown;
     return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : c.name}</b></td><td>${stBadge(cls, text)}</td>
-      <td class="doc-d"><div>${c.detail}</div>${shown ? H`<div class="sub">建议：${shown}</div>` : ""}</td></tr>`;
+      <td class="doc-d"><div>${detail}${applyBtn}</div>${advice ? H`<div class="sub">建议：${advice}</div>` : ""}</td></tr>`;
   });
   return H`${head}
     <div class="grid g3">${docStat(checks, "ok", "正常")}${docStat(checks, "warn", "警告")}${docStat(checks, "fail", "失败")}</div>
@@ -60,6 +85,9 @@ function doctorPage() {
 
 Object.assign(ACTS, {
   "doc-run": () => runDoctor(),
+  // 跳到节点详情页;nodes.js 在详情画好后看到 AUTO_APPLY,就打开「应用到节点」的
+  // 确认弹窗(用户确认才真正下发)。
+  "doc-apply": d => { window.AUTO_APPLY = { id: +d.id, at: Date.now() }; location.hash = "#nodes/" + d.id; },
 });
 
 // runDoctor:发一次请求。先用模块状态摆出「正在体检」再 paint,避免等响应期间

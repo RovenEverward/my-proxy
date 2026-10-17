@@ -678,6 +678,11 @@ type DoctorCheck struct {
 	// UIHint 是同一个"接下来该做什么"的界面版:界面里该怎么做,只描述界面
 	// 操作、不出现命令;为空时界面退回 Hint。
 	UIHint string `json:"ui_hint,omitempty"`
+	// NodeID 是这一项检查对应的节点;不是节点检查项的为空。
+	NodeID int64 `json:"node_id,omitempty"`
+	// UIAction 是界面可以对这个检查项直接做的动作。目前只有 "apply" = 界面可以
+	// 提供「应用到节点」按钮(NodeID 指明是哪台);为空表示没有可做的行内动作。
+	UIAction string `json:"ui_action,omitempty"`
 }
 
 // DoctorReport 是 GET /api/doctor 的回答,也是 mpx doctor 打印的东西。

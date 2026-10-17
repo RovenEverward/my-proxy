@@ -2,10 +2,16 @@
 // 自检会逐台节点现场查,所以进页面不许自动发请求;点了「开始自检」才发。接口报错时
 // 要显示控制面的原话,而不是笼统的"失败了"。
 import { test, expect } from "@playwright/test";
-import { startEnv, login } from "./env.mjs";
+import { startEnv, login, cpFetch } from "./env.mjs";
 
-let env;
-test.beforeAll(async () => { env = await startEnv(); });
+let env, driftNodeID;
+test.beforeAll(async () => {
+  env = await startEnv();
+  // 漂移警告要跳到的节点:地址给 127.0.0.1:1(SSH 必被拒),用例里再把详情 mock 成可达。
+  await env.seed("node", "add", "doc-drift", "--address", "127.0.0.1", "--ssh-port", "1");
+  const r = await cpFetch(env.cpURL + "/api/nodes", { headers: { Authorization: "Bearer " + env.token } });
+  driftNodeID = (await r.json()).find(n => n.name === "doc-drift").id;
+});
 test.afterAll(async () => { await env?.stop(); });
 
 const REPORT = { checks: [
@@ -91,3 +97,112 @@ test("优先显示 ui_hint,不把命令摆进窗口", async ({ page }) => {
   await expect(page.locator("#content, main, body").first()).toContainText("重新「接入已有控制面」");
   await expect(page.locator("body")).not.toContainText("重新 mpx connect");
 });
+
+// 漂移警告行:文案换成界面说法,后面跟「应用到<节点>」;点一下跳到节点详情并弹出
+// 「应用到节点」的确认弹窗(用户确认才下发),取消后不再弹第二次。没有 ui_action
+// 的普通警告行不带这个按钮。
+test("漂移警告:一键跳到节点详情并弹出应用确认", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+    { name: "节点 doc-drift", status: "warn", detail: "配置和下发的不一致(节点上被改过)", ui_hint: "可能是你自己改的,也可能是别人改的;确认后到「节点」页打开 doc-drift,点「下发配置」覆盖回去", ui_action: "apply", node_id: driftNodeID },
+    { name: "节点 plain", status: "warn", detail: "配置和下发的不一致(节点上被改过)" },
+  ] }) }));
+  // 详情要有一个可点的「应用到节点」:可达,且观测哈希与下发的对不上。
+  await page.route(`**/api/nodes/${driftNodeID}`, async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...(n.status || {}), node_id: driftNodeID, checked_at: new Date().toISOString(), reachable: true, error: "", observed_hash: "changed" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  const row = page.locator("table tbody tr").first();
+  await expect(row).toContainText("节点上的配置和控制面不一致");
+  await expect(row).not.toContainText("配置和下发的不一致");
+  await expect(row).not.toContainText("建议：");
+  const btn = row.locator("[data-act=doc-apply]");
+  await expect(btn).toHaveText("应用到doc-drift");
+  // 没有 ui_action 的行只是普通警告,没有行内按钮,原文案也不变。
+  const plainRow = page.locator("table tbody tr").nth(1);
+  await expect(plainRow).toContainText("配置和下发的不一致");
+  await expect(plainRow.locator("[data-act=doc-apply]")).toHaveCount(0);
+  await btn.click();
+  await expect(page).toHaveURL(new RegExp("#nodes/" + driftNodeID + "$"));
+  const modal = page.locator("#modal.open");
+  await expect(modal).toContainText("把配置应用到");
+  // 从体检过来的应用确认要带上「可能是你自己改的」这句提醒(建议行被省掉了)。
+  await expect(modal).toContainText("可能是你自己改的，也可能是别人改的");
+  // 取消:确认弹窗关掉,主动触发一次重绘(体检页 30 秒才轮询一次)也不再自己冒出来。
+  await page.click("#modal [data-act=modal-cancel]");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  await page.evaluate(() => load(true, true));
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+});
+
+// 节点连不上时点体检的「应用到<节点>」:详情里没有可点的下发按钮,应该给出下一步
+// 并聚焦「刷新状态」,而不是静默什么都不做。
+test("漂移行一键应用:节点连不上时提示并聚焦刷新", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+    { name: "节点 doc-drift", status: "warn", detail: "配置和下发的不一致(节点上被改过)", ui_action: "apply", node_id: driftNodeID },
+  ] }) }));
+  await page.route(`**/api/nodes/${driftNodeID}`, async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...(n.status || {}), node_id: driftNodeID, checked_at: new Date().toISOString(), reachable: false, error: "dial tcp: i/o timeout" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  await page.locator("table tbody tr").first().locator("[data-act=doc-apply]").click();
+  await expect(page).toHaveURL(new RegExp("#nodes/" + driftNodeID + "$"));
+  await expect(page.locator(".toast")).toContainText("先点「刷新状态」");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement?.dataset?.act)).toBe("node-check");
+});
+
+// 中途离开节点详情(哪怕标志刚写下)也要丢掉自动应用:LIST 页的 load 会清掉它,
+// 再回详情页不许突然弹确认。
+test("中途离开后自动应用标志不再弹确认", async ({ page }) => {
+  await login(page, env);
+  await page.route(`**/api/nodes/${driftNodeID}`, async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "deployed";
+    n.status = { ...(n.status || {}), node_id: driftNodeID, checked_at: new Date().toISOString(), reachable: true, error: "", observed_hash: "changed" };
+    await route.fulfill({ response, json: n });
+  });
+  await page.goto(env.origin + "/#doctor");
+  await page.evaluate(id => { window.AUTO_APPLY = { id, at: Date.now() }; location.hash = "#nodes"; }, driftNodeID);
+  await expect(page.locator(".ph h1")).toHaveText("节点");
+  await page.evaluate(id => { location.hash = "#nodes/" + id; }, driftNodeID);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  // mock 的详情是可点的:标志若没被丢掉,这里一定会弹。
+  await expect(page.locator(".ph [data-act=node-sync]")).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+});
+
+// ui_action==="apply" 时 xray 的漂移一定是观测到的「不一致」;sing-box 那句两种
+// 可能都有,只有 xray 不在场时才按不一致讲;两句同时出现时 sing-box 保持原句,
+// 不把「没读到」说成「被改过」。
+for (const [name, detail, wants, forbids] of [
+  ["仅 sing-box 漂移", "sing-box 配置未读取或与下发内容不一致", ["节点上的 sing-box 配置和控制面不一致"], ["未读取或与下发内容不一致"]],
+  ["xray 与 sing-box 同时出现", "配置和下发的不一致(节点上被改过);sing-box 配置未读取或与下发内容不一致", ["节点上的配置和控制面不一致", "sing-box 配置未读取或与下发内容不一致"], []],
+]) {
+  test(`漂移文案:${name}`, async ({ page }) => {
+    await login(page, env);
+    await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+      { name: "节点 doc-drift", status: "warn", detail, ui_action: "apply", node_id: driftNodeID },
+    ] }) }));
+    await page.goto(env.origin + "/#doctor");
+    await page.click("[data-act=doc-run]");
+    const row = page.locator("table tbody tr").first();
+    for (const w of wants) await expect(row).toContainText(w);
+    await expect(row).not.toContainText("配置和下发的不一致");
+    for (const f of forbids) await expect(row).not.toContainText(f);
+    // 只留一个「应用到」按钮。
+    await expect(row.locator("[data-act=doc-apply]")).toHaveCount(1);
+  });
+}
