@@ -118,6 +118,11 @@ let route = [], current = { page: null, data: null, error: null, loading: true, 
 // GET /local/update 的最近一次结论;null 表示还没问过。弹窗读它,不重复请求。
 let UPDATE = null;
 const UPD_SKIP_KEY = "mpx-upd-skip";
+// 本机那一层与「正在运行的程序」的叫法:桌面构建(/local/update 的 desktop 为
+// true)都叫「桌面程序」,浏览器模式是「本机 CLI」与 mpx ui;还没问到结论时按
+// 浏览器模式叫。
+const updSelfName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "本机 CLI";
+const updProgName = () => UPDATE && UPDATE.desktop ? "桌面程序" : "mpx ui";
 
 // cmpVer 给版本号做粗略排序:按数字段比,段数不够的算小。"v" 前缀与预发布后缀不计。
 function cmpVer(a, b) {
@@ -192,10 +197,10 @@ function openUpdateModal() {
   const nodes = Array.isArray(u.nodes) ? u.nodes : [];
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
-  ${updRow("本机 CLI", l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
+  ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
   ${u.notes ? H`<pre class="upd-notes">${u.notes}</pre>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
-  <p class="sub mt">将依次升级控制面、节点、本机,完成后 mpx ui 自动重启。</p>
+  <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机,完成后 mpx ui 自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
@@ -205,6 +210,8 @@ function openUpdateModal() {
 // done / failed / restarting。409 表示已有一轮在跑,直接进轮询。
 let updAll = null;
 const UPD_STEP_NAMES = { control: "控制面", nodes: "节点", cli: "本机", restart: "重启" };
+// 进度视图里步骤组的名字;本机那一组在桌面构建下叫「桌面程序」。
+const updStepName = s => s === "cli" && UPDATE && UPDATE.desktop ? "桌面程序" : (UPD_STEP_NAMES[s] || s);
 const UPD_ALL_MIN = 1000, UPD_ALL_MAX = 5000;
 async function applyUpdate(el) {
   el.disabled = true; el.classList.add("busy");
@@ -275,7 +282,7 @@ function renderUpdAll() {
   const title = failed ? "更新失败" : done ? "已是最新" : "正在更新";
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
-  <div class="upd-steps">${groups.map(g => H`<div class="upd-step">${UPD_STEP_NAMES[g.step] || g.step}</div>${g.evs.map(ev => H`<div class="upd-ev ${ev.status}">${ev.msg}</div>`)}`)}</div>
+  <div class="upd-steps">${groups.map(g => H`<div class="upd-step">${updStepName(g.step)}</div>${g.evs.map(ev => H`<div class="upd-ev ${ev.status}">${ev.msg}</div>`)}`)}</div>
   ${failed ? H`<div class="err" role="alert">${failed.msg}</div>` : ""}</div>
   ${(failed || done) ? H`<div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>` : ""}`);
   $("#scrim").classList.add("open"); m.classList.add("open");
@@ -286,15 +293,16 @@ function renderUpdAll() {
 // 刷新;会话沿用,cookie 继续有效。最多等 60 秒,超时提示手动刷新。
 function updRestartWait() {
   if (updAll) { clearTimeout(updAll.timer); updAll = null; }
+  const title = updProgName() + " 正在重启";
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>mpx ui 正在重启…</h2>
+  m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
   <p class="sub">新版本起来后本页会自动刷新,会话沿用,无需重新登录。</p></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const deadline = Date.now() + 60000;
   const tick = async () => {
     try { await api("/ui/meta"); location.reload(); return; } catch {}
     if (Date.now() >= deadline) {
-      m.innerHTML = val(H`<div class="mbody"><h2>mpx ui 正在重启…</h2>
+      m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
       <p class="sub">等了一分钟还没起来,请手动刷新本页确认状态。</p></div>
       <div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>`);
       $("#scrim").classList.add("open"); m.classList.add("open");

@@ -282,3 +282,71 @@ func TestDecide(t *testing.T) {
 		})
 	}
 }
+
+func TestDesktopArchiveName(t *testing.T) {
+	cases := []struct{ goos, goarch, want string }{
+		{"linux", "amd64", "mpx_desktop_linux_amd64.tar.gz"},
+		{"linux", "arm64", "mpx_desktop_linux_arm64.tar.gz"},
+		{"windows", "amd64", "mpx_desktop_windows_amd64.zip"},
+		// macOS 只有通用包,不按 CPU 架构分。
+		{"darwin", "amd64", "mpx_desktop_darwin_universal.tar.gz"},
+		{"darwin", "arm64", "mpx_desktop_darwin_universal.tar.gz"},
+	}
+	for _, tc := range cases {
+		if got := DesktopArchiveName(tc.goos, tc.goarch); got != tc.want {
+			t.Errorf("DesktopArchiveName(%s, %s) = %q,想要 %q", tc.goos, tc.goarch, got, tc.want)
+		}
+	}
+}
+
+// 桌面模式取的是桌面安装包,而且必须校验:缺清单直接拒绝。
+func TestFetchDesktopRequiresSums(t *testing.T) {
+	name := DesktopArchiveName("linux", "amd64")
+	archive := tarGz(t, map[string]string{"mpx": "桌面程序"})
+	_, src := serve(t, "latest", nil, map[string][]byte{name: archive})
+	src.Desktop = true
+
+	_, _, err := src.Fetch(context.Background(), "latest", "linux", "amd64")
+	if err == nil {
+		t.Fatal("桌面模式缺 SHA256SUMS 时应该报错")
+	}
+	if !strings.Contains(err.Error(), "SHA256SUMS") {
+		t.Fatalf("错误里应提到 SHA256SUMS,得到: %v", err)
+	}
+}
+
+func TestFetchDesktopTarGz(t *testing.T) {
+	const want = "桌面程序的内容"
+	name := DesktopArchiveName("linux", "amd64")
+	archive := tarGz(t, map[string]string{"mpx": want})
+	_, src := serve(t, "latest", sumsFor(map[string][]byte{name: archive}), map[string][]byte{name: archive})
+	src.Desktop = true
+
+	bin, verified, err := src.Fetch(context.Background(), "latest", "linux", "amd64")
+	if err != nil {
+		t.Fatalf("Fetch 出错: %v", err)
+	}
+	if !verified {
+		t.Fatal("verified = false,想要 true")
+	}
+	if string(bin) != want {
+		t.Fatalf("解出的内容 = %q,想要 %q", bin, want)
+	}
+}
+
+// 桌面模式的哈希校验不能松:清单对不上就拒绝安装。
+func TestFetchDesktopHashMismatch(t *testing.T) {
+	name := DesktopArchiveName("darwin", "arm64")
+	archive := tarGz(t, map[string]string{"mpx": "真的内容"})
+	bad := []byte(strings.Repeat("0", 64) + "  " + name + "\n")
+	_, src := serve(t, "latest", bad, map[string][]byte{name: archive})
+	src.Desktop = true
+
+	_, _, err := src.Fetch(context.Background(), "latest", "darwin", "arm64")
+	if err == nil {
+		t.Fatal("哈希不符时应该报错")
+	}
+	if !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("错误里应说明 sha256 不符,得到: %v", err)
+	}
+}

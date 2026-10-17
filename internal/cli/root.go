@@ -87,14 +87,24 @@ func init() {
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
-func Execute() int {
+//
+// args 是进程参数(不含程序名),main 已先用 DesktopArgs 摊派过;不传时 cobra
+// 照旧自己读 os.Args[1:],测试与其他调用方两种用法都能走。
+func Execute(args ...string) int {
 	wireCompletion(rootCmd)
+	if len(args) > 0 {
+		rootCmd.SetArgs(args)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		// doctor 发现故障时要给一个能被脚本认出来的码。它走的是"RunE 返回
 		// 错误"这条路(cobra 只认这一种失败方式),但它的输出已经打完了、
 		// 也不该再往 stderr 上补一行,所以单独放行,把它翻译成退出码。
 		if errors.Is(err, errDoctorFailed) {
 			return doctorFailExit
+		}
+		// 缺 WebView 的提示已经打过了(Windows 还弹过对话框),这里只负责退出码。
+		if errors.Is(err, errAppNoWebView) {
+			return appNoWebViewExit
 		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1

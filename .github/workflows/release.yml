@@ -15,6 +15,11 @@ name: release
 # 通用 .pkg(两个架构 lipo 合成后由 pkgbuild 打包)。安装包文件名里的版本号是
 # tag 去掉 v(mpx_0.7.2_...)。都没有签名,安装包和压缩包一样只是同一份二进制换
 # 了个外壳,更新器和 install*.sh 仍然只认压缩包。
+#
+# 另有桌面程序包(desktop-* job):同一个 ./cmd/mpx 加 desktop=1 编译,双击即开
+# MPX 窗口。出 macOS 的 MPX.app / dmg、Windows 的按用户安装 setup.exe、Linux 的
+# mpx-desktop .deb 与带 install.sh 的 tar.gz,以及给桌面自更新用的 mpx_desktop_*
+# 归档。桌面包同样不签名,和命令行包并存、互不替换。
 
 on:
   push:
@@ -74,6 +79,85 @@ jobs:
         with:
           name: mpx_${{ matrix.goos }}_${{ matrix.goarch }}
           path: mpx_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}
+
+  # 桌面程序二进制:同一个 ./cmd/mpx,多一个 desktop=1,无参数启动就开窗口。
+  # 一台 ubuntu 交叉编出五个平台(CGO_ENABLED=0,和 CLI 包同一套)。Windows 构建
+  # 前用 go-winres 把 icon.ico 与 GUI manifest 编进 cmd/mpx 下的临时 .syso ——
+  # 只在 CI 生成、不提交,也不影响 build job 里的 CLI 二进制。
+  #
+  # 自更新只认 mpx_ 开头的压缩包,所以这里先出 linux 与 windows 的
+  # mpx_desktop_<os>_<arch> 归档;macOS 的通用二进制在 desktop-macos 里 lipo 完
+  # 再打包。未打包的二进制以 dbin_ 开头留给后面三个打包 job,publish 的
+  # '{mpx_,pkg_}*' 匹配不到它,不会进 release 附件。
+  desktop-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, archive: tar.gz }
+          - { goos: linux, goarch: arm64, archive: tar.gz }
+          - { goos: darwin, goarch: amd64, archive: '' }
+          - { goos: darwin, goarch: arm64, archive: '' }
+          - { goos: windows, goarch: amd64, archive: zip }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # 只在 Windows 目标上生成:文件名带 _windows_amd64,别的平台构建不会用到它。
+      # go-winres 固定版本,避免上游升级悄悄改变资源格式。
+      - name: 生成 Windows 资源(图标 + GUI manifest)
+        if: matrix.goos == 'windows'
+        working-directory: cmd/mpx
+        run: |
+          go run github.com/tc-hib/go-winres@v0.3.3 simply \
+            --arch amd64 \
+            --icon ../../deploy/desktop/icon.ico \
+            --manifest gui
+
+      - name: 构建桌面二进制
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        # desktop=1 是「无参数启动就开窗口」的开关;版本号与 CLI 包同一口径。
+        # Windows 额外加 -H windowsgui,双击时不带一个黑色控制台窗口。
+        run: |
+          set -eu
+          mkdir -p dist
+          if [ "$GOOS" = "windows" ]; then out="dist/mpx.exe"; else out="dist/mpx"; fi
+          ldflags="-s -w -X github.com/RovenEverward/my-proxy/internal/buildinfo.version=${{ github.ref_name }} -X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1"
+          if [ "$GOOS" = "windows" ]; then ldflags="$ldflags -H windowsgui"; fi
+          go build -trimpath -ldflags "$ldflags" -o "$out" ./cmd/mpx
+          ls -l "$out"
+
+      # macOS 的两个架构要等 desktop-macos 里 lipo,这里不出归档。
+      - name: 打自更新归档(linux / windows)
+        if: matrix.archive != ''
+        run: |
+          set -eu
+          name="mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd dist && zip -q "${name}.zip" mpx.exe)
+          else
+            tar -czf "dist/${name}.tar.gz" -C dist mpx
+          fi
+          ls -l dist/mpx_desktop_*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbin_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/mpx${{ matrix.goos == 'windows' && '.exe' || '' }}
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.archive != ''
+        with:
+          name: mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
+          if-no-files-found: error
 
   # Linux 安装包:同一份二进制分别打成 .deb 和 .rpm。deploy/nfpm.yaml 描述内容,
   # 这里只负责给 nfpm 传进 架构 / 版本 / 二进制路径。
@@ -211,8 +295,181 @@ jobs:
           path: mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg
           if-no-files-found: error
 
+  # 桌面版 macOS:两个 darwin 桌面二进制 lipo 成通用二进制,手工拼 MPX.app
+  # (Info.plist 模板在 deploy/desktop/Info.plist.in),再 hdiutil 打成 dmg。
+  # 另外出一份只含通用二进制的 mpx_desktop_darwin_universal.tar.gz 给自更新用。
+  desktop-macos:
+    needs: desktop-build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dbin_darwin_*
+          path: bin
+
+      - name: 合成通用二进制并拼 MPX.app
+        run: |
+          set -eu
+          ver="${{ steps.ver.outputs.ver }}"
+          chmod +x bin/dbin_darwin_amd64/mpx bin/dbin_darwin_arm64/mpx
+          lipo -create \
+            -output mpx \
+            bin/dbin_darwin_amd64/mpx bin/dbin_darwin_arm64/mpx
+          lipo -info mpx
+
+          app="MPX.app"
+          rm -rf "$app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp mpx "$app/Contents/MacOS/mpx"
+          chmod +x "$app/Contents/MacOS/mpx"
+          cp deploy/desktop/icon.icns "$app/Contents/Resources/icon.icns"
+          # 模板里的 @VERSION@ 换成去掉 v 的版本号(CFBundleShortVersionString
+          # 与 CFBundleVersion 各一处)。
+          sed "s/@VERSION@/${ver}/g" deploy/desktop/Info.plist.in >"$app/Contents/Info.plist"
+          plutil -lint "$app/Contents/Info.plist"
+
+          tar -czf "mpx_desktop_darwin_universal.tar.gz" mpx
+          ls -l mpx_desktop_darwin_universal.tar.gz
+
+      - name: 打 dmg
+        run: |
+          set -eu
+          ver="${{ steps.ver.outputs.ver }}"
+          rm -rf dmg
+          mkdir -p dmg
+          cp -R MPX.app dmg/MPX.app
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "MPX" -srcfolder dmg -ov -format UDZO \
+            "mpx-desktop_${ver}_darwin_universal.dmg"
+          ls -l mpx-desktop_*.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_desktop_macos
+          path: |
+            mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg
+            mpx_desktop_darwin_universal.tar.gz
+          if-no-files-found: error
+
+  # 桌面版 Windows:按用户装到 $LOCALAPPDATA\Programs\MPX,不需要管理员。
+  # 细节(开始菜单/桌面快捷方式、HKCU 卸载项、卸载)都在
+  # deploy/windows/mpx-desktop.nsi 里。desktop-build 已经把 icon.ico 与 GUI
+  # manifest 编进那个 mpx.exe 了。
+  desktop-windows:
+    needs: desktop-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dbin_windows_amd64
+          path: bin
+
+      - name: 安装 NSIS
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+
+      - name: 打桌面 setup.exe
+        run: |
+          set -eu
+          makensis -INPUTCHARSET UTF8 \
+            -DVERSION="${{ steps.ver.outputs.ver }}" \
+            -DSRCEXE="$PWD/bin/mpx.exe" \
+            -DICONFILE="$PWD/deploy/desktop/icon.ico" \
+            -DOUTFILE="$PWD/mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe" \
+            deploy/windows/mpx-desktop.nsi
+          ls -l mpx-desktop_*setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_desktop_windows
+          path: mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe
+          if-no-files-found: error
+
+  # 桌面版 Linux:.deb 装到 /opt/mpx(不碰 CLI 的 /usr/bin/mpx),另出一份带
+  # install.sh 的 tar.gz 给没有 .deb 的发行版。内容描述在
+  # deploy/desktop/nfpm-desktop.yaml。
+  desktop-linux:
+    needs: desktop-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 算出去掉 v 的版本号
+        id: ver
+        env:
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dbin_linux_*
+          path: bin
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 安装 nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+
+      - name: 打 .deb 与 tar.gz 安装包
+        run: |
+          set -eu
+          ver="${{ steps.ver.outputs.ver }}"
+          for arch in amd64 arm64; do
+            chmod +x "bin/dbin_linux_${arch}/mpx"
+            NFPM_ARCH="$arch" NFPM_VERSION="$ver" NFPM_BIN="$PWD/bin/dbin_linux_${arch}/mpx" \
+            NFPM_DESKTOP="$PWD/deploy/desktop/mpx.desktop" \
+            NFPM_ICON256="$PWD/deploy/desktop/mpx-256.png" \
+            NFPM_ICON512="$PWD/deploy/desktop/mpx-512.png" \
+              "$(go env GOPATH)/bin/nfpm" package \
+                -f deploy/desktop/nfpm-desktop.yaml -p deb \
+                -t "mpx-desktop_${ver}_${arch}.deb"
+
+            # tar.gz 的目录固定叫 MPX/,里面的 mpx.desktop 是模板(Exec 指向
+            # /opt/mpx/mpx),install.sh 会把它改成用户目录下的路径。
+            rm -rf stage
+            mkdir -p stage/MPX
+            cp "bin/dbin_linux_${arch}/mpx" stage/MPX/mpx
+            chmod +x stage/MPX/mpx
+            cp deploy/desktop/mpx.desktop stage/MPX/mpx.desktop
+            cp deploy/desktop/mpx-256.png stage/MPX/mpx.png
+            cp deploy/desktop/install.sh stage/MPX/install.sh
+            chmod +x stage/MPX/install.sh
+            tar -czf "mpx-desktop_${ver}_linux_${arch}.tar.gz" -C stage MPX
+          done
+          ls -l mpx-desktop_*.deb mpx-desktop_*.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg_desktop_linux
+          path: |
+            mpx-desktop_${{ steps.ver.outputs.ver }}_*.deb
+            mpx-desktop_${{ steps.ver.outputs.ver }}_linux_*.tar.gz
+          if-no-files-found: error
+
   publish:
-    needs: [build, pkg-linux, pkg-windows, pkg-macos]
+    needs: [build, pkg-linux, pkg-windows, pkg-macos, desktop-build, desktop-macos, desktop-windows, desktop-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -228,22 +485,30 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      # 只要发布件:mpx_* 是压缩包,pkg_* 是安装包,bin_* 是给打包 job 用的中间
-      # 产物,排除掉。merge-multiple 把所有文件摊平进 dist/,供 SHA256SUMS 和
-      # 上传使用。
+      # 只要发布件:mpx_* 是压缩包(含桌面的 mpx_desktop_*),pkg_* 是安装包
+      # (含桌面的 pkg_desktop_*),dbin_* 是给打包 job 用的中间产物,排除掉。
+      # merge-multiple 把所有文件摊平进 dist/,供 SHA256SUMS 和上传使用。
       - uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: '{mpx_,pkg_}*'
           merge-multiple: true
 
-      # SHA256SUMS 覆盖全部发布件,安装脚本按它核对下载的文件。不做签名:决定与理由见
+      # SHA256SUMS 覆盖全部发布件(命令行的 mpx_*、桌面的 mpx-desktop_*),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
       # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
+      # GitHub 的附件名不分大小写:v0.9.0-rc.1/rc.2 里桌面安装包叫 MPX_<ver>_windows_amd64_setup.exe,
+      # 和命令行的 mpx_<ver>_windows_amd64_setup.exe 撞名,前者把后者顶掉了。这里先拦住。
+      - name: 检查附件名不分大小写也不重复
+        run: |
+          set -eu
+          dup=$(ls dist | tr '[:upper:]' '[:lower:]' | sort | uniq -d)
+          if [ -n "$dup" ]; then echo "::error::附件名大小写不敏感地重复: $dup"; exit 1; fi
+
       - name: SHA256SUMS
         run: |
           set -eu
           cd dist
-          sha256sum mpx_* > SHA256SUMS
+          sha256sum mpx_* mpx-desktop_* > SHA256SUMS
           cat SHA256SUMS
 
       - name: 取出 tag 消息当发布说明
@@ -278,7 +543,8 @@ jobs:
           fi
 
       # 下载区接在 tag 消息后面。只在有 tag 消息时拼:轻量 tag 走自动生成正文那
-      # 条路,不掺这一节。文件名里的版本号与三个打包 job 一致(去掉 v)。
+      # 条路,不掺这一节。文件名里的版本号与各打包 job 一致(去掉 v)。桌面程序放
+      # 最前面:它是双击就能用的那个,命令行安装包仍在后面,一个都没少。
       - name: 追加「下载」一节
         if: steps.notes.outputs.annotated == 'true'
         run: |
@@ -287,7 +553,25 @@ jobs:
 
           ## 下载
 
-          ### 安装包
+          ### 桌面程序(推荐)
+
+          双击打开就是一个 MPX 窗口,里面是同一套管理界面。都没有签名。
+
+          - **macOS(通用,Intel 与 Apple 芯片)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg`
+            —— 打开后把 `MPX.app` 拖进「应用程序」。未签名,首次打开请右键 →「打开」,
+            或到「系统设置 → 隐私与安全性」里放行。
+          - **Windows(64 位)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
+            —— 按当前用户安装(不需要管理员),装完开始菜单里有 MPX。未签名,
+            SmartScreen 提示时选「仍要运行」。
+          - **Linux(Debian / Ubuntu)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_amd64.deb`
+            (arm64 是 `mpx-desktop_${{ steps.ver.outputs.ver }}_arm64.deb`)
+            —— 双击安装或 `sudo apt install ./mpx-desktop_....deb`。
+          - **Linux(其他发行版)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_linux_amd64.tar.gz`
+            (arm64 同理)—— 解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
+            `./install.sh --uninstall` 卸载。Linux 桌面版需要系统的 WebKitGTK 4.1
+            (`libwebkit2gtk-4.1-0`,GTK 3 会随依赖装上)。
+
+          ### 命令行安装包
 
           - **macOS(通用,Intel 与 Apple 芯片)**:`mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg`
             —— 双击安装,二进制落在 `/usr/local/bin/mpx`(未签名,首次打开若被拦,可在
@@ -311,44 +595,73 @@ jobs:
           - **Windows(64 位)**:`mpx_windows_amd64.zip`
 
           `deploy/install.sh` 与 `deploy/install-cli.sh` 用的就是上面这些压缩包。
+          桌面程序的 `mpx_desktop_*` 归档只给桌面自更新用,不用手工下载。
           所有文件的 `SHA256SUMS` 在同一发布里,可按它核对下载内容。
           EOF
           echo "拼接后的正文:"
           cat NOTES.md
 
-      # 两个步骤二选一,而不是把 body_path 与 generate_release_notes 一起给:
-      # 同时给时后者会把自动生成的那份**追加**到正文后面,于是人工写的话和凑
-      # 出来的提交列表混在一起。分开写,谁生效一目了然。
+      # 发布用 gh CLI,不用 softprops/action-gh-release:v0.9.0-rc.1 那次它把
+      # 21 个附件全部传完后,死在收尾的「更新 release 资产」上,报
+      # 'Not Found - update-a-release-asset',job 失败,排在后面的写正文步骤
+      # 全没跑,只能整个重跑。gh 把建 release、改正文、传附件拆成独立命令,
+      # 各失败各重试,不绑在一个 action 里陪葬。
       #
-      # 注明:推 tag 时 GitHub 会先自己建一个 release(正文是自动生成的提交列表),
-      # publish job 跑起来时它已经在那儿了,action 于是走"更新已有 release"那条路。
-      # v0.3.0 实测正文仍是提交消息 —— body_path 没能覆盖已有的。所以下面用
-      # gh release edit 再显式写一次正文,不依赖 action 内部的合并逻辑。
-      - name: 用 tag 消息发布
-        if: steps.notes.outputs.annotated == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          body_path: NOTES.md
-
-      - name: 确保正文就是 tag 消息
-        if: steps.notes.outputs.annotated == 'true'
+      # 推 tag 时 GitHub 会先自己建一个 release(正文是自动生成的提交列表),
+      # publish job 跑起来时它多半已经在那儿了,所以先 gh release view 分流:
+      # 已存在就 edit —— 有 tag 消息时 --notes-file 把正文整个覆盖成 NOTES.md
+      # (v0.3.0 实测 softprops 的 body_path 覆盖不了预建 release 的正文,必须
+      # 显式 edit;原「确保正文就是 tag 消息」那步并进了这里);不存在就
+      # create --verify-tag。有 tag 消息用 NOTES.md,轻量 tag 才
+      # --generate-notes,两者不同时给:同时给会把自动生成的提交列表追加到
+      # 人工正文后面,混在一起。
+      - name: 建/改 release 并传附件
         env:
           GH_TOKEN: ${{ github.token }}
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          ANNOTATED: ${{ steps.notes.outputs.annotated }}
         run: |
           set -eu
-          # action 若没能覆盖预建 release 的正文,这里补上。幂等,已是目标内容
-          # 时只是又写一遍同样的字。
-          gh release edit "${{ github.ref_name }}" --notes-file NOTES.md
-          echo "现在正文开头是:$(gh release view '${{ github.ref_name }}' --json body -q .body | head -1)"
 
-      - name: 用自动生成的说明发布
-        if: steps.notes.outputs.annotated != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给
+          # 更新器;口径与原先的 contains(github.ref_name,'-') 一致。edit 没有
+          # 把 prerelease 置假的旗标,稳定 tag 不传它,沿用 release 原有标记。
+          pre=()
+          case "$TAG" in
+            *-*) pre+=(--prerelease) ;;
+          esac
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release 已存在,改它"
+            if [ "$ANNOTATED" = 'true' ]; then
+              gh release edit "$TAG" --repo "$REPO" --notes-file NOTES.md "${pre[@]}"
+            else
+              gh release edit "$TAG" --repo "$REPO" "${pre[@]}"
+            fi
+          else
+            echo "release 不存在,建它"
+            if [ "$ANNOTATED" = 'true' ]; then
+              gh release create "$TAG" --repo "$REPO" --verify-tag \
+                --notes-file NOTES.md "${pre[@]}"
+            else
+              gh release create "$TAG" --repo "$REPO" --verify-tag \
+                --generate-notes "${pre[@]}"
+            fi
+          fi
+
+          # 传附件与建 release 分开:v0.9.0-rc.1 就是死在传完之后的那一步。
+          # 失败重试最多 3 次;--clobber 让重试与整个 job 的重跑都幂等。
+          attempt=0
+          until gh release upload "$TAG" --repo "$REPO" dist/* --clobber; do
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::附件上传重试 3 次后仍失败"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "附件上传失败,第 ${attempt}/3 次重试"
+            sleep 5
+          done
+          echo "发布完成,附件清单:"
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'

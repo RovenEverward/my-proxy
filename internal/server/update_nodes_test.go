@@ -21,7 +21,7 @@ import (
 // 没有入站、也没有 sing-box 下发记录的节点,updateCorePresent 恰好只给它出
 // xray 一行;version 就落在 NodeStatus.Version 那格,updateNodes 从那里读当前
 // 版本。idx 只用来拼出不重复的地址。
-func seedXrayNode(t *testing.T, e *env, idx int, name, version string) {
+func seedXrayNode(t *testing.T, e *env, idx int, name, version string) model.Node {
 	t.Helper()
 	n := model.Node{Name: name, Address: fmt.Sprintf("203.0.113.%d", idx)}
 	if err := e.st.CreateNode(&n); err != nil {
@@ -30,6 +30,7 @@ func seedXrayNode(t *testing.T, e *env, idx int, name, version string) {
 	if err := e.st.UpsertNodeStatus(model.NodeStatus{NodeID: n.ID, Reachable: true, Version: version}); err != nil {
 		t.Fatalf("写节点 %s 的状态: %v", name, err)
 	}
+	return n
 }
 
 // upgradeCalls 记假实现收到了哪些调用。任务 goroutine 在写、测试在断言,加锁。
@@ -202,6 +203,62 @@ func TestUpdateNodesSkipsWhenAlreadyAtTarget(t *testing.T) {
 	resolved, upgraded := calls.snapshot()
 	if len(resolved) != 0 || len(upgraded) != 0 {
 		t.Errorf("已是目标版本还动了节点: resolve=%v upgrade=%v", resolved, upgraded)
+	}
+}
+
+// 缓存说已是目标版本、现场却查到旧版本时,不能 skip:节点可能在两次巡检之间被
+// 手工换过核心,跳不跳过要看现场。
+func TestUpdateNodesUsesLiveVersionOverCached(t *testing.T) {
+	e := newEnvWith(t, &fakeNodeOps{})
+	// 缓存(上一轮巡检)说已经是推荐版本,照着它就会 skip。
+	n := seedXrayNode(t, e, 1, "hk", strings.TrimPrefix(xrayrelease.RecommendedVersion, "v"))
+	// 现场查到的却是旧版本:节点在两次巡检之间被换过核心。
+	e.s.nodeOps.(*fakeNodeOps).check = &model.NodeStatus{NodeID: n.ID, Reachable: true, Version: "25.1.1"}
+	calls := fakeXrayUpgrade(e, nil, nil)
+
+	code, body := e.api("POST", "/api/update/nodes", nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("POST /api/update/nodes: %d %s", code, body)
+	}
+
+	p := waitNodeUpdateFinish(t, e)
+	if p.State != model.UpdateNodesDone {
+		t.Fatalf("state = %s, 想要 done", p.State)
+	}
+
+	events := allNodeUpdateEvents(t, e)
+	if len(events) != 2 || events[0].Status != "start" || events[1].Status != "ok" {
+		t.Fatalf("事件 = %+v, 现场是旧版本,应当走升级而不是 skip", events)
+	}
+	if events[0].From != "25.1.1" {
+		t.Errorf("start 的 from = %q, 想要现场查到的 25.1.1", events[0].From)
+	}
+	if _, upgraded := calls.snapshot(); strings.Join(upgraded, ",") != "hk" {
+		t.Errorf("被升级的节点 = %v, 想要 hk", upgraded)
+	}
+}
+
+// 现场查不到时退回缓存:一次 SSH 不通不该把"已是目标版本"的节点又升一遍。
+func TestUpdateNodesFallsBackToCachedWhenLiveCheckFails(t *testing.T) {
+	e := newEnvWith(t, &fakeNodeOps{checkErr: errors.New("ssh 连不上")})
+	seedXrayNode(t, e, 1, "hk", strings.TrimPrefix(xrayrelease.RecommendedVersion, "v"))
+	calls := fakeXrayUpgrade(e, nil, nil)
+
+	code, body := e.api("POST", "/api/update/nodes", nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("POST /api/update/nodes: %d %s", code, body)
+	}
+	p := waitNodeUpdateFinish(t, e)
+	if p.State != model.UpdateNodesDone {
+		t.Fatalf("state = %s, 想要 done", p.State)
+	}
+
+	events := allNodeUpdateEvents(t, e)
+	if len(events) != 1 || events[0].Status != "skip" {
+		t.Fatalf("事件 = %+v, 现场查不到时应退回缓存并 skip", events)
+	}
+	if _, upgraded := calls.snapshot(); len(upgraded) != 0 {
+		t.Errorf("查不到现场版本却动了节点: %v", upgraded)
 	}
 }
 

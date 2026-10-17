@@ -50,6 +50,11 @@ type Source struct {
 	DownloadBase string
 	// Client 是发起请求用的客户端,空表示带超时的默认客户端。
 	Client *http.Client
+	// Desktop 表示取的是桌面程序的安装包,不是本机 CLI 的发布件。
+	//
+	// 桌面程序只有一条安装路径,没有 install-cli.sh 那种"没有清单也照装"的
+	// 退路:置为 true 时缺 SHA256SUMS 直接报错。
+	Desktop bool
 }
 
 func (s Source) apiBase() string {
@@ -171,13 +176,32 @@ func ArchiveName(goos, goarch string) string {
 	return "mpx_" + goos + "_" + goarch + ".tar.gz"
 }
 
+// DesktopArchiveName 给出桌面程序在某个平台上的安装包文件名。
+//
+// 桌面程序按系统打,不按 CPU 架构打:macOS 发的是通用包(Intel 与 Apple
+// Silicon 共用一个),名字里写 universal;linux 与 windows 按 goarch 分开,
+// 压缩格式与 CLI 发布件一致(windows 是 zip,其余是 tar.gz)。
+func DesktopArchiveName(goos, goarch string) string {
+	if goos == "darwin" {
+		return "mpx_desktop_darwin_universal.tar.gz"
+	}
+	if goos == "windows" {
+		return "mpx_desktop_" + goos + "_" + goarch + ".zip"
+	}
+	return "mpx_desktop_" + goos + "_" + goarch + ".tar.gz"
+}
+
 // Fetch 取回 version 这一版在 goos/goarch 上的 mpx 可执行文件。
 //
 // version 为空或 "latest" 表示最新发布。verified 报告是否用 SHA256SUMS 校验过:
 // 早于清单的旧发布会缺 SHA256SUMS,这时按 install-cli.sh 的做法只警告、继续,
-// 并把 verified 置为 false 交给调用方决定要不要接受。
+// 并把 verified 置为 false 交给调用方决定要不要接受。Source.Desktop 为真时取
+// 的是桌面程序的安装包,缺清单直接报错,不给未校验的安装留口子。
 func (s Source) Fetch(ctx context.Context, version, goos, goarch string) (bin []byte, verified bool, err error) {
 	name := ArchiveName(goos, goarch)
+	if s.Desktop {
+		name = DesktopArchiveName(goos, goarch)
+	}
 	base := s.releaseBase(version)
 
 	sums, code, err := s.get(ctx, base+"/SHA256SUMS", maxSums)
@@ -188,6 +212,9 @@ func (s Source) Fetch(ctx context.Context, version, goos, goarch string) (bin []
 	case http.StatusOK:
 		verified = true
 	case http.StatusNotFound:
+		if s.Desktop {
+			return nil, false, fmt.Errorf("这个发布没有 SHA256SUMS,桌面程序只能在校验通过后安装:请改用安装包")
+		}
 		// 旧发布没有清单,照常安装,只是没法校验。
 		verified = false
 	default:

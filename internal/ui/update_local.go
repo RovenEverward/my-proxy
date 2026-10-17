@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,10 +35,33 @@ const (
 // updateLocalVersion 是本机 CLI 的版本,做成变量便于测试注入一个已知值。
 var updateLocalVersion = buildinfo.Version
 
-// updateSource 是取发布件的来源,默认是本项目在 GitHub 上的仓库。
+// updateDesktop 报告本进程是不是桌面构建:桌面构建的自更新取桌面安装包、页面
+// 文案也叫「桌面程序」。做成变量便于测试注入。
+var updateDesktop = buildinfo.Desktop
+
+// updateSelfName 是页面上本机那一层的名字:桌面构建叫「桌面程序」,普通构建叫
+// 「本机 CLI」。版本行、事件与提示都跟着它叫,页面再据 desktop 字段切换显示。
+func updateSelfName() string {
+	if updateDesktop() {
+		return "桌面程序"
+	}
+	return "本机 CLI"
+}
+
+// updateRunningName 是「正在运行、升级完要重启的那个」:浏览器模式是 mpx ui,
+// 桌面构建的窗口就是桌面程序。
+func updateRunningName() string {
+	if updateDesktop() {
+		return "桌面程序"
+	}
+	return "mpx ui"
+}
+
+// updateSource 是取发布件的来源,默认是本项目在 GitHub 上的仓库。桌面构建取的是
+// 桌面安装档(Source.Desktop),清单缺失或对不上都会被拒。
 // 做成变量是为了让测试把地址指到假控制面,不真去连 GitHub。
 var updateSource = func() selfupdate.Source {
-	return selfupdate.Source{Repo: buildinfo.Repo()}
+	return selfupdate.Source{Repo: buildinfo.Repo(), Desktop: updateDesktop()}
 }
 
 // selfExecutable 返回本机 mpx 的绝对路径并解开符号链接 —— 与 cli 的
@@ -70,6 +94,9 @@ type updateViewBody struct {
 	Control model.UpdatePart       `json:"control"`
 	Nodes   []model.UpdateNodeCore `json:"nodes"`
 	Notes   string                 `json:"notes"`
+	// Desktop 报告本进程是不是桌面构建:页面据此把本机那一层叫「桌面程序」还是
+	// 「本机 CLI」。只加不改,旧页面忽略它照常工作。
+	Desktop bool `json:"desktop"`
 }
 
 // serveUpdate 处理 /local/update*。调用前会话与来源已经校验过(与 setup 相同)。
@@ -121,8 +148,9 @@ func (s *Server) updateView(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	view := updateViewBody{
-		CLI:   model.UpdatePart{Current: updateLocalVersion()},
-		Nodes: []model.UpdateNodeCore{},
+		CLI:     model.UpdatePart{Current: updateLocalVersion()},
+		Nodes:   []model.UpdateNodeCore{},
+		Desktop: updateDesktop(),
 	}
 
 	raw, code, err := s.controlCall(ctx, http.MethodGet, "/api/update?refresh=1", nil)
@@ -189,18 +217,18 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), updateInstallTimeout)
 	defer cancel()
 
-	from, to, changed, _, code, err := applyCLIUpdate(ctx, body.Version)
+	from, to, changed, _, code, err := s.applyCLIUpdate(ctx, body.Version)
 	if err != nil {
 		writeError(w, code, err.Error())
 		return
 	}
 	if !changed {
-		writeJSON(w, map[string]any{"ok": true, "from": from, "to": to, "message": "本机 CLI 已是最新"})
+		writeJSON(w, map[string]any{"ok": true, "from": from, "to": to, "message": updateSelfName() + " 已是最新"})
 		return
 	}
-	// 不 os.Exit:页面自己会提示重启 mpx ui 后生效。
+	// 不 os.Exit:页面自己会提示重启(桌面程序或 mpx ui)后生效。
 	writeJSON(w, map[string]any{"ok": true, "from": from, "to": to,
-		"message": fmt.Sprintf("已升级到 %s；正在运行的 mpx ui 需重启后生效", to)})
+		"message": fmt.Sprintf("已升级到 %s；正在运行的 %s 需重启后生效", to, updateRunningName())})
 }
 
 // applyCLIUpdate 是 updateCLI 与一键更新(update_all.go)共用的本机升级实现:把
@@ -210,7 +238,11 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 // 这次实际写入的新二进制路径(升级前问到的目标路径,已去掉可能的 .prev 后缀),一键
 // 更新拿它去重启,免得重启时 os.Executable() 指到刚改名的 <exe>.prev。出错时 code
 // 是该回给页面的 HTTP 状态码,与 updateCLI 原来的口径一一对应。
-func applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
+//
+// 真正动手(开始下载)之后的成功与失败都会通过 Options.CLIUpdated 记一笔,让
+// mpx update show 能看到页面发起的这次升级;还没开始下载就失败的(版本号不合法、
+// 问不到最新版)不算一次升级尝试,不记。
+func (s *Server) applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
 	current := updateLocalVersion()
 	target := strings.TrimSpace(version)
 	explicit := target != ""
@@ -238,18 +270,36 @@ func applyCLIUpdate(ctx context.Context, version string) (from, to string, chang
 	// 升级前问到的就是新二进制的目标路径;万一已经是改名后的 .prev(重复升级或
 	// 别的调用时机),兜底去掉后缀,保证写入与重启都落在真正的新二进制上。
 	path = stripPrevSuffix(path)
+	started := time.Now()
 	bin, _, ferr := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
 	if ferr != nil {
+		s.noteCLIUpdate(current, target, started, ferr)
 		return current, target, false, path, http.StatusBadGateway, ferr
 	}
 	if ierr := selfupdate.Install(path, bin, target); ierr != nil {
+		s.noteCLIUpdate(current, target, started, ierr)
 		ic := http.StatusInternalServerError
-		if errors.Is(ierr, selfupdate.ErrNeedSudo) {
+		if errors.Is(ierr, selfupdate.ErrNeedSudo) || errors.Is(ierr, fs.ErrPermission) {
 			ic = http.StatusForbidden
+			if updateDesktop() {
+				// 桌面程序没有「sudo 重跑 mpx」这条路:安装目录动不了就指引用
+				// 安装包,别把 CLI 的 sudo 提示原样端给窗口里的用户。
+				ierr = fmt.Errorf("桌面程序装在 %s,当前用户没有写权限;请下载新版安装包安装", filepath.Dir(path))
+			}
 		}
 		return current, target, false, path, ic, ierr
 	}
+	s.noteCLIUpdate(current, target, started, nil)
 	return current, target, true, path, 0, nil
+}
+
+// noteCLIUpdate 把一次本机 CLI 升级的结果交给 cli 侧的回调去落 update.json。
+// 回调为空时什么也不做 —— 这是 ui 包不认识 cli 包的地方。
+func (s *Server) noteCLIUpdate(from, to string, started time.Time, err error) {
+	if s.opts.CLIUpdated == nil {
+		return
+	}
+	s.opts.CLIUpdated(from, to, started, err)
 }
 
 // updateControl:POST /local/update/control,把请求原样转给控制面。

@@ -1,7 +1,7 @@
 ---
 kind: part
 parent: README.md
-code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, deploy/]
+code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/]
 verified: 2026-10-17 @ 65a3d5e
 ---
 # 安装与升级
@@ -19,8 +19,9 @@ verified: 2026-10-17 @ 65a3d5e
 1. **装**：`mpx init` 是 CLI 里唯一会 SSH 的地方（decisions 第 32 条）。它只做 SSH 编排：上传或下载 `mpx`、跑 [deploy/install.sh](../../deploy/install.sh) 装成 systemd 服务，再在 VPS 上跑 `mpx bootstrap`，后者仍是 `/api` 客户端，负责建节点、入站、用户。重复跑安全，已有对象复用。
 2. **校验**：每个发布带 SHA256SUMS，下载后先核哈希（[internal/release](../../internal/release/)）。版本号只能来自编译期注入，拿不到就是空，不编假版本（版本号规则出自 decisions 第 37 条，仍有效；该条的「只提醒不代劳」与 changelog 部分已被第 39 条取代）。
 3. **升控制面**：控制面进程以 `mpx` 用户运行，写不了 `/usr/local/bin`；所以 `POST /api/update/control` 只落一个请求文件，由 root 级的 `mpx-update.path` / `.service` 触发 `mpx update run control`。安装目录是「版本目录加符号链接」，保留两版，回滚就是换链接；升级后健康检查，不过自动换回上一版。方案见 [自动升级方案](../internal/update-rfc.md)。
-4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，任何一台失败就回滚这台、整批停下。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。
+4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，任何一台失败就回滚这台、整批停下。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。跳不跳过按**现场**版本判：缓存（上一轮巡检）说已是目标版本时仍会 SSH 问一次，问不到才退回缓存 —— 否则两次巡检之间被手工换过核心的节点会被一直 skip。
 5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。`mpx ui` 只放一个「更新」按钮，按 控制面 → 节点核心 → 本机 的顺序把三层升完，本机升完 `mpx ui` 自动重启（decisions 第 39 条；页面目前编排了控制面与本机，节点层随该条并入）。
+6. **本机升级留痕**：命令行与页面发起的本机 CLI 升级写同一份 `update.json`，`mpx update show` 才看得到上一次的结果。页面那条路不认识 cli 包，靠 [internal/ui](../../internal/ui/) 的 `Options.CLIUpdated` 回调把结果交回 cli 侧落盘；命令行的 trigger 记 `manual`，页面记 `ui`。
 
 ## 坑
 

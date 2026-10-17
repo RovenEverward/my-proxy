@@ -8,6 +8,10 @@
 /s1-*.png
 /s1-*.log
 
+# 桌面程序冒烟(desktop/smoke/app-smoke.sh)的输出,同样由 CI 上传
+/app-*.png
+/app-*.log
+
 # 文档站依赖与构建产物(vitepress 的输出)
 /node_modules
 /docs/.vitepress/dist/

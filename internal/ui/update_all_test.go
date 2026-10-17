@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -362,6 +363,81 @@ func TestUpdateAllRestartUsesInstalledPath(t *testing.T) {
 		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("没有走到重启这一步")
+	}
+}
+
+// withFakeDesktopRelease 与 withFakeRelease 同一套接管,但走桌面构建的口径:
+// 假发布服务器带上配对的 SHA256SUMS(桌面模式缺清单会被拒),updateDesktop 也换成
+// 桌面构建。返回升级目标路径,重启断言用它核对 exec 的是新二进制。
+func withFakeDesktopRelease(t *testing.T, latest, newBin string) string {
+	t.Helper()
+	archive := tarGzWithMPX(t, newBin)
+	name := selfupdate.DesktopArchiveName(runtime.GOOS, runtime.GOARCH)
+	sums := fmt.Sprintf("%x  %s\n", sha256.Sum256(archive), name)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"tag_name":` + strconv.Quote(latest) + `}`))
+		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
+			_, _ = w.Write([]byte(sums))
+		default:
+			_, _ = w.Write(archive)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	exe := filepath.Join(t.TempDir(), "mpx")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\necho mpx v0.6.4\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldSrc, oldExe, oldDesk := updateSource, selfExecutable, updateDesktop
+	updateSource = func() selfupdate.Source {
+		return selfupdate.Source{Repo: "test/mpx", APIBase: srv.URL, DownloadBase: srv.URL, Desktop: true}
+	}
+	selfExecutable = func() (string, error) { return exe, nil }
+	updateDesktop = func() bool { return true }
+	t.Cleanup(func() { updateSource, selfExecutable, updateDesktop = oldSrc, oldExe, oldDesk })
+	return exe
+}
+
+// 桌面构建的一键更新:发布件取桌面安装包并过 SHA256SUMS,本机那一层的事件叫
+// 「桌面程序」,重启事件也一样,exec 的仍是升级时写入的新二进制。
+func TestUpdateAllDesktopMessages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假本机二进制是 sh 脚本,Windows 上无法执行")
+	}
+	withUpdateAllTiming(t)
+	withLocalVersion(t, "v0.6.4")
+	exe := withFakeDesktopRelease(t, "v0.6.5", "#!/bin/sh\necho mpx v0.6.5\n")
+	cp := &fakeControlPlane{current: "v0.6.4", latest: "v0.6.5",
+		nodesFirst: "running", nodesThen: "done"}
+	s, c := allRig(t, cp)
+	restarted := stubRestart(t)
+
+	if w := doJSON(s, http.MethodPost, "/local/update/all", c, "{}"); w.Code != http.StatusAccepted {
+		t.Fatalf("启动应 202,得到 %d %s", w.Code, w.Body)
+	}
+	select {
+	case call := <-restarted:
+		if call.exe != exe {
+			t.Fatalf("重启应 exec 新二进制 %s,得到 %s", exe, call.exe)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("没有走到重启这一步")
+	}
+	snap := waitAllState(t, s, c, updateAllRestarting)
+	var cliOK, restartStart bool
+	for _, ev := range snap.Events {
+		if ev.Step == updateStepCLI && ev.Status == "ok" {
+			cliOK = ev.Msg == "桌面程序 v0.6.4 → v0.6.5"
+		}
+		if ev.Step == updateStepRestart && ev.Status == "start" {
+			restartStart = ev.Msg == "重启 桌面程序 启用新版本"
+		}
+	}
+	if !cliOK || !restartStart {
+		t.Fatalf("桌面构建的事件文案不对: %+v", snap.Events)
 	}
 }
 

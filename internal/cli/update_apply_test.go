@@ -395,3 +395,58 @@ func TestUpdateShowDisplaysLastResult(t *testing.T) {
 		t.Errorf("cli_last 没进 json: %s", jsonOut)
 	}
 }
+
+// mpx ui 里点出来的本机升级也要落 update.json,否则 mpx update show 看不到它。
+// ui 侧通过 Options.CLIUpdated 把结果交回来,这里直接调那个回调的实现。
+func TestSaveCLIStateFromUI(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "update.json")
+	oldState := cliStatePath
+	cliStatePath = func() (string, error) { return statePath, nil }
+	t.Cleanup(func() { cliStatePath = oldState })
+
+	started := time.Now().Add(-time.Minute)
+	saveCLIStateFromUI("v0.6.4", "v0.6.5", started, nil)
+
+	st, ok, err := selfupdate.LoadState(statePath)
+	if err != nil || !ok {
+		t.Fatalf("读状态: ok=%v err=%v", ok, err)
+	}
+	if st.Result != "ok" || st.Component != updateComponentCLI || st.Trigger != "ui" {
+		t.Errorf("成功状态不对:%+v", st)
+	}
+	if st.From != "v0.6.4" || st.To != "v0.6.5" || !st.StartedAt.Equal(started) {
+		t.Errorf("版本或时间不对:%+v", st)
+	}
+
+	// 失败时 result 与命令行一致记 failed,并把原因写进去。
+	saveCLIStateFromUI("v0.6.4", "v0.6.5", started, os.ErrPermission)
+	st, ok, err = selfupdate.LoadState(statePath)
+	if err != nil || !ok {
+		t.Fatalf("读状态: ok=%v err=%v", ok, err)
+	}
+	if st.Result != "failed" || st.Trigger != "ui" || st.Error == "" {
+		t.Errorf("失败状态不对:%+v", st)
+	}
+}
+
+// mpx update show 要能把页面发起的这次升级显示出来。
+func TestUpdateShowDisplaysUIResult(t *testing.T) {
+	opts.output = outputTable
+	t.Cleanup(func() { opts.output = outputTable })
+	withLocalVersion(t, "v0.6.5")
+
+	statePath := filepath.Join(t.TempDir(), "update.json")
+	oldState := cliStatePath
+	cliStatePath = func() (string, error) { return statePath, nil }
+	t.Cleanup(func() { cliStatePath = oldState })
+
+	saveCLIStateFromUI("v0.6.4", "v0.6.5", time.Now(), nil)
+
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(updatePayload(t, "v0.6.5", "v0.6.5", nil))
+	})
+	out := captureStdout(t, func() { runRoot(t, "update", "show") })
+	if !strings.Contains(out, "上次") || !strings.Contains(out, "v0.6.4→v0.6.5") || !strings.Contains(out, "成功") {
+		t.Errorf("页面发起的升级没显示在 mpx update show 里:\n%s", out)
+	}
+}

@@ -397,27 +397,29 @@ func nodeEventMsg(ev model.UpdateNodeEvent) string {
 // 以及新二进制实际写入的路径 exe —— 重启要用它,不能等到重启时再问 selfExecutable
 // (那时旧二进制已改名成 .prev,os.Executable 会指回旧版)。
 func (s *Server) updateAllCLI(ctx context.Context) (changed bool, exe string, err error) {
-	from, to, changed, exe, _, err := applyCLIUpdate(ctx, "")
+	from, to, changed, exe, _, err := s.applyCLIUpdate(ctx, "")
 	if err != nil {
 		return false, "", err
 	}
 	if !changed {
-		s.addAllEvent(updateStepCLI, "skip", "本机 CLI 已是最新")
+		s.addAllEvent(updateStepCLI, "skip", updateSelfName()+" 已是最新")
 		return false, "", nil
 	}
-	s.addAllEvent(updateStepCLI, "ok", "本机 CLI "+from+" → "+to)
+	s.addAllEvent(updateStepCLI, "ok", updateSelfName()+" "+from+" → "+to)
 	return true, exe, nil
 }
 
-// updateAllRestart 用新二进制原地重启 mpx ui。exe 是升级时实际写入的新二进制路径
+// updateAllRestart 用新二进制原地重启 mpx ui(桌面构建则是桌面窗口背后的同一
+// 套进程)。exe 是升级时实际写入的新二进制路径
 // (见 updateAllCLI),重启直接 exec 它,不再问 selfExecutable。交接文件带上监听
-// 地址与会话,新进程读完后监听同一个地址、认同一个会话,浏览器的 cookie 继续有效。
+// 地址与会话,新进程读完后监听同一个地址、认同一个会话,浏览器的 cookie 与桌面
+// 窗口重新打开后拿到的一次性链接都继续有效。
 func (s *Server) updateAllRestart(exe string) error {
 	path, err := writeRestartState(s.listenAddr(), s.sessionValue())
 	if err != nil {
 		return err
 	}
-	s.addAllEvent(updateStepRestart, "start", "重启 mpx ui 启用新版本")
+	s.addAllEvent(updateStepRestart, "start", "重启 "+updateRunningName()+" 启用新版本")
 
 	st := &s.all
 	st.mu.Lock()
@@ -435,7 +437,7 @@ func (s *Server) updateAllRestart(exe string) error {
 	time.Sleep(updateRestartDelay)
 	if err := restartSelf(path, exe); err != nil {
 		_ = os.Remove(path)
-		return fmt.Errorf("重启 mpx ui 失败: %w", err)
+		return fmt.Errorf("重启 %s 失败: %w", updateRunningName(), err)
 	}
 	return nil
 }
