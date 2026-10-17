@@ -114,7 +114,8 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.TLS == nil && !fromLoopback(r) {
-		writeError(w, http.StatusForbidden, "设备密码只能经 HTTPS 发送:用 mpx connect 接入(它走 HTTPS 并核对证书指纹)")
+		writeErrorHint(w, http.StatusForbidden, "设备密码只能经 HTTPS 发送:用 mpx connect 接入(它走 HTTPS 并核对证书指纹)",
+			"设备密码只能经 HTTPS 发送,请用 MPX 的「接入已有控制面」接入")
 		return
 	}
 
@@ -135,7 +136,8 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hash == "" {
-		writeError(w, http.StatusForbidden, "这个控制面还没设设备密码;在已接入的设备上跑 mpx device password")
+		writeErrorHint(w, http.StatusForbidden, "这个控制面还没设设备密码;在已接入的设备上跑 mpx device password",
+			"这个控制面还没设设备密码:在已接入的设备上打开 设置 → 设备 设一个")
 		return
 	}
 	ok, err := verifyDevicePassword(req.Password, hash)

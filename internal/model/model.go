@@ -650,6 +650,9 @@ type DoctorCheck struct {
 	Detail string `json:"detail"`
 	// Hint 是"接下来该做什么",没有可做的就为空。
 	Hint string `json:"hint,omitempty"`
+	// UIHint 是同一个"接下来该做什么"的界面版:界面里该怎么做,只描述界面
+	// 操作、不出现命令;为空时界面退回 Hint。
+	UIHint string `json:"ui_hint,omitempty"`
 }
 
 // DoctorReport 是 GET /api/doctor 的回答,也是 mpx doctor 打印的东西。

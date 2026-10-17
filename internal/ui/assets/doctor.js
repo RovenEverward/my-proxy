@@ -41,7 +41,7 @@ function doctorPage() {
   const rows = checks.map(c => {
     const [cls, text] = DOC_ST[c.status] || ["", c.status];
     return H`<tr data-check="${c.name}"><td><b class="bold">${c.name}</b></td><td>${stBadge(cls, text)}</td>
-      <td class="doc-d"><div>${c.detail}</div>${c.hint ? H`<div class="sub">建议:${c.hint}</div>` : ""}</td></tr>`;
+      <td class="doc-d"><div>${c.detail}</div>${(c.ui_hint || c.hint) ? H`<div class="sub">建议:${c.ui_hint || c.hint}</div>` : ""}</td></tr>`;
   });
   return H`${head}
     <div class="grid g3">${docStat(checks, "ok", "正常")}${docStat(checks, "warn", "警告")}${docStat(checks, "fail", "失败")}</div>

@@ -25,7 +25,8 @@ async function api(path, init = {}) {
     if (init.asText && res.ok) return text;
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-    if (!res.ok) throw new APIError(res.status, (body && body.error) || text || res.statusText);
+    // 控制面给界面的说法(ui_hint,不提命令)优先;没有才用 error 原话。
+    if (!res.ok) throw new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText);
     return body;
   }
 }

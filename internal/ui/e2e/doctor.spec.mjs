@@ -60,3 +60,22 @@ test("接口报错时把控制面的原话显示出来", async ({ page }) => {
   await expect(page.locator("[data-doc-err]")).toHaveText("连不上控制面 https://cp.example.net: dial tcp: 超时");
   await expect(page.locator("table tbody tr")).toHaveCount(0);
 });
+
+// 控制面同时给了 hint(命令行用,带命令)和 ui_hint(界面说法)时,页面只显示 ui_hint;
+// 接口报错带 ui_hint 时,报错卡片也用它。
+test("优先显示 ui_hint,不把命令摆进窗口", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+    { name: "节点 hk", status: "warn", detail: "配置和下发的不一致", hint: "确认后 mpx node sync hk 覆盖回去", ui_hint: "确认后到「节点」页打开 hk,点「下发配置」覆盖回去" },
+  ] }) }));
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  const row = page.locator("table tbody tr").first();
+  await expect(row).toContainText("点「下发配置」覆盖回去");
+  await expect(row).not.toContainText("mpx ");
+  await page.unroute("**/api/doctor");
+  await page.route("**/api/doctor", r => r.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "token 不正确或这台设备已被吊销;重新 mpx connect", ui_hint: "这台设备的登录已失效或被吊销:请在 MPX 里重新「接入已有控制面」" }) }));
+  await page.click("[data-act=doc-run]");
+  await expect(page.locator("#content, main, body").first()).toContainText("重新「接入已有控制面」");
+  await expect(page.locator("body")).not.toContainText("重新 mpx connect");
+});

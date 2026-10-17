@@ -34,6 +34,19 @@ type Client struct {
 type APIError struct {
 	StatusCode int
 	Message    string
+	// UIHint 是控制面给界面的说法(回答里的 ui_hint,只增字段):同一件事,不提命令。
+	// 命令行照旧用 Message;mpx ui / 桌面窗口经 uiError 换成它。
+	UIHint string
+}
+
+// uiError 把控制面错误换成界面说法:是带 ui_hint 的 APIError 就用 ui_hint,
+// 否则原样返回。只在结果会显示到窗口里的路径上用。
+func uiError(err error) error {
+	var ae *APIError
+	if errors.As(err, &ae) && ae.UIHint != "" {
+		return &APIError{StatusCode: ae.StatusCode, Message: ae.UIHint, UIHint: ae.UIHint}
+	}
+	return err
 }
 
 func (e *APIError) Error() string { return e.Message }
@@ -195,7 +208,7 @@ func (c *Client) doOnce(ctx context.Context, method, path string, payload []byte
 				wait = time.Duration(s) * time.Second
 			}
 		}
-		return nil, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data)}
+		return nil, wait, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data)}
 	}
 	return data, 0, nil
 }
@@ -222,7 +235,7 @@ func (c *Client) download(path string, w io.Writer) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
-		return &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data)}
+		return &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data)}
 	}
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		return fmt.Errorf("写入备份文件: %w", err)
@@ -244,6 +257,17 @@ func errorMessage(code int, data []byte) string {
 		return fmt.Sprintf("HTTP %d: %s", code, text)
 	}
 	return fmt.Sprintf("HTTP %d", code)
+}
+
+// errorUIHint 取出控制面错误回答里的 ui_hint(没有就是空串)。
+func errorUIHint(data []byte) string {
+	var e struct {
+		UIHint string `json:"ui_hint"`
+	}
+	if json.Unmarshal(data, &e) == nil {
+		return e.UIHint
+	}
+	return ""
 }
 
 // emitJSON 把服务端的原始响应重新缩进后输出。

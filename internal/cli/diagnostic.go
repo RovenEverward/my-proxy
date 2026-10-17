@@ -488,7 +488,7 @@ func diagnosticRequest(cmd *cobra.Command, c *Client, path string, cfg diagnosti
 		return nil, fmt.Errorf("诊断响应超过 260 KiB")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return raw, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, raw)}
+		return raw, &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, raw), UIHint: errorUIHint(raw)}
 	}
 	return raw, nil
 }

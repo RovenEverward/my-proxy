@@ -57,12 +57,14 @@ func (s *Server) handleLocateNode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "识别失败("+err.Error()+");请手动填写:mpx node edit "+n.Name+" --region US --city 洛杉矶")
+		writeErrorHint(w, http.StatusBadGateway, "识别失败("+err.Error()+");请手动填写:mpx node edit "+n.Name+" --region US --city 洛杉矶",
+			"识别失败("+err.Error()+");请在节点详情里点「编辑」手动填地区和城市")
 		return
 	}
 	sg, err := parseLocate(raw)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error()+";请手动填写:mpx node edit "+n.Name+" --region US --city 洛杉矶")
+		writeErrorHint(w, http.StatusBadGateway, err.Error()+";请手动填写:mpx node edit "+n.Name+" --region US --city 洛杉矶",
+			err.Error()+";请在节点详情里点「编辑」手动填地区和城市")
 		return
 	}
 	sg.Via = via
@@ -118,14 +120,16 @@ func parseLocate(raw string) (LocateSuggestion, error) {
 // autoLocateNode 在新建节点后识别地区并写入显示名(docs/internal/node-naming-rfc.md):
 // 只在节点还没有地区时写,手动设过的不覆盖;地址是域名时不自动 SSH 探测(新节点
 // 未必已经能连),提示用 node locate。返回写入后的显示名,或给人看的提示。
-func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, note string) {
+func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, note, uiNote string) {
 	if !s.autoLocate {
-		return "", ""
+		return "", "", ""
 	}
 	manual := "可以手动设:mpx node edit " + n.Name + " --region US --city 洛杉矶"
+	manualUI := "到「节点」页打开 " + n.Name + ",点「编辑」手动填地区和城市"
 	ip := net.ParseIP(strings.Trim(n.Address, "[]"))
 	if ip == nil {
-		return "", "地址是域名,没有自动识别地区;节点能连上后跑 mpx node locate " + n.Name + " --apply," + manual
+		return "", "地址是域名,没有自动识别地区;节点能连上后跑 mpx node locate " + n.Name + " --apply," + manual,
+			"地址是域名,没有自动识别地区;节点能连上后到「节点」页打开 " + n.Name + ",点「编辑」,再点「重新识别」"
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -136,28 +140,29 @@ func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, not
 	}
 	if err != nil {
 		s.logger.Warn("自动识别节点地区失败", "node", n.Name, "error", err)
-		return "", "自动识别地区失败(" + err.Error() + ")," + manual
+		return "", "自动识别地区失败(" + err.Error() + ")," + manual, "自动识别地区失败(" + err.Error() + ")," + manualUI
 	}
 	metadataMu.Lock()
 	defer metadataMu.Unlock()
 	m, err := s.store.GetLocationMetadata("nodes", n.ID)
 	if err != nil {
-		return "", "自动识别后写入失败(" + err.Error() + ")," + manual
+		return "", "自动识别后写入失败(" + err.Error() + ")," + manual, "自动识别后写入失败(" + err.Error() + ")," + manualUI
 	}
 	if strings.TrimSpace(m.Region) != "" {
-		return model.NodeDisplay(m), "" // 已经有人设过,不覆盖
+		return model.NodeDisplay(m), "", "" // 已经有人设过,不覆盖
 	}
 	m.Region, m.City, m.Letter = sg.Region, sg.City, ""
 	if code, msg := s.fillNodeLetter(n.ID, &m, true, true); code != 0 {
-		return "", "自动识别后分配字母失败(" + msg + ")," + manual
+		return "", "自动识别后分配字母失败(" + msg + ")," + manual, "自动识别后分配字母失败(" + msg + ")," + manualUI
 	}
 	if err := s.store.SaveLocationMetadata("nodes", n.ID, m); err != nil {
-		return "", "自动识别后写入失败(" + err.Error() + ")," + manual
+		return "", "自动识别后写入失败(" + err.Error() + ")," + manual, "自动识别后写入失败(" + err.Error() + ")," + manualUI
 	}
 	s.invalidateSubCache()
 	display = model.NodeDisplay(m)
 	if sg.City == "" && sg.CityEn != "" {
 		note = "城市 " + sg.CityEn + " 不在对照表里,只用了国家;要补上:mpx node edit " + n.Name + " --city <城市>"
+		uiNote = "城市 " + sg.CityEn + " 不在对照表里,只用了国家;要补上:到「节点」页打开 " + n.Name + ",点「编辑」补上城市"
 	}
-	return display, note
+	return display, note, uiNote
 }

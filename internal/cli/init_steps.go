@@ -209,7 +209,7 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	prog.Step("把这台电脑接入控制面")
 	if _, err := initConnect(server, fp, p.DevicePassword, defaultDeviceName()); err != nil {
 		if p.FromUI {
-			return nil, fmt.Errorf("本机接入失败: %w;控制面已经装好,稍后在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s", err, hostport, fp)
+			return nil, fmt.Errorf("本机接入失败: %w;控制面已经装好,稍后在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s", uiError(err), hostport, fp)
 		}
 		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s", err, hostport, fp)
 	}

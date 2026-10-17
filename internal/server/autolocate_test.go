@@ -54,7 +54,7 @@ func TestAutoLocateOnCreate(t *testing.T) {
 	json.Unmarshal(raw, &n)
 	e.api("PUT", fmt.Sprintf("/api/nodes/%d/metadata", n.ID), map[string]any{"region": "JP", "city": "东京"})
 	n.Address = "1.2.3.4"
-	if d, _ := e.s.autoLocateNode(context.Background(), n); d != "🇯🇵 东京 A" {
+	if d, _, _ := e.s.autoLocateNode(context.Background(), n); d != "🇯🇵 东京 A" {
 		t.Fatalf("manual overwritten: %q", d)
 	}
 }
