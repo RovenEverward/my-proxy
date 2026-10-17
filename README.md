@@ -12,7 +12,8 @@
 [![Release](https://img.shields.io/github/v/release/RovenEverward/my-proxy?label=release&color=111111)](https://github.com/RovenEverward/my-proxy/releases/latest) [![Go](https://img.shields.io/github/go-mod/go-version/RovenEverward/my-proxy?color=111111)](go.mod) [![License](https://img.shields.io/badge/license-MIT-111111)](LICENSE)<br>
 ![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white) ![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black) ![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)
 
-**[文档](https://RovenEverward.github.io/my-proxy/)** &nbsp;·&nbsp; **[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)** &nbsp;·&nbsp; **[下载](https://github.com/RovenEverward/my-proxy/releases/latest)** &nbsp;·&nbsp; **[更新记录](CHANGELOG.md)**
+**下载：[Windows](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe)** &nbsp;·&nbsp; **[macOS](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg)** &nbsp;·&nbsp; **[Linux .deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb)**（[ARM](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-arm64.deb)） &nbsp;·&nbsp; [全部文件](https://github.com/RovenEverward/my-proxy/releases/latest)<br>
+**[文档](https://RovenEverward.github.io/my-proxy/)** &nbsp;·&nbsp; **[快速开始](https://RovenEverward.github.io/my-proxy/tutorial/quickstart)** &nbsp;·&nbsp; **[更新记录](CHANGELOG.md)**
 
 <br>
 
@@ -39,16 +40,17 @@
 
 准备一台能用 root SSH 登录的 Linux VPS，和你自己的电脑（macOS、Windows 或 Linux）。
 
-**1 · 安装 MPX。** 在[最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)下载桌面安装包：
+**1 · 安装 MPX。** 下载桌面安装包（链接永远指向最新版）：
 
-| 系统 | 安装包 |
-| :--- | :--- |
-| macOS（Intel 与 Apple 芯片） | `mpx-desktop_<版本>_darwin_universal.dmg`，打开后把 MPX 拖进「应用程序」 |
-| Windows（64 位） | `mpx-desktop_<版本>_windows_amd64_setup.exe` |
-| Debian / Ubuntu | `mpx-desktop_<版本>_amd64.deb`（ARM 用 `arm64`） |
-| 其他 Linux | `mpx-desktop_<版本>_linux_amd64.tar.gz`，解压后运行 `./install.sh` |
+| 你的电脑 | 下载 | 怎么装 |
+| :--- | :--- | :--- |
+| Windows（64 位） | [MPX-Windows-x64-setup.exe](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe) | 双击安装，不需要管理员 |
+| macOS（Intel 与 Apple 芯片） | [MPX-macOS.dmg](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg) | 打开后把 MPX 拖进「应用程序」 |
+| Ubuntu / Debian（x86_64） | [MPX-Linux-amd64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb) | 双击安装 |
+| Ubuntu / Debian（ARM） | [MPX-Linux-arm64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-arm64.deb) | 双击安装 |
+| 其他 Linux | [最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)的 `MPX-<版本>-Linux-amd64.tar.gz` | 解压后运行 `./install.sh` |
 
-<sub>安装包没有签名。macOS 第一次打开时右键 MPX →「打开」；Windows 的 SmartScreen 提示时选「仍要运行」。Linux 桌面版需要 WebKitGTK 4.1。</sub>
+<sub>安装包没有签名，第一次打开要放行一次：Windows 的 SmartScreen 提示时点「更多信息」→「仍要运行」；macOS 在「应用程序」里右键 MPX →「打开」，或到「系统设置 → 隐私与安全性」点「仍要打开」。Linux 桌面版需要 WebKitGTK 4.1。</sub>
 
 **2 · 打开 MPX，点「首次安装（新服务器）」。** 填 VPS 的 IP 和 root 密码，设一个**设备密码**（以后别的电脑接入时用，不是 VPS 密码），点「开始安装」。向导装好控制面、第一个节点和第一个用户，全程不用登录 VPS。
 

@@ -8,16 +8,20 @@
 
 1. 在左侧点 **用户**，再点右上角 **添加用户**。
 2. 填写表单：
-   - **用户名**：字母、数字、下划线、点和减号，1–64 位。
+   - **用户名**：例如 `alice`，建好后不能改。
    - **套餐**：决定他能用哪些节点。不确定就留「默认套餐」，它包含全部节点。见[用套餐分配节点](/guides/plans)。
    - **流量上限**：例如 `50GB`、`1.5TB`。留空表示不限。
    - **到期日**：格式 `YYYY-MM-DD`，按本机时区当天 23:59:59 截止。留空表示永不过期。
    - **流量重置**：不重置、每天、每周或每月。
 3. 点 **创建**。
 
-<Shot name="user-new" cap="添加用户" />
+<Shot name="user-new" cap="添加用户" size="dialog" />
 
-新用户在 30 秒内同步到节点。Xray 节点（默认的 VLESS + REALITY）不重启，其他人不掉线；Hysteria2 / TUIC 节点由 sing-box 承载，名单一变会重启 sing-box，这台节点上的 Hysteria2 / TUIC 连接会断开一次。
+保存后半分钟内生效，其他人不掉线。
+
+::: details 用 Hysteria2 / TUIC 的注意
+Hysteria2 / TUIC 节点由 sing-box 承载，用户名单一变会重启 sing-box，这台节点上的 Hysteria2 / TUIC 连接会断开一次。默认的 VLESS + REALITY（xray）不受影响。
+:::
 
 ## 发订阅链接
 
