@@ -59,6 +59,18 @@ type SetupRunner interface {
 	Run(ctx context.Context, p SetupParams, prog SetupProgress) (*SetupResult, error)
 }
 
+// ConnectRunner 由 cli 实现(等价 mpx connect),测试里换成假的。指纹先经 Probe
+// 取回、交页面上的人核对,确认过的指纹再随 Connect 送去换 token —— 与终端里
+// 「先摆指纹、输入 yes 才继续」是同一道手续。
+type ConnectRunner interface {
+	// Probe 整理地址并取回证书指纹:addr 是人填的(IP / 域名 / https://host:port),
+	// server 是归一后的 https://host:port,fingerprint 形如 SHA256:…。
+	Probe(ctx context.Context, addr string) (server, fingerprint string, err error)
+	// Connect 用设备密码换 token、存配置档并切为当前,返回能让页面切到正常模式的
+	// Upstream/Token/Transport/Profile。name 为空由实现方取默认(主机名)。
+	Connect(ctx context.Context, server, fingerprint, password, name string) (*SetupResult, error)
+}
+
 // setupStep 是一步的状态。State 取 run|done|fail。
 type setupStep struct {
 	Title string  `json:"title"`

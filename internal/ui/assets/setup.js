@@ -1,4 +1,5 @@
-// 首次安装向导(向导 B)全部 6 屏:欢迎 / 连接 / 检查 / 设置 / 安装 / 完成。
+// 首次安装向导(向导 B)全部 6 屏:欢迎 / 连接 / 检查 / 设置 / 安装 / 完成;
+// 欢迎屏另有「接入已有控制面」一条路(等价 mpx connect)。
 // 对外暴露 window.openSetup 与 window.setupStartRun;轮询状态挂在 window.__setupPoll。
 "use strict";
 (() => {
@@ -62,10 +63,90 @@ function renderWelcome() {
   <p class="lead">和 <code>mpx init</code> 一样：一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、入站和入口</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
-  <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。</p></div>`,
-  H`<span class="sub" style="flex:1">已经有控制面？${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换已有配置档</a>` : H`在终端运行 <code>mpx connect</code>`}</span>${btn("开始", "pri", "", "s-start")}`);
+  <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。已经有控制面？选右边的「接入已有控制面」。</p></div>`,
+  H`<span class="sub" style="flex:1">${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换已有配置档</a>` : ""}</span>${btn("接入已有控制面", "", "lock", "s-connect")}${btn("首次安装（新服务器）", "pri", "", "s-start")}`);
   $("#s-start").addEventListener("click", () => renderConnect());
+  $("#s-connect").addEventListener("click", renderConnectCP);
   $("#s-profiles")?.addEventListener("click", e => { e.preventDefault(); openProfiles(); });
+}
+
+/* ---------- 接入已有控制面(等价 mpx connect) ---------- */
+// CN 是接入流程的状态:addr/name 是表单值,server/fp 是取指纹的结果,pw 只在
+// 内存里,请求发出后立刻清掉,绝不进等价命令。
+const CN = { addr: "", name: "", server: "", fp: "", fpErr: "", err: "", probing: false, ok: false, pw: "", pwShown: false, errs: {} };
+
+function cmdConnectCP() {
+  let s = `mpx connect ${shq(String(CN.addr || "").trim() || "<地址>")}`;
+  const name = String(CN.name || "").trim();
+  if (name) s += ` --name ${shq(name)}`;
+  if (CN.fp) s += ` --fp ${CN.fp}`;
+  return s;
+}
+
+function renderConnectCP() {
+  const e = CN.errs || {}, fp = CN.fp && !CN.fpErr;
+  setup(null, H`<h2>接入已有控制面</h2>
+  <p class="lead">把这台电脑接进已经在跑的控制面，和终端里的 <code>mpx connect</code> 一样：先取回证书指纹核对，再输入设备密码。</p>
+  <div class="two">${field("控制面地址", H`<input id="s-cp-addr" class="in mono ${e.addr ? "bad" : ""}" placeholder="203.0.113.10:8080" autocomplete="off">`, "IP 或域名，端口默认 8080", e.addr)}
+  ${field("设备名", H`<input id="s-cp-name" class="in mono" autocomplete="off">`, "这台电脑在设备列表里叫什么；留空用主机名")}</div>
+  ${CN.err ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>接入失败</b><div class="raw">${CN.err}</div></div></div>` : ""}
+  ${CN.fpErr ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>取指纹失败</b><div class="raw">${CN.fpErr}</div></div></div>` : ""}
+  ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
+  ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd" style="padding-left:12px">${CN.fp}</div><span class="h">跟 mpx init 打印的那一行，或已接入设备上 mpx status 里的「证书指纹」对一下</span></div>
+  <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
+  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "mpx init 时设的；忘了在任何一台已接入设备上 mpx device password 重设")}` : ""}
+  <div class="field mt"><label>等价命令</label><div class="cmd" id="s-cmd">${cmdConnectCP()}</div></div>
+  <p class="sub">等价命令里不写密码，终端会询问。</p>`,
+  H`${btn("上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
+  $("#s-cp-addr").value = CN.addr; $("#s-cp-name").value = CN.name;
+  if (fp) $("#s-cp-pw").value = CN.pw;
+  const updCmd = () => { const c = $("#s-cmd"); if (c) c.textContent = cmdConnectCP(); };
+  // 改地址会作废已取的指纹:得重新取、重新核对。
+  $("#s-cp-addr").addEventListener("input", ev => {
+    CN.addr = ev.target.value; CN.errs = {};
+    if (CN.server || CN.fpErr) {
+      CN.server = ""; CN.fp = ""; CN.fpErr = ""; CN.ok = false;
+      renderConnectCP();
+      const a = $("#s-cp-addr"); a.focus(); a.setSelectionRange(a.value.length, a.value.length);
+      return;
+    }
+    updCmd();
+  });
+  $("#s-cp-name").addEventListener("input", ev => { CN.name = ev.target.value; updCmd(); });
+  $("#s-cp-back").addEventListener("click", () => { CN.errs = {}; renderWelcome(); });
+  $("#s-cp-probe").addEventListener("click", async () => {
+    const addr = String(CN.addr || "").trim();
+    if (!addr) { CN.errs = { addr: "请填写控制面地址" }; renderConnectCP(); return; }
+    CN.errs = {}; CN.err = ""; CN.fpErr = ""; CN.server = ""; CN.fp = ""; CN.ok = false; CN.probing = true;
+    renderConnectCP();
+    try {
+      const r = await api("/local/setup/connect/probe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ addr }) });
+      CN.server = (r && r.server) || ""; CN.fp = (r && r.fingerprint) || "";
+      if (!CN.server || !CN.fp) CN.fpErr = "控制面没有报证书指纹";
+    } catch (e2) { CN.fpErr = e2.message || String(e2); }
+    CN.probing = false;
+    renderConnectCP();
+  });
+  if (fp) {
+    const go = $("#s-cp-go");
+    const updGo = () => { go.disabled = !(CN.ok && CN.pw); };
+    $("#s-cp-ok").addEventListener("change", ev => { CN.ok = ev.target.checked; updGo(); });
+    $("#s-cp-pw").addEventListener("input", ev => { CN.pw = ev.target.value; updGo(); });
+    $("#s-cp-pw-eye").addEventListener("click", () => { CN.pw = $("#s-cp-pw").value; CN.pwShown = !CN.pwShown; renderConnectCP(); $("#s-cp-pw").focus(); });
+    updGo();
+    go.addEventListener("click", async () => {
+      if (!CN.ok || !CN.pw) return;
+      const body = { server: CN.server, fingerprint: CN.fp, password: CN.pw, name: String(CN.name || "").trim() };
+      CN.pw = ""; CN.err = "";
+      go.disabled = true; go.classList.add("busy");
+      try {
+        const r = await api("/local/setup/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (r && r.ok) { location.reload(); return; } // 已切到正常模式,整页刷新进管理界面
+        CN.err = "控制面没有确认接入";
+      } catch (e2) { CN.err = e2.message || String(e2); }
+      renderConnectCP();
+    });
+  }
 }
 
 /* ---------- 屏 2:连接 ---------- */

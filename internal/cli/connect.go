@@ -140,21 +140,31 @@ func confirmFingerprint(hostport string) (string, error) {
 
 // connectAndSave 拿设备密码换 token,存进配置档并切过去。mpx init 收尾时也走它。
 func connectAndSave(server, fp, password, name string) (*connectResult, error) {
-	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
-	raw, err := c.do("POST", "/api/connect", map[string]string{"password": password, "device_name": name})
-	if err != nil {
-		return nil, err
-	}
-	res, err := decode[connectResult](raw)
-	if err != nil {
-		return nil, err
-	}
-	profile, err := saveProfile(Profile{Server: server, Token: res.Token, Fingerprint: fp})
+	res, profile, err := connectAndSaveQuiet(server, fp, password, name)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Printf("已接入 %s:本设备「%s」(设备 %d),存在配置档 %s。\n", server, res.Name, res.DeviceID, profile)
 	return &res, nil
+}
+
+// connectAndSaveQuiet 是 connectAndSave 的安静版:同一件事,但不打印 —— mpx ui
+// 的「接入已有控制面」也走它,提示由页面自己给。
+func connectAndSaveQuiet(server, fp, password, name string) (connectResult, string, error) {
+	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
+	raw, err := c.do("POST", "/api/connect", map[string]string{"password": password, "device_name": name})
+	if err != nil {
+		return connectResult{}, "", err
+	}
+	res, err := decode[connectResult](raw)
+	if err != nil {
+		return connectResult{}, "", err
+	}
+	profile, err := saveProfile(Profile{Server: server, Token: res.Token, Fingerprint: fp})
+	if err != nil {
+		return connectResult{}, "", err
+	}
+	return res, profile, nil
 }
 
 type connectResult struct {
