@@ -144,7 +144,7 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   // 底部:主按钮「创建并应用到节点」+ 次要「只创建，稍后应用」+ 一行灰字。
   await expect(dr.locator("#a-save")).toHaveText("创建并应用到节点");
   await expect(dr.locator("#x-later")).toHaveText("只创建，稍后应用");
-  await expect(dr.locator("#x-note")).toHaveText("会重启东京 A上的代理，已连着的用户会断开几秒");
+  await expect(dr.locator("#x-note")).toHaveText("会重启东京 A 上的代理，已连着的用户会断开几秒");
   await expect(dr).not.toContainText("创建后要到节点页");
   await expect(dr.locator(".pv-r")).toContainText("东京 A · Reality");
   await expect(dr.locator("#pv-a")).toHaveText("203.0.113.21:8444");

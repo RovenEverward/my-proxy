@@ -210,7 +210,7 @@ const SHOTS = [
       await page.click('button[data-act="user-new"]');
       await page.waitForSelector("#user-form");
       await page.fill("#f-name", "frank");
-      await page.selectOption("#f-plan", { label: "标准" });
+      await page.locator("#f-plans .plan", { hasText: "标准" }).click();
       await page.waitForTimeout(350); // 等抽屉滑入
     },
   },

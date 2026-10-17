@@ -183,7 +183,7 @@ function connPending(n) {
 }
 // 给灰字说明用的节点名:不带国旗。
 const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";
-const restartNote = n => `会重启${plainNodeName(n)}上的代理，已连着的用户会断开几秒`;
+const restartNote = n => `会重启${plainNodeName(n)} 上的代理，已连着的用户会断开几秒`;
 // 抽屉底部:次要「只…，稍后应用」+ 主按钮「…并应用到节点」,主按钮下面一行灰字。
 function applyFoot(n, main, later, id = "i-save") {
   return H`<div class="df df-apply"><div class="df-row"><button type="button" class="btn" id="x-later">${later}</button><button type="submit" class="btn pri" id="${id}">${main}</button></div><p class="df-note" id="x-note">${restartNote(n)}</p></div>`;
