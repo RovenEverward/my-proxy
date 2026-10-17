@@ -71,6 +71,18 @@ npm run docs:build
 
 `docs/.vitepress/dist/` 与 `docs/.vitepress/cache/` 是构建产物，已加进 `.gitignore`，不要提交。
 
+### 重拍界面截图
+
+文档里的 `<Shot name="...">` 取自 `docs/public/ui/<name>.png`（浅色）与 `<name>-dark.png`（深色），由 `scripts/docs-shots.mjs` 生成：本地起一个控制面和 `mpx ui`，用示例数据（RFC 5737 地址、`example.com`、alice / bob 等示例用户）灌好后用 Playwright 截图，不连任何真实服务器。界面改了就重拍：
+
+```bash
+npx playwright install chromium   # 第一次
+npm run docs:shots                # 全部 36 张，覆盖 docs/public/ui/
+npm run docs:shots -- --only overview,update   # 只拍几张
+```
+
+截图里只能出现示例数据。新增截图时往脚本的 `SHOTS` 里加一项。
+
 ---
 
 ## 5. 安装脚本与发布
