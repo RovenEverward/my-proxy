@@ -6,7 +6,7 @@
 
 ### 新增
 - 发布页的安装包改成好认的名字：桌面程序 `MPX-<版本>-macOS.dmg`、`MPX-<版本>-Windows-x64-setup.exe`、`MPX-<版本>-Linux-amd64.deb` / `arm64.deb`（其他发行版 `MPX-<版本>-Linux-<架构>.tar.gz`）；命令行安装包加前缀 `mpx-cli_`。每个桌面安装包另有一份不带版本号的同内容副本（`MPX-macOS.dmg`、`MPX-Windows-x64-setup.exe`、`MPX-Linux-amd64.deb`、`MPX-Linux-arm64.deb`），`releases/latest/download/<文件名>` 永远指向最新版；副本也列在 `SHA256SUMS` 里。自更新用的 `mpx_<系统>_<架构>` 压缩包和 `mpx_desktop_*` 名字不变。
-- 发布说明开头是「我该下哪个」表，只列桌面安装包；命令行安装包、压缩包和校验文件收在下面的折叠区里。
+- 发布说明开头是「我该下哪个」表，只列桌面安装包，并写清未签名安装包第一次打开怎么放行（Windows SmartScreen、macOS Gatekeeper）；命令行安装包、压缩包和校验文件收在下面的折叠区里。
 - 窗口内置国旗字体（Twemoji Country Flags，只用于国旗字符），Windows 上节点名前的 🇯🇵 等国旗不再显示成两个字母。
 
 ### 改进

@@ -188,6 +188,11 @@ func TestReleaseNotesTable(t *testing.T) {
 	if strings.Contains(table, "mpx-cli_") || strings.Contains(table, "mpx_") {
 		t.Error("表里只该链接桌面安装包")
 	}
+	for _, w := range []string{"仍要运行", "仍要打开", "隐私与安全性"} {
+		if !strings.Contains(run, w) {
+			t.Errorf("发布说明要写清未签名安装包怎么放行,缺「%s」", w)
+		}
+	}
 	if !strings.Contains(run, "cat DL.md NOTES.md") {
 		t.Error("下载表要放在正文最前面")
 	}
