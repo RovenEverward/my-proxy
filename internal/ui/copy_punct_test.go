@@ -301,3 +301,78 @@ func TestAssetsNoMojibake(t *testing.T) {
 		}
 	}
 }
+
+// copyBannedTerms 是界面上不再使用的旧词。可见文案里出现任何一个都算失败;
+// 确有技术含义的地方按文件 + 子串在 copyBannedAllowed 里点名放行。
+var copyBannedTerms = []string{"入站", "入口", "巡检", "下发", "排水"}
+
+// copyBannedAllowed 是文件 → 放行的子串。掩码后的某一行命中其中任一子串就整行放行。
+// 只用于「高级」里确实要展示入站/入口技术细节的地方,以及必须与控制面原文逐字
+// 匹配的匹配键(doctor.js 的漂移文案),不是给漏改兜底。
+var copyBannedAllowed = map[string][]string{
+	"assets/conn.js": {
+		"协议、端口、",
+		"订阅里每个入口一行",
+		"编辑这个入口",
+		"还没有入口 · 订阅会用入站自己的地址",
+		"个入口一起删掉",
+	},
+	"assets/doctor.js": {
+		"配置和下发的不一致(节点上被改过)",
+		"sing-box 配置未读取或与下发内容不一致",
+	},
+}
+
+// copyBannedLineOK 判断某一行是否整行放行:资产里可在原始行写 `// copy-ok: 原因`
+// 标记,或者原行(掩码后)命中 copyBannedAllowed 里该文件的子串。
+func copyBannedLineOK(file, original, masked string) bool {
+	if strings.Contains(original, "// copy-ok:") {
+		return true
+	}
+	for _, sub := range copyBannedAllowed[filepath.ToSlash(file)] {
+		if strings.Contains(masked, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCopyBannedTerms 只看可见文案:先用 copyPunctSource 掩掉注释与正则,
+// 再逐行找旧词,和 TestCopyPunct 用同一套掩码。
+func TestCopyBannedTerms(t *testing.T) {
+	files, err := filepath.Glob("assets/*.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no JavaScript assets found")
+	}
+	html, err := filepath.Glob("assets/*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files = append(files, html...)
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := string(data)
+		maskedLines := strings.Split(copyPunctSource(src), "\n")
+		srcLines := strings.Split(src, "\n")
+		for i, masked := range maskedLines {
+			original := ""
+			if i < len(srcLines) {
+				original = srcLines[i]
+			}
+			if copyBannedLineOK(file, original, masked) {
+				continue
+			}
+			for _, term := range copyBannedTerms {
+				if strings.Contains(masked, term) {
+					t.Errorf("%s:%d: 可见文案里还有旧词 %q: %s", file, i+1, term, strings.TrimSpace(original))
+				}
+			}
+		}
+	}
+}

@@ -228,3 +228,14 @@ test("用户改套餐:与 mpx user edit --plan 一致", async ({ page }) => {
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
   await expect(page.locator("#drawer.open")).toContainText("改B");
 });
+
+// 一台节点有两条连接方式时,预览标题分开写节点数和连接方式数,不把连接方式数当节点数。
+test("套餐预览:节点数和连接方式数分开写", async ({ page }) => {
+  await login(page, env);
+  await gotoPlans(page);
+  await page.click("[data-act=pl-edit][data-id='']");
+  await page.locator(".pl-n label", { hasText: "洛杉矶 A" }).click();
+  await expect(page.locator("#pl-cnt")).toContainText("已选 1");
+  await expect(page.locator(".pl-pv h5")).toContainText("1 个节点、2 个连接方式");
+  await expect(page.locator(".pl-pv h5")).not.toContainText("2 个节点");
+});

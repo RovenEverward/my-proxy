@@ -146,7 +146,7 @@ test("策略组:新建与 mpx group add 结果一致,预览随条件变化;被�
   expect((await getJSON("/api/rules")).final).toBe(final);
 });
 
-test("测试网址:命中第几条、去向和组内入口", async ({ page }) => {
+test("测试网址:命中第几条、去向和组内节点", async ({ page }) => {
   const auto = (await getJSON("/api/proxy-groups")).find(g => g.name === "自动选择");
   await cp("/api/rules/final", { method: "PUT", body: JSON.stringify({ target: "group:" + auto.id }) });
   await login(page, env);
@@ -154,7 +154,7 @@ test("测试网址:命中第几条、去向和组内入口", async ({ page }) =>
   await page.fill("#rp-test", "https://www.example.net/path");
   await expect(page.locator("#rp-res")).toContainText("www.example.net");
   await expect(page.locator("#rp-res")).toContainText("没有规则对上");
-  await expect(page.locator("#rp-res")).toContainText("自动在 3 个入口里挑最快的");
+  await expect(page.locator("#rp-res")).toContainText("自动在 3 个节点里挑最快的");
   await expect(page.locator("#rp-res")).toContainText("按 IP 匹配");
 });
 
@@ -282,4 +282,39 @@ test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色
     const c = rgb(co);
     expect(c[0] - Math.max(c[1], c[2])).toBeLessThan(40);
   }
+});
+
+// 规则列表的斑马纹与吸顶栏:吸顶栏必须实底、不模糊,且不盖住第一条规则。
+test("规则列表:斑马纹;吸顶栏实底不盖住第一条", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+
+  // 相邻两条规则的背景色不同(斑马纹)。
+  const bgs = await page.locator(".rp-list .rp-row").evaluateAll(els => els.slice(0, 2).map(el => getComputedStyle(el).backgroundColor));
+  expect(bgs).toHaveLength(2);
+  expect(bgs[0]).not.toBe(bgs[1]);
+
+  // 列表上方的吸顶栏:实底(var(--canvas)),没有 backdrop-filter。
+  const top = page.locator("main > .top");
+  await expect(top).toHaveCount(1);
+  const st = await top.evaluate(el => { const s = getComputedStyle(el); return { bf: s.backdropFilter || s.webkitBackdropFilter || "none", bg: s.backgroundColor }; });
+  expect(st.bf).toBe("none");
+  const nums = (st.bg.match(/[\d.]+/g) || []).map(Number);
+  expect(nums[3] ?? 1).toBe(1);
+
+  const rects = () => page.evaluate(() => {
+    const bar = document.querySelector("main > .top").getBoundingClientRect();
+    const row = document.querySelector(".rp-list .rp-row").getBoundingClientRect();
+    return { barBottom: bar.bottom, rowTop: row.top };
+  });
+  let r = await rects();
+  expect(r.rowTop).toBeGreaterThanOrEqual(r.barBottom - 0.5);
+  const main = page.locator("main");
+  await main.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await page.waitForTimeout(100);
+  await main.evaluate(el => { el.scrollTop = 0; });
+  await page.waitForTimeout(100);
+  r = await rects();
+  expect(r.rowTop).toBeGreaterThanOrEqual(r.barBottom - 0.5);
 });

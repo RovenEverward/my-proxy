@@ -409,6 +409,41 @@ func (u *User) AllowsInbound(inboundID int64) bool {
 type SubscriptionRule struct {
 	Pattern string       `json:"pattern"`
 	Result  ClientFormat `json:"result"`
+	// Label 是展示名,只给界面用,不影响匹配;服务端按内置表派生,不落库。
+	Label string `json:"label,omitempty"`
+}
+
+// SameMatch 报告两条规则的匹配语义是否相同(Pattern 与 Result 一致)。
+//
+// 它有意不看 Label:Label 只是展示名,不落库、不参与匹配,新旧服务端之间
+// 比对规则表时它不该算差异(见 cli 的 rulesAreBuiltin)。
+func (r SubscriptionRule) SameMatch(o SubscriptionRule) bool {
+	return r.Pattern == o.Pattern && r.Result == o.Result
+}
+
+// WithBuiltinLabels 返回一份新切片:Label 为空、且 Pattern+Result 与某条内置规则
+// 相同的规则补上内置的 Label;已有 Label 或对不上内置表的原样保留。
+//
+// 它只影响响应与界面展示,不写回库、不改匹配;不修改传入的切片。
+func WithBuiltinLabels(rules []SubscriptionRule) []SubscriptionRule {
+	if rules == nil {
+		return nil
+	}
+	builtin := BuiltinRules()
+	out := make([]SubscriptionRule, len(rules))
+	copy(out, rules)
+	for i := range out {
+		if out[i].Label != "" {
+			continue
+		}
+		for _, b := range builtin {
+			if out[i].SameMatch(b) {
+				out[i].Label = b.Label
+				break
+			}
+		}
+	}
+	return out
 }
 
 // Settings 是控制面的全局设置。
@@ -490,18 +525,18 @@ func (s *Settings) TemplateFor(format ClientFormat) string {
 func BuiltinRules() []SubscriptionRule {
 	return []SubscriptionRule{
 		// Karing 会同时声称自己是好几种客户端,排在最前,免得更宽的那条抢走它。
-		{Pattern: `(?i)karing`, Result: FormatClashMeta},
+		{Pattern: `(?i)karing`, Result: FormatClashMeta, Label: "Karing"},
 		// mihomo 系(Clash Verge Rev / Mihomo Party / Stash / FlClash)。
-		{Pattern: `(?i)mihomo|clash-verge|clash\.meta|clashmeta|flclash|stash`, Result: FormatClashMeta},
+		{Pattern: `(?i)mihomo|clash-verge|clash\.meta|clashmeta|flclash|stash`, Result: FormatClashMeta, Label: "Clash Verge、Mihomo Party、FlClash、Stash"},
 		// 原版 Clash 家族排在 meta 之后:它们的 UA 里通常只有 "clash"。
-		{Pattern: `(?i)clash`, Result: FormatClash},
-		{Pattern: `(?i)sing-box|sfi/|sfa/|sfm/|hiddify|nekobox`, Result: FormatSingBox},
-		{Pattern: `(?i)xray`, Result: FormatXray},
+		{Pattern: `(?i)clash`, Result: FormatClash, Label: "其他 Clash 客户端"},
+		{Pattern: `(?i)sing-box|sfi/|sfa/|sfm/|hiddify|nekobox`, Result: FormatSingBox, Label: "sing-box、Hiddify、NekoBox"},
+		{Pattern: `(?i)xray`, Result: FormatXray, Label: "Xray"},
 		// 这几个都只认 base64 链接列表,给不了 YAML/JSON。
-		{Pattern: `(?i)v2rayn|v2rayng`, Result: FormatBase64},
-		{Pattern: `(?i)shadowrocket`, Result: FormatBase64},
-		{Pattern: `(?i)quantumult`, Result: FormatBase64},
-		{Pattern: `(?i)surge|loon`, Result: FormatBase64},
+		{Pattern: `(?i)v2rayn|v2rayng`, Result: FormatBase64, Label: "v2rayN、v2rayNG"},
+		{Pattern: `(?i)shadowrocket`, Result: FormatBase64, Label: "Shadowrocket"},
+		{Pattern: `(?i)quantumult`, Result: FormatBase64, Label: "Quantumult"},
+		{Pattern: `(?i)surge|loon`, Result: FormatBase64, Label: "Surge、Loon"},
 	}
 }
 

@@ -68,10 +68,10 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
   await expect(userRow(page, "r-renew")).not.toHaveText(before, NOW);
 });
 
-test("删除入口与入站:节点详情的连接方式立刻更新", async ({ page }) => {
+test("删除对外地址与连接方式:节点详情的连接方式立刻更新", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#nodes/1");
-  // 只有一个入口时行上没有展开按钮;编辑连接抽屉的「高级」里能编辑这个入口。
+  // 只有一个对外地址时行上没有展开按钮;编辑连接抽屉的「高级」里能编辑这个对外地址。
   await page.click(".cx-row[data-act=conn-edit][data-id='1']");
   await page.click("#conn-form details.adv2 > summary");
   await expect(page.locator("[data-act=conn-host-edit][data-id='1']")).toHaveCount(1);
@@ -106,9 +106,10 @@ test("删除节点:节点列表立刻更新", async ({ page }) => {
 test("恢复内置模板:模板列表立刻显示内置默认", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#settings/templates");
-  await expect(page.locator("tr[data-f='xray']")).toContainText("自定义");
+  await expect(page.locator(".zr-tpl[data-f='xray']")).toContainText("自定义");
+  await page.click("button[data-act=tpl-open][data-f='xray']");
   await page.click("button[data-act=tpl-del][data-f='xray']");
   await page.fill("#typed", "xray");
   await page.click("#okb");
-  await expect(page.locator("tr[data-f='xray']")).toContainText("内置默认", NOW);
+  await expect(page.locator(".zr-tpl[data-f='xray']")).toContainText("内置", NOW);
 });

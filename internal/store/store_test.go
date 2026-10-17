@@ -797,6 +797,46 @@ func TestSaveSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+// Label 是界面展示名,由服务端派生,不落库:存进去带 Label,读回来必须为空,
+// 而 Pattern / Result 一个不能变。
+func TestSaveSettingsDoesNotPersistRuleLabels(t *testing.T) {
+	s := newTestStore(t)
+
+	st := &model.Settings{
+		Rules: []model.SubscriptionRule{
+			{Pattern: `(?i)clash`, Result: model.FormatClash, Label: "其他 Clash 客户端"},
+			{Pattern: `(?i)my-client`, Result: model.FormatLinks, Label: "自定义"},
+		},
+	}
+	if err := s.SaveSettings(st); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+
+	// 不改调用方传进来的切片。
+	if st.Rules[0].Label != "其他 Clash 客户端" || st.Rules[1].Label != "自定义" {
+		t.Fatalf("SaveSettings 改到了调用方的规则切片: %+v", st.Rules)
+	}
+
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if len(got.Rules) != 2 {
+		t.Fatalf("规则条数不对: %+v", got.Rules)
+	}
+	for i, r := range got.Rules {
+		if r.Label != "" {
+			t.Errorf("第 %d 条规则的 Label 落库了: %q", i, r.Label)
+		}
+	}
+	if got.Rules[0].Pattern != `(?i)clash` || got.Rules[0].Result != model.FormatClash {
+		t.Errorf("第 0 条 Pattern/Result 变了: %+v", got.Rules[0])
+	}
+	if got.Rules[1].Pattern != `(?i)my-client` || got.Rules[1].Result != model.FormatLinks {
+		t.Errorf("第 1 条 Pattern/Result 变了: %+v", got.Rules[1])
+	}
+}
+
 // 老库升级上来的样子:settings 行已经存在,rules 列是 '[]'。这时必须也拿到内置
 // 规则,否则「新装的库有规则、升级上来的库没有」—— 同一个版本两种行为,而且
 // 老用户正是最需要它的人(他们的客户端本来就没被认出来)。

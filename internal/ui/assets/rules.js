@@ -144,10 +144,10 @@ function rpTestOut() {
   const r = RP.testRes;
   if (!RP.test.trim() || !r) return H`<p class="sub mt">看看它会命中哪条规则、最后从哪里出去。${RP.scope ? `按 ${RP.scope} 的规则算。` : ""}</p>`;
   if (r.error) return H`<p class="c-bad mt">${r.error}</p>`;
-  const m = r.matched, how = groupID(r.target) ? (r.mode === "auto" ? `自动在 ${r.members?.length || 0} 个入口里挑最快的` : `你在客户端里选的那个(${r.members?.length || 0} 个可选)`) : "";
+  const m = r.matched, how = groupID(r.target) ? (r.mode === "auto" ? `自动在 ${r.members?.length || 0} 个节点里挑最快的` : `你在客户端里选的那个(${r.members?.length || 0} 个可选)`) : "";
   return H`<div class="rp-res"><div class="sub">${r.domain}</div><div class="rp-big">${rpPill(r.target)}</div>
     <dl class="kv flat"><dt>命中</dt><dd>${m ? H`${m.scope === "user" ? H`<span class="pill on">仅 ${r.user}</span> ` : ""}第 ${m.index} 条 · ${RULE_TYPES[m.rule.type]} <b>${rpValText(m.rule)}</b>` : "没有规则对上，走「其他全部」"}</dd>
-    ${how ? H`<dt>实际出口</dt><dd>${how}${r.members?.length ? H`<div class="chips mt6">${r.members.map(x => H`<span class="tag">${x}</span>`)}</div>` : H` <span class="c-warn">· 组里没有入口，只剩直连</span>`}</dd>` : ""}
+    ${how ? H`<dt>实际出口</dt><dd>${how}${r.members?.length ? H`<div class="chips mt6">${r.members.map(x => H`<span class="tag">${x}</span>`)}</div>` : H` <span class="c-warn">· 组里没有节点，只剩直连</span>`}</dd>` : ""}
     ${r.uncertain?.length ? H`<dt>注意</dt><dd class="c-warn">${r.uncertain.map(u => H`<div>第 ${u.index} 条 ${RULE_TYPES[u.rule.type]} ${rpValText(u.rule)}:${u.reason}</div>`)}</dd>` : ""}
     ${r.disabled_hits?.length ? H`<dt>停用</dt><dd class="sub">有 ${r.disabled_hits.length} 条已停用的规则本来会命中</dd>` : ""}</dl>
     <p class="sub">规则组以 Clash 版上游规则集模拟;客户端实际下载的规则集可能稍有不同。</p></div>`;
@@ -164,13 +164,13 @@ async function rpRunTest() {
 function rpGroupsCard(d) {
   const W = can("POST", "/api/proxy-groups");
   const used = id => d.rules.global.filter(r => r.target === "group:" + id).length + (d.rules.final === "group:" + id ? 1 : 0);
-  const cond = g => [...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags?.length ? ["旧标签条件(已不生效)"] : [])].join(" + ") || "全部入口";
-  return H`<div class="card"><div class="ch">策略组：按条件自动收入口，新加的节点符合条件会自己进来<span class="sp"></span>${W ? H`<button class="btn pri sm" data-act="gp-edit" data-id="">${ic("plus")}新建策略组</button>` : ""}</div>
+  const cond = g => [...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags?.length ? ["旧标签条件(已不生效)"] : [])].join(" + ") || "全部节点";
+  return H`<div class="card"><div class="ch">策略组：按条件自动收节点，新加的节点符合条件会自己进来<span class="sp"></span>${W ? H`<button class="btn pri sm" data-act="gp-edit" data-id="">${ic("plus")}新建策略组</button>` : ""}</div>
   ${d.groups.length ? d.groups.map(g => { const e = d.members[g.id];
     return H`<div class="row rp-g" data-act="gp-edit" data-id="${g.id}" tabindex="0"><span class="rp-gi">${g.icon || "◎"}</span><div class="grow"><b class="bold">${g.name}</b> <span class="pill">${g.mode === "auto" ? "自动选最快" : "手动选"}</span>
       <div class="sub">${cond(g)} · 被 ${used(g.id)} 条规则使用</div>
-      <div class="chips mt6">${e ? e.map(x => H`<span class="tag">${x}</span>`) : ""}${e && !e.length ? H`<span class="c-warn">没有符合条件的入口，订阅里这个组只有「直连」</span>` : ""}</div></div>${ic("arrow")}</div>`; })
-    : emptyBox("tpl", "还没有策略组", "策略组是规则的去向：按地区、协议、能力检测挑入口。点右上角「新建策略组」开始。", "")}</div>`;
+      <div class="chips mt6">${e ? e.map(x => H`<span class="tag">${x}</span>`) : ""}${e && !e.length ? H`<span class="c-warn">没有符合条件的节点，订阅里这个组只有「直连」</span>` : ""}</div></div>${ic("arrow")}</div>`; })
+    : emptyBox("tpl", "还没有策略组", "策略组是规则的去向：按地区、协议、能力检测挑节点。点右上角「新建策略组」开始。", "")}</div>`;
 }
 
 async function groupEditor(id) {
@@ -179,15 +179,15 @@ async function groupEditor(id) {
   for (const k of ["regions", "protocols", "capabilities", "tags"]) g[k] ||= [];
   let all = [];
   try { all = await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ name: "preview", mode: "auto" }), headers: { "Content-Type": "application/json" } }); } catch {}
-  const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有入口带这一项</span>`; };
+  const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有节点带这一项</span>`; };
   const regions = all.map(e => e.region).filter(Boolean), protos = all.map(e => e.protocol).filter(Boolean);
   openDrawer(H`<form id="gp-form" novalidate><div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">
     <div class="field"><label for="gp-name">名字</label><div class="flex8"><input class="in" style="width:64px;flex:none;text-align:center" id="gp-icon" value="${g.icon}" placeholder="🌐" aria-label="图标"><input class="in" style="flex:1;min-width:0" id="gp-name" value="${g.name}" placeholder="比如 日本节点" autocomplete="off"></div></div>
-    <div class="field"><label>收哪些入口 <span class="sub">· 各类之间要同时满足，不选就不限</span></label></div>
+    <div class="field"><label>收哪些节点 <span class="sub">· 各类之间要同时满足，不选就不限</span></label></div>
     <div class="field"><label class="sub">地区(任一)</label>${opts("regions", regions, k => RULE_REGIONS[k] || k)}</div>
     <div class="field"><label class="sub">协议(任一)</label>${opts("protocols", protos, k => k)}</div>
     <div class="field"><label class="sub">能力检测(全部通过)</label>${opts("capabilities", Object.keys(RULE_CAPS), k => RULE_CAPS[k])}</div>
-    ${g.tags.length ? H`<div class="callout rp-warn" id="gp-oldtags">${ic("warn", "ico-warn")}<div>这个策略组还留着旧的「标签」条件(${g.tags.join("、")})。从 v0.7.0 起入口不再带标签，这个条件什么都匹配不上，组里会一直是空的。<div class="mt6"><button type="button" class="btn sm" id="gp-cleartags">去掉旧的标签条件</button></div></div></div>` : ""}
+    ${g.tags.length ? H`<div class="callout rp-warn" id="gp-oldtags">${ic("warn", "ico-warn")}<div>这个策略组还留着旧的「标签」条件(${g.tags.join("、")})。从 v0.7.0 起节点不再带标签，这个条件什么都匹配不上，组里会一直是空的。<div class="mt6"><button type="button" class="btn sm" id="gp-cleartags">去掉旧的标签条件</button></div></div></div>` : ""}
     <div class="field"><label>怎么选</label><div class="seg" id="gp-mode"><button type="button" class="${g.mode === "auto" ? "on" : ""}" data-m="auto">自动选最快</button><button type="button" class="${g.mode === "manual" ? "on" : ""}" data-m="manual">我手动选</button></div><span class="h">自动：客户端定时测网页延迟，挑最快的。手动：用户在客户端里自己选。</span></div>
     <div class="card mt"><div class="ch">现在会收进来<small id="gp-cnt"></small></div><div id="gp-pv"></div></div>
     <div class="err" id="gp-err" role="alert"></div>
@@ -206,9 +206,9 @@ async function groupEditor(id) {
     catch (e) { if (my === seq) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
     if (my !== seq) return;
     const n = pv.filter(x => x.admitted).length;
-    $("#gp-cnt").textContent = `· ${n} / ${pv.length} 个入口`;
+    $("#gp-cnt").textContent = `· ${n} / ${pv.length} 个节点`;
     $("#gp-pv").innerHTML = val(pv.length ? pv.map(x => H`<div class="row pp-pvr ${x.admitted ? "" : "miss"}"><span class="pp-mk ${x.admitted ? "ok" : ""}">${ic(x.admitted ? "check" : "x")}</span><span class="grow">${x.name}</span><span class="sub">${x.admitted ? (x.capabilities || []).map(c => RULE_CAPS[c] || c).join(" · ") : (x.reasons || []).join("、")}</span></div>`)
-      : H`<div class="pad16 sub">还没有入口。</div>`);
+      : H`<div class="pad16 sub">还没有节点。</div>`);
   };
   f.addEventListener("change", sync); f.addEventListener("input", e => { if (e.target.id === "gp-name" || e.target.id === "gp-icon") read(); });
   // 「标签」条件界面上已经去掉;旧数据里的 tags 原样保留(API 兼容),只在这里给一个清掉的按钮。

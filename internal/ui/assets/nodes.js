@@ -91,7 +91,7 @@ function nodeList(d) {
     <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
   // 「批量识别显示名」只在有实现、且确实还有没显示名的节点时出现。
   const needRelabel = d && META.relabel && d.nodes.some(n => !n.display);
-  return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的巡检缓存</p></div><div class="sp"></div>
+  return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的定时检查</p></div><div class="sp"></div>
     ${needRelabel ? H`<button class="btn" data-act="relabel-open">${ic("globe")}批量识别显示名</button>` : ""}
     ${W ? H`<button class="btn pri" data-act="node-wizard">${ic("plus")}添加节点</button>` : ""}</div><div class="card">${inner}</div>`;
 }
@@ -146,7 +146,7 @@ function nodeDetail(d) {
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
-  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt node-danger"><div class="ch">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除节点</button></div></div>` : ""}`;
+  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt node-danger"><div class="ch">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的连接方式会一起删掉，订阅里不再有它。节点上已装的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除节点</button></div></div>` : ""}`;
 }
 
 /* ---- 编辑器:add / edit ---- */
@@ -158,7 +158,7 @@ async function nodeEditor(id) {
   const num = x => x ? String(x) : "";
   openDrawer(H`<form id="node-form" novalidate><div class="dh"><h2>${isNew ? "添加节点" : "编辑 " + nodeLabel(v)}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
-    <div class="field"><label for="n-address">对外地址</label><input class="in mono" id="n-address" name="address" value="${n.address}" placeholder="203.0.113.10"><span class="h">入口没写地址时订阅里用它${isNew ? ";显示名按它自动识别" : ""}</span></div>
+    <div class="field"><label for="n-address">对外地址</label><input class="in mono" id="n-address" name="address" value="${n.address}" placeholder="203.0.113.10"><span class="h">连接方式没填对外地址时，订阅里用它${isNew ? ";显示名按它自动识别" : ""}</span></div>
     <div class="two"><div class="field"><label for="n-ssh-port">SSH 端口</label><input class="in mono" id="n-ssh-port" name="ssh_port" value="${num(n.ssh_port)}" placeholder="22" inputmode="numeric"></div>
     <div class="field"><label for="n-ssh-user">SSH 用户</label><input class="in mono" id="n-ssh-user" name="ssh_user" value="${n.ssh_user}" placeholder="root"></div></div>
     ${isNew ? "" : H`<div class="field"><label>显示名<span class="sub" id="n-display"></span></label><div class="three">
@@ -177,7 +177,7 @@ async function nodeEditor(id) {
       <option value="v6" ${n.outbound_ip === "v6" ? "selected" : ""}>仅 IPv6</option>
       <option value="asis" ${n.outbound_ip === "asis" ? "selected" : ""}>不指定(AsIs)</option>
     </select><span class="h">节点直连出口的 IP 版本;改完要「应用到节点」才生效</span></div></details>
-    ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
+    ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会影响订阅里没单独填对外地址的连接方式;改 SSH 参数只影响控制面以后怎么连它。都不会自动应用到节点。</p>`}
     <div class="err" id="n-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="n-save">${isNew ? "创建" : "保存"}</button></div></form>`);
   const form = $("#node-form");
@@ -259,7 +259,7 @@ async function nodeEditor(id) {
 function relabelModal() {
   const m = $("#modal");
   let plans = null;
-  m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
   <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>)，先出「旧名 → 新名」对照表。已经有显示名的节点会跳过，用户写过的值不会被覆盖。</p>
   <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>
@@ -309,7 +309,7 @@ Object.assign(ACTS, {
     run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
-    confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "开始排水",
+    confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
   "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心？`, text: "控制面下载发布包(有缓存)，经 SSH 送到节点，应用当前配置并启动。慢链路上要几分钟，期间别关这个页面。", ok: "安装",
@@ -324,7 +324,7 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、出口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
     const r = await api(nodePath(d.id) + "/online");
@@ -336,7 +336,7 @@ Object.assign(ACTS, {
     const cfg = await api(nodePath(d.id) + "/config");
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: "不可恢复：它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心还在跑，要清理得自己登上去。只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: "不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的核心和配置不会被清理；只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 

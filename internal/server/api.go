@@ -1056,13 +1056,39 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "订阅设置")
 		return
 	}
+	// Label 不落库:读出来是空的,响应里按内置表补上给界面用。
+	v.Rules = model.WithBuiltinLabels(v.Rules)
 	writeJSON(w, http.StatusOK, v)
+}
+
+// handleBuiltinRules 返回内置 UA 识别规则(带展示名),给界面的「恢复内置」用。
+func (s *Server) handleBuiltinRules(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, model.BuiltinRules())
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	var v model.Settings
 	if !decodeBody(w, r, &v) {
 		return
+	}
+	// 先读回现行设置:订阅地址前缀只在这次真的写了新值时才校验与规整。库里
+	// 已有的旧值(哪怕不合法、结尾带 /)绝不迁移,订阅必须逐字节不变。
+	cur, err := s.store.GetSettings()
+	if err != nil {
+		s.writeStoreError(w, err, "订阅设置")
+		return
+	}
+	if v.SubURLPrefix != cur.SubURLPrefix {
+		p := strings.TrimSpace(v.SubURLPrefix)
+		if p != "" {
+			u, err := url.Parse(p)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				writeError(w, http.StatusBadRequest, "订阅地址要以 http:// 或 https:// 开头，比如 https://sub.example.com")
+				return
+			}
+			p = strings.TrimRight(p, "/")
+		}
+		v.SubURLPrefix = p
 	}
 	for _, rule := range v.Rules {
 		if !rule.Result.Valid() {
@@ -1108,6 +1134,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateSubCache()
+	v.Rules = model.WithBuiltinLabels(v.Rules)
 	writeJSON(w, http.StatusOK, v)
 }
 

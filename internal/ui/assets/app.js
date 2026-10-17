@@ -50,6 +50,9 @@ async function api(path, init = {}) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const ICONS = {
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7M12 17h.01"/>',
+  sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  flask: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>',
   home: '<path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
   nodes: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>',
@@ -115,7 +118,7 @@ function expireCell(u) {
 }
 const avatar = n => H`<span class="av">${[...String(n)][0]?.toUpperCase() || "?"}</span>`;
 function nodeSt(n) {
-  if (!n.status) return n.draining ? stBadge("info", "已暂停分配") : stBadge("", "未巡检");
+  if (!n.status) return n.draining ? stBadge("info", "已暂停分配") : stBadge("", "未体检");
   if (!n.status.reachable) return stBadge("bad", "连不上");
   if (n.draining) return stBadge("info", "已暂停分配");
   if (!n.status.active) return stBadge("warn", "核心未运行");
@@ -140,7 +143,7 @@ const PAGES = {};
 let META = { server: "", profile: "", allow: ["GET /api"] };
 // 页面只在转发层放行时才显示写操作(放行规则见 internal/cli/ui.go)。
 const can = (method, path) => META.allow.some(a => { const [m, p] = a.split(" "); return m === method && (path === p || path.startsWith(p.replace(/\/$/, "") + "/")); });
-let route = [], current = { page: null, data: null, error: null, loading: true, at: null };
+let route = [], here = "overview", current = { page: null, data: null, error: null, loading: true, at: null };
 
 /* ---------- 更新 pill ---------- */
 // GET /local/update 的最近一次结论;null 表示还没问过。弹窗读它,不重复请求。
@@ -202,7 +205,10 @@ async function refreshUpdatePill(force) {
   const b = $("#upd-pill");
   if (b) b.hidden = !showUpdatePill(u);
 }
-function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
+let modalCleanup = null;
+// 换一个弹窗内容前先收掉上一个弹窗留下的焦点陷阱等(离页确认会设)。
+function modalTake() { const c = modalCleanup; modalCleanup = null; c?.(); }
+function closeModal() { const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -228,7 +234,7 @@ function openUpdateModal() {
   const c = u.control || {}, l = u.cli || {};
   const nodes = Array.isArray(u.nodes) ? u.nodes : [];
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
   ${releaseHighlights(u.notes).length ? H`<div class="upd-notes"><div class="upd-hl-t">这次更新</div><ul class="upd-hl">${releaseHighlights(u.notes).map(t => H`<li>${raw(inlineMd(t))}</li>`)}</ul></div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
@@ -361,7 +367,7 @@ function renderUpdAll() {
   const done = a.state === "done";
   const title = failed ? "更新失败" : done ? "已是最新" : "正在更新";
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
   <div class="upd-steps">${groups.map(g => H`<div class="upd-step">${updStepName(g.step)}</div>${g.evs.map(ev => H`<div class="upd-ev ${ev.status}">${ev.msg}</div>`)}`)}</div>
   ${failed ? H`<div class="err" role="alert">${failed.msg}</div>` : ""}</div>
   ${(failed || done) ? H`<div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>` : ""}`);
@@ -375,14 +381,14 @@ function updRestartWait() {
   if (updAll) { clearTimeout(updAll.timer); updAll = null; }
   const title = updProgName() + " 正在重启";
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
   <p class="sub">新版本起来后本页会自动刷新，会话沿用，无需重新登录。</p></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const deadline = Date.now() + 60000;
   const tick = async () => {
     try { await api("/ui/meta"); location.reload(); return; } catch {}
     if (Date.now() >= deadline) {
-      m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
+      modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${title}…</h2>
       <p class="sub">等了一分钟还没起来，请手动刷新本页确认状态。</p></div>
       <div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>`);
       $("#scrim").classList.add("open"); m.classList.add("open");
@@ -530,7 +536,7 @@ PAGES.overview = {
     <div class="grid g4">
       ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
-      ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个入口`)}
+      ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
       ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
     </div>
     <div class="grid g2 mt">
@@ -633,11 +639,26 @@ let DRAWER_RAF = 0;
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
   cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
-  $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
+  $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open");
   updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
 }
-function toast(text, bad) { document.querySelector(".toast")?.remove(); const e = document.createElement("div"); e.className = "toast" + (bad ? " bad" : ""); e.setAttribute("role", "status"); e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`); document.body.append(e); setTimeout(() => e.remove(), bad ? 6000 : 2600); }
+// action:{ label, run } 给 toast 加一个按钮(比如「放弃」后的「撤销」);有按钮时多停一会儿。
+function toast(text, bad, action) {
+  document.querySelector(".toast")?.remove();
+  const e = document.createElement("div");
+  e.className = "toast" + (bad ? " bad" : "");
+  e.setAttribute("role", "status");
+  e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`);
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "toast-act"; b.textContent = action.label;
+    b.addEventListener("click", () => { e.remove(); try { action.run(); } catch { /* 按钮自己的事,报错也不影响页面 */ } });
+    e.append(b);
+  }
+  document.body.append(e);
+  setTimeout(() => e.remove(), bad || action ? 6000 : 2600);
+}
 
 // 写操作:发出请求、成功后提示并刷新当前页;失败把控制面原话报出来。
 async function write(method, path, body, okText) {
@@ -656,7 +677,7 @@ function afterWrite() { setTimeout(() => load(true, true), 0); }
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
 function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
@@ -691,7 +712,7 @@ async function openProfiles() {
   }
   // 每项只摆名称和地址;证书指纹在侧栏控制面卡片的展开面板里看。
   const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>切换控制面</h2>
   <p>切换后会记住，下次打开仍连你选的这个。</p>
   <div class="pflist">${list.map(p => { const addr = cpAddr(p.server), name = cpName(p.name, p.server);
     return H`<button type="button" class="pfitem${p.current ? " on" : ""}" data-name="${p.name}">
@@ -702,7 +723,8 @@ async function openProfiles() {
   for (const b of m.querySelectorAll(".pfitem")) b.addEventListener("click", () => useProfile(b.dataset.name, b));
 }
 // useProfile:切到 name。成功整页刷新,让所有页面数据都跟着新控制面重来。
-async function useProfile(name, el) {
+async function useProfile(name, el, confirmed = false) {
+  if (!confirmed && PAGES[route[0]]?.canLeave && await PAGES[route[0]].canLeave(() => useProfile(name, null, true)) === false) return;
   if (el) { el.disabled = true; el.classList.add("busy"); }
   try {
     await api("/local/profiles/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
@@ -745,6 +767,7 @@ async function load(soft, force) {
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
   route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
+  here = route[0] === "overview" ? "overview" : key;
   // 体检页带过来的 AUTO_APPLY 只对它指向的那台节点有效:换了页、换到别的节点都
   // 丢掉,免得下次进来突然弹出「应用到节点」。
   if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
@@ -790,7 +813,7 @@ const ACTS = {
   reload: () => load(true),
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
-  "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
+  "modal-cancel": () => closeModal(),
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
   "update-open": async () => { if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch {} } openUpdateModal(); },
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
@@ -818,7 +841,7 @@ const ACTS = {
   "cp-switch": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
-  "profile-add": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); window.openConnectForm(); },
+  "profile-add": () => { closeModal(); window.openConnectForm(); },
   "cl-skip": () => { clSet("skip-sub", true); toast("先用服务器 IP;之后在「订阅」里随时能改"); paint(); },
   "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
   "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },
@@ -844,8 +867,17 @@ document.addEventListener("visibilitychange", () => {
 });
 // 换到别的页(侧栏、浏览器后退、页面里的链接)时把抽屉和确认框收起来,不然上一页的抽屉
 // 会盖在新页面上。同一页里换子路由(如 #users/alice)不动,由各页自己开关抽屉。
-addEventListener("hashchange", () => {
-  if (routeOf(migrateKey(location.hash.slice(1) || "overview"))[0] !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
+// 页面可以实现 canLeave(nextKey):返回 false 表示有未保存的改动不放行,由页面自己弹
+// 应用内对话框;这里把地址改回当前页(replaceState 不触发新的 hashchange),也不加载新页。
+addEventListener("hashchange", async () => {
+  const nextKey = migrateKey(location.hash.slice(1) || "overview");
+  const p = PAGES[route[0]];
+  if (p?.canLeave) {
+    let ok = true;
+    try { ok = await p.canLeave(nextKey); } catch { ok = true; }
+    if (!ok) { history.replaceState(null, "", "#" + here); return; }
+  }
+  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open"); }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
