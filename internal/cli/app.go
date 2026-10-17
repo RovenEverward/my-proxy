@@ -303,6 +303,13 @@ func saveAppWindowShot(win *mygo.Window, out string) {
 	if runtime.GOOS != "windows" {
 		return
 	}
+	// CI 的 Windows 桌面上 runner 的控制台窗口常盖在前面,窗口也不一定在屏幕
+	// 左上角(位置与缩放换算会错开)。先挪到 (0,0)、临时置顶并聚焦再抓,抓完取消置顶。
+	win.SetPosition(0, 0)
+	win.SetAlwaysOnTop(true)
+	win.Focus()
+	defer win.SetAlwaysOnTop(false)
+	time.Sleep(800 * time.Millisecond)
 	b := win.Bounds()
 	if b.Width <= 0 || b.Height <= 0 {
 		fmt.Fprintln(os.Stderr, "mpx app: 跳过窗口截图:窗口大小无效", b)
