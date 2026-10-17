@@ -329,7 +329,7 @@ func copyBannedLineOK(file, original, masked string) bool {
 	if strings.Contains(original, "// copy-ok:") {
 		return true
 	}
-	for _, sub := range copyBannedAllowed[file] {
+	for _, sub := range copyBannedAllowed[filepath.ToSlash(file)] {
 		if strings.Contains(masked, sub) {
 			return true
 		}
