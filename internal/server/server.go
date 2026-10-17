@@ -245,6 +245,8 @@ func (s *Server) routes() {
 
 	api.HandleFunc("GET /api/settings", s.handleGetSettings)
 	api.HandleFunc("PUT /api/settings", s.handleSaveSettings)
+	// 内置 UA 识别规则(带展示名),给界面的「恢复内置」用。只读。
+	api.HandleFunc("GET /api/settings/builtin-rules", s.handleBuiltinRules)
 	api.HandleFunc("GET /api/settings/templates/{format}", s.handleGetTemplate)
 	api.HandleFunc("PUT /api/settings/templates/{format}", s.handlePutTemplate)
 	api.HandleFunc("DELETE /api/settings/templates/{format}", s.handleDeleteTemplate)

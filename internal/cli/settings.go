@@ -361,7 +361,7 @@ func rulesAreBuiltin(rules []model.SubscriptionRule) bool {
 		return false
 	}
 	for i := range rules {
-		if rules[i] != builtin[i] {
+		if !rules[i].SameMatch(builtin[i]) {
 			return false
 		}
 	}

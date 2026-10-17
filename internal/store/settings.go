@@ -77,7 +77,17 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 	if st == nil {
 		return errors.New("保存设置: 设置对象为空")
 	}
-	rules, err := encodeSlice(st.Rules)
+	// Label 只给界面展示用,由服务端按内置表派生,不落库。这里复制一份再把
+	// Label 清掉,不改调用方传进来的切片。
+	rulesIn := st.Rules
+	if rulesIn != nil {
+		rulesIn = make([]model.SubscriptionRule, len(st.Rules))
+		for i, r := range st.Rules {
+			r.Label = ""
+			rulesIn[i] = r
+		}
+	}
+	rules, err := encodeSlice(rulesIn)
 	if err != nil {
 		return fmt.Errorf("序列化订阅规则: %w", err)
 	}
