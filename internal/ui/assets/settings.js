@@ -324,7 +324,7 @@ function preview(d) {
         ${d.support_link ? H`<span class="pv-help" title="${d.support_link}">${ic("help")}</span>` : ""}</div>
       <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
       <div class="pv-meta"><span>${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "由客户端决定多久更新"}</span>${d.support_link ? H`<span class="ell">${ic("help")}${d.support_link.replace(/^https?:\/\//, "")}</span>` : ""}</div>
-      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span><span class="sub">还有 ${PV.more} 个</span></div>` : ""}
+      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
     </div>
     ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>/sub/${PV.token}</code>
       <button type="button" class="ib sm" data-act="copy" data-text="${base}/sub/${PV.token}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
@@ -566,7 +566,7 @@ async function subPreview(u, data) {
     return i ? [{ n, i }] : [];
   });
   if (available.length) {
-    const { n, i } = available[0]; out.node = nodeLabel(n); out.proto = `${i.protocol.toUpperCase()}${i.security && i.security !== "none" ? " · " + i.security : ""}`; out.more = available.length - 1;
+    const { n, i } = available[0]; out.node = nodeLabel(n); out.proto = `${i.protocol.toUpperCase()}${i.security && i.security !== "none" ? " · " + ({ reality: "Reality", tls: "TLS" }[i.security] || i.security) : ""}`; out.more = available.length - 1;
   }
   return out;
 }
