@@ -254,19 +254,81 @@ func TestUpdateRollbackCLIRoundTrip(t *testing.T) {
 	}
 }
 
-func TestUpdateApplyUnsupportedComponents(t *testing.T) {
-	// control 已在 M3 接上,剩下的仍是明确报"尚未支持",不做半套。
-	for _, part := range []string{"nodes"} {
-		t.Run(part, func(t *testing.T) {
-			err := runRootErr(t, "update", "apply", part)
-			if err == nil || err.Error() != "节点核心升级尚未支持（M4）" {
-				t.Fatalf("err = %v, 想要节点核心尚未支持", err)
+// apply nodes 已接上;rollback nodes 仍是明确报"尚未支持",不做半套。
+func TestUpdateRollbackNodesUnsupported(t *testing.T) {
+	err := runRootErr(t, "update", "rollback", "nodes")
+	if err == nil || err.Error() != "节点核心回退尚未支持（M4）" {
+		t.Fatalf("err = %v, 想要节点核心回退尚未支持", err)
+	}
+}
+
+// withFastNodeUpdatePoll 把进度轮询间隔压到毫秒级,不然一次用例真等 2 秒。
+func withFastNodeUpdatePoll(t *testing.T) {
+	t.Helper()
+	old := nodeUpdatePollInterval
+	nodeUpdatePollInterval = time.Millisecond
+	t.Cleanup(func() { nodeUpdatePollInterval = old })
+}
+
+// apply nodes 只发起任务并转述事件:起一台假控制面,先回 running 带两条事件,
+// 再回 done,CLI 应当逐条打出来并正常退出。
+func TestUpdateApplyNodesPrintsEventsAndExitsZero(t *testing.T) {
+	withFastNodeUpdatePoll(t)
+	step := 0
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/update/nodes":
+			_, _ = fmt.Fprint(w, `{"job":7}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/update/nodes":
+			step++
+			if step == 1 {
+				_, _ = fmt.Fprint(w, `{"job":7,"state":"running","seq":2,"events":[`+
+					`{"seq":1,"node":"hk","core":"xray","from":"25.1.1","to":"v26.3.27","status":"start","msg":""},`+
+					`{"seq":2,"node":"hk","core":"xray","from":"25.1.1","to":"v26.3.27","status":"ok","msg":""}]}`)
+				return
 			}
-			err = runRootErr(t, "update", "rollback", part)
-			if err == nil || err.Error() != "节点核心回退尚未支持（M4）" {
-				t.Fatalf("err = %v, 想要节点核心回退尚未支持", err)
-			}
-		})
+			_, _ = fmt.Fprint(w, `{"job":7,"state":"done","seq":2,"events":[]}`)
+		default:
+			http.Error(w, `{"error":"没有这个接口"}`, http.StatusNotFound)
+		}
+	})
+
+	out := captureStdout(t, func() { runRoot(t, "update", "apply", "nodes") })
+
+	for _, want := range []string{
+		"节点核心升级任务 #7 已启动",
+		"hk xray：25.1.1 → v26.3.27 开始",
+		"hk xray：25.1.1 → v26.3.27 完成",
+		"节点核心升级完成",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("输出缺少 %q:\n%s", want, out)
+		}
+	}
+}
+
+// 控制面报 failed 时 CLI 要带着失败原因以非零退出,不能装作没事。
+func TestUpdateApplyNodesFailedReturnsError(t *testing.T) {
+	withFastNodeUpdatePoll(t)
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/update/nodes":
+			_, _ = fmt.Fprint(w, `{"job":3}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/update/nodes":
+			_, _ = fmt.Fprint(w, `{"job":3,"state":"failed","seq":1,"events":[`+
+				`{"seq":1,"node":"jp","core":"xray","from":"25.1.1","to":"v26.3.27","status":"failed","msg":"ssh 连不上"}]}`)
+		default:
+			http.Error(w, `{"error":"没有这个接口"}`, http.StatusNotFound)
+		}
+	})
+
+	var err error
+	out := captureStdout(t, func() { err = runRootErr(t, "update", "apply", "nodes") })
+	if err == nil || !strings.Contains(err.Error(), "节点核心升级失败") || !strings.Contains(err.Error(), "ssh 连不上") {
+		t.Fatalf("err = %v, 想要带上失败原因的报错", err)
+	}
+	if !strings.Contains(out, "jp xray：升级失败（ssh 连不上）") {
+		t.Errorf("失败事件没照常打出来:\n%s", out)
 	}
 }
 

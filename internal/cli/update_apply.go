@@ -13,6 +13,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
+	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 )
 
@@ -67,13 +68,17 @@ var updateApplyCmd = &cobra.Command{
 	Short: "升级本机 CLI、控制面或节点核心",
 	Long: `升级指定部件。
 
-目前只支持本机 CLI:从发布站取回指定版本(默认最新),核对 SHA256SUMS 后替换
-当前可执行文件,旧文件留在 <mpx>.prev 供 mpx update rollback cli 回退。
+本机 CLI(cli):从发布站取回指定版本(默认最新),核对 SHA256SUMS 后替换当前可执行
+文件,旧文件留在 <mpx>.prev 供 mpx update rollback cli 回退。
 
-控制面远程升级与节点核心升级分别在 M3、M4 接上,这里先明确报"尚未支持",
-不做半套。`,
+控制面(control):把升级请求登记到控制面,由控制面的 root 一次性单元换二进制并
+重启服务。
+
+节点核心(nodes):让控制面对每台节点逐台升级核心。xray 由节点自己从 GitHub 拉,
+sing-box 由控制面推;进度会一条条打在终端上,失败即停并返回错误。`,
 	Example: `  mpx update apply cli --version v0.6.1 -y
-  mpx update apply cli -y`,
+  mpx update apply control -y
+  mpx update apply nodes`,
 	Args: cobra.ExactArgs(1),
 	RunE: runUpdateApply,
 }
@@ -104,7 +109,7 @@ func runUpdateApply(cmd *cobra.Command, args []string) error {
 	case updateComponentControl:
 		return applyControl(cmd)
 	case updateComponentNodes:
-		return errors.New("节点核心升级尚未支持（M4）")
+		return applyNodes(cmd)
 	default:
 		return fmt.Errorf("不认识的部件 %q，可选值：%s", args[0], updateComponentChoices)
 	}
@@ -272,5 +277,113 @@ func warnControlAfterUpdate(cmd *cobra.Command) {
 	}
 	if _, err := c.do("GET", "/api/status", nil); err != nil {
 		fmt.Fprintf(os.Stderr, "注意：升级后联系控制面失败:%v\n", err)
+	}
+}
+
+// 节点核心升级的轮询参数。做成包级变量,测试把间隔压到毫秒级,不然真等 2 秒
+// 一轮的用例没法跑。
+var (
+	nodeUpdatePollInterval = 2 * time.Second
+	// nodeUpdatePollTimeout 是整轮等待的上限。多台节点串行升级可能很久,给足;
+	// 再久就不是慢,而是卡住了。
+	nodeUpdatePollTimeout = time.Hour
+)
+
+// applyNodes 让控制面起一轮节点核心一键升级,然后轮询进度直到跑完。
+//
+// CLI 不自己连节点:它只发起任务、把控制面产生的事件一条条打出来,失败时以
+// 非零退出(返回 error)。任务状态只在控制面内存里,控制面重启会让它消失,这时
+// 明确报错而不是继续等。
+func applyNodes(cmd *cobra.Command) error {
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
+	raw, err := c.do("POST", "/api/update/nodes", nil)
+	if err != nil {
+		return err
+	}
+	started, err := decode[struct {
+		Job int64 `json:"job"`
+	}](raw)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("节点核心升级任务 #%d 已启动\n", started.Job)
+	return waitNodeUpdate(c, started.Job)
+}
+
+// waitNodeUpdate 按 since 增量拉取进度,打印每条新事件,直到任务 done/failed。
+//
+// 只有 done 才算成功;failed 把最后一条失败事件的原因带回去。控制面重启后任务
+// 会变回 idle 且 job 对不上,这时直接报错,不空等。
+func waitNodeUpdate(c *Client, job int64) error {
+	deadline := time.Now().Add(nodeUpdatePollTimeout)
+	var since int64
+	var lastErr string
+
+	for {
+		if time.Now().After(deadline) {
+			return errors.New("等待节点核心升级超时；用 mpx update 查看结果")
+		}
+		raw, err := c.do("GET", fmt.Sprintf("/api/update/nodes?since=%d", since), nil)
+		if err != nil {
+			return err
+		}
+		p, err := decode[model.UpdateNodesProgress](raw)
+		if err != nil {
+			return err
+		}
+		if p.Job != job {
+			return errors.New("控制面上的节点核心升级任务不见了(可能刚重启过)；用 mpx update 查看结果")
+		}
+
+		for _, ev := range p.Events {
+			fmt.Println(nodeUpdateEventLine(ev))
+			since = ev.Seq
+			if ev.Status == "failed" || ev.Status == "rolled_back" {
+				lastErr = ev.Msg
+			}
+		}
+
+		switch p.State {
+		case model.UpdateNodesDone:
+			// 事件还没拉完(被 20 条上限截断)就再拉一轮,别把尾巴丢掉。
+			if since < p.Seq {
+				break
+			}
+			fmt.Println("节点核心升级完成")
+			return nil
+		case model.UpdateNodesFailed:
+			if since < p.Seq {
+				break
+			}
+			if lastErr == "" {
+				lastErr = "有一台节点升级失败"
+			}
+			return fmt.Errorf("节点核心升级失败：%s", lastErr)
+		case model.UpdateNodesIdle:
+			return errors.New("控制面没有正在跑的节点核心升级任务")
+		}
+		time.Sleep(nodeUpdatePollInterval)
+	}
+}
+
+// nodeUpdateEventLine 把一条事件翻成一行给人看的话。
+func nodeUpdateEventLine(ev model.UpdateNodeEvent) string {
+	head := fmt.Sprintf("%s %s", ev.Node, ev.Core)
+	switch ev.Status {
+	case "start":
+		return fmt.Sprintf("%s：%s → %s 开始", head, dash(ev.From), dash(ev.To))
+	case "skip":
+		return fmt.Sprintf("%s：已是 %s，跳过", head, dash(ev.To))
+	case "ok":
+		return fmt.Sprintf("%s：%s → %s 完成", head, dash(ev.From), dash(ev.To))
+	case "rolled_back":
+		return fmt.Sprintf("%s：升级失败，已回滚（%s）", head, ev.Msg)
+	case "failed":
+		return fmt.Sprintf("%s：升级失败（%s）", head, ev.Msg)
+	default:
+		return head + "：" + ev.Status
 	}
 }

@@ -203,6 +203,79 @@ func TestFetchLeavesNoHalfCacheBehind(t *testing.T) {
 	}
 }
 
+// Latest 只问 releases/latest 拿 tag_name,别的一个字段都不依赖。
+func TestLatest(t *testing.T) {
+	var asked atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		if r.URL.Path != "/repos/"+repo+"/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, `{"tag_name":"v9.9.9","assets":[{"name":"别的"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	oldAPI := apiBase
+	apiBase = srv.URL
+	t.Cleanup(func() { apiBase = oldAPI })
+
+	got, err := Latest(t.Context())
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if got != "v9.9.9" {
+		t.Fatalf("Latest = %q, want v9.9.9", got)
+	}
+	if n := asked.Load(); n != 1 {
+		t.Fatalf("Latest 应当正好请求一次,实际 %d 次", n)
+	}
+}
+
+// Digest 从 .dgst 里挑出 SHA2-256 那一行,并统一成小写。
+func TestDigest(t *testing.T) {
+	const asset = "Xray-linux-64.zip"
+	sum := strings.Repeat("AB", 32) // 64 位,故意大写
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := releaseURL("v1.2.3", asset) + ".dgst"
+		want = strings.TrimPrefix(want, downloadBase)
+		if r.URL.Path != want {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, "MD5= 0123456789abcdef\nSHA2-256= "+sum+"\nSHA2-512= 不管\n")
+	}))
+	t.Cleanup(srv.Close)
+
+	oldDL := downloadBase
+	downloadBase = srv.URL
+	t.Cleanup(func() { downloadBase = oldDL })
+
+	got, err := Digest(t.Context(), "v1.2.3", asset)
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	if want := strings.ToLower(sum); got != want {
+		t.Fatalf("Digest = %q, want %q", got, want)
+	}
+}
+
+// 摘要里没有 SHA2-256 行就得报错:拿别的哈希顶上等于没验完整性。
+func TestDigestRejectsMissingSHA256Line(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "MD5= 0123456789abcdef\nSHA2-512= "+strings.Repeat("a", 128)+"\n")
+	}))
+	t.Cleanup(srv.Close)
+
+	oldDL := downloadBase
+	downloadBase = srv.URL
+	t.Cleanup(func() { downloadBase = oldDL })
+
+	if _, err := Digest(t.Context(), "v1.2.3", "Xray-linux-64.zip"); err == nil {
+		t.Fatal("没有 SHA2-256 行应当报错")
+	}
+}
+
 // 认不出的平台要在碰网络之前就报错。
 func TestFetchRejectsUnknownPlatform(t *testing.T) {
 	dir := t.TempDir()

@@ -50,12 +50,16 @@ type Options struct {
 	Profiles ProfileSource
 	// Relabel 非空时启用 /local/relabel/plan 与 /local/relabel/apply。为 nil 时 404。
 	Relabel RelabelRunner
+	// Session 非空时沿用这个会话值,而不是新发一个:一键更新重启 mpx ui 时的交接
+	// 用(见 restart.go),让浏览器的 cookie 不作废。为空时行为与从前完全一样。
+	Session string
 }
 
 // Server 是一个已经绑定好端口的页面服务。
 type Server struct {
 	opts    Options
 	port    string
+	addr    string // 监听地址(host:port),重启交接时交给新进程
 	key     string // 一次性登录 key,用掉即清空
 	session string // cookie 里的值
 	mu      sync.Mutex
@@ -63,6 +67,7 @@ type Server struct {
 	static  http.Handler
 	allow   []rule
 	job     *setupJob
+	all     updateAllState
 }
 
 type rule struct{ method, prefix string }
@@ -91,7 +96,12 @@ func New(addr string, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{opts: opts, port: port, key: randomToken(), session: randomToken(),
+	session := randomToken()
+	if opts.Session != "" {
+		// 重启交接:旧进程把这个值发进了浏览器 cookie,新进程认同一个会话。
+		session = opts.Session
+	}
+	s := &Server{opts: opts, port: port, addr: addr, key: randomToken(), session: session,
 		static: http.FileServer(http.FS(sub))}
 	for _, a := range opts.Allow {
 		m, p, ok := strings.Cut(a, " ")

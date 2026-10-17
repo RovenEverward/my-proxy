@@ -301,8 +301,13 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .upd-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2);padding:3px 0}
 .upd-row b{font-weight:560;color:var(--ink);min-width:56px}
 .upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
-.upd-cmds{display:flex;flex-direction:column;gap:6px;margin:10px 0}
-.upd-cmds .cmd{margin:0}
+/* 一键更新的进度列表:事件按 step 分组,一组一个标题 */
+.upd-steps{max-height:280px;overflow:auto;margin:10px 0}
+.upd-step{font-size:11.5px;font-weight:560;color:var(--muted);margin:10px 0 3px}
+.upd-step:first-child{margin-top:0}
+.upd-ev{font-size:12.5px;color:var(--ink2);padding:1px 0 1px 10px;border-left:2px solid var(--stone);word-break:break-all}
+.upd-ev.failed{color:var(--bad);border-left-color:var(--bad)}
+.upd-ev.ok{color:var(--ink)}
 /* 自检页:说明列要换行(名称/结论都很短),否则 detail 与 hint 会把表格撑得很宽 */
 .doc-d{white-space:normal;min-width:280px;max-width:720px;line-height:1.55}.doc-d .sub{margin-top:3px}
 .lk-d,.mk-d{display:none}[data-theme=dark] .lk-l,[data-theme=dark] .mk-l{display:none}[data-theme=dark] .lk-d,[data-theme=dark] .mk-d{display:inline-block}

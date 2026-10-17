@@ -103,7 +103,7 @@ flowchart LR
 | RFC：管理 UI | [ui-rfc.md](../internal/ui-rfc.md) | 开发者 | 冻结（已采纳，已实现） | — |
 | RFC：设备接入 | [device-connect-rfc.md](../internal/device-connect-rfc.md) | 开发者 | 冻结（已实现） | — |
 | RFC：节点展示名 | [node-naming-rfc.md](../internal/node-naming-rfc.md) | 开发者 | 冻结（N1–N6 已实现） | — |
-| RFC：自动升级与 `mpx update` | [update-rfc.md](../internal/update-rfc.md) | 开发者 | 冻结（M1–M3、M6 已实现） | — |
+| RFC：自动升级与 `mpx update` | [update-rfc.md](../internal/update-rfc.md) | 开发者 | 冻结（M1–M3、M6 已实现；节点核心与一键三层见 decisions 第 39 条，M5 自动策略不做） | — |
 | RFC：分流规则（替代用途） | [routing-rules-rfc.md](../internal/routing-rules-rfc.md) | 开发者 | 冻结（已实现，用途已于 v0.7.0 删除） | — |
 | RFC：套餐 | [plans-rfc.md](../internal/plans-rfc.md) | 开发者 | 冻结（P1–P3 已实现） | — |
 | RFC：两个向导 | [wizard-rfc.md](../internal/wizard-rfc.md) | 开发者 | 冻结（v0.6.4 已实现） | — |

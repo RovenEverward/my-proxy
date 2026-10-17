@@ -46,6 +46,22 @@ func Platform(ctx context.Context, r Runner, n model.Node) (goos, goarch string,
 	return goos, goarch, nil
 }
 
+// NodeArch 只问节点自己的架构,换算成 Go 的 GOARCH 叫法。
+//
+// 和 Platform 分开:升级 xray 时节点从 GitHub 自己拉包,只需要挑对资产,不需要
+// 知道系统名;单独来问一次就不必把 Platform 里操作系统那一半也拖上。
+func NodeArch(ctx context.Context, r Runner, n model.Node) (string, error) {
+	out, err := r.Run(ctx, n, "uname -m")
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(out)
+	if len(fields) != 1 {
+		return "", fmt.Errorf("读不出节点 %s 的架构: %q", n.Name, strings.TrimSpace(out))
+	}
+	return platformArch(fields[0])
+}
+
 func platformOS(s string) (string, error) {
 	switch strings.ToLower(s) {
 	case "linux":

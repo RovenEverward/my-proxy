@@ -51,8 +51,8 @@ type UpdateRun struct {
 // UpdateNodeCore 是一台节点上某个核心的版本行。
 //
 // 一个节点装了两种核心就出两行。Current 是观察到的值(可能为空:还没查过、或者
-// 查的时候核心没起来);Target 是控制面给这个核心钉的死版本,xray 目前没有钉死
-// 版本,所以恒为空。
+// 查的时候核心没起来);Target 是控制面给这个核心钉的死版本 —— xray 是
+// xrayrelease.RecommendedVersion,sing-box 是 singboxbuild.DefaultVersion。
 type UpdateNodeCore struct {
 	NodeID int64  `json:"id"`
 	Name   string `json:"name"`
@@ -62,6 +62,43 @@ type UpdateNodeCore struct {
 	Current string `json:"current"`
 	Target  string `json:"target"`
 }
+
+// UpdateNodeEvent 是节点核心升级任务里的一条事件。
+//
+// 一次升级按「每台节点的每个核心」产生事件:开始时一条 start,结束再按结果补一条
+// ok / skip / rolled_back / failed。Seq 全局递增,客户端靠 since 增量拉取。
+type UpdateNodeEvent struct {
+	Seq    int64  `json:"seq"`
+	Node   string `json:"node"`
+	Core   Core   `json:"core"`
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Status string `json:"status"`
+	Msg    string `json:"msg"`
+}
+
+// UpdateNodeEventStatuses 是一次升级任务里允许出现的事件状态。
+var UpdateNodeEventStatuses = []string{"start", "ok", "skip", "rolled_back", "failed"}
+
+// UpdateNodesProgress 是 GET /api/update/nodes 的形状。
+//
+// 它是节点核心升级任务的进度快照:State 是任务状态(见 UpdateNodesStates),
+// Seq 是本次响应带回来的最新游标(没有新事件时等于请求里的 since),Events 是
+// since 之后最早的一批事件(服务端会截断,客户端拿 Seq 当下一次 since 即可)。
+type UpdateNodesProgress struct {
+	Job    int64             `json:"job"`
+	State  string            `json:"state"`
+	Seq    int64             `json:"seq"`
+	Events []UpdateNodeEvent `json:"events"`
+}
+
+// 节点核心升级任务的状态取值。
+const (
+	UpdateNodesIdle    = "idle"
+	UpdateNodesRunning = "running"
+	UpdateNodesDone    = "done"
+	UpdateNodesFailed  = "failed"
+)
 
 // UpdateSnapshot 是 GET /api/update 的形状:控制面自己那一部分,加上各节点核心。
 //

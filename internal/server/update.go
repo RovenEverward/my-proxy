@@ -15,6 +15,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 	"github.com/RovenEverward/my-proxy/internal/singboxbuild"
+	"github.com/RovenEverward/my-proxy/internal/xrayrelease"
 )
 
 // handleUpdate 回控制面自己与各节点核心的版本,给 mpx update 用。
@@ -250,6 +251,9 @@ func (s *Server) updateNodes() ([]model.UpdateNodeCore, error) {
 			rows = append(rows, model.UpdateNodeCore{
 				NodeID: n.ID, Name: n.Name, Display: display, Core: model.CoreXray,
 				Current: xrayVersion(statuses[n.ID]),
+				// xray 的版本同样由控制面钉死:推荐版本跟着 MPX 发布走,而不是
+				// 看节点上现在是什么。升级任务据此算出目标,CLI 据此显示"可升级"。
+				Target: xrayrelease.RecommendedVersion,
 			})
 		}
 		if singbox {
