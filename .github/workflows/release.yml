@@ -594,39 +594,67 @@ jobs:
           echo "拼接后的正文:"
           cat NOTES.md
 
-      # 两个步骤二选一,而不是把 body_path 与 generate_release_notes 一起给:
-      # 同时给时后者会把自动生成的那份**追加**到正文后面,于是人工写的话和凑
-      # 出来的提交列表混在一起。分开写,谁生效一目了然。
+      # 发布用 gh CLI,不用 softprops/action-gh-release:v0.9.0-rc.1 那次它把
+      # 21 个附件全部传完后,死在收尾的「更新 release 资产」上,报
+      # 'Not Found - update-a-release-asset',job 失败,排在后面的写正文步骤
+      # 全没跑,只能整个重跑。gh 把建 release、改正文、传附件拆成独立命令,
+      # 各失败各重试,不绑在一个 action 里陪葬。
       #
-      # 注明:推 tag 时 GitHub 会先自己建一个 release(正文是自动生成的提交列表),
-      # publish job 跑起来时它已经在那儿了,action 于是走"更新已有 release"那条路。
-      # v0.3.0 实测正文仍是提交消息 —— body_path 没能覆盖已有的。所以下面用
-      # gh release edit 再显式写一次正文,不依赖 action 内部的合并逻辑。
-      - name: 用 tag 消息发布
-        if: steps.notes.outputs.annotated == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          body_path: NOTES.md
-
-      - name: 确保正文就是 tag 消息
-        if: steps.notes.outputs.annotated == 'true'
+      # 推 tag 时 GitHub 会先自己建一个 release(正文是自动生成的提交列表),
+      # publish job 跑起来时它多半已经在那儿了,所以先 gh release view 分流:
+      # 已存在就 edit —— 有 tag 消息时 --notes-file 把正文整个覆盖成 NOTES.md
+      # (v0.3.0 实测 softprops 的 body_path 覆盖不了预建 release 的正文,必须
+      # 显式 edit;原「确保正文就是 tag 消息」那步并进了这里);不存在就
+      # create --verify-tag。有 tag 消息用 NOTES.md,轻量 tag 才
+      # --generate-notes,两者不同时给:同时给会把自动生成的提交列表追加到
+      # 人工正文后面,混在一起。
+      - name: 建/改 release 并传附件
         env:
           GH_TOKEN: ${{ github.token }}
+          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          ANNOTATED: ${{ steps.notes.outputs.annotated }}
         run: |
           set -eu
-          # action 若没能覆盖预建 release 的正文,这里补上。幂等,已是目标内容
-          # 时只是又写一遍同样的字。
-          gh release edit "${{ github.ref_name }}" --notes-file NOTES.md
-          echo "现在正文开头是:$(gh release view '${{ github.ref_name }}' --json body -q .body | head -1)"
 
-      - name: 用自动生成的说明发布
-        if: steps.notes.outputs.annotated != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给更新器。
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          # 带 - 的测试 tag(如 v0.7.4-rc.1)标成预发布,不会被当成「最新版」推给
+          # 更新器;口径与原先的 contains(github.ref_name,'-') 一致。edit 没有
+          # 把 prerelease 置假的旗标,稳定 tag 不传它,沿用 release 原有标记。
+          pre=()
+          case "$TAG" in
+            *-*) pre+=(--prerelease) ;;
+          esac
+
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "release 已存在,改它"
+            if [ "$ANNOTATED" = 'true' ]; then
+              gh release edit "$TAG" --repo "$REPO" --notes-file NOTES.md "${pre[@]}"
+            else
+              gh release edit "$TAG" --repo "$REPO" "${pre[@]}"
+            fi
+          else
+            echo "release 不存在,建它"
+            if [ "$ANNOTATED" = 'true' ]; then
+              gh release create "$TAG" --repo "$REPO" --verify-tag \
+                --notes-file NOTES.md "${pre[@]}"
+            else
+              gh release create "$TAG" --repo "$REPO" --verify-tag \
+                --generate-notes "${pre[@]}"
+            fi
+          fi
+
+          # 传附件与建 release 分开:v0.9.0-rc.1 就是死在传完之后的那一步。
+          # 失败重试最多 3 次;--clobber 让重试与整个 job 的重跑都幂等。
+          attempt=0
+          until gh release upload "$TAG" --repo "$REPO" dist/* --clobber; do
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::附件上传重试 3 次后仍失败"
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            echo "附件上传失败,第 ${attempt}/3 次重试"
+            sleep 5
+          done
+          echo "发布完成,附件清单:"
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'
