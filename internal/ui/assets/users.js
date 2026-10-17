@@ -98,8 +98,11 @@ const PAGE_SIZE = 50;
 const US = { status: "", search: "", plan: "", offset: 0 };
 const STATUS_TABS = [["", "全部"], ["active", "正常"], ["limited", "已超限"], ["expired", "已过期"], ["disabled", "已停用"]];
 
+// 用户页顶部的「用户 | 套餐」页签:套餐是用户的属性,不再单独占侧栏一级(#users/plans)。
+const userTabs = plans => PAGES.plans ? H`<div class="tabs"><a class="${plans ? "" : "on"}" href="#users">用户</a><a class="${plans ? "on" : ""}" href="#users/plans">套餐</a></div>` : "";
+
 PAGES.users = {
-  title: "用户", nav: ["管理", "users", 10], closeTo: "users",
+  title: "用户", closeTo: "users",
   count: () => USERS_TOTAL ?? STATUS?.counts?.users ?? "",
   crumb: r => r[1] ? H`<a href="#users">用户</a><i>/</i><b>${r[1]}</b>` : H`<b>用户</b>`,
   async load(r) {
@@ -139,9 +142,10 @@ PAGES.users = {
     }
     const c = d ? d.counts : {};
     const planOpts = d ? d.plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id)) : [];
-    return H`<div class="ph"><div><h1>用户</h1><p>状态由控制面判定</p></div><div class="sp"></div>
+    return H`<div class="ph"><div><h1>用户</h1><p>每个用户一条自己的订阅</p></div><div class="sp"></div>
       <button class="btn hide-m" data-act="user-export">${ic("dl")}导出 CSV</button>
       ${can("POST", "/api/users") ? H`<button class="btn pri" data-act="user-new">${ic("plus")}添加用户</button>` : ""}</div>
+      ${userTabs(false)}
       <div class="card"><div class="tb"><div class="seg" role="tablist">${STATUS_TABS.map(([k, t]) => H`<button role="tab" class="${US.status === k ? "on" : ""}" data-act="user-filter" data-status="${k}">${t}<em>${c[k] ?? ""}</em></button>`)}</div>
       <span class="sp" style="flex:1"></span><select class="in w180" id="uf-plan" aria-label="按套餐筛选"><option value="">全部套餐</option>${planOpts.map(p => H`<option value="${p.id}" ${raw(US.plan == p.id ? "selected" : "")}>${p.name}</option>`)}</select>
       <label class="search in-card">${ic("search")}<input type="search" id="user-search" placeholder="搜索用户名" value="${US.search}" autocomplete="off"></label></div>${inner}</div>`;

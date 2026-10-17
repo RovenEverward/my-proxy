@@ -19,7 +19,7 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   const hits = [];
   await page.route("**/api/doctor", r => { hits.push(r.request().method()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(REPORT) }); });
   await page.goto(env.origin + "/#doctor");
-  await expect(page.locator("h1")).toHaveText("自检");
+  await expect(page.locator("h1")).toHaveText("体检");
   await expect(page.locator(".ph p")).not.toContainText("mpx ");
   await expect(page.locator("[data-act=doc-run]")).toBeVisible();
   // 页面停一会儿也不许自己发:自检不是只读的便宜请求。
@@ -39,7 +39,7 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(rows.nth(1).locator(".st")).toHaveText("警告");
   await expect(rows.nth(1).locator(".dot")).toHaveClass(/warn/);
   await expect(rows.nth(1)).toContainText("配置和下发的不一致");
-  await expect(rows.nth(1)).toContainText("到节点页点「下发配置」覆盖回去");
+  await expect(rows.nth(1)).toContainText("到节点页点「应用到节点」覆盖回去");
   await expect(rows.nth(2)).toContainText("订阅 xray");
   await expect(rows.nth(2).locator(".st")).toHaveText("失败");
   await expect(rows.nth(2).locator(".dot")).toHaveClass(/bad/);
@@ -71,7 +71,7 @@ test("优先显示 ui_hint,不把命令摆进窗口", async ({ page }) => {
   await page.goto(env.origin + "/#doctor");
   await page.click("[data-act=doc-run]");
   const row = page.locator("table tbody tr").first();
-  await expect(row).toContainText("点「下发配置」覆盖回去");
+  await expect(row).toContainText("点「应用到节点」覆盖回去");
   await expect(row).not.toContainText("mpx ");
   await page.unroute("**/api/doctor");
   await page.route("**/api/doctor", r => r.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "token 不正确或这台设备已被吊销;重新 mpx connect", ui_hint: "这台设备的登录已失效或被吊销:请在 MPX 里重新「接入已有控制面」" }) }));

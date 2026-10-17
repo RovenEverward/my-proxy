@@ -109,7 +109,7 @@ function render2() {
 function row(st, t, du, extraRaw) {
   return H`<li class="${st}"><span class="pi">${st === "run" ? raw('<span class="spin"></span>') : st === "done" ? ic("check") : st === "fail" ? X : st === "skip" ? ic("dash") : raw("<i></i>")}</span><span class="t">${t}</span><span class="du">${du || ""}</span>${extraRaw || ""}</li>`;
 }
-const ROW_TITLES = ["登录并装公钥", "登记节点", "建入站和入口", "装核心并下发"];
+const ROW_TITLES = ["登录并装公钥", "登记节点", "建入站和入口", "装核心并应用配置"];
 const HINTS = [
   "密码不对，或这台机器关了密码登录。节点还没有建，不用回退。",
   "",
@@ -226,7 +226,7 @@ async function render4() {
     else subs = H`${allPlans.map(p => p.name).join("、")} · <b>${allPlans.reduce((s, p) => s + (+p.users || 0), 0)}</b> 个用户的订阅会在下次刷新时拿到它`;
   }
   drawer(["done", "done", "done", "cur"], H`
-    <div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>${display || address} 已就绪</h3><p>${address} · xray 已安装，配置已下发</p></div></div>
+    <div class="done-hd"><span class="ok">${ic("check")}</span><div><h3>${display || address} 已就绪</h3><p>${address} · xray 已安装，配置已应用</p></div></div>
     <dl class="kvw"><dt>显示名</dt><dd>${display || "—"} <span class="sub">· ${locateNote || "按 IP 自动识别，可在节点页改"}</span></dd>
     <dt>入站</dt><dd class="mono">REALITY · ${W.inbPort} · 1 个入口</dd>
     <dt>进了哪些订阅</dt><dd>${subs}</dd></dl>

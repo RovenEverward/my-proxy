@@ -40,7 +40,7 @@ const sshText = n => `${n.ssh_user || "root"}@${n.address || "?"}:${n.ssh_port |
 const certText = c => c.error ? "读不到" : c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`;
 
 PAGES.nodes = {
-  title: "节点", nav: ["管理", "nodes", 20],
+  title: "节点",
   count: () => NODES_TOTAL ?? STATUS?.counts?.nodes ?? "",
   crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${nodeLabel(d?.node) || "节点"}</b>` : H`<b>节点</b>`,
   async load(r) {
@@ -48,8 +48,9 @@ PAGES.nodes = {
       const id = +r[1];
       // 体检报告没有就是 404,不算页面错误。
       const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
-      const [node, inbounds, report] = await Promise.all([api(nodePath(id)), api("/api/inbounds?node_id=" + id), diag]);
-      return { node, inbounds, report };
+      // 连接方式用入站页同一个组件(conn.js),数据也由它取。
+      const [node, conn, report] = await Promise.all([api(nodePath(id)), CONN.load([id]), diag]);
+      return { node, inbounds: conn.inbounds, conn, report };
     }
     const nodes = await api("/api/nodes");
     NODES_TOTAL = nodes.length;
@@ -76,9 +77,9 @@ function nodeList(d) {
 }
 // 配置:节点上读回的哈希与控制面最后一次下发的比对(同 mpx node list 的漂移判定)。
 function driftCell(n) {
-  if (!n.deployed_hash) return H`<span class="sub">没下发过</span>`;
+  if (!n.deployed_hash) return H`<span class="sub">还没应用过</span>`;
   if (!n.status?.observed_hash) return H`<span class="sub">未知</span>`;
-  return n.status.observed_hash === n.deployed_hash ? stBadge("ok", "一致") : stBadge("warn", "有漂移");
+  return n.status.observed_hash === n.deployed_hash ? stBadge("ok", "已是最新") : stBadge("warn", "有改动未应用");
 }
 
 function nodeDetail(d) {
@@ -89,26 +90,25 @@ function nodeDetail(d) {
   let summary = [];
   try { const j = rep ? (typeof rep.report === "string" ? JSON.parse(rep.report) : rep.report) : null; summary = (j && j.summary) || []; } catch { summary = []; }
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    <button class="btn" data-act="node-check" data-id="${id}">${ic("refresh")}现场检查</button>
-    ${W ? H`<button class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">下发配置</button>
-    <button class="btn" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${n.draining ? "结束排水" : "排水"}</button>` : ""}
+    <button class="btn" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
+    ${W ? H`<button class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>
+    <button class="btn" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
     ${can("PUT", "/api/nodes/x") ? H`<button class="btn" data-act="node-edit" data-id="${id}">编辑</button>` : ""}</div>
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
-  ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>排水中</b> · 新订阅不再发这台节点的入口;已连上的用户会在下次订阅刷新时漂走。</div></div>` : ""}
+  ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
     <div class="card stat"><div class="l">核心</div><div class="v f18">${s?.version || "—"}</div><div class="s">${coreText(s)}</div></div>
-    <div class="card stat"><div class="l">配置哈希</div><div class="v mono f16 ell" title="${s?.observed_hash || ""}">${s?.observed_hash ? s.observed_hash.slice(0, 12) : "—"}</div><div class="s">${driftCell(n)}${n.deployed_at ? H` · 下发于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
+    <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有 TLS 入站"}</div></div>
   </div>
-  <div class="card mt"><div class="ch">入站<small>· ${d.inbounds.length}</small><span class="sp"></span>${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="inb-new" data-node="${id}">${ic("plus")}添加入站</button>` : ""}</div>
-    ${d.inbounds.length ? H`<div class="tw"><table><thead><tr><th>入站</th><th>协议</th><th class="num">端口</th><th class="hide-m">传输 / 安全</th><th class="hide-m">SNI</th></tr></thead><tbody>${d.inbounds.map(i => H`<tr data-href="#inbounds" tabindex="0"><td><b class="bold">${typeof inbTitle === "function" ? inbTitle(i, null) : i.tag}</b></td><td><span class="tag">${i.protocol}</span></td><td class="num mono">${i.port}</td><td class="hide-m sub">${i.network} · ${i.security}</td><td class="hide-m mono sub">${i.sni || "—"}</td></tr>`)}</tbody></table></div>`
-      : emptyBox("inb", "这个节点上还没有入站", "入站决定节点上监听什么协议和端口。点上面的「添加入站」开始,加好后要下发一次才生效,下发会重启核心。", "")}</div>
+  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
+    ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
       ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">体检</button>` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包,经 SSH 送到节点,下发当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装…</button></div>` : ""}
+    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">控制面下载发布包,经 SSH 送到节点,应用当前配置并启动。</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装…</button></div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">现场问节点此刻每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
-    <div class="row"><div><b class="bold">配置预览</b><div class="sub">下发会推的 config.json,不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
+    <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json,不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
   ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt danger-zone"><div class="ch c-bad">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm c-bad" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除</button></div></div>` : ""}`;
 }
@@ -140,7 +140,7 @@ async function nodeEditor(id) {
       <option value="v4" ${n.outbound_ip === "v4" ? "selected" : ""}>仅 IPv4</option>
       <option value="v6" ${n.outbound_ip === "v6" ? "selected" : ""}>仅 IPv6</option>
       <option value="asis" ${n.outbound_ip === "asis" ? "selected" : ""}>不指定(AsIs)</option>
-    </select><span class="h">节点直连出口的 IP 版本;改完要下发配置才生效</span></div></details>
+    </select><span class="h">节点直连出口的 IP 版本;改完要「应用到节点」才生效</span></div></details>
     ${isNew ? H`<p class="sub">这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。</p>` : H`<p class="sub">改地址会改掉订阅里没写地址的入口;改 SSH 参数只影响控制面以后怎么连它。都不会自动下发。</p>`}
     <div class="err" id="n-err" role="alert"></div>
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="n-save">${isNew ? "创建" : "保存"}</button></div></form>`);
@@ -267,15 +267,15 @@ Object.assign(ACTS, {
   "relabel-open": () => relabelModal(),
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
-  "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("已现场检查,状态已更新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `下发配置到 ${d.label || d.name}?`, text: "把当前配置推到节点并重启核心:这台节点上所有人的连接会断一次。加人、删人、到期、超限不用下发,控制面每 30 秒自动收敛。", ok: "下发并重启",
-    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已下发到 ${d.label || d.name},核心已重启`); await load(true, true); } }),
+  "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
+  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}?`, text: "把当前配置推到节点并重启核心:这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用,控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
+    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name},核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
-    if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已结束排水`); await load(true, true); });
-    confirmBox({ title: `开始排水 ${d.label || d.name}?`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线,会在下次订阅刷新时漂走。随时可以结束排水。", ok: "开始排水",
-      run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已开始排水`); await load(true, true); } });
+    if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
+    confirmBox({ title: `暂停给 ${d.label || d.name} 分配?`, text: "新订阅不再发这台节点的入口;已连上的用户不会立刻断线,会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "开始排水",
+      run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
-  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心?`, text: "控制面下载发布包(有缓存),经 SSH 送到节点,下发当前配置并启动。慢链路上要几分钟,期间别关这个页面。", ok: "安装",
+  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心?`, text: "控制面下载发布包(有缓存),经 SSH 送到节点,应用当前配置并启动。慢链路上要几分钟,期间别关这个页面。", ok: "安装",
     extra: H`<div class="two"><div class="field"><label for="i-core">核心</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
@@ -297,9 +297,9 @@ Object.assign(ACTS, {
   }),
   "node-config": (d, b) => busy(b, async () => {
     const cfg = await api(nodePath(d.id) + "/config");
-    infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`下发会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
+    infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}?`, text: "不可恢复:它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心还在跑,要清理得自己登上去。只想让新订阅别再发它,用「排水」。", ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}?`, text: "不可恢复:它上面的入站和入口一起删掉,订阅里不再有它。机器上的核心还在跑,要清理得自己登上去。只想让新订阅别再发它,用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 

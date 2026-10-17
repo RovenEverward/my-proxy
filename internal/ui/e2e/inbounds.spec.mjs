@@ -34,7 +34,7 @@ const group = (page, name) => page.locator(".ng", { has: page.locator(".ng-n", {
 
 test("按节点分组:组头、连接数、空状态与页头", async ({ page }) => {
   await goto(page);
-  await expect(page.locator(".ph h1")).toHaveText("入站与入口");
+  await expect(page.locator(".ph h1")).toHaveText("连接方式");
   await expect(page.locator(".ph p")).toHaveText("每条连接会出现在用户的订阅里");
   await expect(page.locator(".ph [data-act=conn-new]")).toHaveCount(1);
   await expect(page.locator(".ng")).toHaveCount(3);
@@ -148,7 +148,7 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   await page.fill("#drawer.open #a-port", "2090");
   await expect(page.locator("#drawer.open #pv-a")).toHaveText("203.0.113.21:2090");
   await page.click("#add-form button[type=submit]");
-  await expect(page.locator(".toast")).toContainText("下发");
+  await expect(page.locator(".toast")).toContainText("应用到节点");
   await expect(group(page, "东京 A").locator(".cx-row")).toHaveCount(3, { timeout: 15000 });
 });
 
