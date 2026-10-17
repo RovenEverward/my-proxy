@@ -279,7 +279,7 @@ func profileRigWithConnect(t *testing.T, connect ConnectRunner) (*Server, *http.
 }
 
 // TestMetaFingerprint:meta 里的证书指纹跟着当前档走 —— 设置页靠它显示「当前
-// 控制面」的指纹,切换配置档后要跟着变;http 控制面没有指纹,是空。
+// 控制面」的指纹,切换控制面后要跟着变;http 控制面没有指纹,是空。
 func TestMetaFingerprint(t *testing.T) {
 	const fpAlpha = "SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg"
 	fp := &fakeProfiles{

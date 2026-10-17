@@ -32,7 +32,10 @@ func TestSetupInitParamsDefaults(t *testing.T) {
 	if ip.APIPort != 8080 {
 		t.Errorf("APIPort = %d", ip.APIPort)
 	}
-	if ip.Name != "default" {
+	if !ip.AutoRemark {
+		t.Error("向导发起的安装应让第一个入口跟随节点显示名(AutoRemark)")
+	}
+	if ip.Name != "node-1" {
 		t.Errorf("Name = %q", ip.Name)
 	}
 	if ip.Username != "user1" {
@@ -212,6 +215,16 @@ func TestSetupRunnerRun(t *testing.T) {
 	}
 	if res.Token != "tok-run" {
 		t.Errorf("Token = %q,want tok-run", res.Token)
+	}
+	// 向导没给内部名:bootstrap 用 node-1,并显式留空入口名(--remark=)。
+	var boot string
+	for _, c := range fake.calls {
+		if strings.Contains(c, "'bootstrap' '--address'") {
+			boot = c
+		}
+	}
+	if !strings.Contains(boot, "'--name' 'node-1'") || !strings.Contains(boot, "'--remark='") {
+		t.Errorf("bootstrap 参数不对: %q\n全部调用: %q", boot, fake.calls)
 	}
 }
 

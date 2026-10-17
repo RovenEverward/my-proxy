@@ -1,5 +1,6 @@
-// 左上角配置档卡片:用 page.route 把 /local/profiles 换成假列表,验证
-// 当前档打勾、每项显示指纹前 16 位、点别的会 POST /local/profiles/use 并整页刷新;
+// 左上角控制面卡片:用 page.route 把 /local/profiles 换成假列表,验证
+// 当前项打勾、每项只显示名称和地址(不显示指纹;自动生成的 default 直接显示地址)、
+// 点别的会 POST /local/profiles/use 并整页刷新;
 // 弹窗里有「添加控制面…」入口,只有一个档时也弹(加新控制面就从这进)。
 import { test, expect } from "@playwright/test";
 import { startEnv, login } from "./env.mjs";
@@ -23,7 +24,7 @@ async function mockProfiles(page, items, useCalls) {
   });
 }
 
-test("点配置档卡片:列出全部,当前档打勾,点别的会切换并刷新", async ({ page }) => {
+test("点控制面卡片:列出全部,当前档打勾,点别的会切换并刷新", async ({ page }) => {
   const useCalls = [];
   await mockProfiles(page, list, useCalls);
   await login(page, env);
@@ -31,11 +32,16 @@ test("点配置档卡片:列出全部,当前档打勾,点别的会切换并刷�
   await page.click(".profile[data-act=profile-open]");
   await expect(page.locator("#modal.open")).toBeVisible();
   await expect(page.locator(".pfitem")).toHaveCount(2);
-  await expect(page.locator(".pfitem.on")).toContainText("default");
-  await expect(page.locator(".pfitem.on")).toContainText("127.0.0.1:9001");
-  // 指纹只摆前 16 位;地址里的 scheme 不显示,token 不在弹窗里。
-  await expect(page.locator(".pfitem.on")).toContainText(FP.slice(0, 16));
-  await expect(page.locator("#modal")).not.toContainText(FP);
+  await expect(page.locator("#modal h2")).toHaveText("切换控制面");
+  await expect(page.locator("#modal")).toContainText("下次打开仍连你选的这个");
+  // 自动生成的 default 不显示,直接用地址当名字;有名字的显示名字 + 地址。
+  await expect(page.locator(".pfitem.on b")).toHaveText("127.0.0.1:9001");
+  await expect(page.locator(".pfitem.on")).not.toContainText("default");
+  await expect(page.locator(".pfitem:not(.on) b")).toHaveText("prod");
+  await expect(page.locator(".pfitem:not(.on)")).toContainText("cp.example.net");
+  // 指纹不进列表(在设置页看);地址里的 scheme 不显示,token 不在弹窗里。
+  await expect(page.locator("#modal")).not.toContainText("SHA256");
+  await expect(page.locator("#modal")).not.toContainText("配置档");
   await expect(page.locator("#modal")).not.toContainText("http://");
   await expect(page.locator("#modal")).not.toContainText("token");
 
@@ -54,7 +60,7 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
 
   await page.click(".profile[data-act=profile-open]");
   await page.click("[data-act=profile-add]");
-  // 模态关掉,换成全屏的接入表单;配置档名是正常模式多出来的必填项。
+  // 模态关掉,换成全屏的接入表单;控制面名是正常模式多出来的必填项。
   await expect(page.locator("#modal.open")).toBeHidden();
   await expect(page.locator(".setup")).toBeVisible();
   await expect(page.locator("#s-cp-addr")).toBeVisible();
@@ -70,7 +76,7 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   expect(["none", "normal", ""]).toContain(before);
 });
 
-test("只有一个配置档:也弹窗,好从这加新的", async ({ page }) => {
+test("只有一个控制面:也弹窗,好从这加新的", async ({ page }) => {
   await mockProfiles(page, [list[0]], null);
   await login(page, env);
   await page.click(".profile[data-act=profile-open]");

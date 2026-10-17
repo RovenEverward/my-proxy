@@ -62,48 +62,55 @@ test("弹窗列出本机、控制面与节点核心三层;稍后本会话不再�
   await expect(page.locator("#upd-pill")).toBeHidden();
 });
 
-test("发版说明按 Markdown 渲染,原文里的 <script> 被转义", async ({ page }) => {
+test("更新弹窗只列这一版的要点:下载表、安装说明、文件清单都不出现", async ({ page }) => {
   const notes = [
-    "# 大版本",
+    "## 更新要点",
     "",
-    "修了 **几个** 小问题,细节看 `docs/update.md`。",
+    "- 安装向导不再问 **节点名**",
+    "- 总览的用时改成 `秒`",
+    "- <script>alert(1)</script>",
     "",
-    "## 改进",
+    "### 修复",
     "",
-    "- 第一项",
-    "  - 嵌套项",
-    "- 第二项",
+    "- 这一条是详细说明,不该出现",
     "",
-    "1. 第一步",
-    "2. 第二步",
+    "## 我该下哪个",
     "",
-    "```",
-    "mpx --version",
-    "```",
+    "| 你的电脑 | 下载 | 怎么装 |",
+    "| --- | --- | --- |",
+    "| Windows | [MPX.exe](https://example.com/a.exe) | 双击 |",
     "",
-    "详见 [发布说明](https://example.com/notes)。",
-    "<script>alert(1)</script>",
+    "**第一次打开被系统拦住?** 点「仍要运行」。",
+    "",
+    "<details>",
+    "<summary>其他文件</summary>",
+    "",
+    "- `mpx_linux_amd64.tar.gz`",
+    "",
+    "</details>",
   ].join("\n");
   await mockUpdate(page, { ...available, notes });
   await login(page, env);
   await page.locator("#upd-pill").click();
   const box = page.locator(".upd-notes");
-  await expect(box.locator("h1")).toHaveText("大版本");
-  await expect(box.locator("h2")).toHaveText("改进");
-  await expect(box.locator("ul > li").first()).toContainText("第一项");
-  await expect(box.locator("ul ul li")).toHaveText("嵌套项");
-  await expect(box.locator("ol > li")).toHaveCount(2);
-  await expect(box.locator("strong")).toHaveText("几个");
-  await expect(box.locator("code").first()).toHaveText("docs/update.md");
-  await expect(box.locator("pre code")).toContainText("mpx --version");
-  const link = box.locator("a");
-  await expect(link).toHaveText("发布说明");
-  await expect(link).toHaveAttribute("href", "https://example.com/notes");
-  await expect(link).toHaveAttribute("target", "_blank");
-  await expect(link).toHaveAttribute("rel", "noopener");
-  // <script> 只能是正文,不能变成元素。
+  await expect(box.locator("li")).toHaveCount(3);
+  await expect(box.locator("li").first()).toContainText("安装向导不再问");
+  await expect(box.locator("b")).toHaveText("节点名");
+  await expect(box.locator("code")).toHaveText("秒");
   await expect(box.locator("script")).toHaveCount(0);
   await expect(box).toContainText("<script>alert(1)</script>");
+  for (const bad of ["| ---", "我该下哪个", "仍要运行", "mpx_linux", "详细说明", "<details>"]) await expect(box).not.toContainText(bad);
+  await expect(page.locator("#modal a.u-link")).toHaveText("查看发布说明");
+});
+
+test("老版本的发布说明(没有「更新要点」):只取正文里的列表项", async ({ page }) => {
+  const notes = ["## 我该下哪个", "", "| a | b |", "| --- | --- |", "", "<details>", "<summary>x</summary>", "", "</details>", "", "### 修复", "", "- 第一项", "- 第二项", "", "## 下载", "", "- 不该出现"].join("\n");
+  await mockUpdate(page, { ...available, notes });
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  const box = page.locator(".upd-notes");
+  await expect(box.locator("li")).toHaveText(["第一项", "第二项"]);
+  await expect(box).not.toContainText("| ---");
 });
 
 test("无更新:三层都不落后时顶栏不出现 pill", async ({ page }) => {

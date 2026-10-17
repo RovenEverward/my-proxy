@@ -27,6 +27,11 @@ type initParams struct {
 	// FromUI:由窗口里的首次安装向导发起。报错与收尾提示改说界面操作,不提命令
 	// (窗口里显示的就是这些文字)。
 	FromUI bool
+	// AutoRemark:Remark 为空时让第一个入口不起名(bootstrap --remark=),订阅里
+	// 跟随节点显示名。窗口里的首次安装向导用它;命令行 mpx init 仍默认用节点名。
+	AutoRemark bool
+	// InboundPort:第一个入站的端口;0 = 默认 443,被占用时自动换一个空闲的。
+	InboundPort int
 }
 
 // initProgress 接收进度。CLI 实现原样写终端;向导实现把它记进任务。
@@ -84,6 +89,24 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 			n.SSHUserOrDefault(), info["uid"])
 	}
 	prog.Note("%s %s,root,fetch=%s", info["os"], info["arch"], firstNonEmpty(info["fetch"], "无"))
+
+	// 端口:控制面端口被别的程序占着就停在这里说清楚(不装到一半);入站端口
+	// 没人指定时被占就换一个空闲的。
+	inboundWant := p.InboundPort
+	if inboundWant == 0 {
+		inboundWant = 443
+	}
+	apiChk, inbChk := checkPorts(info, p.APIPort, inboundWant)
+	if apiChk.Owner != "" {
+		return nil, apiPortBusyError(apiChk, p.FromUI)
+	}
+	if inbChk.Owner != "" {
+		if p.InboundPort != 0 || inbChk.Suggest == 0 {
+			return nil, fmt.Errorf("入站端口 %d 已被 %s 占用。换一个没被占用的端口再装,或先停掉占用它的程序", inbChk.Port, inbChk.Owner)
+		}
+		prog.Note("入站端口 %d 已被 %s 占用,改用 %d", inbChk.Port, inbChk.Owner, inbChk.Suggest)
+		p.InboundPort = inbChk.Suggest
+	}
 
 	// ---- 把安装脚本送上去 -----------------------------------------------------
 
@@ -153,8 +176,13 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 		"--sni", p.SNI,
 		"--reality-dest", p.RealityDest,
 	}
+	if p.InboundPort != 0 && p.InboundPort != 443 {
+		bootArgs = append(bootArgs, "--inbound-port", strconv.Itoa(p.InboundPort))
+	}
 	if p.Remark != "" {
 		bootArgs = append(bootArgs, "--remark", p.Remark)
+	} else if p.AutoRemark {
+		bootArgs = append(bootArgs, "--remark=")
 	}
 	if p.SubPrefix != "" {
 		bootArgs = append(bootArgs, "--sub-prefix", p.SubPrefix)

@@ -1,5 +1,5 @@
 // 正常模式下的「添加控制面」:复用接入已有控制面的那套手续(先取指纹、人核对、
-// 设备密码换 token),只是把结果存成一个指名的新配置档再切过去。与 /local/setup/
+// 设备密码换 token),只是把结果存成一个指名的新控制面再切过去。与 /local/setup/
 // connect 的区别:那两个接口只在首次安装(setup 模式)可用,这里随时可用 —— 窗口
 // 里加第二套控制面是正常操作,不该逼人回终端。
 package ui
@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// profileNameMax 是新配置档名的长度上限,与页面输入框的提示一致。
+// profileNameMax 是新控制面名称的长度上限,与页面输入框的提示一致。
 const profileNameMax = 32
 
 // connectRunner 拿到接入用的 ConnectRunner;没给这个能力就 404(Profiles 那一份
@@ -56,7 +56,7 @@ func (s *Server) profileConnectProbe(w http.ResponseWriter, r *http.Request) {
 }
 
 // profileConnect:POST {server, fingerprint, password, name, profile}。
-// 接入一个新控制面、存成名为 profile 的新配置档并设为当前,本进程随即切过去
+// 接入一个新控制面、存成名为 profile 的新控制面并设为当前,本进程随即切过去
 // (setUpstream)。与 /local/profiles/use 不同,它会写配置文件 —— 要把换来的
 // token 存下来。成功返回 {ok:true, profile};名字被占用 409,密码只在这一次
 // 请求里用,不回显、不进任何日志。
@@ -67,7 +67,7 @@ func (s *Server) profileConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	named, ok := runner.(ConnectNamedRunner)
 	if !ok {
-		writeError(w, http.StatusNotFound, "这里不支持按名字存配置档")
+		writeError(w, http.StatusNotFound, "这里不支持按名字保存控制面")
 		return
 	}
 	var body struct {
@@ -94,10 +94,10 @@ func (s *Server) profileConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "请输入设备密码")
 		return
 	case profile == "":
-		writeError(w, http.StatusBadRequest, "请给新配置档起个名字")
+		writeError(w, http.StatusBadRequest, "请给这个控制面起个名字")
 		return
 	case !validProfileName(profile):
-		writeError(w, http.StatusBadRequest, "配置档名字只能用字母、数字、- 和 _,1–32 个字符")
+		writeError(w, http.StatusBadRequest, "名称只能用字母、数字、- 和 _,1–32 个字符")
 		return
 	}
 	// 名字先在这里问一次,给人立刻的 409;实现方(connectAndSaveProfile 一侧)
@@ -108,7 +108,7 @@ func (s *Server) profileConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists {
-		writeError(w, http.StatusConflict, "配置档 "+profile+" 已存在,请换一个名字")
+		writeError(w, http.StatusConflict, "控制面 "+profile+" 已存在,请换一个名字")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), connectLimit)

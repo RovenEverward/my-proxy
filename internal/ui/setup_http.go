@@ -14,7 +14,7 @@ const (
 	setupCheckLimit = 60 * time.Second
 	setupRunLimit   = 30 * time.Minute
 	connectProLimit = 30 * time.Second // 取指纹:一次 TLS 握手
-	connectLimit    = 60 * time.Second // 换 token + 写配置档
+	connectLimit    = 60 * time.Second // 换 token + 写控制面
 )
 
 // serveSetup 处理 /local/setup*。调用前会话与来源已经校验过。
@@ -110,10 +110,7 @@ func (s *Server) setupRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "密码只在检查那一步用")
 		return
 	}
-	if p.Name == "" {
-		writeError(w, http.StatusBadRequest, "请填写节点名称")
-		return
-	}
+	// 节点内部名可以不填:装的时候自动取 node-1(v0.9.5 起向导不再问)。
 	if p.Username == "" {
 		writeError(w, http.StatusBadRequest, "请填写用户名")
 		return
@@ -190,6 +187,10 @@ func readSetupParams(w http.ResponseWriter, r *http.Request) (SetupParams, bool)
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&p); err != nil {
 		writeError(w, http.StatusBadRequest, "请求体不是合法的 JSON")
+		return p, false
+	}
+	if p.InboundPort < 0 || p.InboundPort > 65535 {
+		writeError(w, http.StatusBadRequest, "入站端口要在 1–65535 之间")
 		return p, false
 	}
 	return p, true

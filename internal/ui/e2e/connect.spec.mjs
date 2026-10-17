@@ -38,7 +38,7 @@ async function probe(page) {
   return fpBox;
 }
 
-// a. 全程:指纹与控制面一致 → 核对 → 接入 → 进主界面,配置档落在临时配置目录。
+// a. 全程:指纹与控制面一致 → 核对 → 接入 → 进主界面,控制面落在临时配置目录。
 test("a. 接入成功:指纹一致,进主界面,配置写入 https 地址与指纹", async ({ page }) => {
   const u = await openConnectForm(page);
   const fpBox = await probe(page);
@@ -53,7 +53,7 @@ test("a. 接入成功:指纹一致,进主界面,配置写入 https 地址与指�
   await expect(page.locator("aside.side")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".setup")).toHaveCount(0);
 
-  // 配置档:https 地址 + 指纹(token 在,值不断言)。
+  // 控制面:https 地址 + 指纹(token 在,值不断言)。
   const cfg = JSON.parse(readFileSync(path.join(u.dir, "mpx", "config.json"), "utf8"));
   const p = cfg.profiles[cfg.current || "default"];
   expect(p.server).toBe(`https://127.0.0.1:${env.cpPort}`);

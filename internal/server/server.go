@@ -209,6 +209,7 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/nodes/{id}/config", s.handlePreviewNodeConfig)
 	api.HandleFunc("POST /api/nodes/{id}/sync", s.handleSyncNode)
 	api.HandleFunc("POST /api/nodes/{id}/install", s.handleInstallNode)
+	api.HandleFunc("GET /api/nodes/{id}/ports", s.handleNodePorts)
 	api.HandleFunc("POST /api/nodes/{id}/drain", s.handleDrainNode)
 	api.HandleFunc("POST /api/nodes/{id}/undrain", s.handleUndrainNode)
 	api.HandleFunc("GET /api/nodes/{id}/online", s.handleNodeOnline)

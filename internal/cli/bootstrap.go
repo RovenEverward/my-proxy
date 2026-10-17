@@ -74,7 +74,10 @@ var bootstrapCmd = &cobra.Command{
 已经存在的对象会被复用,所以重复跑不会炸。`,
 	Hidden: true,
 	Args:   cobra.NoArgs,
-	RunE:   func(cmd *cobra.Command, args []string) error { return runBootstrap() },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		bootstrapRemarkSet = cmd.Flags().Changed("remark")
+		return runBootstrap()
+	},
 }
 
 func init() {
@@ -89,7 +92,7 @@ func init() {
 	f.StringVar(&bootstrapFlags.sni, "sni", bootstrapSNI, "REALITY 的 SNI")
 	f.StringVar(&bootstrapFlags.realityDest, "reality-dest", bootstrapRealityDest, "REALITY 回落的目标")
 	f.StringVar(&bootstrapFlags.subPrefix, "sub-prefix", "", "订阅地址前缀,默认 http://<address>:<api-port>")
-	f.StringVar(&bootstrapFlags.remark, "remark", "", "客户端看到的节点名,默认用节点名")
+	f.StringVar(&bootstrapFlags.remark, "remark", "", "客户端看到的节点名,默认用节点名;显式写 --remark= 表示留空,订阅里跟随节点显示名")
 	f.StringVar(&bootstrapFlags.envFile, "env-file", bootstrapEnvFile, "控制面的环境文件(里面有 MPX_TOKEN)")
 	f.StringVar(&bootstrapFlags.keyFile, "key-file", bootstrapKeyFile, "控制面公钥的位置")
 }
@@ -375,7 +378,7 @@ func ensureHost(c *Client, inboundID int64, nodeName string) error {
 		return nil
 	}
 	// 入口上留空 = 回落到节点地址与入站端口,正是单机全包想要的。
-	h := model.Host{Remark: firstNonEmpty(bootstrapFlags.remark, nodeName)}
+	h := model.Host{Remark: bootstrapRemark(nodeName)}
 	raw, err = c.do("POST", path, h)
 	if err != nil {
 		return err
@@ -519,4 +522,18 @@ func linkNote(format string) string {
 // note 打一行缩进的补充说明,跟在 step 后面。
 func note(format string, a ...any) {
 	fmt.Fprintf(os.Stderr, "    "+format+"\n", a...)
+}
+
+// bootstrapRemarkSet:命令行里是否写了 --remark(哪怕是空值)。
+var bootstrapRemarkSet bool
+
+// bootstrapRemark 决定第一个入口的名字。没写 --remark 时沿用节点名(老行为);
+// 显式写了空的 --remark= 时留空,订阅里跟随节点显示名(如 🇯🇵 东京 A),
+// 和窗口里「添加节点」向导建的入口一致。老版本的 mpx 不认识这个区别,
+// 收到 --remark= 会照旧用节点名,不会报错。
+func bootstrapRemark(nodeName string) string {
+	if bootstrapRemarkSet {
+		return strings.TrimSpace(bootstrapFlags.remark)
+	}
+	return firstNonEmpty(bootstrapFlags.remark, nodeName)
 }

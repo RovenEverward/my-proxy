@@ -256,7 +256,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"relabel":     s.opts.Relabel != nil,
 			"mode":        mode,
 			"cli_version": buildinfo.Version(),
-			// fingerprint 是当前配置档记下的控制面证书指纹,http 控制面为空;
+			// fingerprint 是当前控制面记下的控制面证书指纹,http 控制面为空;
 			// connect 报告能不能在页面里接入新控制面。都是只加的字段,旧页面忽略。
 			"fingerprint": s.currentFingerprint(),
 			"connect":     s.opts.Connect != nil,
@@ -339,7 +339,7 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
-<body style="font:14px/1.6 system-ui;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
+<body style="font:14px/1.6 'PingFang SC','Microsoft YaHei UI','Microsoft YaHei','Noto Sans CJK SC',system-ui,sans-serif;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
 <h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
 

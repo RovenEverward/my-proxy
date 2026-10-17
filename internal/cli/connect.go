@@ -34,7 +34,7 @@ var connectCmd = &cobra.Command{
 	Use:   "connect <地址>",
 	Short: "用设备密码把这台设备接入控制面(每台设备一枚自己的 token)",
 	Long: `把这台设备接入控制面:核对控制面的证书指纹,输入设备密码,换一枚这台设备
-专属的 token,连同地址与指纹存进配置档(--profile,默认 default)。之后的命令
+专属的 token,连同地址与指纹保存在本机(--profile 指定名称,默认 default)。之后的命令
 都走 HTTPS,并且只认这个指纹 —— 和 SSH 的 known_hosts 一个道理。
 
 地址写 IP 或域名即可,端口默认 8080。--fp 给了就只认它(mpx init 打印的那一行
@@ -43,7 +43,7 @@ var connectCmd = &cobra.Command{
 设备密码是 mpx init 时设的;忘了的话在任何一台已接入的设备上 mpx device
 password 重设。
 
---upgrade 用于老版本装的控制面:把当前配置档里的 http:// 地址换成 https:// 并
+--upgrade 用于老版本装的控制面:把当前配置里的 http:// 地址换成 https:// 并
 记下指纹,沿用原来的 token,不用密码。`,
 	Example: `  mpx connect 203.0.113.10 --fp SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg
   mpx connect 203.0.113.10:8080 --name office-pc --profile work
@@ -52,7 +52,7 @@ password 重设。
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if connectFlags.upgrade {
 			if len(args) > 0 {
-				return errors.New("--upgrade 不带地址:它改的是当前配置档里那个控制面")
+				return errors.New("--upgrade 不带地址:它改的是当前配置里那个控制面")
 			}
 			return runConnectUpgrade()
 		}
@@ -139,13 +139,13 @@ func confirmFingerprint(hostport string) (string, error) {
 	return fp, nil
 }
 
-// connectAndSave 拿设备密码换 token,存进配置档并切过去。mpx init 收尾时也走它。
+// connectAndSave 拿设备密码换 token,存进控制面并切过去。mpx init 收尾时也走它。
 func connectAndSave(server, fp, password, name string) (*connectResult, error) {
 	res, profile, err := connectAndSaveQuiet(server, fp, password, name)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("已接入 %s:本设备「%s」(设备 %d),存在配置档 %s。\n", server, res.Name, res.DeviceID, profile)
+	fmt.Printf("已接入 %s:本设备「%s」(设备 %d),保存为控制面「%s」。\n", server, res.Name, res.DeviceID, profile)
 	return &res, nil
 }
 
@@ -169,7 +169,7 @@ func connectAndSaveQuiet(server, fp, password, name string) (connectResult, stri
 }
 
 // connectAndSaveProfile 是 connectAndSaveQuiet 的带档名版:存进名为 profile 的
-// **新**配置档并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
+// **新**控制面并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
 // 它,不能把 default 或别的档里已有的 token 覆盖掉。不经过 saveProfile:那里写死
 // 了 --profile/default,而且会覆盖同名档。
 func connectAndSaveProfile(server, fp, password, name, profile string) (connectResult, error) {
@@ -187,7 +187,7 @@ func connectAndSaveProfile(server, fp, password, name, profile string) (connectR
 		return connectResult{}, err
 	}
 	if _, ok := cfg.Profiles[profile]; ok {
-		return connectResult{}, fmt.Errorf("配置档 %s 已存在,请换一个名字", profile)
+		return connectResult{}, fmt.Errorf("控制面 %s 已存在,请换一个名字", profile)
 	}
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]Profile{}
@@ -206,7 +206,7 @@ type connectResult struct {
 	Token    string `json:"token"`
 }
 
-// saveProfile 把 p 写进 --profile 指的配置档(默认 default)并设为当前。
+// saveProfile 把 p 写进 --profile 指的控制面(默认 default)并设为当前。
 func saveProfile(p Profile) (string, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -214,7 +214,7 @@ func saveProfile(p Profile) (string, error) {
 	}
 	name := firstNonEmpty(opts.profile, defaultProfile)
 	if old, ok := cfg.Profiles[name]; ok && old.Server != "" && old.Server != p.Server {
-		fmt.Printf("配置档 %s 的地址:%s → %s\n", name, old.Server, p.Server)
+		fmt.Printf("控制面 %s 的地址:%s → %s\n", name, old.Server, p.Server)
 	}
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]Profile{}
@@ -224,7 +224,7 @@ func saveProfile(p Profile) (string, error) {
 	return name, saveConfig(cfg)
 }
 
-// runConnectUpgrade 把老配置档(http:// + 管理 token)换成 https:// + 指纹。
+// runConnectUpgrade 把老控制面(http:// + 管理 token)换成 https:// + 指纹。
 //
 // 指纹是经旧的明文通道读回来的 —— 和此前每条命令走明文的风险相同,而且只发生
 // 这一次;之后的每次连接都按指纹核对。
@@ -236,14 +236,14 @@ func runConnectUpgrade() error {
 	name := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current, defaultProfile)
 	p, ok := cfg.Profiles[name]
 	if !ok || p.Server == "" {
-		return fmt.Errorf("配置档 %s 不存在或没有地址;新设备直接 mpx connect <地址>", name)
+		return fmt.Errorf("控制面 %s 不存在或没有地址;新设备直接 mpx connect <地址>", name)
 	}
 	u, err := url.Parse(p.Server)
 	if err != nil {
 		return err
 	}
 	if u.Scheme == "https" {
-		return fmt.Errorf("配置档 %s 已经是 https 地址,不用升级", name)
+		return fmt.Errorf("控制面 %s 已经是 https 地址,不用升级", name)
 	}
 	old := &Client{server: strings.TrimSuffix(p.Server, "/"), token: p.Token, http: &http.Client{}}
 	raw, err := old.do("GET", "/api/status", nil)
@@ -269,7 +269,7 @@ func runConnectUpgrade() error {
 	if err := saveConfig(cfg); err != nil {
 		return err
 	}
-	fmt.Printf("配置档 %s 已改走 %s,证书指纹 %s。\n", name, server, st.TLSFingerprint)
+	fmt.Printf("控制面 %s 已改走 %s,证书指纹 %s。\n", name, server, st.TLSFingerprint)
 	return nil
 }
 
@@ -374,7 +374,7 @@ func readNewDevicePassword(fromStdin bool) (string, error) {
 func init() {
 	connectCmd.Flags().StringVar(&connectFlags.name, "name", "", "这台设备叫什么,默认用主机名")
 	connectCmd.Flags().BoolVar(&connectFlags.passwordStdin, "password-stdin", false, "从 stdin 读设备密码(脚本用)")
-	connectCmd.Flags().BoolVar(&connectFlags.upgrade, "upgrade", false, "把当前配置档的 http:// 地址换成 https:// 并记下指纹(老安装用)")
+	connectCmd.Flags().BoolVar(&connectFlags.upgrade, "upgrade", false, "把当前控制面的 http:// 地址换成 https:// 并记下指纹(老安装用)")
 	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.revokeAll, "revoke-all", false, "同时吊销所有已接入的设备")
 	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.disable, "disable", false, "关闭设备密码接入")
 	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.passwordStdin, "password-stdin", false, "从 stdin 读新密码(脚本用)")

@@ -153,3 +153,59 @@ test("登记链接打开原登记抽屉", async ({ page }) => {
   await page.click("#drawer .wlnk");
   await expect(page.locator("#n-address")).toBeVisible();
 });
+
+// v0.9.5:建入站前先看节点端口。默认的 443 被占时自动换备选端口;自己填的端口被占时
+// 停下说清楚,「改端口」后从建入站那步接着跑,不重建节点。
+async function stubNodePost(page) {
+  await page.route("**/api/nodes", async route => {
+    if (route.request().method() !== "POST") return route.continue();
+    const body = route.request().postDataJSON();
+    delete body.ssh_password;
+    await route.continue({ postData: JSON.stringify(body) });
+  });
+  await page.route("**/api/nodes/*/install", route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ node: "x", core: "xray", version: "v25.1.1" }),
+  }));
+}
+const busyPorts = { known: true, tcp: [{ port: 443, owner: "nginx(进程 1234)" }, { port: 22, owner: "sshd(进程 1)" }], udp: [] };
+
+test("端口:默认 443 被占时自动换 2087", async ({ page }) => {
+  await stubNodePost(page);
+  await page.route("**/api/nodes/*/ports", route => route.fulfill({ json: busyPorts }));
+  const ports = [];
+  await page.route("**/api/inbounds", async route => {
+    if (route.request().method() === "POST") ports.push(route.request().postDataJSON().port);
+    await route.continue();
+  });
+  await openWizard(page);
+  await page.fill("#w-address", "127.0.0.1");
+  await page.fill("#w-ssh-port", "1");
+  await page.fill("#w-pw", PW);
+  await page.click("#w-next");
+  await page.click("#w-start");
+  await expect(page.locator(".done-hd")).toContainText("已就绪");
+  expect(ports).toEqual([2087]);
+  await noLeak(page);
+});
+
+test("端口:自己填的端口被占时停下,改端口后接着建入站", async ({ page }) => {
+  await stubNodePost(page);
+  await page.route("**/api/nodes/*/ports", route => route.fulfill({ json: busyPorts }));
+  let nodePosts = 0;
+  page.on("request", r => { if (r.method() === "POST" && /\/api\/nodes$/.test(r.url())) nodePosts++; });
+  await openWizard(page);
+  await page.fill("#w-address", "127.0.0.1");
+  await page.fill("#w-ssh-port", "1");
+  await page.fill("#w-pw", PW);
+  await page.click("#w-next");
+  await page.click("#w-opt-custom");
+  await page.fill("#w-inb-port", "443");
+  await page.click("#w-start");
+  await expect(page.locator(".plist li.fail")).toContainText("nginx(进程 1234)");
+  await page.click("#w-port");
+  await page.fill("#w-inb-port", "8443");
+  await page.click("#w-start");
+  await expect(page.locator(".done-hd")).toContainText("已就绪");
+  expect(nodePosts).toBe(1);
+  await noLeak(page);
+});

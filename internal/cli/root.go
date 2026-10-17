@@ -69,7 +69,7 @@ func init() {
 	// 的 persistent flag 对子命令同样可见。别在 loginCmd.Flags() 上再注册一个同名的
 	// —— 那是个被忽略的重复注册,还会让 cmd.Flags().Changed("profile") 永远为 false
 	// (它只看本命令自己的 flag,看不到继承来的)。
-	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个配置档,覆盖 MPX_PROFILE 与文件里的 current")
+	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个控制面(按保存时的名称),覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
 	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
@@ -112,13 +112,13 @@ func Execute(args ...string) int {
 	return 0
 }
 
-// loginCmd 把一个控制面的地址与 token 记进某个配置档,省得每次敲 flag。
+// loginCmd 把一个控制面的地址与 token 记进某个控制面,省得每次敲 flag。
 var loginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "保存控制面地址与 token(可存成不同的配置档);不带参数时显示当前生效的值",
+	Short: "保存控制面地址与 token(可保存多个控制面);不带参数时显示当前生效的值",
 	Long: `保存控制面地址与 token。
 
---profile 指定存到哪个配置档(默认 default),存完就把当前档切过去。配置文件里
+--profile 指定存到哪个控制面(默认 default),存完就把当前控制面切过去。配置文件里
 能同时放多套:临时起一个控制面试命令时用另一个档名,原来的连接原封不动,切回来
 是一次本地操作 —— token 只在服务器上,丢了要跑一趟机器。
 
@@ -152,7 +152,7 @@ var loginCmd = &cobra.Command{
 		// 切档要求这个档已经存在:否则一个拼错的档名会静静地建出一个空档,
 		// 之后每条命令都因为"没有控制面地址"失败,却看不出是拼错了。
 		if changedProfile && !changedServer && !changedToken && !hadOld {
-			return fmt.Errorf("没有名为 %q 的配置档,%s", name, cfg.profileHint())
+			return fmt.Errorf("没有名为 %q 的控制面,%s", name, cfg.profileHint())
 		}
 
 		// 只覆盖这次给了的项,没给的沿用该档里已有的值。
@@ -193,19 +193,19 @@ var loginCmd = &cobra.Command{
 		// 回显"从什么变成了什么"。这不是确认步骤(正常的换控制面不该被拦),
 		// 只是让覆盖旧地址这件事在屏幕上留一行,出事时一眼看得见。
 		if hadOld && old.Server != p.Server {
-			fmt.Printf("配置档 %s 的地址:%s → %s\n", name, dash(old.Server), dash(p.Server))
+			fmt.Printf("控制面 %s 的地址:%s → %s\n", name, dash(old.Server), dash(p.Server))
 		}
 		if hadOld && old.Fingerprint != p.Fingerprint {
-			fmt.Printf("配置档 %s 的证书指纹:%s → %s\n", name, dash(old.Fingerprint), dash(p.Fingerprint))
+			fmt.Printf("控制面 %s 的证书指纹:%s → %s\n", name, dash(old.Fingerprint), dash(p.Fingerprint))
 		}
 		if hadOld && old.Token != p.Token {
-			fmt.Printf("配置档 %s 的 token:%s → %s\n", name, maskToken(old.Token), maskToken(p.Token))
+			fmt.Printf("控制面 %s 的 token:%s → %s\n", name, maskToken(old.Token), maskToken(p.Token))
 		}
 		// 纯切换时上面两行都不打,得说清楚切到哪了。
 		if old == p {
-			fmt.Printf("已切到配置档 %s(server: %s)\n", name, dash(p.Server))
+			fmt.Printf("已切到控制面 %s(server: %s)\n", name, dash(p.Server))
 		} else {
-			fmt.Printf("已写入 %s(当前配置档 %s)\n", path, name)
+			fmt.Printf("已写入 %s(当前控制面 %s)\n", path, name)
 		}
 		return nil
 	},
@@ -222,7 +222,7 @@ func cliVersion() string {
 	return "未知(从源码直接编译,没带版本号;发布件会带)"
 }
 
-// showLogin 打印当前生效的控制面与 token,以及存在哪些配置档。
+// showLogin 打印当前生效的控制面与 token,以及存在哪些控制面。
 func showLogin(cfg Config) error {
 	server, token, err := resolve()
 	if err != nil {
@@ -242,7 +242,7 @@ func showLogin(cfg Config) error {
 	// 所以标记跟着 resolve 的口径走,不能直接读 cfg.Current —— 否则打了
 	// "--profile scratch" 却把 * 标在 default 上。
 	current := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current)
-	fmt.Printf("配置档: ")
+	fmt.Printf("已保存的控制面: ")
 	for i, name := range names {
 		if i > 0 {
 			fmt.Printf("  ")

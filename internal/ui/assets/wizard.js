@@ -99,6 +99,8 @@ function render2() {
   $("#w-start").addEventListener("click", () => {
     W.errs = validate2();
     if (Object.keys(W.errs).length) return render2();
+    // 从「建入站」失败退回来改端口:节点已经建好,接着从建入站那步跑,不重建节点。
+    if (W.task && W.task.nodeId && !W.task.inboundId) { W.task.rows[2].st = "wait"; W.task.rows[2].extra = null; W.task.rows[2].t = ROW_TITLES[2]; return runFrom(2); }
     if (typeof window.nodeWizardStart === "function") window.nodeWizardStart(W);
     else toast("安装步骤尚未实现", true);
   });
@@ -117,10 +119,10 @@ const HINTS = [
 function newTask() {
   return { stage: 0, nodeId: null, inboundId: null, rows: ROW_TITLES.map(t => ({ st: "wait", t, du: "", extra: null })), err: null };
 }
-// 耗时:<60s 写 "6.1s",否则 "1:02"。
+// 耗时:<60 秒写「6.1 秒」,否则「1:02」。
 function fmtDur(ms) {
   const s = Math.max(0, ms) / 1000;
-  return s < 60 ? s.toFixed(1) + "s" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0");
+  return s < 60 ? s.toFixed(1) + " 秒" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0");
 }
 // 失败行的原话来自控制面,extra 是控制面原话 + 针对这一步的提示。
 function failExtra(stage, msg) {
@@ -142,12 +144,13 @@ function render3() {
   const body = H`<ol class="plist">${t.rows.map(r => row(r.st, r.t, r.du, r.extra))}</ol>`;
   let foot;
   if (keyFail) foot = H`<span style="flex:1"></span><button type="button" class="btn pri" id="w-back1">${ic("back")}返回修改</button>`;
-  else if (inbFail) foot = H`<button type="button" class="btn ghost" id="w-del">删除刚加的节点</button><span style="flex:1"></span><button type="button" class="btn pri" id="w-retry">${ic("refresh")}重试这一步</button>`;
+  else if (inbFail) foot = H`<button type="button" class="btn ghost" id="w-del">删除刚加的节点</button><span style="flex:1"></span><button type="button" class="btn" id="w-port">${ic("back")}改端口</button><button type="button" class="btn pri" id="w-retry">${ic("refresh")}重试这一步</button>`;
   else if (coreFail) foot = H`<span style="flex:1"></span><button type="button" class="btn" id="w-later">稍后在节点页处理</button><button type="button" class="btn pri" id="w-retry">${ic("refresh")}重试安装</button>`;
   else foot = H`<span class="sub" style="flex:1">每一步都是一次普通请求，关掉抽屉也能在节点页接着装</span><button type="button" class="btn pri" disabled>安装中…</button>`;
   drawer(st, body, foot);
   if ($("#w-back1")) $("#w-back1").addEventListener("click", () => { W.errs = { pw: "请重新输入 SSH 密码" }; W.step = 1; render1(); });
   if ($("#w-retry")) $("#w-retry").addEventListener("click", () => runFrom(t.stage));
+  if ($("#w-port")) $("#w-port").addEventListener("click", () => { W.preset = "custom"; W.errs = {}; W.step = 2; render2(); });
   if ($("#w-del")) $("#w-del").addEventListener("click", () => {
     const nodeId = t.nodeId;
     confirmBox({ title: `删除刚加的节点 ${W.display || W.address}?`, text: "节点、它的入站和入口一起删掉。公钥会留在这台机器上，要清理得自己登上去。", ok: "删除节点", danger: true,
@@ -179,6 +182,9 @@ async function runFrom(stage) {
     t.rows[2].st = "run"; t.rows[2]._t0 = Date.now(); render3();
     try {
       if (!t.inboundId) {
+        // 建入站前先看端口:默认的 443 被别的程序占着就换一个空闲的;自己填的端口被占就停下说清楚。
+        const pick = await pickInboundPort(t.nodeId, +W.inbPort, W.preset !== "custom");
+        if (pick.port !== +W.inbPort) { t.rows[2].t = `建入站：${W.inbPort} 端口已被 ${pick.owner} 占用，改用 ${pick.port}`; W.inbPort = pick.port; }
         const inb = await api("/api/inbounds", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: 0, node_id: t.nodeId, tag: "", protocol: "vless", listen: "", port: +W.inbPort, network: "tcp", security: "reality", sni: W.sni, reality_dest: W.dest, wg_mtu: 1420, flow: "xtls-rprx-vision" }) });
         t.inboundId = inb.id;
@@ -231,6 +237,21 @@ async function render4() {
   load(true, true); // 刷新背后的节点列表;load 不会关抽屉。
 }
 // autoNodeName:取 node-1、node-2… 里第一个还没被占用的内部名。
+// pickInboundPort:问控制面节点上哪些 TCP 端口被占(GET /api/nodes/{id}/ports,v0.9.5 起)。
+// 老控制面没有这个接口、或节点上看不出来时照原端口走。auto 为真时被占就换备选端口,
+// 否则抛出中文说明(自己填的端口不替人改)。
+const INB_CANDIDATES = [443, 2087, 2053, 2083, 2096, 8443, 9443];
+async function pickInboundPort(nodeId, want, auto) {
+  let r;
+  try { r = await api(`/api/nodes/${nodeId}/ports`); } catch { return { port: want }; }
+  const busy = new Map((r && r.tcp || []).filter(p => !p.core).map(p => [p.port, p.owner]));
+  if (!busy.has(want)) return { port: want };
+  const owner = busy.get(want);
+  if (!auto) throw new Error(`${want} 端口已被 ${owner} 占用，代理核心起不来。点「改端口」换一个，或先停掉占用它的程序再重试。`);
+  const alt = INB_CANDIDATES.find(p => p !== want && !busy.has(p));
+  if (!alt) throw new Error(`${want} 端口已被 ${owner} 占用，备选端口也都被占了。点「改端口」换一个。`);
+  return { port: alt, owner };
+}
 async function autoNodeName() {
   let names = new Set();
   try { names = new Set((await api("/api/nodes")).map(n => n.name)); } catch { /* 拉不到就从 1 试,撞名由控制面报 */ }

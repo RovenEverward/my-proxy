@@ -46,6 +46,39 @@ note() {
 	printf '    %s\n' "$1"
 }
 
+# >>> port_preflight
+# port_owner PORT:有别的程序(不是 mpx 自己)在 TCP PORT 上监听时,打印「名字(进程 PID)」;
+# 端口空着、占着的是 mpx、或机器上没有 ss 看不出来时什么都不打印。
+port_owner() {
+	command -v ss >/dev/null 2>&1 || return 0
+	local line local_addr name
+	while IFS= read -r line; do
+		# ss -H 的列:State Recv-Q Send-Q Local Peer [Process]
+		local_addr="$(printf '%s\n' "$line" | awk '{print $4}')"
+		[[ "${local_addr##*:}" == "$1" ]] || continue
+		name="$(printf '%s\n' "$line" | sed -n 's/.*users:(("\([^"]*\)",pid=\([0-9]*\).*/\1(进程 \2)/p')"
+		[[ "$name" == mpx\(* ]] && continue
+		printf '%s\n' "${name:-另一个程序}"
+		return 0
+	done < <(ss -Hltnp 2>/dev/null || true)
+}
+
+# preflight_port ADDR UNIT:装之前先确认控制面要监听的端口没被别的程序占着。被占时
+# 什么都不装就退出,用中文说清楚是谁占的、怎么换端口 —— 不然 mpx 起来就会因为
+# 「address already in use」立刻退出,systemd 每 3 秒重启一次,装到一半卡在那里。
+preflight_port() {
+	local addr="${1:-}" port owner
+	if [[ -z "$addr" && -f "${2:-}" ]]; then
+		addr="$(sed -n 's/.*--addr[= ]\([^ ]*\).*/\1/p' "$2" | head -n1)"
+	fi
+	port="${addr##*:}"
+	[[ -n "$port" && "$port" != "$addr" ]] || port=8080
+	owner="$(port_owner "$port")"
+	[[ -z "$owner" ]] && return 0
+	die "端口 $port 已被 $owner 占用,mpx 控制面起不来。还没有装任何东西。换一个没被占用的端口重装(比如 --addr 0.0.0.0:18080),或先停掉占用它的程序"
+}
+# <<< port_preflight
+
 # >>> verify_release(install.sh 与 install-cli.sh 里逐字相同,internal/release 的测试会比对)
 sha256_of() {
 	if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
@@ -235,6 +268,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ ${EUID} -eq 0 ]] || die "要 root 才能装服务:sudo $0 $*"
+
+# ---- 端口先看一眼 -----------------------------------------------------------
+
+preflight_port "${ADDR:-}" "$PREFIX/etc/systemd/system/mpx.service"
 
 # ---- 这个系统要哪一份 -------------------------------------------------------
 
@@ -502,6 +539,13 @@ sleep 1
 if ! systemctl is-active --quiet mpx; then
 	systemctl --no-pager -l status mpx || true
 	journalctl -u mpx -n 20 --no-pager || true
+	if journalctl -u mpx -n 20 --no-pager 2>/dev/null | grep -q 'address already in use'; then
+		# 装的过程中端口被别的程序抢了:停掉自己,别让 systemd 一直重启。
+		systemctl stop mpx 2>/dev/null || true
+		BUSY_PORT="${RESOLVED_ADDR##*:}"; BUSY_PORT="${BUSY_PORT:-8080}"
+		BUSY_OWNER="$(port_owner "$BUSY_PORT")"
+		die "mpx 起不来:端口 $BUSY_PORT 被${BUSY_OWNER:-别的程序}占用了,已停掉 mpx 服务。换一个端口重装(--addr 0.0.0.0:<端口>),或先停掉占用它的程序"
+	fi
 	die "mpx 没起来,上面是它的状态和最近的日志"
 fi
 

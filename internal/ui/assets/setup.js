@@ -16,8 +16,8 @@ const BN = ["连接", "检查", "设置", "安装", "完成"];
 const S = {
   step: 1, host: "", sshPort: 22, sshUser: "root", auth: "password", pw: "", identity: "",
   pwShown: false, probe: null, checkErr: "", checkAt: 0,
-  username: "user1", name: "default", dpw: "", dpw2: "", dpwShown: false,
-  addr: "0.0.0.0:8080", subPrefix: "", sni: "www.cloudflare.com", errs: {}, run: null,
+  username: "user1", dpw: "", dpw2: "", dpwShown: false,
+  addr: "0.0.0.0:8080", inboundPort: 0, portProbe: null, subPrefix: "", sni: "www.cloudflare.com", errs: {}, run: null,
 };
 
 /* ---------- 小工具(与 wizard.js 同款) ---------- */
@@ -40,7 +40,7 @@ function clearErr(el, key) {
 }
 function fmtDur(ms) {
   const s = Math.max(0, ms) / 1000;
-  return s < 60 ? s.toFixed(1) + "s" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0");
+  return s < 60 ? s.toFixed(1) + " 秒" : Math.floor(s / 60) + ":" + String(Math.round(s % 60)).padStart(2, "0");
 }
 function setup(st, bodyRaw, footRaw) {
   document.querySelector(".setup")?.remove();
@@ -63,7 +63,7 @@ function renderWelcome() {
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、入站和入口</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
   <p class="sub">需要：一台 Linux VPS 的地址和 root 密码（或这台电脑已能用密钥登录）。已经有控制面？选右边的「接入已有控制面」。</p></div>`,
-  H`<span class="sub" style="flex:1">${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换已有配置档</a>` : ""}</span>${btn("接入已有控制面", "", "lock", "s-connect")}${btn("首次安装（新服务器）", "pri", "", "s-start")}`);
+  H`<span class="sub" style="flex:1">${META?.profiles ? H`<a href="#" class="u-link" id="s-profiles">切换到已有的控制面</a>` : ""}</span>${btn("接入已有控制面", "", "lock", "s-connect")}${btn("首次安装（新服务器）", "pri", "", "s-start")}`);
   $("#s-start").addEventListener("click", () => renderConnect());
   $("#s-connect").addEventListener("click", () => { resetCN("setup"); renderConnectCP(); });
   $("#s-profiles")?.addEventListener("click", e => { e.preventDefault(); openProfiles(); });
@@ -86,10 +86,10 @@ function resetCN(mode) {
 function renderConnectCP() {
   const add = CN.mode === "add", e = CN.errs || {}, fp = CN.fp && !CN.fpErr;
   setup(null, H`<h2>${add ? "添加控制面" : "接入已有控制面"}</h2>
-  <p class="lead">${add ? H`把另一套控制面接进来，存成一个新的配置档并切过去；先取回证书指纹核对，再输入设备密码。` : H`把这台电脑接进已经在跑的控制面：先取回证书指纹核对，再输入设备密码。`}</p>
+  <p class="lead">${add ? H`把另一套控制面接进来，记下来并切过去；先取回证书指纹核对，再输入设备密码。` : H`把这台电脑接进已经在跑的控制面：先取回证书指纹核对，再输入设备密码。`}</p>
   <div class="two">${field("控制面地址", H`<input id="s-cp-addr" class="in mono ${e.addr ? "bad" : ""}" placeholder="203.0.113.10:8080" autocomplete="off">`, "IP 或域名，端口默认 8080", e.addr)}
   ${field("设备名", H`<input id="s-cp-name" class="in mono" autocomplete="off">`, "这台电脑在设备列表里叫什么；留空用主机名")}</div>
-  ${add ? field("配置档名", H`<input id="s-cp-profile" class="in mono ${e.profile ? "bad" : ""}" placeholder="work" autocomplete="off">`, "只能用字母、数字、- 和 _，1–32 个字符；名字已存在会提示换一个", e.profile) : ""}
+  ${add ? field("名称", H`<input id="s-cp-profile" class="in mono ${e.profile ? "bad" : ""}" placeholder="work" autocomplete="off">`, "只能用字母、数字、- 和 _，1–32 个字符；名字已存在会提示换一个", e.profile) : ""}
   ${CN.err ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>接入失败</b><div class="raw">${CN.err}</div></div></div>` : ""}
   ${CN.fpErr ? H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>取指纹失败</b><div class="raw">${CN.fpErr}</div></div></div>` : ""}
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
@@ -115,7 +115,7 @@ function renderConnectCP() {
   if (add) $("#s-cp-profile").addEventListener("input", ev => { CN.profile = ev.target.value; CN.errs = {}; });
   $("#s-cp-back").addEventListener("click", () => {
     CN.errs = {};
-    // 正常模式:拆掉遮罩回到管理界面;setup 模式(欢迎屏也能从配置档弹窗进到这)
+    // 正常模式:拆掉遮罩回到管理界面;setup 模式(欢迎屏也能从控制面弹窗进到这)
     // 没有底层页面可回,退回欢迎屏。
     if (add && META.mode !== "setup") document.querySelector(".setup")?.remove();
     else renderWelcome();
@@ -243,16 +243,35 @@ function renderCheck() {
   if (uidBad) reasons.push(`登录用户不是 root（uid=${p.uid}）。回到上一步，在高级里确认 SSH 用户是 root，或先在 VPS 上开启 root 登录。`);
   if (dlBad) reasons.push("机器上没有 curl 或 wget，装不了控制面。先在 VPS 上装一个。");
   const title = osBad ? "只能装在 Linux 上" : uidBad ? "要用 root 登录" : "缺少下载工具";
+  const portNotes = allOk ? applyPortProbe(p) : [];
   setup(["done", "done", "", "", ""], H`<h2>检查机器</h2><p class="lead">登录一次、装上本机公钥，再看看这台机器能不能装控制面。</p>
   <ol class="plist">${row("done", first, dur)}${row("done", "检查系统、架构、权限和下载工具", dur)}</ol>
   <div class="probe">${pr("系统", p.os || "未知", osBad)}${pr("架构", p.arch || "未知")}${pr("用户", uidBad ? `uid=${p.uid}` : "root", uidBad)}${pr("下载", dl || "无", dlBad)}</div>
-  ${allOk ? H`<div class="callout stone mb">${ic("check")}<div><b>可以安装。</b>本机公钥已装上，后面的步骤不再需要密码。</div></div>`
+  ${allOk ? H`<div class="callout stone mb">${ic("check")}<div><b>可以安装。</b>本机公钥已装上，后面的步骤不再需要密码。</div></div>${portNotes.length ? H`<div class="callout warn mb" id="s-ports">${ic("warn", "ico-warn")}<div><b>端口已换</b>${portNotes.map(t => H`<div class="mt2">${t}</div>`)}</div></div>` : ""}`
     : H`<div class="callout bad mb">${ic("warn", "ico-bad")}<div><b>${title}</b><div class="mt2">${reasons.join(" ")}</div></div></div>`}`,
   allOk ? H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("下一步", "pri", "", "s-next")}`
     : H`${btn("返回修改", "pri", "back", "s-back2")}`);
   const back = $("#s-back") || $("#s-back2");
   back.addEventListener("click", backToConnect);
   if (allOk) $("#s-next").addEventListener("click", renderSettings);
+}
+
+// applyPortProbe:检查结果里带了端口占用(v0.9.5 起),被占的端口换成推荐的空闲端口,
+// 返回给人看的说明。只在第一次看到这份结果时改,之后用户在「高级」里改的值不覆盖。
+function applyPortProbe(p) {
+  const notes = [];
+  if (p.api_busy) {
+    if (p.api_suggest) {
+      if (S.portProbe !== p) S.addr = String(S.addr || "0.0.0.0:8080").replace(/:\d+$/, ":" + p.api_suggest);
+      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在「设置 → 高级 → 监听地址」里改。`);
+    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在「设置 → 高级 → 监听地址」里换一个端口。`);
+  }
+  if (p.inbound_busy && p.inbound_suggest) {
+    if (S.portProbe !== p) S.inboundPort = +p.inbound_suggest;
+    notes.push(`代理入站默认用的 ${p.inbound_port} 端口已被 ${p.inbound_busy} 占用，已改用 ${p.inbound_suggest}。`);
+  }
+  S.portProbe = p;
+  return notes;
 }
 
 /* ---------- 屏 4:设置 ---------- */
@@ -272,9 +291,6 @@ function meterHtml(pw) {
 function validateSetup() {
   const e = {};
   if (!/^[A-Za-z0-9_-]+$/.test(String(S.username || "").trim())) e.username = "只能用字母、数字、- 和 _";
-  const name = String(S.name || "").trim();
-  if (!name) e.name = "请填写节点名";
-  else if (/^\d+$/.test(name)) e.name = "节点名不能是纯数字";
   if (String(S.dpw || "").length < 12) e.dpw = "设备密码至少 12 个字符";
   if (S.dpw2 !== S.dpw) e.dpw2 = "两次输入不一致";
   if (!/^[^:\s]+:\d{1,5}$/.test(String(S.addr || "").trim())) e.addr = "监听地址写成 地址:端口";
@@ -285,7 +301,7 @@ function renderSettings() {
   const e = S.errs || {};
   setup(["done", "done", "cur", "", ""], H`<h2>设置</h2><p class="lead">之后都能在管理界面里改。</p>
   <div class="two">${field("第一个用户", H`<input id="s-username" class="in mono ${e.username ? "bad" : ""}" autocomplete="off">`, "只能用字母、数字、- 和 _", e.username)}
-  ${field("节点名", H`<input id="s-name" class="in mono ${e.name ? "bad" : ""}" autocomplete="off">`, "建议用地区名", e.name)}</div>
+  <div class="field"><label>节点显示名</label><div class="sub" id="s-autoname" style="padding-top:8px">按这台 VPS 的 IP 自动识别（如 🇯🇵 东京 A），装好后可在节点页改。</div></div></div>
   <div class="two"><div class="field"><label>设备密码</label>${pwBox("s-dpw", S.dpwShown)}<div class="meter" id="s-meter">${raw(meterHtml(S.dpw))}</div><span class="h" id="s-str">强度：${SW[strength(S.dpw)]}</span>${e.dpw ? H`<span class="fe">${e.dpw}</span>` : ""}</div>
   <div class="field"><label>再输一次</label>${pwBox("s-dpw2", S.dpwShown)}${e.dpw2 ? H`<span class="fe">${e.dpw2}</span>` : ""}</div></div>
   <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
@@ -293,10 +309,10 @@ function renderSettings() {
    <div class="two">${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("订阅前缀", H`<input id="s-sub" class="in mono" autocomplete="off">`)}</div>${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个入站用的 REALITY SNI")}</details>
   `,
   H`${btn("上一步", "ghost", "back", "s-back")}<span class="sp"></span>${btn("开始安装", "pri", "", "s-run")}`);
-  $("#s-username").value = S.username; $("#s-name").value = S.name;
+  $("#s-username").value = S.username;
   $("#s-dpw").value = S.dpw; $("#s-dpw2").value = S.dpw2;
   $("#s-addr").value = S.addr; $("#s-sub").value = S.subPrefix; $("#s-sni").value = S.sni;
-  bindInput("#s-username", "username"); bindInput("#s-name", "name");
+  bindInput("#s-username", "username");
   bindInput("#s-addr", "addr"); bindInput("#s-sub", "subPrefix"); bindInput("#s-sni", "sni");
   $("#s-dpw").addEventListener("input", () => {
     S.dpw = $("#s-dpw").value;
@@ -316,7 +332,7 @@ function renderSettings() {
     S.errs = validateSetup();
     if (Object.keys(S.errs).length) return renderSettings();
     if (typeof window.setupStartRun === "function") {
-      window.setupStartRun({ host: S.host, ssh_port: +S.sshPort || 22, ssh_user: S.sshUser || "root", identity: S.identity, name: S.name, username: S.username, device_password: S.dpw, addr: S.addr, sub_prefix: S.subPrefix, sni: S.sni });
+      window.setupStartRun({ host: S.host, ssh_port: +S.sshPort || 22, ssh_user: S.sshUser || "root", identity: S.identity, name: "", username: S.username, device_password: S.dpw, addr: S.addr, sub_prefix: S.subPrefix, sni: S.sni, inbound_port: S.inboundPort || 0 });
     } else toast("安装步骤尚未实现", true);
   });
 }
@@ -456,7 +472,7 @@ async function renderDone(res) {
   $("#s-enter").addEventListener("click", () => location.reload());
 }
 
-// openConnectForm:正常模式「添加控制面」的入口,app.js 的配置档弹窗调它。重置
+// openConnectForm:正常模式「添加控制面」的入口,app.js 的控制面弹窗调它。重置
 // 状态再进表单,免得带上 setup 流程里输过的地址或指纹;成功后表单自己 reload。
 function openConnectForm() {
   resetCN("add");
