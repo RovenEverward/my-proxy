@@ -16,6 +16,10 @@ func TestSetupInitParamsDefaults(t *testing.T) {
 	if ip.Host != "203.0.113.10" {
 		t.Errorf("Host = %q", ip.Host)
 	}
+	// 窗口发起的安装:报错与收尾提示要说界面操作,不提命令。
+	if !ip.FromUI {
+		t.Error("FromUI 没置上")
+	}
 	if ip.SSHUser != "root" {
 		t.Errorf("SSHUser = %q", ip.SSHUser)
 	}

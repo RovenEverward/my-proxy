@@ -203,3 +203,52 @@ install_unit mpx-update.service "$UPDATE_ADDR"
 		})
 	}
 }
+
+// TestInstallArgs:带值参数缺值要明说(以前 `shift 2` 在 set -e 下静默退出),
+// 并认 --addr=值 / --version=值 写法。只跑到参数解析为止(非 root 会停在 root 检查)。
+func TestInstallArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh 只在 Linux 上跑")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("以 root 跑会真的往下装")
+	}
+	script, err := filepath.Abs(filepath.Join("..", "..", "deploy", "install.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--addr"}, "--addr 后面要跟一个值"},
+		{[]string{"--version"}, "--version 后面要跟一个值"},
+		{[]string{"--addr", "--version", "v0.9.1"}, "--addr 后面要跟一个值"},
+		{[]string{"--addr="}, "--addr 后面要跟一个值"},
+		{[]string{"--addr=0.0.0.0:9090"}, "要 root"},
+		{[]string{"--version=v0.9.1", "--addr", "0.0.0.0:8080"}, "要 root"},
+	}
+	for _, c := range cases {
+		out, err := exec.Command("bash", append([]string{script}, c.args...)...).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), c.want) {
+			t.Errorf("%v:err=%v 输出=%s", c.args, err, out)
+		}
+	}
+}
+
+// TestInstallCLIArgs:install-cli.sh 的带值参数缺值同样要明说。
+func TestInstallCLIArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install-cli.sh 不在 Windows 上跑")
+	}
+	script, err := filepath.Abs(filepath.Join("..", "..", "deploy", "install-cli.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--version"}, {"--prefix="}, {"--from", "--version", "v1"}} {
+		out, err := exec.Command("bash", append([]string{script}, args...)...).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "后面要跟一个值") {
+			t.Errorf("%v:err=%v 输出=%s", args, err, out)
+		}
+	}
+}

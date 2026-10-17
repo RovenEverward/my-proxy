@@ -76,6 +76,11 @@ func TestScriptVerify(t *testing.T) {
 	old, good := mk("v0", false), mk("v1", true)
 	bad := filepath.Join(dir, "bad.tar.gz")
 	os.WriteFile(bad, []byte("archive-v2"), 0o644)
+	// latest 走 releases/latest/download/;这里故意不放 SHA256SUMS。
+	latestDir := filepath.Join(rel, "latest", "download")
+	os.MkdirAll(latestDir, 0o755)
+	latest := filepath.Join(latestDir, "a.tar.gz")
+	os.WriteFile(latest, []byte("archive-latest"), 0o644)
 	fn := block.FindString(readScript(t, "install-cli.sh"))
 
 	cases := []struct {
@@ -85,6 +90,7 @@ func TestScriptVerify(t *testing.T) {
 		{"哈希对", "v1", good, "sha256 ✓", true},
 		{"发布件被换", "v1", bad, "不符", false},
 		{"旧版本没有清单:提示后照常安装", "v0", old, "还没有 SHA256SUMS", true},
+		{"最新版取不到清单:拒绝安装", "latest", latest, "拒绝安装", false},
 	}
 	for _, c := range cases {
 		sh := `set -euo pipefail

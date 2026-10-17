@@ -19,7 +19,7 @@ const profileNameMax = 32
 // 里做过。
 func (s *Server) connectRunner(w http.ResponseWriter) (ConnectRunner, bool) {
 	if s.opts.Connect == nil {
-		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持接入控制面")
+		writeError(w, http.StatusNotFound, "这里不支持接入控制面")
 		return nil, false
 	}
 	return s.opts.Connect, true
@@ -67,7 +67,7 @@ func (s *Server) profileConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	named, ok := runner.(ConnectNamedRunner)
 	if !ok {
-		writeError(w, http.StatusNotFound, "这台 mpx ui 不支持按名字存配置档")
+		writeError(w, http.StatusNotFound, "这里不支持按名字存配置档")
 		return
 	}
 	var body struct {
