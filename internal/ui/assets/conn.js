@@ -2,11 +2,10 @@
 // 更多菜单,以及三个抽屉(添加连接 / 再加一个入口 / 编辑连接)。
 //
 // 谁在用:
-//   - 入站与入口页(inbounds.js)只剩页头 + CONN.groups(d);
-//   - 节点详情页的「连接方式」以后直接用它,不要再抄一份行/抽屉:
+//   - 节点详情页的「连接方式」是唯一入口,直接使用行/抽屉:
 //       const d = await CONN.load([nodeID]);      // 只拉这台节点的入站
 //       ... CONN.groups(d, { node: nodeID })      // 不带组头,只有这台的连接行
-//     抽屉保存后调用的全局刷新是 load(true, true),所以组件不依赖入站页。
+//     抽屉保存后调用全局刷新 load(true, true)。
 //
 // 动作名统一 conn-*;旧的 inb-new / inb-edit / inb-rm / host-new / host-edit / host-rm
 // 保留为别名(nodes 页与老测试还在用)。
@@ -176,10 +175,10 @@ function inbGroup(n, list) {
 // connLoad(nodeIds):拉组件要的全部数据。nodeIds 给了就只留这些节点的入站,
 // 但节点列表里没有连接的节点也照样返回(节点详情要显示「还没有连接」)。
 let INB_PENDING = new Set();
-// 节点组头 / 节点详情里的「有改动未应用 · 应用」。「应用」走节点页同一个 node-sync(确认后 POST /sync)。
-function connPending(n) {
+// 未应用提示;节点详情传 tagOnly,应用按钮统一放在详情头部。
+function connPending(n, opts = {}) {
   if (!INB_PENDING.has(n.id)) return "";
-  return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
+  return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${!opts.tagOnly && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
 }
 // 给灰字说明用的节点名:不带国旗。
 const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";

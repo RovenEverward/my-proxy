@@ -429,9 +429,10 @@ function shell(page, body, crumb) {
 }
 
 // 旧地址(书签、文档、别处的链接)跳到新位置。只换地址不留历史,后退不会又跳回来。
-const OLD_ROUTES = { settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients", "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans" };
+const OLD_ROUTES = { inbounds: "nodes", settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients", "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans" };
 function migrateKey(key) {
   if (OLD_ROUTES[key]) return OLD_ROUTES[key];
+  if (key.startsWith("inbounds/")) return "nodes";
   if (key.startsWith("plans/")) return "users/" + key;
   return key;
 }
