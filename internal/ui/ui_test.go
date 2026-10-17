@@ -209,7 +209,7 @@ func TestSecurityHeadersAndAssets(t *testing.T) {
 	if strings.Contains(csp, "unsafe-eval") || strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
 		t.Error("CSP 不能放行行内脚本或 eval")
 	}
-	for _, p := range []string{"/app.js", "/app.css", "/boot.js", "/doctor.js", "/fonts/MonaSansVF.woff2"} {
+	for _, p := range []string{"/app.js", "/app.css", "/boot.js", "/doctor.js", "/fonts/MonaSansVF.woff2", "/fonts/TwemojiCountryFlags.woff2"} {
 		if w := do(s, "GET", p, c); w.Code != 200 {
 			t.Errorf("%s: %d", p, w.Code)
 		}

@@ -345,6 +345,8 @@ func (s *Server) updateAllNodes(ctx context.Context) error {
 		return fmt.Errorf("控制面拒绝节点核心升级: HTTP %d: %s", code, briefBody(raw))
 	}
 
+	// 进度里用节点显示名(🇺🇸 洛杉矶 A),不用内部名;取不到就退回内部名。
+	labels := s.nodeLabels(ctx)
 	var since int64
 	misses := 0
 	deadline := time.Now().Add(updateNodesWait)
@@ -376,6 +378,9 @@ func (s *Server) updateAllNodes(ctx context.Context) error {
 			return fmt.Errorf("解析节点升级进度失败: %w", err)
 		}
 		for _, ev := range p.Events {
+			if l := labels[ev.Node]; l != "" {
+				ev.Node = l
+			}
 			s.addAllEvent(updateStepNodes, string(ev.Status), nodeEventMsg(ev))
 		}
 		since = p.Seq
@@ -386,6 +391,25 @@ func (s *Server) updateAllNodes(ctx context.Context) error {
 			return errors.New("节点核心升级失败")
 		}
 	}
+}
+
+// nodeLabels 问控制面要节点列表,给出 内部名 → 显示名。有显示名的才进表。
+func (s *Server) nodeLabels(ctx context.Context) map[string]string {
+	out := map[string]string{}
+	raw, code, err := s.controlCall(ctx, http.MethodGet, "/api/nodes", nil)
+	if err != nil || code != http.StatusOK {
+		return out
+	}
+	var nodes []model.NodeView
+	if json.Unmarshal(raw, &nodes) != nil {
+		return out
+	}
+	for _, n := range nodes {
+		if n.Display != "" {
+			out[n.Name] = n.Display
+		}
+	}
+	return out
 }
 
 // nodeEventMsg 把一条节点事件压成一句话,页面按时间顺序列出来。说法与

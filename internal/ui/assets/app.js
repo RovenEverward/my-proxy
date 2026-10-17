@@ -12,6 +12,11 @@ const val = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(val).join("")
 function H(strings, ...vals) { let s = strings[0]; vals.forEach((v, i) => { s += val(v) + strings[i + 1]; }); return raw(s); }
 
 let writeGen = 0; // 写请求的代数,见 pageData
+// 界面里指代节点一律用显示名(🇺🇸 洛杉矶 A);内部名(la-1)只在节点详情与编辑里作次要信息。
+// NODE_LABELS:内部名 → 显示名,每次拉到节点列表时记下,给只带内部名的数据(更新弹窗、退避)用。
+const nodeLabel = n => (n && (n.display || n.name)) || "";
+const NODE_LABELS = {};
+const labelOfName = name => NODE_LABELS[name] || name;
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 async function api(path, init = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -28,6 +33,7 @@ async function api(path, init = {}) {
     const text = await res.text();
     // asText:要原文(模板),不要把看着像 JSON 的正文解析掉。
     if (init.asText && res.ok) return text;
+    if (res.ok && (init.method || "GET") === "GET" && /^\/api\/nodes(\?|$)/.test(path)) { try { for (const n of JSON.parse(text) || []) NODE_LABELS[n.name] = nodeLabel(n); } catch {} }
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     // 控制面给界面的说法(ui_hint,不提命令)优先;没有才用 error 原话。
@@ -185,10 +191,10 @@ function updRow(name, p) {
   const to = p.latest || "—";
   return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
 }
-// 节点核心一行:「la-1 · xray 26.3.27 → 26.4.1」;已在推荐版本上的只报现版本。
+// 节点核心一行:「🇺🇸 洛杉矶 A · xray 26.3.27 → 26.4.1」;已在推荐版本上的只报现版本。
 function nodeUpdRow(n) {
   const up = nodeUpgradable(n);
-  return H`<div class="upd-row"><b>${n.name}</b><span class="sub">${n.core}</span>
+  return H`<div class="upd-row"><b>${labelOfName(n.name)}</b><span class="sub">${n.core}</span>
   ${up ? H`<span class="mono">${n.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
   <span class="sp"></span>${up ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是推荐版本</span>`}</div>`;
 }
@@ -202,7 +208,7 @@ function openUpdateModal() {
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
   ${updRow(updSelfName(), l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
-  ${u.notes ? H`<div class="upd-notes">${raw(renderMarkdown(u.notes))}</div>` : ""}
+  ${releaseNotesBody(u.notes) ? H`<div class="upd-notes">${raw(renderMarkdown(releaseNotesBody(u.notes)))}</div>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
   <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
@@ -370,8 +376,8 @@ PAGES.overview = {
     const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
     const partial = users.total > U.length;
     return H`<div class="ph"><div><h1>总览</h1><p>后台循环每 ${s.interval_seconds} 秒一轮 · ${tick}</p></div></div>
-    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${b.node_name} 在退避中</b> · 连续失败 ${b.failures} 次,${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
-      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => b.node_name).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
+    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次,${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
+      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
     <div class="grid g4">
       ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 排水 · ${down} 连不上`)}
@@ -385,7 +391,7 @@ PAGES.overview = {
         <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table></div>`
         : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
       <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
-      ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${x.name}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
+      ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${nodeLabel(x)}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
         : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
     </div>
     <div class="card mt"><div class="ch">通知</div>
@@ -394,6 +400,15 @@ PAGES.overview = {
       <dt>用量提醒</dt><dd>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</dd></dl></div>`;
   },
 };
+
+// releaseNotesBody:发布说明里只留「这次改了什么」。v0.9.4 起正文开头是「我该下哪个」下载表和
+// 折叠的文件清单(给发布页看的),更早的版本末尾是「## 下载」一节;更新弹窗里都不需要。
+function releaseNotesBody(md) {
+  let s = String(md || "");
+  s = s.replace(/^## 我该下哪个[\s\S]*?<\/details>\s*/m, "");
+  s = s.replace(/^## 下载\s*$[\s\S]*/m, "");
+  return s.trim();
+}
 
 /* ---------- 抽屉、确认框、提示 ---------- */
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
@@ -525,7 +540,8 @@ const ACTS = {
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
-  "update-open": () => openUpdateModal(),
+  // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
+  "update-open": async () => { if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch {} } openUpdateModal(); },
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
@@ -548,7 +564,12 @@ document.addEventListener("visibilitychange", () => {
   clearTimeout(updAll.timer);
   pollUpdateAll();
 });
-addEventListener("hashchange", () => load(true, true));
+// 换到别的页(侧栏、浏览器后退、页面里的链接)时把抽屉和确认框收起来,不然上一页的抽屉
+// 会盖在新页面上。同一页里换子路由(如 #users/alice)不动,由各页自己开关抽屉。
+addEventListener("hashchange", () => {
+  if ((location.hash.slice(1).split("/")[0] || "overview") !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
+  load(true, true);
+});
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) load(true); }, 30000);
 // 更新检查慢一些:60 秒一次,同样避开抽屉/模态与后台标签页。

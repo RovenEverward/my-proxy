@@ -34,18 +34,16 @@ test("前端校验文案", async ({ page }) => {
   await openWizard(page);
   await page.click("#w-next");
   await expect(page.locator("#drawer")).toContainText("请填写服务器地址");
-  await expect(page.locator("#drawer")).toContainText("请填写节点名");
+  // 内部名不再让用户填,向导里没有这个框。
+  await expect(page.locator("#w-name")).toHaveCount(0);
   await expect(page.locator("#drawer")).toContainText("请输入 SSH 密码");
 
   await page.fill("#w-address", "203.0.113.42");
-  await page.fill("#w-name", "123");
   await page.fill("#w-ssh-port", "70000");
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
-  await expect(page.locator("#drawer")).toContainText("节点名不能是纯数字");
   await expect(page.locator("#drawer")).toContainText("端口要在 1–65535 之间");
 
-  await page.fill("#w-name", "jp-2");
   await page.fill("#w-ssh-port", "2222");
   await page.fill("#w-ssh-user", "ubuntu");
   // 界面里不再展示等价命令:抽屉正文不该出现任何 mpx 命令。
@@ -62,23 +60,25 @@ test("前端校验文案", async ({ page }) => {
 test("装公钥失败:显示原话,回到第 1 步,没建节点", async ({ page }) => {
   await openWizard(page);
   await page.fill("#w-address", "127.0.0.1");
-  await page.fill("#w-name", "wz-fail");
   await page.fill("#w-ssh-port", "1");
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
   await page.click("#w-start");
   const fail = page.locator(".plist li.fail");
-  await expect(fail).toContainText("密码不对");
+  // 127.0.0.1:1 是连接被拒,不是密码错:提示要说连不上,不能说成密码不对。
+  await expect(fail).toContainText("节点还没有建");
+  await expect(fail).not.toContainText("密码不对");
   await page.click("#w-back1");
   await expect(page.locator("#w-pw")).toHaveValue("");
   await expect(page.locator("#drawer")).toContainText("请重新输入 SSH 密码");
   const list = await apiJSON("/api/nodes");
-  expect(list.some(n => n.name === "wz-fail")).toBe(false);
+  expect(list.length).toBe(0);
   await noLeak(page);
 });
 
 test("成功全流程:请求与 CLI 一致", async ({ page }) => {
-  const names = ["cli-wz", "ui-wz"];
+  // 向导自动起内部名:这个环境里还没有 node-N,第一台就是 node-1。
+  const names = ["cli-wz", "node-1"];
   env.takeLog();
   await env.cli("node", "add", "cli-wz", "--address", "127.0.0.1", "--ssh-port", "1");
   const cliNode = (await apiJSON("/api/nodes")).find(n => n.name === "cli-wz");
@@ -86,7 +86,8 @@ test("成功全流程:请求与 CLI 一致", async ({ page }) => {
     "--network", "tcp", "--security", "reality", "--sni", "www.cloudflare.com",
     "--reality-dest", "www.cloudflare.com:443", "--flow", "xtls-rprx-vision");
   const cliInb = (await apiJSON("/api/inbounds")).filter(i => i.node_id === cliNode.id).at(-1);
-  await env.cli("host", "add", "--inbound", String(cliInb.id), "--remark", "cli-wz");
+  // 向导建的入口不起名(订阅里跟随节点显示名),对照的 CLI 也不带 --remark。
+  await env.cli("host", "add", "--inbound", String(cliInb.id));
   const cliRaw = threeOnly(env.takeLog());
 
   let seenPw = null;
@@ -105,7 +106,6 @@ test("成功全流程:请求与 CLI 一致", async ({ page }) => {
 
   await openWizard(page);
   await page.fill("#w-address", "127.0.0.1");
-  await page.fill("#w-name", "ui-wz");
   await page.fill("#w-ssh-port", "1");
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
@@ -113,7 +113,7 @@ test("成功全流程:请求与 CLI 一致", async ({ page }) => {
   await expect(page.locator(".done-hd")).toContainText("已就绪");
   expect(seenPw).toBe(PW);
 
-  const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "ui-wz");
+  const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "node-1");
   const uiInb = (await apiJSON("/api/inbounds")).filter(i => i.node_id === uiNode.id).at(-1);
   const uiRaw = threeOnly(env.takeLog());
   const ids = [cliNode.id, cliInb.id, uiNode.id, uiInb.id].map(String);
@@ -135,7 +135,6 @@ test("装核心失败:给出原因和重试", async ({ page }) => {
   });
   await openWizard(page);
   await page.fill("#w-address", "127.0.0.1");
-  await page.fill("#w-name", "ui-wz2");
   await page.fill("#w-ssh-port", "1");
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
@@ -143,7 +142,7 @@ test("装核心失败:给出原因和重试", async ({ page }) => {
   await expect(page.locator(".plist li.fail")).toContainText("装核心并下发");
   await expect(page.locator("#w-retry")).toContainText("重试安装");
   await expect(page.locator("#w-later")).toBeVisible();
-  const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "ui-wz2");
+  const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "node-2");
   await page.click("#w-later");
   await expect(page).toHaveURL(new RegExp("#nodes/" + uiNode.id));
   await noLeak(page);
@@ -152,5 +151,5 @@ test("装核心失败:给出原因和重试", async ({ page }) => {
 test("登记链接打开原登记抽屉", async ({ page }) => {
   await openWizard(page);
   await page.click("#drawer .wlnk");
-  await expect(page.locator("#n-name")).toBeVisible();
+  await expect(page.locator("#n-address")).toBeVisible();
 });

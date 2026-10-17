@@ -157,3 +157,31 @@ test("测试网址:命中第几条、去向和组内入口", async ({ page }) =>
   await expect(page.locator("#rp-res")).toContainText("自动在 3 个入口里挑最快的");
   await expect(page.locator("#rp-res")).toContainText("按 IP 匹配");
 });
+
+test("策略组:界面不再有「标签」条件;旧数据里的标签原样保留,可一键去掉", async ({ page }) => {
+  const res = await cp("/api/proxy-groups", { method: "POST", body: JSON.stringify({ id: 0, name: "旧标签组", icon: "", mode: "auto", regions: [], protocols: [], capabilities: [], tags: ["old-tag"] }) });
+  expect(res.status).toBeLessThan(300);
+  const id = (await getJSON("/api/proxy-groups")).find(g => g.name === "旧标签组").id;
+  await login(page, env);
+  await page.goto(env.origin + "/#rules/groups");
+  await page.click("[data-act=gp-edit][data-id='']");
+  await expect(page.locator("#gp-form")).toBeVisible();
+  await expect(page.locator("#gp-tags")).toHaveCount(0);
+  await expect(page.locator("#gp-form")).not.toContainText("标签");
+  await page.click("[data-act=close]");
+
+  await page.locator(".rp-g", { hasText: "旧标签组" }).click();
+  await expect(page.locator("#gp-oldtags")).toContainText("old-tag");
+  // 不动它直接保存:旧标签原样留着(API 兼容,不删数据)。
+  await page.click("#gp-save");
+  await expect(page.locator(".toast")).toContainText("已保存");
+  expect((await getJSON("/api/proxy-groups")).find(g => g.id === id).tags).toEqual(["old-tag"]);
+  // 用户点了「去掉」才清掉。
+  await page.locator(".rp-g", { hasText: "旧标签组" }).click();
+  await page.click("#gp-cleartags");
+  await expect(page.locator("#gp-oldtags")).toHaveCount(0);
+  await page.click("#gp-save");
+  await expect(page.locator(".toast")).toContainText("已保存");
+  expect((await getJSON("/api/proxy-groups")).find(g => g.id === id).tags || []).toEqual([]);
+  await cp("/api/proxy-groups/" + id, { method: "DELETE" });
+});

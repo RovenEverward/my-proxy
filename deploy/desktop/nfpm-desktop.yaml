@@ -6,6 +6,8 @@
 #     nfpm package -f deploy/desktop/nfpm-desktop.yaml -p deb \
 #       -t mpx-desktop_0.7.2_amd64.deb
 #
+# 发布前 publish job 会把它改名为 MPX-<ver>-Linux-amd64.deb(另有固定名副本)。
+#
 # 包名是 mpx-desktop,和命令行的 mpx 包并存:两个包都装时 /usr/bin/mpx 仍是
 # 命令行版,桌面版从 /opt/mpx/mpx 启动(桌面文件里的 Exec 写死了这个路径)。
 # GTK / WebKitGTK 用系统自带的,不打进包;Debian 12 起 libgtk-3-0 改名

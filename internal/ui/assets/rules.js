@@ -160,7 +160,7 @@ async function rpRunTest() {
 function rpGroupsCard(d) {
   const W = can("POST", "/api/proxy-groups");
   const used = id => d.rules.global.filter(r => r.target === "group:" + id).length + (d.rules.final === "group:" + id ? 1 : 0);
-  const cond = g => [...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags || []).map(t => "#" + t)].join(" + ") || "全部入口";
+  const cond = g => [...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags?.length ? ["旧标签条件(已不生效)"] : [])].join(" + ") || "全部入口";
   return H`<div class="card"><div class="ch">策略组:按条件自动收入口,新加的节点符合条件会自己进来<span class="sp"></span>${W ? H`<button class="btn pri sm" data-act="gp-edit" data-id="">${ic("plus")}新建策略组</button>` : ""}</div>
   ${d.groups.length ? d.groups.map(g => { const e = d.members[g.id];
     return H`<div class="row rp-g" data-act="gp-edit" data-id="${g.id}" tabindex="0"><span class="rp-gi">${g.icon || "◎"}</span><div class="grow"><b class="bold">${g.name}</b> <span class="pill">${g.mode === "auto" ? "自动选最快" : "手动选"}</span>
@@ -183,7 +183,7 @@ async function groupEditor(id) {
     <div class="field"><label class="sub">地区(任一)</label>${opts("regions", regions, k => RULE_REGIONS[k] || k)}</div>
     <div class="field"><label class="sub">协议(任一)</label>${opts("protocols", protos, k => k)}</div>
     <div class="field"><label class="sub">能力检测(全部通过)</label>${opts("capabilities", Object.keys(RULE_CAPS), k => RULE_CAPS[k])}</div>
-    <div class="field"><label class="sub" for="gp-tags">标签(任一,逗号分隔)</label><input class="in mono" id="gp-tags" value="${g.tags.join(",")}" autocomplete="off"></div>
+    ${g.tags.length ? H`<div class="callout rp-warn" id="gp-oldtags">${ic("warn", "ico-warn")}<div>这个策略组还留着旧的「标签」条件(${g.tags.join("、")})。从 v0.7.0 起入口不再带标签,这个条件什么都匹配不上,组里会一直是空的。<div class="mt6"><button type="button" class="btn sm" id="gp-cleartags">去掉旧的标签条件</button></div></div></div>` : ""}
     <div class="field"><label>怎么选</label><div class="seg" id="gp-mode"><button type="button" class="${g.mode === "auto" ? "on" : ""}" data-m="auto">自动选最快</button><button type="button" class="${g.mode === "manual" ? "on" : ""}" data-m="manual">我手动选</button></div><span class="h">自动:客户端定时测网页延迟,挑最快的。手动:用户在客户端里自己选。</span></div>
     <div class="card mt"><div class="ch">现在会收进来<small id="gp-cnt"></small></div><div id="gp-pv"></div></div>
     <div class="err" id="gp-err" role="alert"></div>
@@ -192,7 +192,7 @@ async function groupEditor(id) {
   const f = $("#gp-form");
   const read = () => {
     for (const k of ["regions", "protocols", "capabilities"]) g[k] = [...f.querySelectorAll(`[data-key=${k}] input:checked`)].map(x => x.value);
-    g.tags = splitCSV($("#gp-tags").value); g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
+    g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
   };
   let seq = 0;
   const sync = async () => {
@@ -206,8 +206,9 @@ async function groupEditor(id) {
     $("#gp-pv").innerHTML = val(pv.length ? pv.map(x => H`<div class="row pp-pvr ${x.admitted ? "" : "miss"}"><span class="pp-mk ${x.admitted ? "ok" : ""}">${ic(x.admitted ? "check" : "x")}</span><span class="grow">${x.name}</span><span class="sub">${x.admitted ? (x.capabilities || []).map(c => RULE_CAPS[c] || c).join(" · ") : (x.reasons || []).join("、")}</span></div>`)
       : H`<div class="pad16 sub">还没有入口。</div>`);
   };
-  f.addEventListener("change", sync); f.addEventListener("input", e => { if (e.target.id === "gp-tags" || e.target.id === "gp-name" || e.target.id === "gp-icon") read(); });
-  $("#gp-tags").addEventListener("change", sync);
+  f.addEventListener("change", sync); f.addEventListener("input", e => { if (e.target.id === "gp-name" || e.target.id === "gp-icon") read(); });
+  // 「标签」条件界面上已经去掉;旧数据里的 tags 原样保留(API 兼容),只在这里给一个清掉的按钮。
+  if ($("#gp-cleartags")) $("#gp-cleartags").addEventListener("click", () => { g.tags = []; $("#gp-oldtags").remove(); sync(); });
   $("#gp-mode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; g.mode = b.dataset.m; f.querySelectorAll("#gp-mode button").forEach(x => x.classList.toggle("on", x === b)); read(); });
   sync();
   f.addEventListener("submit", async e => {

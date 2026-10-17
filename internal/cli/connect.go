@@ -421,16 +421,17 @@ func connectError(err error, now time.Time) error {
 		when := until.Local().Format("15:04")
 		wait := connectWaitText(until.Sub(now))
 		head := "设备密码连续输错太多次,接入已锁定,到 " + when + "(本机时间)解锁,还要等约 " + wait + "。已经接入的设备不受影响。"
+		uiHead := "设备密码连续输错太多次，接入已锁定，到 " + when + "（本机时间）解锁，还要等约 " + wait + "。已经接入的设备不受影响。"
 		return &APIError{StatusCode: ae.StatusCode, Body: ae.Body,
 			Message: head + "忘了密码的话,重设做法见 " + devicesDocURL,
-			UIHint:  head + "忘了密码:在已经接入的设备上打开 设置 → 设备,改一个新的设备密码;一台已接入的设备都没有时,登录 VPS 重设,做法见文档「在多台设备上管理」。"}
+			UIHint:  uiHead + "忘了密码：在已经接入的设备上打开 设置 → 设备，改一个新的设备密码；一台已接入的设备都没有时，登录 VPS 重设，做法见文档「在多台设备上管理」。"}
 	}
 	if ae.StatusCode == http.StatusUnauthorized {
 		out := *ae
 		out.Message = "设备密码不对。忘了密码:在已接入的设备上运行 mpx device password(或在桌面程序里打开 设置 → 设备)改一个新的;" +
 			"一台已接入的设备都没有时,登录 VPS 重设,做法见 " + devicesDocURL
 		if out.UIHint == "" {
-			out.UIHint = "设备密码不对。忘了密码:在已经接入的设备上打开 设置 → 设备,改一个新的设备密码;一台已接入的设备都没有时,登录 VPS 重设,做法见文档「在多台设备上管理」。"
+			out.UIHint = "设备密码不对。忘了密码：在已经接入的设备上打开 设置 → 设备，改一个新的设备密码；一台已接入的设备都没有时，登录 VPS 重设，做法见文档「在多台设备上管理」。"
 		}
 		return &out
 	}

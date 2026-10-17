@@ -40,8 +40,12 @@ function doctorPage() {
   const checks = DOC.checks || [];
   const rows = checks.map(c => {
     const [cls, text] = DOC_ST[c.status] || ["", c.status];
-    return H`<tr data-check="${c.name}"><td><b class="bold">${c.name}</b></td><td>${stBadge(cls, text)}</td>
-      <td class="doc-d"><div>${c.detail}</div>${(c.ui_hint || c.hint) ? H`<div class="sub">建议:${c.ui_hint || c.hint}</div>` : ""}</td></tr>`;
+    // 控制面按内部名给检查项起名(「节点 la-1」);界面上换成显示名,data-check 保留原名。
+    const nm = /^节点 (.+)$/.exec(c.name)?.[1], lb = nm ? labelOfName(nm) : "";
+    const hint = (c.ui_hint || c.hint || "");
+    const shown = nm && lb !== nm ? hint.split(`打开 ${nm}`).join(`打开 ${lb}`) : hint;
+    return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : c.name}</b></td><td>${stBadge(cls, text)}</td>
+      <td class="doc-d"><div>${c.detail}</div>${shown ? H`<div class="sub">建议:${shown}</div>` : ""}</td></tr>`;
   });
   return H`${head}
     <div class="grid g3">${docStat(checks, "ok", "正常")}${docStat(checks, "warn", "警告")}${docStat(checks, "fail", "失败")}</div>
@@ -61,6 +65,8 @@ async function runDoctor() {
   paint();
   try {
     DOC = await api("/api/doctor", { signal: AbortSignal.timeout(DOCTOR_TIMEOUT_MS) });
+    // 检查项里的节点用显示名展示;还没拉过节点列表时补拉一次(失败就照原名显示)。
+    if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch { /* 原名兜底 */ } }
   } catch (e) {
     DOC = null; DOC_ERR = e.message;
   } finally {

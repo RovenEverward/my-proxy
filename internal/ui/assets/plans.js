@@ -12,8 +12,9 @@
 // 进入时按需取一次套餐/入站(控制面 /api 按 IP 限流,能省一次是一次)。
 const PLAN_CACHE = { plans: [], nodes: [], inbounds: [], users: [], loaded: false };
 
-const planNodeName = n => (n && (n.display || n.name)) || "";
-const planInboundLabel = i => i.tag || i.protocol || ("#" + i.id);
+const planNodeName = n => (n ? nodeLabel(n) : "");
+// 入站在套餐里按可读名显示(VLESS Reality :443);自定义过标签的仍显示标签。
+const planInboundLabel = i => inbTitle(i, null);
 
 // planEffectiveSet 返回套餐当前能用的入站 id 集合;all_nodes 时返回 null 表示「全部」。
 function planEffectiveSet(p, inbounds) {
@@ -113,10 +114,10 @@ function plIncTags(p, d) {
   }
   const tags = [];
   for (const [nid, sel] of byNode) {
-    const name = planNodeName(nodeByID.get(nid)) || ("#" + nid);
+    const name = planNodeName(nodeByID.get(nid)) || "节点";
     if (sel === "all") tags.push(H`<span class="tag">${name}</span>`);
     else {
-      const protos = sel.map(id => { const inb = (d.inbounds || []).find(i => i.id === id); return inb ? planInboundLabel(inb) : "#" + id; }).join("、");
+      const protos = sel.map(id => { const inb = (d.inbounds || []).find(i => i.id === id); return inb ? planInboundLabel(inb) : "入站"; }).join("、");
       tags.push(H`<span class="tag">${name} · 仅 ${protos}</span>`);
     }
   }
@@ -266,12 +267,12 @@ function plPreview(users) {
   const why = i => { const n = PLAN_CACHE.nodes.find(x => x.id === i.node_id); if (n && n.draining) return "排水中"; if (i.max_users && occ[i.id] >= i.max_users) return "满员"; return ""; };
   const ulist = users.length ? H`<div class="pl-sub"><div class="pl-sec">在用的用户</div><div class="pl-users">${users.slice(0, 12).map(u => H`<span class="tag">${u.username}</span>`)}${users.length > 12 ? H`<span class="tag g">+${users.length - 12}</span>` : ""}</div></div>` : "";
   return H`<div class="pl-pv"><h5>挂这个套餐的用户会拿到<small>${auth.length ? `· ${auth.length} 个入口` : ""}</small></h5>
-    ${auth.length ? nodeSet.map(nid => { const n = PLAN_CACHE.nodes.find(x => x.id === nid); return H`<div class="pl-g"><b>${planNodeName(n) || "#" + nid}</b>${auth.filter(i => i.node_id === nid).map(i => { const w = why(i); return H`<div class="pl-e ${w ? "dim" : ""}"><span class="pp-mk ${w ? "" : "ok"}">${ic(w ? "ban" : "check")}</span>${planInflightName(n, i)}<span class="sp"></span><span class="why">${w}</span></div>`; })}</div>`; })
+    ${auth.length ? nodeSet.map(nid => { const n = PLAN_CACHE.nodes.find(x => x.id === nid); return H`<div class="pl-g"><b>${planNodeName(n) || "节点"}</b>${auth.filter(i => i.node_id === nid).map(i => { const w = why(i); return H`<div class="pl-e ${w ? "dim" : ""}"><span class="pp-mk ${w ? "" : "ok"}">${ic(w ? "ban" : "check")}</span>${planInflightName(n, i)}<span class="sp"></span><span class="why">${w}</span></div>`; })}</div>`; })
       : H`<div class="pl-none"><span class="ill">${ic("ban")}</span><b>无可用节点</b><span>${users.length ? `${planCountText(users.length, users.filter(u => u.status === "active").length)} 个用户将断开` : "挂上的用户什么都用不了"}</span></div>`}
     ${ulist}</div>`;
 }
 
-const planInflightName = (n, i) => `${planNodeName(n) || "#" + i.node_id} · ${planInboundLabel(i)}`;
+const planInflightName = (n, i) => `${planNodeName(n) || "节点"} · ${planInboundLabel(i)}`;
 
 /* ---- 删除:有用户时必须选改挂去向,没有「移出套餐」 ---- */
 function planDelete(id) {

@@ -160,7 +160,7 @@ let USERS_TOTAL = null;
 function userDrawer(u, links) {
   const W = can("PUT", "/api/users/x"), name = u.username;
   const fmtOrder = [["auto", "自动识别"], ["links", "分享链接"], ["base64-links", "Base64"], ["clash-meta", "Clash Meta"], ["clash", "Clash"], ["sing-box", "sing-box"], ["xray", "Xray"]];
-  openDrawer(H`<div class="dh">${avatar(name)}<div style="min-width:0"><h2 class="ell">${name}</h2><div class="sub">#${u.id} · ${u.note || "无备注"}</div></div><span class="sp" style="flex:1"></span>${userSt(u.status)}<button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  openDrawer(H`<div class="dh">${avatar(name)}<div style="min-width:0"><h2 class="ell">${name}</h2><div class="sub">${u.note || "无备注"}</div></div><span class="sp" style="flex:1"></span>${userSt(u.status)}<button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
     <div class="card mb" style="padding:14px"><div class="sub">本期用量</div><div class="f22">${fmtBytes(u.used_traffic)} <span class="sub">/ ${u.data_limit ? fmtBytes(u.data_limit) : "不限"}</span></div>
       ${u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div>` : ""}<div class="sub mt8">累计 ${fmtBytes(u.lifetime_used_traffic)}</div></div>
@@ -192,7 +192,7 @@ async function userEditor(name) {
   catch (e) { toast(e.message, true); return; }
   const isNew = !u;
   u = u || { username: "", data_limit: 0, expire_at: null, reset_strategy: "none", inbound_ids: [], note: "", enabled: true, plan_id: null };
-  const nodeName = id => { const n = nodes.find(x => x.id === id); return n ? (n.display || n.name) : "#" + id; };
+  const nodeName = id => { const n = nodes.find(x => x.id === id); return n ? nodeLabel(n) : "节点"; };
   const planList = plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id));
   const defPlan = planList.find(p => p.is_default);
   const currentPlan = u.plan_id != null ? String(u.plan_id) : "";
@@ -209,7 +209,7 @@ async function userEditor(name) {
     <div class="two"><div class="field"><label for="f-limit">流量上限</label><input class="in" id="f-limit" name="limit" value="${limitText}" placeholder="100GB,留空不限"><span class="h">B / KB / MB / GB / TB,按 1024 进位</span></div>
     <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD,留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
     <div class="field"><label>流量重置</label><div class="chips">${Object.entries(RESET).map(([k, t]) => H`<label class="chip"><input type="radio" name="reset" value="${k}" ${(u.reset_strategy || "none") === k ? raw("checked") : ""}>${t}</label>`)}</div></div>
-    <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${i.tag || i.protocol}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
+    <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${inbTitle(i, null)}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
     <div class="field"><label for="f-note">备注</label><input class="in" id="f-note" name="note" value="${u.note || ""}" placeholder="可选"></div>
     ${isNew ? H`<label class="chk"><input type="checkbox" name="disabled"> 建好后先停用</label>` : ""}
     <div class="err" id="f-err" role="alert"></div>

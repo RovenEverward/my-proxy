@@ -18,7 +18,8 @@ name: release
 #
 # 另有桌面程序包(desktop-* job):同一个 ./cmd/mpx 加 desktop=1 编译,双击即开
 # MPX 窗口。出 macOS 的 MPX.app / dmg、Windows 的按用户安装 setup.exe、Linux 的
-# mpx-desktop .deb 与带 install.sh 的 tar.gz,以及给桌面自更新用的 mpx_desktop_*
+# mpx-desktop .deb 与带 install.sh 的 tar.gz(发布前统一改成 MPX-<ver>-* 对外名),
+# 以及给桌面自更新用的 mpx_desktop_*
 # 归档。桌面包同样不签名,和命令行包并存、互不替换。
 
 on:
@@ -494,7 +495,40 @@ jobs:
           pattern: '{mpx_,pkg_}*'
           merge-multiple: true
 
-      # SHA256SUMS 覆盖全部发布件(命令行的 mpx_*、桌面的 mpx-desktop_*),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
+      # 对外的安装包名在这里统一定下(各打包 job 仍按原来的中间名产出,只在发布前改):
+      #   桌面安装包:MPX-<ver>-macOS.dmg、MPX-<ver>-Windows-x64-setup.exe、
+      #               MPX-<ver>-Linux-amd64.deb / arm64.deb、MPX-<ver>-Linux-amd64.tar.gz / arm64.tar.gz
+      #   每个桌面安装包另有一份不带版本号的固定名副本(MPX-macOS.dmg 等),
+      #   让 releases/latest/download/<固定名> 永远指向最新版;副本也进 SHA256SUMS。
+      #   命令行安装包:前缀 mpx-cli_(mpx-cli_<ver>_windows_amd64_setup.exe 等)。
+      #   自更新用的压缩包 mpx_<os>_<arch>.tar.gz/.zip 与 mpx_desktop_* 名字不变:
+      #   更新器和 install*.sh 只认这些名字。
+      - name: 安装包改成对外名字,桌面安装包加固定名副本
+        env:
+          VER: ${{ steps.ver.outputs.ver }}
+        run: |
+          set -eu
+          cd dist
+          mvf() { [ -f "$1" ] || { echo "::error::缺少 $1"; exit 1; }; mv "$1" "$2"; }
+          mvf "mpx-desktop_${VER}_darwin_universal.dmg"        "MPX-${VER}-macOS.dmg"
+          mvf "mpx-desktop_${VER}_windows_amd64_setup.exe"     "MPX-${VER}-Windows-x64-setup.exe"
+          for a in amd64 arm64; do
+            mvf "mpx-desktop_${VER}_${a}.deb"                  "MPX-${VER}-Linux-${a}.deb"
+            mvf "mpx-desktop_${VER}_linux_${a}.tar.gz"         "MPX-${VER}-Linux-${a}.tar.gz"
+          done
+          for f in MPX-${VER}-macOS.dmg MPX-${VER}-Windows-x64-setup.exe MPX-${VER}-Linux-amd64.deb MPX-${VER}-Linux-arm64.deb; do
+            cp "$f" "MPX-${f#MPX-${VER}-}"
+          done
+          mvf "mpx_${VER}_darwin_universal.pkg"                "mpx-cli_${VER}_darwin_universal.pkg"
+          mvf "mpx_${VER}_windows_amd64_setup.exe"             "mpx-cli_${VER}_windows_amd64_setup.exe"
+          for a in amd64 arm64; do for k in deb rpm; do
+            mvf "mpx_${VER}_linux_${a}.${k}"                   "mpx-cli_${VER}_linux_${a}.${k}"
+          done; done
+          leftover=$(ls | grep -E '^mpx-desktop_|^mpx_[0-9]' || true)
+          if [ -n "$leftover" ]; then echo "::error::还有没改名的安装包: $leftover"; exit 1; fi
+          ls -l
+
+      # SHA256SUMS 覆盖全部发布件(压缩包、安装包、固定名副本),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
       # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
       # GitHub 的附件名不分大小写:v0.9.0-rc.1/rc.2 里桌面安装包叫 MPX_<ver>_windows_amd64_setup.exe,
       # 和命令行的 mpx_<ver>_windows_amd64_setup.exe 撞名,前者把后者顶掉了。这里先拦住。
@@ -508,8 +542,14 @@ jobs:
         run: |
           set -eu
           cd dist
-          sha256sum mpx_* mpx-desktop_* > SHA256SUMS
+          sha256sum * > SHA256SUMS
           cat SHA256SUMS
+          # 固定名副本必须和带版本号的那份逐字节相同,且都列进了 SHA256SUMS。
+          for f in macOS.dmg Windows-x64-setup.exe Linux-amd64.deb Linux-arm64.deb; do
+            a=$(sha256sum "MPX-$f" | cut -d' ' -f1); b=$(sha256sum "MPX-${{ steps.ver.outputs.ver }}-$f" | cut -d' ' -f1)
+            [ "$a" = "$b" ] || { echo "::error::MPX-$f 与带版本号的不一致"; exit 1; }
+            grep -q "  MPX-$f\$" SHA256SUMS || { echo "::error::SHA256SUMS 里没有 MPX-$f"; exit 1; }
+          done
 
       - name: 取出 tag 消息当发布说明
         id: notes
@@ -542,62 +582,55 @@ jobs:
             echo "annotated=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # 下载区接在 tag 消息后面。只在有 tag 消息时拼:轻量 tag 走自动生成正文那
-      # 条路,不掺这一节。文件名里的版本号与各打包 job 一致(去掉 v)。桌面程序放
-      # 最前面:它是双击就能用的那个,命令行安装包仍在后面,一个都没少。
-      - name: 追加「下载」一节
+      # 「我该下哪个」放在正文最前面,只链接桌面安装包;命令行安装包、压缩包等收进
+      # <details> 折叠。只在有 tag 消息时拼:轻量 tag 走自动生成正文那条路。文件名
+      # 里的版本号去掉 v,与上面改名那步一致。
+      - name: 正文开头加「我该下哪个」
         if: steps.notes.outputs.annotated == 'true'
         run: |
           set -eu
-          cat >> NOTES.md <<'EOF'
+          cat > DL.md <<'EOF'
+          ## 我该下哪个
 
-          ## 下载
+          | 你的电脑 | 下载 | 怎么装 |
+          | --- | --- | --- |
+          | Windows(64 位) | [MPX-${{ steps.ver.outputs.ver }}-Windows-x64-setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Windows-x64-setup.exe) | 双击安装,不需要管理员。未签名,SmartScreen 提示时点「更多信息 → 仍要运行」 |
+          | macOS(Intel 与 Apple 芯片) | [MPX-${{ steps.ver.outputs.ver }}-macOS.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-macOS.dmg) | 打开后把 MPX 拖进「应用程序」。未签名,首次请右键 →「打开」 |
+          | Ubuntu / Debian(x86_64) | [MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb) | 双击安装,或 `sudo apt install ./MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb` |
+          | Ubuntu / Debian(ARM) | [MPX-${{ steps.ver.outputs.ver }}-Linux-arm64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Linux-arm64.deb) | 同上 |
 
-          ### 桌面程序(推荐)
+          这四个都是桌面程序:双击打开就是 MPX 窗口。下面的文件大多数人用不到。
 
-          双击打开就是一个 MPX 窗口,里面是同一套管理界面。都没有签名。
+          <details>
+          <summary>其他 Linux、命令行安装包、压缩包和校验文件</summary>
 
-          - **macOS(通用,Intel 与 Apple 芯片)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg`
-            —— 打开后把 `MPX.app` 拖进「应用程序」。未签名,首次打开请右键 →「打开」,
-            或到「系统设置 → 隐私与安全性」里放行。
-          - **Windows(64 位)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
-            —— 按当前用户安装(不需要管理员),装完开始菜单里有 MPX。未签名,
-            SmartScreen 提示时选「仍要运行」。
-          - **Linux(Debian / Ubuntu)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_amd64.deb`
-            (arm64 是 `mpx-desktop_${{ steps.ver.outputs.ver }}_arm64.deb`)
-            —— 双击安装或 `sudo apt install ./mpx-desktop_....deb`。
-          - **Linux(其他发行版)**:`mpx-desktop_${{ steps.ver.outputs.ver }}_linux_amd64.tar.gz`
-            (arm64 同理)—— 解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
-            `./install.sh --uninstall` 卸载。Linux 桌面版需要系统的 WebKitGTK 4.1
-            (`libwebkit2gtk-4.1-0`,GTK 3 会随依赖装上)。
+          ### 桌面程序(其他 Linux 发行版)
+
+          - `MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.tar.gz`(arm64 同理):解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
+            `./install.sh --uninstall` 卸载。需要系统的 WebKitGTK 4.1(`libwebkit2gtk-4.1-0`)。
+          - 不带版本号的 `MPX-macOS.dmg`、`MPX-Windows-x64-setup.exe`、`MPX-Linux-amd64.deb`、`MPX-Linux-arm64.deb`
+            与上面同名带版本号的文件逐字节相同,供 `releases/latest/download/<文件名>` 固定链接使用。
 
           ### 命令行安装包
 
-          - **macOS(通用,Intel 与 Apple 芯片)**:`mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg`
-            —— 双击安装,二进制落在 `/usr/local/bin/mpx`(未签名,首次打开若被拦,可在
-            「系统设置 → 隐私与安全性」里放行)。
-          - **Windows(64 位)**:`mpx_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe`
-            —— 装到 `%ProgramFiles%\mpx`,并把这个目录加进当前用户 `PATH`,自带卸载程序
-            (未签名,SmartScreen 提示时选「仍要运行」)。
-          - **Linux(Debian / Ubuntu,amd64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_amd64.deb`
-            —— `sudo dpkg -i` 或双击安装,二进制落在 `/usr/bin/mpx`。
-          - **Linux(Debian / Ubuntu,arm64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_arm64.deb`
-          - **Linux(RHEL / Fedora 系,amd64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_amd64.rpm`
-            —— `sudo rpm -i` 或 `sudo dnf install`,二进制落在 `/usr/bin/mpx`。
-          - **Linux(RHEL / Fedora 系,arm64)**:`mpx_${{ steps.ver.outputs.ver }}_linux_arm64.rpm`
+          - **macOS(通用)**:`mpx-cli_${{ steps.ver.outputs.ver }}_darwin_universal.pkg` —— 二进制落在 `/usr/local/bin/mpx`。
+          - **Windows(64 位)**:`mpx-cli_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe` —— 装到 `%ProgramFiles%\mpx` 并加进当前用户 `PATH`。
+          - **Debian / Ubuntu**:`mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb`、`mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.deb` —— 二进制落在 `/usr/bin/mpx`。
+          - **RHEL / Fedora 系**:`mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.rpm`、`mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.rpm`。
 
           ### 压缩包
 
-          - **macOS(Intel)**:`mpx_darwin_amd64.tar.gz`
-          - **macOS(Apple 芯片)**:`mpx_darwin_arm64.tar.gz`
-          - **Linux(amd64)**:`mpx_linux_amd64.tar.gz`
-          - **Linux(arm64)**:`mpx_linux_arm64.tar.gz`
-          - **Windows(64 位)**:`mpx_windows_amd64.zip`
+          - `mpx_darwin_amd64.tar.gz`、`mpx_darwin_arm64.tar.gz`、`mpx_linux_amd64.tar.gz`、`mpx_linux_arm64.tar.gz`、`mpx_windows_amd64.zip`
 
-          `deploy/install.sh` 与 `deploy/install-cli.sh` 用的就是上面这些压缩包。
-          桌面程序的 `mpx_desktop_*` 归档只给桌面自更新用,不用手工下载。
+          `deploy/install.sh` 与 `deploy/install-cli.sh` 用的就是这些压缩包。
+          桌面程序的 `mpx_desktop_*` 归档给桌面自更新用,不用手工下载。
           所有文件的 `SHA256SUMS` 在同一发布里,可按它核对下载内容。
+
+          </details>
+
           EOF
+          # 下载表放在最前面:大多数人点进发布页只想知道下哪个。tag 消息(更新内容)接在后面。
+          cat DL.md NOTES.md > NOTES.new && mv NOTES.new NOTES.md
           echo "拼接后的正文:"
           cat NOTES.md
 
