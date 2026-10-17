@@ -16,7 +16,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
 /* sidebar */
 .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
-.brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px;font-weight:620;font-size:14px}
+.brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px calc(8px + var(--mygo-titlebar-inset-left,0px));min-height:calc(var(--mygo-titlebar-height,0px) - 14px);font-weight:620;font-size:14px;--app-region:drag}
 .brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
 .profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -34,9 +34,14 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .ro{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;background:var(--canvas);width:max-content;font-size:11px}
 /* main */
 main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14px;min-height:calc(100vh - 16px)}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 28px;border-radius:14px 14px 0 0;background:color-mix(in srgb,var(--canvas) 84%,transparent);backdrop-filter:blur(12px)}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:14px 14px 0 0;background:color-mix(in srgb,var(--canvas) 84%,transparent);backdrop-filter:blur(12px);--app-region:drag}
 .crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.crumb b{color:var(--ink);font-weight:560}.crumb i{font-style:normal;color:var(--faint)}
 .top .sp{flex:1}
+/* 拖拽区里能点的东西保持可点(浏览器里 --app-region 没有意义,外观不变)。 */
+.top button,.top input,.top select,.top textarea,.top a,.top [role=menu],.top [data-act],
+.brand button,.brand input,.brand select,.brand textarea,.brand a,.brand [role=menu],.brand [data-act]{--app-region:no-drag}
+/* 桌面窗口的标题栏拖拽条:浏览器里 --mygo-titlebar-height 不存在,高度为 0。 */
+.tb-drag{height:var(--mygo-titlebar-height,0px);flex:none;align-self:stretch;--app-region:drag}
 .kbd{font:500 11px var(--mono);padding:1px 5px;border-radius:5px;background:var(--stone);color:var(--muted)}
 .search{display:flex;align-items:center;gap:8px;height:32px;width:260px;padding:0 10px;border-radius:8px;background:var(--stone);color:var(--faint);font-size:12.5px}
 .search input{border:0;outline:0;background:none;flex:1;min-width:0;color:var(--ink)}
@@ -122,7 +127,7 @@ textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:12.5px;li
 .demo{display:inline-flex;font-size:10.5px;padding:1px 6px;border-radius:5px;background:var(--warn-bg);color:var(--warn);font-weight:560}
 .mtop,.mnav{display:none}
 @media (max-width:860px){
- .app{grid-template-columns:1fr}.side{display:none}main{margin:8px}.top{padding:0 14px}.search{display:none}.page{padding:18px 14px 90px}
+ .app{grid-template-columns:1fr}.side{display:none}main{margin:8px}.top{padding:0 calc(14px + var(--mygo-titlebar-inset-right,0px)) 0 14px}.search{display:none}.page{padding:18px 14px 90px}
  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g2,.g3,.two,.three{grid-template-columns:minmax(0,1fr)}.ph{flex-wrap:wrap}.ph h1{font-size:20px}
  .hide-m{display:none}td,th{padding:10px 12px}.bar{width:64px}.use span{min-width:0}
  .mnav{display:flex;position:fixed;z-index:20;left:0;right:0;bottom:0;justify-content:space-around;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--canvas) 90%,transparent);backdrop-filter:blur(12px)}

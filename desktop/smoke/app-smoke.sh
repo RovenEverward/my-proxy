@@ -47,6 +47,10 @@ MAIN_PNG="$ROOT/app-$OS_NAME-main.png"
 NODES_PNG="$ROOT/app-$OS_NAME-nodes.png"
 OVERVIEW_PNG="$ROOT/app-$OS_NAME-overview.png"
 UPDATE_PNG="$ROOT/app-$OS_NAME-update.png"
+# Windows 上额外抓整个窗口(含 MyGo 自绘的标题栏按钮),浅色/深色各一张。
+# 页面截图是 ...-titlebar-light.png,整窗截图由 mpx app 存成 ...-titlebar-light-window.png。
+TITLEBAR_LIGHT_PNG="$ROOT/app-$OS_NAME-titlebar-light.png"
+TITLEBAR_DARK_PNG="$ROOT/app-$OS_NAME-titlebar-dark.png"
 
 # 临时 HOME / 配置目录,别碰开发者自己的配置。Git Bash 的 mktemp 给的是 MSYS
 # 路径(/tmp/...),原生 Windows 程序不认,过一层 cygpath。
@@ -72,6 +76,8 @@ MAIN_LOG="$TMP/main.log"
 NODES_LOG="$TMP/nodes.log"
 OVERVIEW_LOG="$TMP/overview.log"
 UPDATE_LOG="$TMP/update.log"
+TITLEBAR_LIGHT_LOG="$TMP/titlebar-light.log"
+TITLEBAR_DARK_LOG="$TMP/titlebar-dark.log"
 SERVE_PID=""
 FAIL=0
 
@@ -193,6 +199,25 @@ else
     check_result "更新弹窗冒烟" "$?" "$UPDATE_LOG" "$UPDATE_PNG"
     grep -q 'modal=open' "$UPDATE_LOG" || { echo "更新弹窗冒烟:弹窗没打开" >&2; FAIL=1; }
     grep -q 'tagfont=.*Microsoft YaHei UI' "$UPDATE_LOG" || { echo "更新弹窗冒烟:徽章字体栈里没有中文无衬线回退" >&2; FAIL=1; }
+
+    # 5) 标题栏:总览页浅色/深色各一张,Windows 上同时产出整窗截图
+    #    app-windows-titlebar-<theme>-window.png(只有页面之外的按钮才看得出
+    #    标题栏和界面融为一体)。别的平台没有系统画的按钮,跳过。
+    if [ "$OS_NAME" = "windows" ]; then
+      for theme in light dark; do
+        case "$theme" in
+          light) shot="$TITLEBAR_LIGHT_PNG"; log="$TITLEBAR_LIGHT_LOG"; label="浅色标题栏" ;;
+          dark) shot="$TITLEBAR_DARK_PNG"; log="$TITLEBAR_DARK_LOG"; label="深色标题栏" ;;
+        esac
+        run_app "$shot" "$log" \
+          MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=overview MPX_APP_SMOKE_THEME=$theme
+        check_result "$label 冒烟" "$?" "$log" "$shot"
+        # 整窗截图由 mpx app 用 PowerShell 抓;抓不到只警告,不影响冒烟结果。
+        if [ ! -s "${shot%.png}-window.png" ]; then
+          echo "$label 冒烟:警告:没有生成整窗截图 ${shot%.png}-window.png" >&2
+        fi
+      done
+    fi
   fi
 fi
 
@@ -209,6 +234,8 @@ cp "$MAIN_LOG" "$ROOT/app-$OS_NAME-main.log" 2>/dev/null || true
 cp "$NODES_LOG" "$ROOT/app-$OS_NAME-nodes.log" 2>/dev/null || true
 cp "$OVERVIEW_LOG" "$ROOT/app-$OS_NAME-overview.log" 2>/dev/null || true
 cp "$UPDATE_LOG" "$ROOT/app-$OS_NAME-update.log" 2>/dev/null || true
+cp "$TITLEBAR_LIGHT_LOG" "$ROOT/app-$OS_NAME-titlebar-light.log" 2>/dev/null || true
+cp "$TITLEBAR_DARK_LOG" "$ROOT/app-$OS_NAME-titlebar-dark.log" 2>/dev/null || true
 cp "$SERVE_LOG" "$ROOT/app-$OS_NAME-serve.log" 2>/dev/null || true
 
 exit "$FAIL"
