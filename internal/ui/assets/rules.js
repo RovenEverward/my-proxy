@@ -272,7 +272,7 @@ Object.assign(ACTS, {
     try { await rpPut(list, version, "已删除"); RP.edit = null; } catch (e) { $("#re-err").textContent = e.message; } },
   "rp-builtin": () => rpBuiltin(),
   "gp-edit": d => groupEditor(d.id),
-  "gp-rm": d => confirmBox({ title: `删除策略组 ${d.name}?`, text: "删除后订阅里不再有这个组。", ok: "删除", danger: true,
+  "gp-rm": d => confirmBox({ title: `删除策略组 ${d.name}？`, text: "删除后订阅里不再有这个组。", ok: "删除", danger: true,
     run: async () => { await write("DELETE", groupPath(d.id), undefined, `策略组「${d.name}」已删除`); closeOverlays(); } }),
   "rp-migrate": d => confirmBox({ title: d.confirm ? "确认迁移到规则表？" : "把现在的分流转换成规则表？", text: "按现在的模板生成策略组与规则，订阅改由规则表生成。原来的模板保留。", ok: "转换",
     run: async () => { const r = await write("POST", "/api/routing/migrate", d.confirm ? { confirm: true } : {}); if (r.status !== "migrated") throw new Error(r.status === "needs_confirm" ? "存过自定义 sing-box 模板，需要确认后迁移" : (r.unconvertible || r.notes || []).join(";") || r.status); toast(`已转换：${r.groups.length} 个策略组、${r.rules} 条规则`); } }),

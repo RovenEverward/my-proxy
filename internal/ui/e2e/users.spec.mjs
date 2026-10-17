@@ -107,7 +107,7 @@ test("停用要确认、取消不发请求;停用与启用和 CLI 一致", async
 
   await openUser(page, "ui-toggle");
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-toggle]");
-  await expect(page.locator("#modal.open")).toContainText("停用 ui-toggle?");
+  await expect(page.locator("#modal.open")).toContainText("停用 ui-toggle？");
   await page.click("[data-act=modal-cancel]");
   await page.waitForTimeout(300);
   expect(env.takeLog()).toEqual([]);

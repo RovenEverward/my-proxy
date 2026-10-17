@@ -284,7 +284,7 @@ async function templateDrawer(f) {
 Object.assign(ACTS, {
   "set-revert": () => load(true, true),
   "set-test": (d, b) => busy(b, async () => { await write("POST", "/api/settings/test-webhook", undefined, "测试通知已送到"); }),
-  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}?`, text: "它的 token 立即失效，要再用得在那台机器上重新接入。", ok: "吊销", danger: true,
+  "dev-revoke": d => confirmBox({ title: `吊销设备 ${d.name}？`, text: "它的 token 立即失效，要再用得在那台机器上重新接入。", ok: "吊销", danger: true,
     run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
   "dpw-off": () => confirmBox({ title: "关闭设备密码接入？", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开，在这里设一个新密码即可。", ok: "关闭设备密码接入", danger: true,
     run: async () => { await write("DELETE", "/api/device-password", undefined, "已关闭设备密码接入;已接入的设备不受影响"); } }),

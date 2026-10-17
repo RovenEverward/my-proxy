@@ -33,7 +33,7 @@ test("删除用户:列表里立刻没了这个人", async ({ page }) => {
   await expect(userRow(page, "r-rm")).toHaveCount(1);
   await userRow(page, "r-rm").click();
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-rm]");
-  await expect(page.locator("#modal.open")).toContainText("删除 r-rm?");
+  await expect(page.locator("#modal.open")).toContainText("删除 r-rm？");
   await page.fill("#typed", "r-rm");
   await page.click("#okb");
   await expect(page).toHaveURL(/#users$/);

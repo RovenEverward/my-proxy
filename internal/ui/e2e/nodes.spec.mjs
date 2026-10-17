@@ -367,6 +367,8 @@ for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
       await expect(menu.locator("[data-act=node-check]")).toHaveText("刷新状态");
       await expect(menu.locator("[data-act=node-drain]")).toHaveText("暂停分配");
       await expect(menu.locator("[data-act=node-edit]")).toHaveText("编辑");
+      // 没有待应用时也能手动应用(改出口 IP 之类控制面不记待应用的改动)。
+      await expect(menu.locator("[data-act=node-sync]")).toHaveText("应用到节点");
       await page.locator(".ph h1").click();
       await expect(menu).toBeHidden();
       await page.click("[data-act=node-menu]");
@@ -374,6 +376,7 @@ for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
       await expect(page.locator("#drawer.open #node-form")).toBeVisible();
       await expect(menu).toBeHidden();
     } else {
+      await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveCount(0);
       await expect(primary).toHaveText("应用到节点");
       await expect(primary).toHaveAttribute("data-act", "node-sync");
     }
@@ -383,3 +386,20 @@ for (const state of ["最新", "待应用", "漂移", "从未应用"]) {
     if (state === "待应用") await expect(card.locator(".tag.pend")).toHaveText("有改动未应用");
   });
 }
+
+test("节点详情:只有 sing-box 的节点没有 xray 下发记录,不因此一直挂着主按钮", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/nodes/2", async route => {
+    const response = await route.fetch();
+    const n = await response.json();
+    n.deployed_hash = "";
+    n.status = { ...n.status, observed_hash: "", cores: [{ core: "sing-box", active: true, version: "1.12.0", observed_hash: "sb" }] };
+    await route.fulfill({ response, json: n });
+  });
+  await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
+  await openNode(page, 2);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator(".ph .btn.pri")).toHaveCount(0);
+  await page.click("[data-act=node-menu]");
+  await expect(page.locator("#node-menu [data-act=node-sync]")).toHaveText("应用到节点");
+});

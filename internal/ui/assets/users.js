@@ -372,7 +372,7 @@ Object.assign(ACTS, {
     const off = !!d.on, verb = off ? "停用" : "启用";
     const run = async () => { await readModify(d.name, m => { m.enabled = !off; }); toast(`已${verb}用户 ${d.name}`); await refreshDrawer(d.name); };
     if (!off) return run().catch(e => toast(e.message, true));
-    confirmBox({ title: `停用 ${d.name}?`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉，订阅里只剩「已停用」占位节点。记录保留，随时可以再启用。", ok: "停用", run });
+    confirmBox({ title: `停用 ${d.name}？`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉，订阅里只剩「已停用」占位节点。记录保留，随时可以再启用。", ok: "停用", run });
   },
   "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量？`, text: "本期用量清零，累计用量不变。超限的用户会在下一轮收敛时恢复。", ok: "重置流量",
     run: async () => { await write("POST", userPath(d.name) + "/reset-traffic", undefined, `已重置用户 ${d.name} 的流量`); await refreshDrawer(d.name); } }),
@@ -381,7 +381,7 @@ Object.assign(ACTS, {
     run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换成新链接，旧链接已失效"); await refreshDrawer(d.name); } }),
   // ⋯ 菜单:点按钮开合;点菜单里的项或别处就收起。
   "user-menu": () => { const m = $("#user-menu"); if (m) m.hidden = !m.hidden; },
-  "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
+  "user-rm": d => confirmBox({ title: `删除 ${d.name}？`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
     run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });

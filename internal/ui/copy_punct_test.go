@@ -129,7 +129,17 @@ func copyPunctFragments(line string) []string {
 		for right < len(runes) && unicode.IsSpace(runes[right]) {
 			right++
 		}
-		if (left >= 0 && chinese(runes[left])) || (right < len(runes) && chinese(runes[right])) {
+		// 紧跟在 ${…} 插值后的标点(如「停用 ${name}?」):同一段模板字面量里有汉字就算文案。
+		afterInterp := false
+		if i > 0 && runes[i-1] == '}' && i+1 < len(runes) && (runes[i+1] == '`' || chinese(runes[i+1])) {
+			for j := i - 1; j >= 0 && runes[j] != '`'; j-- {
+				if unicode.Is(unicode.Han, runes[j]) {
+					afterInterp = true
+					break
+				}
+			}
+		}
+		if afterInterp || (left >= 0 && chinese(runes[left])) || (right < len(runes) && chinese(runes[right])) {
 			fragments = append(fragments, string(runes[max(0, i-16):min(len(runes), i+17)]))
 		}
 	}
@@ -189,6 +199,10 @@ func TestCopyPunct(t *testing.T) {
 			{"regexSlashes", `const r = /https?:\/\//; toast("提示,继续");`, 1},
 			{"nestedTemplate", "H`标题${ok ? H`提示,继续` : \"正常\"}`", 1},
 			{"templateComment", "H`标题${/* 注释,忽略 */ '正常'}内容`", 0},
+			{"afterInterpolation", "confirmBox({ title: `停用 ${d.name}?` })", 1},
+			{"afterInterpolationCopy", "toast(`第 ${i},共 ${n} 条`)", 1},
+			{"interpolationTernary", "H`${a ? H`甲` : \"乙\"}`", 0},
+			{"interpolationEnglish", "`${a}?x=1`", 0},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				var got []string
@@ -201,4 +215,24 @@ func TestCopyPunct(t *testing.T) {
 			})
 		}
 	})
+}
+
+// 批量替换标点时曾把「？」写成了按 Latin-1 二次编码的「ï¼」。资产里不该出现这种乱码。
+func TestAssetsNoMojibake(t *testing.T) {
+	files, _ := filepath.Glob("assets/*.js")
+	css, _ := filepath.Glob("assets/*.css")
+	files = append(append(files, css...), "assets/index.html")
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			for _, bad := range []string{"\u00ef\u00bc", "\u00e3\u0080", "\u00e2\u0080"} {
+				if strings.Contains(line, bad) {
+					t.Errorf("%s:%d: mojibake %q", file, i+1, bad)
+				}
+			}
+		}
+	}
 }

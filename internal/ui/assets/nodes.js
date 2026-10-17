@@ -89,10 +89,16 @@ function nodeDetail(d) {
   const rep = d.report && !d.report.error ? d.report : null;
   let summary = [];
   try { const j = rep ? (typeof rep.report === "string" ? JSON.parse(rep.report) : rep.report) : null; summary = (j && j.summary) || []; } catch { summary = []; }
+  // 「应用到节点」做主按钮的情况:有未应用的连接改动、xray 配置和下发的不一致、或者从没应用过
+  // (只有 sing-box 的节点不看 xray 的下发记录)。其余情况(比如改了出口 IP、只有 sing-box 漂移)
+  // 控制面不记待应用,仍可以从「⋯」里手动应用,不会被藏起来。
+  const sbOnly = (s?.cores || []).length > 0 && !(s.cores || []).some(c => c.core === "xray");
+  const needApply = INB_PENDING.has(id) || (!!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash) || (!n.deployed_hash && !sbOnly);
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    ${W && (INB_PENDING.has(id) || (s?.observed_hash && n.deployed_hash && s.observed_hash !== n.deployed_hash) || !n.deployed_hash) ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    ${W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
       <button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>
+      ${W && !needApply ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>` : ""}
       ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
       ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
     </div></span></div>
@@ -271,7 +277,7 @@ Object.assign(ACTS, {
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}?`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
+  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
     run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
@@ -290,7 +296,7 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}?`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、入口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
     const r = await api(nodePath(d.id) + "/online");
@@ -302,7 +308,7 @@ Object.assign(ACTS, {
     const cfg = await api(nodePath(d.id) + "/config");
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}?`, text: "不可恢复：它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心还在跑，要清理得自己登上去。只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: "不可恢复：它上面的入站和入口一起删掉，订阅里不再有它。机器上的核心还在跑，要清理得自己登上去。只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 
