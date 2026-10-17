@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
@@ -137,5 +138,53 @@ func TestDevicePasswordHashRoundTrip(t *testing.T) {
 	}
 	if ok, _ := verifyDevicePassword(goodPW+"x", h); ok {
 		t.Fatal("错的密码过了")
+	}
+}
+
+// 密码不对要告诉人怎么重设;第 20 次错把锁触发时,回答里就要说清已经锁上、
+// 锁到什么时候;锁定期内的 429 带 Retry-After、locked_until 与「N 分钟后再试」。
+// error 原话不变(只增)。
+func TestConnectWrongAndLockedHints(t *testing.T) {
+	e := newEnv(t)
+	relaxConnect(e)
+	e.api("PUT", "/api/device-password", devicePasswordRequest{Password: goodPW})
+	type ans struct {
+		Error       string `json:"error"`
+		UIHint      string `json:"ui_hint"`
+		LockedUntil string `json:"locked_until"`
+	}
+	var last ans
+	for i := 0; i < connectLockAfter; i++ {
+		_, body := e.request("POST", "/api/connect", connectRequest{Password: "nope nope nope", DeviceName: "x"}, nil)
+		last = ans{}
+		_ = json.Unmarshal(body, &last)
+		if last.Error != "设备密码不对" {
+			t.Fatalf("第 %d 次 error 应保持原话,得到 %q", i+1, last.Error)
+		}
+		if i == 0 && (!strings.Contains(last.UIHint, "设置 → 设备") || last.LockedUntil != "") {
+			t.Fatalf("密码不对应提示怎么重设: %+v", last)
+		}
+	}
+	if !strings.Contains(last.UIHint, "已锁定") || !strings.Contains(last.UIHint, "15 分钟") || last.LockedUntil == "" {
+		t.Fatalf("触发锁定的那次要说清已锁定: %+v", last)
+	}
+	resp, err := http.Post(e.srv.URL+"/api/connect", "application/json", strings.NewReader(`{"password":"`+goodPW+`","device_name":"x"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var locked ans
+	_ = json.NewDecoder(resp.Body).Decode(&locked)
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" || locked.LockedUntil == "" ||
+		!strings.Contains(locked.UIHint, "分钟后再试") || !strings.HasPrefix(locked.Error, "设备密码连续输错太多次,接入已锁定,") {
+		t.Fatalf("锁定期内: %d %s %+v", resp.StatusCode, resp.Header.Get("Retry-After"), locked)
+	}
+}
+
+func TestWaitText(t *testing.T) {
+	for d, want := range map[time.Duration]string{0: "1 秒", 1500 * time.Millisecond: "2 秒", 59 * time.Second: "59 秒", time.Minute: "1 分钟", 14*time.Minute + time.Second: "15 分钟", 15 * time.Minute: "15 分钟"} {
+		if got := waitText(d); got != want {
+			t.Errorf("waitText(%v)=%q want %q", d, got, want)
+		}
 	}
 }

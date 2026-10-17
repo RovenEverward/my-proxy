@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -152,7 +153,7 @@ func connectAndSave(server, fp, password, name string) (*connectResult, error) {
 // 的「接入已有控制面」也走它,提示由页面自己给。
 func connectAndSaveQuiet(server, fp, password, name string) (connectResult, string, error) {
 	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
-	raw, err := c.do("POST", "/api/connect", map[string]string{"password": password, "device_name": name})
+	raw, err := postConnect(c, password, name)
 	if err != nil {
 		return connectResult{}, "", err
 	}
@@ -173,7 +174,7 @@ func connectAndSaveQuiet(server, fp, password, name string) (connectResult, stri
 // 了 --profile/default,而且会覆盖同名档。
 func connectAndSaveProfile(server, fp, password, name, profile string) (connectResult, error) {
 	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
-	raw, err := c.do("POST", "/api/connect", map[string]string{"password": password, "device_name": name})
+	raw, err := postConnect(c, password, name)
 	if err != nil {
 		return connectResult{}, err
 	}
@@ -379,4 +380,71 @@ func init() {
 	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.passwordStdin, "password-stdin", false, "从 stdin 读新密码(脚本用)")
 	deviceCmd.AddCommand(devicePasswordCmd)
 	rootCmd.AddCommand(connectCmd)
+}
+
+// devicesDocURL 是「在多台设备上管理」的文档页,忘了设备密码的重设做法在那里。
+const devicesDocURL = "https://roveneverward.github.io/my-proxy/guides/devices#忘了设备密码"
+
+// postConnect 拿设备密码换 token。只发一次:撞上限流或锁定(429)时等下去没有
+// 意义 —— 锁定要等 15 分钟,人在窗口或终端前干等 30 秒只会以为卡住了;直接把
+// 原因和该等多久说出来。密码不对与锁定的说法在 connectError 里补全。
+func postConnect(c *Client, password, name string) ([]byte, error) {
+	payload, err := json.Marshal(map[string]string{"password": password, "device_name": name})
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	raw, _, err := c.doOnce(ctx, http.MethodPost, "/api/connect", payload, true)
+	if err != nil {
+		return nil, connectError(err, time.Now())
+	}
+	return raw, nil
+}
+
+// connectError 把接入失败翻成说得清楚的话:
+//   - 密码不对:告诉人忘了密码怎么重设;
+//   - 已锁定:锁到本机几点、还要等多久,已接入的设备不受影响。
+//
+// Message 是命令行的说法,UIHint 是窗口的说法(不提命令)。锁定时间按本机时区
+// 换算 —— 控制面不知道使用者在哪个时区,所以由客户端来算。
+func connectError(err error, now time.Time) error {
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		return err
+	}
+	var body struct {
+		LockedUntil string `json:"locked_until"`
+	}
+	_ = json.Unmarshal(ae.Body, &body)
+	if until, perr := time.Parse(time.RFC3339, body.LockedUntil); perr == nil && until.After(now) {
+		when := until.Local().Format("15:04")
+		wait := connectWaitText(until.Sub(now))
+		head := "设备密码连续输错太多次,接入已锁定,到 " + when + "(本机时间)解锁,还要等约 " + wait + "。已经接入的设备不受影响。"
+		return &APIError{StatusCode: ae.StatusCode, Body: ae.Body,
+			Message: head + "忘了密码的话,重设做法见 " + devicesDocURL,
+			UIHint:  head + "忘了密码:在已经接入的设备上打开 设置 → 设备,改一个新的设备密码;一台已接入的设备都没有时,登录 VPS 重设,做法见文档「在多台设备上管理」。"}
+	}
+	if ae.StatusCode == http.StatusUnauthorized {
+		out := *ae
+		out.Message = "设备密码不对。忘了密码:在已接入的设备上运行 mpx device password(或在桌面程序里打开 设置 → 设备)改一个新的;" +
+			"一台已接入的设备都没有时,登录 VPS 重设,做法见 " + devicesDocURL
+		if out.UIHint == "" {
+			out.UIHint = "设备密码不对。忘了密码:在已经接入的设备上打开 设置 → 设备,改一个新的设备密码;一台已接入的设备都没有时,登录 VPS 重设,做法见文档「在多台设备上管理」。"
+		}
+		return &out
+	}
+	return err
+}
+
+// connectWaitText 与控制面同一口径:不到一分钟按秒,其余按分钟向上取整。
+func connectWaitText(d time.Duration) string {
+	if d < time.Minute {
+		sec := int((d + time.Second - 1) / time.Second)
+		if sec < 1 {
+			sec = 1
+		}
+		return strconv.Itoa(sec) + " 秒"
+	}
+	return strconv.Itoa(int((d+time.Minute-1)/time.Minute)) + " 分钟"
 }
