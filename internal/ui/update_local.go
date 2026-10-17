@@ -97,6 +97,9 @@ type updateViewBody struct {
 	// Desktop 报告本进程是不是桌面构建:页面据此把本机那一层叫「桌面程序」还是
 	// 「本机 CLI」。只加不改,旧页面忽略它照常工作。
 	Desktop bool `json:"desktop"`
+	// Prefetch 是桌面端后台预下载的状态;普通构建或不适用时为 nil(JSON 里不出现),
+	// 旧页面忽略。
+	Prefetch *prefetchStatus `json:"prefetch,omitempty"`
 }
 
 // serveUpdate 处理 /local/update*。调用前会话与来源已经校验过(与 setup 相同)。
@@ -123,6 +126,12 @@ func (s *Server) serveUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.updateControl(w, r)
+	case "/local/update/prefetch":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "这个接口只接受 POST")
+			return
+		}
+		s.updatePrefetch(w, r)
 	case "/local/update/all":
 		// POST 启动一键更新,GET 拉进度;同一个路径按方法分(见 update_all.go)。
 		switch r.Method {
@@ -183,6 +192,12 @@ func (s *Server) updateView(w http.ResponseWriter, r *http.Request) {
 	view.CLI.Behind = snap.Control.Behind
 	view.CLI.Available = view.CLI.Current != "" && view.CLI.Latest != "" &&
 		updatecheck.Ahead(view.CLI.Current, view.CLI.Latest)
+	// 发现 CLI 有新版本就在后台预下载;弹窗据 prefetch 字段显示进度。只影响
+	// 桌面构建,别的构建下 prefetchView 返回 nil。
+	if view.CLI.Available {
+		s.startPrefetch(view.CLI.Latest)
+	}
+	view.Prefetch = s.prefetchView()
 	// 上游没问成时,控制面把原因放在 control.error;这也是 CLI 算不出最新的原因。
 	if view.CLI.Latest == "" && snap.Control.Error != "" {
 		view.CLI.Error = snap.Control.Error
@@ -271,10 +286,15 @@ func (s *Server) applyCLIUpdate(ctx context.Context, version string) (from, to s
 	// 别的调用时机),兜底去掉后缀,保证写入与重启都落在真正的新二进制上。
 	path = stripPrevSuffix(path)
 	started := time.Now()
-	bin, _, ferr := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
-	if ferr != nil {
-		s.noteCLIUpdate(current, target, started, ferr)
-		return current, target, false, path, http.StatusBadGateway, ferr
+	bin, ok := s.stagedFor(target)
+	if !ok {
+		// 没有合格暂存:保持原来的现下现装。
+		var ferr error
+		bin, _, ferr = src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
+		if ferr != nil {
+			s.noteCLIUpdate(current, target, started, ferr)
+			return current, target, false, path, http.StatusBadGateway, ferr
+		}
 	}
 	if ierr := selfupdate.Install(path, bin, target); ierr != nil {
 		s.noteCLIUpdate(current, target, started, ierr)
@@ -300,6 +320,19 @@ func (s *Server) noteCLIUpdate(from, to string, started time.Time, err error) {
 		return
 	}
 	s.opts.CLIUpdated(from, to, started, err)
+}
+
+// updatePrefetch:POST /local/update/prefetch,让后台立刻重试当前目标的下载,
+// 不等退避。没有可重试的目标时是 200 的空操作,不制造假错误。
+func (s *Server) updatePrefetch(w http.ResponseWriter, r *http.Request) {
+	pf := s.prefetchView()
+	if pf == nil || pf.State == prefetchDisabled {
+		writeError(w, http.StatusConflict, "这台机器没有启用后台预下载")
+		return
+	}
+	p := s.getPrefetcher()
+	p.retry()
+	writeJSON(w, map[string]any{"ok": true, "prefetch": p.snapshot()})
 }
 
 // updateControl:POST /local/update/control,把请求原样转给控制面。

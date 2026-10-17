@@ -80,6 +80,8 @@ type Server struct {
 	allow   []rule
 	job     *setupJob
 	all     updateAllState
+	// prefetch 是桌面端后台预下载的状态;懒建,见 prefetch.go。
+	prefetch *prefetcher
 }
 
 type rule struct{ method, prefix string }
