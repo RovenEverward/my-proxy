@@ -87,18 +87,23 @@ test("显示名:与 mpx node edit --region / --city 一致,只发 metadata", asy
   await page.fill("#n-region", "us");
   await page.fill("#n-city", "洛杉矶");
   await expect(page.locator("#node-form")).not.toContainText("mpx ");
-  await expect(page.locator("#n-display")).toContainText("🇺🇸 洛杉矶");
+  // 国旗在页面上是 <img class="flag">,文本里只剩城市;服务端仍存 emoji(下面的请求对照)。
+  await expect(page.locator("#n-display img.flag")).toHaveAttribute("src", "/flags/us.svg");
+  await expect(page.locator("#n-display")).toContainText("洛杉矶");
   await page.click("#n-save");
-  await expect(page.locator(".toast")).toContainText("🇺🇸 洛杉矶 B");
+  await expect(page.locator(".toast img.flag")).toHaveAttribute("src", "/flags/us.svg");
+  await expect(page.locator(".toast")).toContainText("洛杉矶 B");
   expect(take(names, opt)).toEqual(fromCLI);
   // 列表只显示显示名;内部名只在详情里作为次要信息。
   await page.goto(env.origin + "/#nodes");
-  const row = page.locator("tbody tr", { hasText: "🇺🇸 洛杉矶 B" }).first();
+  const row = page.locator("tbody tr", { hasText: "洛杉矶 B" }).first();
   await expect(row).toBeVisible();
+  await expect(row.locator("img.flag")).toHaveAttribute("src", "/flags/us.svg");
   await expect(row).not.toContainText("ui-n");
   await expect(row).not.toContainText("#2");
   await openNode(page, 2);
-  await expect(page.locator("h1")).toContainText("🇺🇸 洛杉矶 B");
+  await expect(page.locator("h1")).toContainText("洛杉矶 B");
+  await expect(page.locator("h1 img.flag")).toHaveAttribute("src", "/flags/us.svg");
   await expect(page.locator(".ph p").first()).toContainText("内部名 ui-n");
 });
 
@@ -198,7 +203,10 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   await page.check("input[name=mux]");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
   await page.click("#i-save");
-  await expect(page.locator(".toast")).toContainText("要到节点「🇺🇸 洛杉矶 B」下发配置才生效");
+  // 节点显示名里的国旗也换成了 SVG;toast 文本里只剩城市与字母。
+  // 国旗换成了 img,文本里旗后留一个空格当间距,所以从城市名开始比。
+  await expect(page.locator(".toast")).toContainText("洛杉矶 B」下发配置才生效");
+  await expect(page.locator(".toast img.flag")).toHaveAttribute("src", "/flags/us.svg");
   expect(take(names, opt)).toEqual(fromCLI);
 });
 

@@ -161,7 +161,7 @@ else
   MAIN_CODE=$?
   check_result "主界面冒烟" "$MAIN_CODE" "$MAIN_LOG" "$MAIN_PNG"
 
-  # 3) 节点页 + 国旗字体。示例节点:地址用文档保留段 203.0.113.0/24,不 SSH。
+  # 3) 节点页 + SVG 国旗。示例节点:地址用文档保留段 203.0.113.0/24,不 SSH。
   API=http://127.0.0.1:18080
   AUTH="Authorization: Bearer ci-token"
   # 三台:日本(白底红日,小字号下不显眼)、美国、德国,截图里一眼能看出是彩色国旗而不是字母。
@@ -182,7 +182,7 @@ else
       MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=nodes
     NODES_CODE=$?
     check_result "节点页国旗冒烟" "$NODES_CODE" "$NODES_LOG" "$NODES_PNG"
-    grep -q 'flagfont=loaded' "$NODES_LOG" || { echo "节点页冒烟:国旗字体没有加载" >&2; FAIL=1; }
+    grep -q 'flagsvg=loaded' "$NODES_LOG" || { echo "节点页冒烟:SVG 国旗没有显示" >&2; FAIL=1; }
 
     # 4) 总览 + 更新弹窗(示例数据)。
     run_app "$OVERVIEW_PNG" "$OVERVIEW_LOG" \

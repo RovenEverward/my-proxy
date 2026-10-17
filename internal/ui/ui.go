@@ -185,6 +185,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.login(w, r, k)
 		return
 	}
+	// 国旗来自内嵌 zip,不碰控制面、也不需要会话:首次安装向导和登录转场里也会
+	// 先画旗帜。名字限制在 /flags/<xx>.svg,其余一律 404。
+	if strings.HasPrefix(r.URL.Path, "/flags/") {
+		s.serveFlag(w, r)
+		return
+	}
 	if !s.sessionOK(r) {
 		if r.URL.Path == "/" {
 			h.Set("Content-Type", "text/html; charset=utf-8")

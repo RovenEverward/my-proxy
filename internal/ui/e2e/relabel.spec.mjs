@@ -49,7 +49,9 @@ test("按钮只在有没显示名的节点时出现,plan 先于 apply", async ({
   expect(calls).toEqual([]); // 打开弹窗本身不发请求
 
   await page.click("#rl-plan");
-  await expect(page.locator("#rl-table")).toContainText("🇺🇸 洛杉矶 B");
+  // 新显示名里的国旗在表格里是 <img class="flag">,文本里只剩城市与字母。
+  await expect(page.locator("#rl-table")).toContainText("洛杉矶 B");
+  await expect(page.locator("#rl-table img.flag").first()).toHaveAttribute("src", "/flags/us.svg");
   await expect(page.locator("#rl-apply")).toHaveText("写入这 2 个节点");
   expect(calls.map(c => c.kind)).toEqual(["plan"]);
   expect(calls[0].body).toEqual({ all: true });

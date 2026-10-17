@@ -4,6 +4,10 @@
 "use strict";
 
 /* ---------- 基础 ---------- */
+// 区域指示符国旗的识别与本地 SVG 名字,替换逻辑见文件末尾的「国旗」一节。
+const RI = /[\u{1F1E6}-\u{1F1FF}]/u;
+const RI_PAIR = /([\u{1F1E6}-\u{1F1FF}])([\u{1F1E6}-\u{1F1FF}])/gu;
+const riCode = (a, b) => String.fromCharCode(97 + a.codePointAt(0) - 0x1F1E6, 97 + b.codePointAt(0) - 0x1F1E6);
 const $ = (s, el = document) => el.querySelector(s);
 class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
 const raw = s => new Raw(s);
@@ -599,6 +603,82 @@ addEventListener("hashchange", () => {
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) load(true); }, 30000);
 // 更新检查慢一些:60 秒一次,同样避开抽屉/模态与后台标签页。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) refreshUpdatePill(true); }, 60000);
+
+/* ---------- 国旗 ---------- */
+// 区域指示符国旗(🇯🇵 = 两个 U+1F1E6–U+1F1FF)在 Windows 上会显示成两个字母。
+// 这里把文本里的成对指示符换成本地 /flags/<xx>.svg;服务端 model 里的 emoji 不动。
+// 自己插入的 <img class="flag"> 没有文本子节点,再次扫描也不会再动它;文本被拆成
+// 「普通文本 + img」后普通文本里已没有指示符,所以替换是幂等的,不会来回触发。
+// flagHost 判断文本所在的位置:drop = 放不了图片,直接删掉旗帜(连同后面一个空格);
+// skip = 根本不碰;"" = 正常替换。
+function flagHost(el) {
+  for (; el; el = el.parentElement) {
+    const tag = el.tagName;
+    if (tag === "SCRIPT" || tag === "STYLE" || tag === "TEXTAREA" || tag === "INPUT") return "skip";
+    if (tag === "OPTION" || tag === "TITLE") return "drop";
+    if (el.isContentEditable) return "skip";
+  }
+  return "";
+}
+function flagText(node) {
+  const text = node.nodeValue;
+  if (!text || !RI.test(text)) return;
+  const mode = flagHost(node.parentElement);
+  if (mode === "skip") return;
+  if (mode === "drop") {
+    // <option>/<title> 里只能是纯文本:旗帜连着后面一个空格一起删。
+    node.nodeValue = text.replace(/([\u{1F1E6}-\u{1F1FF}]{2}) ?/gu, "");
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  let last = 0, found = false, m;
+  RI_PAIR.lastIndex = 0;
+  while ((m = RI_PAIR.exec(text))) {
+    found = true;
+    if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+    const img = document.createElement("img");
+    img.className = "flag";
+    img.src = "/flags/" + riCode(m[1], m[2]) + ".svg";
+    img.alt = m[0];
+    img.draggable = false;
+    img.dataset.flag = "1"; // 自己插入的节点,再遇到时不再处理
+    frag.append(img);
+    last = RI_PAIR.lastIndex;
+  }
+  if (!found) return;
+  if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
+  node.parentNode.replaceChild(frag, node);
+}
+function walkFlags(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { flagText(root); return; }
+  if (root.nodeType !== 1 && root.nodeType !== 11) return;
+  // 先收齐再换:换掉一个文本节点会让 TreeWalker 的当前节点脱离文档,后面的就遍历不到了。
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  for (let n = w.nextNode(); n; n = w.nextNode()) nodes.push(n);
+  for (const n of nodes) flagText(n);
+}
+function stripTitle() {
+  if (RI.test(document.title)) document.title = document.title.replace(/([\u{1F1E6}-\u{1F1FF}]{2}) ?/gu, "");
+}
+// 监听 body 的新增节点与文本变化。childList 覆盖 innerHTML 整块重画,characterData
+// 覆盖页面里改了文字的少数地方。自己插入的 img 是元素,walkFlags 只找文本节点,
+// 不会再触发替换;重画时新文本里已没有指示符,也不会再来一轮。
+const flagObserver = new MutationObserver(ms => {
+  let changed = false;
+  for (const m of ms) {
+    if (m.type === "characterData") { if (RI.test(m.target.nodeValue || "")) { flagText(m.target); changed = true; } }
+    else for (const n of m.addedNodes) { if (n.nodeType === 3 ? RI.test(n.nodeValue || "") : n.nodeType === 1 || n.nodeType === 11) { walkFlags(n); changed = true; } }
+  }
+  if (changed) stripTitle();
+});
+flagObserver.observe(document.body, { childList: true, characterData: true, subtree: true });
+// <title> 在 head 里:document.title 被改时也要把旗帜删掉(它放不了图片)。
+// 改 title 是换一个文本节点(childList);新节点里没有旗帜就什么都不做,不会成环。
+flagObserver.observe(document.head, { childList: true, characterData: true, subtree: true });
+walkFlags(document.body);
+stripTitle();
 
 document.addEventListener("DOMContentLoaded", async () => {
   try { META = await api("/ui/meta"); } catch (e) { /* 会在页面加载时一并报出来 */ }

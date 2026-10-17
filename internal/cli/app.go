@@ -19,12 +19,15 @@ import (
 const appSmokeEnv = "MPX_APP_SMOKE"
 
 // appSmokeRouteEnv 让冒烟在进入主界面后再跳到某一页(如 nodes)才截图。跳到节点页时
-// 还要等到内置国旗字体真的被加载(页面上有 🇯🇵 这类旗帜),证明 Windows 上国旗能显示。
+// 还要等到内置 SVG 国旗真的画出来(页面上有 🇯🇵 这类旗帜换成的 img.flag),证明
+// Windows 上国旗能显示。
 const appSmokeRouteEnv = "MPX_APP_SMOKE_ROUTE"
 
-// appSmokeRouteSelector:目标页标题已出现、且国旗字体已加载时返回非空。国旗字体
-// 只覆盖区域指示符(unicode-range),页面上真的出现旗帜时浏览器才会去加载它。
-const appSmokeRouteSelector = `(document.querySelector(".ph h1") && [...document.fonts].some(f => /Twemoji Country Flags/.test(f.family) && f.status === "loaded")) ? document.title + " flagfont=loaded" : ""`
+// appSmokeRouteSelector:目标页标题已出现、且至少一张 SVG 国旗已经加载完成
+// (complete 且 naturalWidth > 0)时返回非空。只看 DOM 不够:图片可能还在加载。
+const appSmokeRouteSelector = `(() => { if (!document.querySelector(".ph h1")) return "";
+  const f = [...document.querySelectorAll("img.flag")].find(i => i.complete && i.naturalWidth > 0);
+  return f ? document.title + " flagsvg=loaded" : ""; })()`
 
 // appNoWebViewExit 是系统缺 WebView 时的退出码:2 与用法错分开,脚本能一眼
 // 认出是环境缺件而不是参数写错。
