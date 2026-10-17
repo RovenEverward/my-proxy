@@ -133,11 +133,22 @@ function updLatest(u) {
   return out;
 }
 function updSkipped() { try { return sessionStorage.getItem(UPD_SKIP_KEY) || ""; } catch { return ""; } }
-// 有可升级项、且本会话没对这个版本点过「稍后」时才显示 pill。
+// sameVer:同一版本的粗判,忽略空白与打头的 v —— 节点核心报的 current / target
+// 一个带 v 一个不带时,直接字符串比会把同一版判成两版。
+function sameVer(a, b) {
+  a = String(a || "").trim().replace(/^v/, "");
+  b = String(b || "").trim().replace(/^v/, "");
+  return a !== "" && a === b;
+}
+// 节点核心这一行有没有得升:target 为空(没查到或没钉版本)或已等于 target 都算没有。
+function nodeUpgradable(n) { return !!n.target && !sameVer(n.current, n.target); }
+// 有可升级项、且本会话没对这个版本点过「稍后」时才显示 pill。可升级 = 本机 /
+// 控制面有新发布,或任一节点核心不在推荐版本上。
 function showUpdatePill(u) {
   if (!u) return false;
   const c = u.control || {}, l = u.cli || {};
-  if (!(c.available || l.available)) return false;
+  const nodes = Array.isArray(u.nodes) ? u.nodes : [];
+  if (!(c.available || l.available || nodes.some(nodeUpgradable))) return false;
   const latest = updLatest(u);
   return !(latest && updSkipped() === latest);
 }
@@ -165,58 +176,133 @@ function updRow(name, p) {
   const to = p.latest || "—";
   return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
 }
+// 节点核心一行:「la-1 · xray 26.3.27 → 26.4.1」;已在推荐版本上的只报现版本。
+function nodeUpdRow(n) {
+  const up = nodeUpgradable(n);
+  return H`<div class="upd-row"><b>${n.name}</b><span class="sub">${n.core}</span>
+  ${up ? H`<span class="mono">${n.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
+  <span class="sp"></span>${up ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是推荐版本</span>`}</div>`;
+}
 // openUpdateModal 直接写 #modal,与 confirmBox 同一套 .mbody / .mf 结构。
 function openUpdateModal() {
+  if (updAll) { renderUpdAll(); return; } // 一轮正在进行:直接回进度视图
   const u = UPDATE;
   if (!u) return;
   const c = u.control || {}, l = u.cli || {};
-  const cmds = [];
-  if (c.available) cmds.push("mpx update apply control");
-  if (l.available) cmds.push("mpx update apply cli");
+  const nodes = Array.isArray(u.nodes) ? u.nodes : [];
   const m = $("#modal");
   m.innerHTML = val(H`<div class="mbody"><h2>${updTitle(u)}</h2>
-  ${updRow("本机 CLI", l)}${updRow("控制面", c)}
+  ${updRow("本机 CLI", l)}${updRow("控制面", c)}${nodes.map(nodeUpdRow)}
   ${u.notes ? H`<pre class="upd-notes">${u.notes}</pre>` : ""}
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
-  ${cmds.length ? H`<div class="upd-cmds">${cmds.map(x => H`<div class="cmd">${x}</div>`)}</div>` : ""}
+  <p class="sub mt">将依次升级控制面、节点、本机,完成后 mpx ui 自动重启。</p>
   <div class="err" id="upd-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   setTimeout(() => $("#upd-ok")?.focus(), 50);
 }
-// 本机二进制换掉后,mpx ui 进程还在用旧的;只留一个「知道了」。
-function updDoneModal(message) {
-  const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>本机二进制已更新</h2>
-  <p>请关掉终端里的 mpx ui,再重新运行一次。</p>${message ? H`<p class="sub">${message}</p>` : ""}</div>
-  <div class="mf"><button class="btn pri" data-act="modal-cancel">知道了</button></div>`);
-  $("#scrim").classList.add("open"); m.classList.add("open");
-  setTimeout(() => $("#modal [data-act=modal-cancel]")?.focus(), 50);
-}
-// 先控制面后 cli,与 mpx update apply all 的顺序一致。
+// 一键更新:POST /local/update/all 启动编排,GET ?since= 增量拉进度直到
+// done / failed / restarting。409 表示已有一轮在跑,直接进轮询。
+let updAll = null;
+const UPD_STEP_NAMES = { control: "控制面", nodes: "节点", cli: "本机", restart: "重启" };
+const UPD_ALL_MIN = 1000, UPD_ALL_MAX = 5000;
 async function applyUpdate(el) {
-  const u = UPDATE || {}, c = u.control || {}, l = u.cli || {};
   el.disabled = true; el.classList.add("busy");
   try {
-    let msg = "";
-    if (c.available) {
-      const r = await api("/local/update/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      if (r && r.message) msg = r.message;
+    try {
+      await api("/local/update/all", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } catch (e) {
+      if (e.status !== 409) throw e;
     }
-    let cliUp = false;
-    if (l.available) {
-      const r = await api("/local/update/cli", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-      cliUp = !!(r && r.to && r.to !== r.from);
-      if (r && r.message) msg = r.message;
-    }
-    if (cliUp) updDoneModal(msg);
-    else { closeModal(); toast(msg || "升级完成"); }
-    refreshUpdatePill(true);
   } catch (e) {
     const box = $("#upd-err");
     if (box) box.textContent = e.message;
     el.disabled = false; el.classList.remove("busy");
+    return;
   }
+  updAll = { since: 0, events: [], delay: UPD_ALL_MIN, timer: 0, state: "" };
+  renderUpdAll();
+  pollUpdateAll();
+}
+// 轮询节奏:有新事件回到 1 秒,没有就翻倍,上限 5 秒;页面隐藏时一拍都不发,
+// 回到可见时由 visibilitychange 立刻补一次。游标用最后一条事件的 seq 而不是
+// 响应里的 seq 总数:单次响应有条数 / 大小上限,总数会跳过被截掉的事件。
+async function pollUpdateAll() {
+  const a = updAll;
+  if (!a || document.hidden) return;
+  let snap = null;
+  try { snap = await api("/local/update/all?since=" + a.since); }
+  catch (e) {
+    // 进度接口连不上:本机二进制正在被换,视同进入重启。
+    if (e.status === 0) { updRestartWait(); return; }
+  }
+  if (updAll !== a) return; // 期间重开了一轮,旧的链子就此打住
+  if (snap) {
+    const evs = Array.isArray(snap.events) ? snap.events : [];
+    if (evs.length) {
+      a.events.push(...evs);
+      a.since = evs[evs.length - 1].seq;
+      a.delay = UPD_ALL_MIN;
+    } else {
+      a.delay = Math.min(a.delay * 2, UPD_ALL_MAX);
+    }
+    if (snap.state === "failed" || snap.state === "done") {
+      a.state = snap.state;
+      renderUpdAll();
+      updAll = null;
+      refreshUpdatePill(true);
+      return;
+    }
+    if (snap.state === "restarting") { updRestartWait(); return; }
+    a.state = snap.state;
+    renderUpdAll();
+  }
+  if (document.hidden) return; // 轮询间隙页面藏了:交给 visibilitychange 恢复
+  a.timer = setTimeout(pollUpdateAll, a.delay);
+}
+// 进度视图:每条事件一行,按 step 分组列出来;失败的那条单独报出,配上「关闭」。
+function renderUpdAll() {
+  const a = updAll;
+  if (!a) return;
+  const groups = [];
+  for (const ev of a.events) {
+    const last = groups[groups.length - 1];
+    if (last && last.step === ev.step) last.evs.push(ev);
+    else groups.push({ step: ev.step, evs: [ev] });
+  }
+  const failed = a.state === "failed" ? a.events.filter(e => e.status === "failed").pop() : null;
+  const done = a.state === "done";
+  const title = failed ? "更新失败" : done ? "已是最新" : "正在更新";
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>${title}</h2>
+  <div class="upd-steps">${groups.map(g => H`<div class="upd-step">${UPD_STEP_NAMES[g.step] || g.step}</div>${g.evs.map(ev => H`<div class="upd-ev ${ev.status}">${ev.msg}</div>`)}`)}</div>
+  ${failed ? H`<div class="err" role="alert">${failed.msg}</div>` : ""}</div>
+  ${(failed || done) ? H`<div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>` : ""}`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  const box = $(".upd-steps");
+  if (box) box.scrollTop = box.scrollHeight;
+}
+// state=restarting,或轮询连不上(进程正在被换):改问 /ui/meta,问通了整页
+// 刷新;会话沿用,cookie 继续有效。最多等 60 秒,超时提示手动刷新。
+function updRestartWait() {
+  if (updAll) { clearTimeout(updAll.timer); updAll = null; }
+  const m = $("#modal");
+  m.innerHTML = val(H`<div class="mbody"><h2>mpx ui 正在重启…</h2>
+  <p class="sub">新版本起来后本页会自动刷新,会话沿用,无需重新登录。</p></div>`);
+  $("#scrim").classList.add("open"); m.classList.add("open");
+  const deadline = Date.now() + 60000;
+  const tick = async () => {
+    try { await api("/ui/meta"); location.reload(); return; } catch {}
+    if (Date.now() >= deadline) {
+      m.innerHTML = val(H`<div class="mbody"><h2>mpx ui 正在重启…</h2>
+      <p class="sub">等了一分钟还没起来,请手动刷新本页确认状态。</p></div>
+      <div class="mf"><button class="btn pri" data-act="modal-cancel">关闭</button></div>`);
+      $("#scrim").classList.add("open"); m.classList.add("open");
+      return;
+    }
+    setTimeout(tick, 1000);
+  };
+  setTimeout(tick, 1000);
 }
 
 function shell(page, body, crumb) {
@@ -422,6 +508,12 @@ document.addEventListener("click", e => {
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeOverlays(); });
+// 一键更新轮询随页面可见性走:藏起来停拍,回到可见立刻补一次。
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !updAll) return;
+  clearTimeout(updAll.timer);
+  pollUpdateAll();
+});
 addEventListener("hashchange", () => load(true, true));
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
 setInterval(() => { if (!document.hidden && !$("#drawer.open, #modal.open")) load(true); }, 30000);

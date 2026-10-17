@@ -2,6 +2,22 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.8.0 (2026-10-17)
+
+### 新增
+- **一键更新三层**（决策 39，取代 37）：`mpx ui` 右上角「更新」弹窗列出本机、控制面和每台节点核心的当前/目标版本，点「重启以更新」后依次升级：
+  1. 控制面：升级并等健康检查通过；
+  2. 节点：逐台升级 xray 内核。节点自己从 GitHub 拉包，按官方 `.dgst` 摘要校验，先用现有配置 `xray run -test` 校验，重启后确认版本；任何一台失败就回滚这台并停下。有 sing-box 的节点按钉死版本升级（控制面编译后推送）；
+  3. 本机 CLI / `mpx ui`，升完 `mpx ui` 原地重启，已打开的页面不用重新登录。
+  - 进度走增量轮询，单次响应小于 4KB，页面不可见时暂停。
+- 每个 MPX 版本固定一个推荐 xray 版本（本版 v26.3.27），节点目标版本不再追上游 latest。
+- `mpx update apply nodes`：命令行升级全部节点核心。
+- 控制面 API（只加不改）：`POST /api/update/nodes`、`GET /api/update/nodes?since=`；`GET /api/update` 的节点行开始填 `target`。
+
+### 兼容性
+- 从 v0.7.x 升级：旧版 `mpx ui` 没有一键更新，先用 `mpx update apply cli` 和 `mpx update apply control` 升到 v0.8.0，之后就能在页面里一键升级。
+- 仓库内 CHANGELOG.md 继续维护。
+
 ## v0.7.4 (2026-10-17)
 
 ### 新增
