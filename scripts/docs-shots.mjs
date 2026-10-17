@@ -47,15 +47,17 @@ async function seed(env) {
   // 节点与入站:只建记录,不连 SSH(不带 ssh_password 就不会去碰节点)。
   const CERT = ["/etc/letsencrypt/live/node.example.com/fullchain.pem", "/etc/letsencrypt/live/node.example.com/privkey.pem"];
   const nodes = [
-    { name: "tokyo-a", address: "203.0.113.10", inbound: { protocol: "vless", port: 443, network: "ws", security: "tls", ws_path: "/ws", cert_file: CERT[0], key_file: CERT[1] }, host: "东京 A" },
-    { name: "tokyo-b", address: "203.0.113.11", inbound: { protocol: "vmess", port: 8443, network: "ws", security: "tls", ws_path: "/vm", cert_file: CERT[0], key_file: CERT[1] }, host: "东京 B" },
-    { name: "frankfurt-a", address: "203.0.113.20", inbound: { protocol: "trojan", port: 443, network: "tcp", security: "tls", cert_file: CERT[0], key_file: CERT[1] }, host: "法兰克福 A" },
-    { name: "sanjose-a", address: "198.51.100.30", inbound: { protocol: "vless", port: 443, network: "tcp", security: "reality", reality_dest: "www.microsoft.com:443", sni: "www.microsoft.com" }, host: "圣何塞 A" },
+    { name: "tokyo-a", address: "203.0.113.10", meta: { region: "JP", city: "东京" }, inbound: { protocol: "vless", port: 443, network: "ws", security: "tls", ws_path: "/ws", cert_file: CERT[0], key_file: CERT[1] } },
+    { name: "tokyo-b", address: "203.0.113.11", meta: { region: "JP", city: "东京" }, inbound: { protocol: "vmess", port: 8443, network: "ws", security: "tls", ws_path: "/vm", cert_file: CERT[0], key_file: CERT[1] } },
+    { name: "frankfurt-a", address: "203.0.113.20", meta: { region: "DE", city: "法兰克福" }, inbound: { protocol: "trojan", port: 443, network: "tcp", security: "tls", cert_file: CERT[0], key_file: CERT[1] } },
+    { name: "sanjose-a", address: "198.51.100.30", meta: { region: "US", city: "圣何塞" }, inbound: { protocol: "vless", port: 443, network: "tcp", security: "reality", reality_dest: "www.microsoft.com:443", sni: "www.microsoft.com" } },
   ];
+  // 显示名(🇯🇵 东京 A 这类)来自节点的地区与城市;入口不起名,订阅与界面里跟随显示名。
   for (const n of nodes) {
     const created = await post("/api/nodes", { name: n.name, address: n.address });
+    await req("PUT", `/api/nodes/${created.id}/metadata`, n.meta);
     const inb = await post("/api/inbounds", { node_id: created.id, ...n.inbound });
-    await post(`/api/inbounds/${inb.id}/hosts`, { remark: n.host });
+    await post(`/api/inbounds/${inb.id}/hosts`, { remark: "" });
   }
 
   // 分流规则页:灌三条示例(域名与网段都用文档专用段,不指真实站点)。
@@ -108,7 +110,7 @@ async function polish(page, setup = false) {
   await page.route("**/ui/meta", async r => {
     const res = await r.fetch();
     const j = await res.json();
-    j.cli_version = "v0.9.1";
+    j.cli_version = "v0.9.4";
     if (!setup) {
       j.server = "127.0.0.1:18080";
       j.fingerprint = "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA";
@@ -119,7 +121,7 @@ async function polish(page, setup = false) {
   await page.route("**/api/status", async r => {
     const res = await r.fetch();
     const j = await res.json();
-    j.version = "v0.9.1";
+    j.version = "v0.9.4";
     await r.fulfill({ response: res, json: j });
   });
   // 测试环境没真的 SSH 上节点巡检过,列表里会全是「未巡检」;给每台补一份
@@ -168,19 +170,19 @@ const doctorReport = () => {
   ] };
 };
 
-// 更新弹窗的示例结论:桌面程序与控制面 v0.9.0 → v0.9.1 可升级,四个节点的
-// xray 都已在推荐版本上;notes 是 v0.9.1 的发版说明,弹窗里按 Markdown 渲染。
+// 更新弹窗的示例结论:桌面程序与控制面 v0.9.3 → v0.9.4 可升级,四个节点的
+// xray 都已在推荐版本上;notes 是 v0.9.4 发版说明的节选,弹窗里按 Markdown 渲染。
 const UPDATE_INFO = {
   desktop: true,
-  cli: { current: "v0.9.0", latest: "v0.9.1", available: true, release_url: "" },
-  control: { current: "v0.9.0", latest: "v0.9.1", available: true, release_url: "" },
+  cli: { current: "v0.9.3", latest: "v0.9.4", available: true, release_url: "" },
+  control: { current: "v0.9.3", latest: "v0.9.4", available: true, release_url: "" },
   nodes: [
     { name: "tokyo-a", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "tokyo-b", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "frankfurt-a", core: "xray", current: "26.3.27", target: "26.3.27" },
     { name: "sanjose-a", core: "xray", current: "26.3.27", target: "26.3.27" },
   ],
-  notes: "### 新增\n- 设置 → 通用 显示**当前控制面**与证书指纹\n- 配置档列表可「添加控制面…」\n\n### 修复\n- 预发布版不再误显示为「已是最新」\n- 安装脚本补跑时沿用 `mpx.service` 的监听地址",
+  notes: "### 改进\n- 窗口里提到节点的地方一律用显示名(如 🇯🇵 东京 A)\n- 添加节点向导不再要求填内部名\n\n### 修复\n- 切到别的页时上一页的抽屉没有收起",
 };
 
 const SHOTS = [
@@ -195,7 +197,7 @@ const SHOTS = [
   { name: "users", run: async (page, env) => { await page.goto(env.origin + "/#users"); } },
   {
     // 添加用户弹窗:填好 frank / 标准,停在提交前。
-    name: "user-new",
+    name: "user-new", crop: "#drawer",
     run: async (page, env) => {
       await page.goto(env.origin + "/#users");
       await page.click('button[data-act="user-new"]');
@@ -225,14 +227,13 @@ const SHOTS = [
   },
   { name: "rules", run: async (page, env) => { await page.goto(env.origin + "/#rules"); } },
   {
-    // 添加节点向导第 1 步「连接」:填好地址与节点名,停在提交前。
-    name: "node-wizard",
+    // 添加节点向导第 1 步「连接」:填好地址,停在提交前(内部名自动生成,不用填)。
+    name: "node-wizard", crop: "#drawer",
     run: async (page, env) => {
       await page.goto(env.origin + "/#nodes");
       await page.click('button[data-act="node-wizard"]');
       await page.waitForSelector("#w-address");
       await page.fill("#w-address", "203.0.113.40");
-      await page.fill("#w-name", "singapore-a");
       await page.waitForTimeout(350); // 等抽屉滑入
     },
   },
@@ -287,7 +288,7 @@ const SHOTS = [
     // 更新弹窗:/local/update 摆成示例结论,等右上角出现「更新」pill 后点开
     // 弹窗。结论要在登录前就拦上:刷新 pill 有 30 秒节流,登录那一次 load
     // 拿到什么就定形了。
-    name: "update",
+    name: "update", crop: "#modal > *",
     routes: async page => { await page.route("**/local/update", r => r.fulfill({ json: UPDATE_INFO })); },
     run: async page => {
       await page.locator("#upd-pill").waitFor({ state: "visible" });
@@ -300,9 +301,9 @@ const SHOTS = [
   { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#settings/backup"); } },
   { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#settings/rules"); } },
   // 首次安装(setup 模式:配置为空的 mpx ui)。
-  { name: "setup-welcome", setup: true, run: async page => { await page.waitForSelector("#s-start"); } },
+  { name: "setup-welcome", setup: true, crop: ".scard", run: async page => { await page.waitForSelector("#s-start"); } },
   {
-    name: "setup-host", setup: true,
+    name: "setup-host", setup: true, crop: ".scard",
     run: async page => {
       await page.click("#s-start");
       await page.waitForSelector("#s-host");
@@ -311,8 +312,50 @@ const SHOTS = [
     },
   },
   {
+    // 第 3 步「设置」:检查结果用路由摆成示例(Linux / x86_64 / root / curl),
+    // 填好第一个用户、节点名和设备密码,停在「开始安装」前。
+    name: "setup-settings", setup: true, crop: ".scard",
+    routes: async page => {
+      await page.route("**/local/setup/check", r => r.fulfill({ json: { probe: { os: "Linux", arch: "x86_64", uid: 0, fetch: "/usr/bin/curl" } } }));
+    },
+    run: async page => {
+      await page.click("#s-start");
+      await page.waitForSelector("#s-host");
+      await page.fill("#s-host", "203.0.113.10");
+      await page.fill("#s-port", "22");
+      await page.fill("#s-pw", "Example-Root-Pass");
+      await page.click("#s-check");
+      await page.waitForSelector("#s-next");
+      await page.click("#s-next");
+      await page.waitForSelector("#s-username");
+      await page.fill("#s-username", "alice");
+      await page.fill("#s-name", "tokyo");
+      await page.fill("#s-dpw", "Docs-Device-2026-Example");
+      await page.dispatchEvent("#s-dpw", "input");
+      await page.fill("#s-dpw2", "Docs-Device-2026-Example");
+    },
+  },
+  {
+    // 「完成」页:装好后的结论用示例数据直接渲染(订阅链接、二维码、地址与指纹),
+    // 不真的装任何东西。
+    name: "setup-done", setup: true, crop: ".scard",
+    routes: async page => {
+      await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto: "https://sub.example.com/sub/Q2xhdWRlRXhhbXBsZVRva2Vu" } }));
+      // 安装任务用假接口:一启动就报「完成」,带回示例结果。
+      await page.route("**/local/setup/run", r => r.fulfill({ status: 202, json: { id: "docs-example" } }));
+      await page.route("**/local/setup/jobs/**", r => r.fulfill({ json: { state: "done", seq: 1, steps: [], lines: [],
+        result: { connected: true, host_port: "203.0.113.10:8080", fingerprint: "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA", username: "alice" } } }));
+    },
+    run: async page => {
+      await page.waitForSelector("#s-start");
+      await page.evaluate(() => window.setupStartRun({ host: "203.0.113.10", ssh_port: 22, ssh_user: "root", username: "alice" }));
+      await page.waitForSelector("img.qr");
+      await page.waitForTimeout(400);
+    },
+  },
+  {
     // 接入已有控制面:取指纹的结果用路由摆成示例,不连任何真控制面。
-    name: "setup-connect", setup: true,
+    name: "setup-connect", setup: true, crop: ".scard",
     routes: async page => {
       await page.route("**/local/setup/connect/probe", r => r.fulfill({ json: {
         server: "https://203.0.113.10:8080", fingerprint: "SHA256:Q2xhdWRlRXhhbXBsZUZpbmdlcnByaW50MDAwMDAwMDA",
@@ -325,6 +368,16 @@ const SHOTS = [
       await page.fill("#s-cp-name", "laptop");
       await page.click("#s-cp-probe");
       await page.waitForSelector("#s-cp-ok");
+    },
+  },
+  {
+    // 备选配图(宣传用,文档正文暂不引用):节点列表,示例数据、带国旗显示名。
+    // 默认不截,用 --only alt-nodes 单独生成。
+    name: "alt-nodes", alt: true,
+    run: async (page, env) => {
+      await page.goto(env.origin + "/#nodes");
+      await page.waitForSelector('tr[data-href^="#nodes/"]');
+      await page.waitForTimeout(400);
     },
   },
 ];
@@ -349,7 +402,12 @@ async function takeShot(browser, shot, env) {
       await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(300);
       const file = path.join(OUT, theme === "dark" ? `${shot.name}-dark.png` : `${shot.name}.png`);
-      await page.screenshot({ path: file });
+      // 对话框类的图裁到对话框本身(四周留一点边),正文里放大也看得清。
+      if (shot.crop) {
+        const box = await page.locator(shot.crop).first().boundingBox();
+        const pad = 12;
+        await page.screenshot({ path: file, clip: { x: Math.max(0, box.x - pad), y: Math.max(0, box.y - pad), width: Math.min(1280, box.width + 2 * pad), height: Math.min(820, box.height + 2 * pad) } });
+      } else await page.screenshot({ path: file });
       console.log("已生成 " + path.relative(ROOT, file));
     } finally {
       await context.close();
@@ -359,7 +417,7 @@ async function takeShot(browser, shot, env) {
 
 const argv = process.argv.slice(2);
 const only = argv[0] === "--only" ? argv[1]?.split(",").map(s => s.trim()).filter(Boolean) : null;
-const shots = only ? SHOTS.filter(s => only.includes(s.name)) : SHOTS;
+const shots = only ? SHOTS.filter(s => only.includes(s.name)) : SHOTS.filter(s => !s.alt);
 if (!shots.length) {
   console.error(`没有匹配的截图:${only ? only.join(", ") : "(SHOTS 为空)"}`);
   process.exit(1);

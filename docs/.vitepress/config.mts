@@ -39,17 +39,22 @@ export default defineConfig({
         items: [{ text: '快速开始', link: '/tutorial/quickstart' }]
       },
       {
-        text: '指南',
+        text: '常用',
         items: [
           { text: '添加用户并分发订阅', link: '/guides/add-users' },
           { text: '添加节点', link: '/guides/add-nodes' },
+          { text: '一键更新', link: '/guides/update' },
+          { text: '用自检排查', link: '/guides/troubleshoot' }
+        ]
+      },
+      {
+        text: '进阶',
+        items: [
           { text: '用套餐分配节点', link: '/guides/plans' },
           { text: '设置分流规则', link: '/guides/routing' },
           { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
           { text: '在多台设备上管理', link: '/guides/devices' },
-          { text: '一键更新', link: '/guides/update' },
-          { text: '备份控制面', link: '/guides/backup' },
-          { text: '用自检排查', link: '/guides/troubleshoot' }
+          { text: '备份控制面', link: '/guides/backup' }
         ]
       },
       {
