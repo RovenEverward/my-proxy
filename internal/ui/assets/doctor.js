@@ -30,28 +30,21 @@ const docStat = (checks, k, label) => {
   <div class="s">${k === "ok" ? "没有毛病" : k === "warn" ? "该看一眼，不算坏" : "要看，系统确实有毛病"}</div></div>`;
 };
 
-// doctorApplyDetail:ui_action==="apply" 的漂移行换成界面说法。控制面此时一定观测到
-// 了不一致,所以「未读取或与下发内容不一致」也按不一致讲。xray 和 sing-box 两句同时
-// 出现(控制面用分号拼同一条明细)时合并成一句,只出现一次;其他问题原样挨着分号。
+// doctorApplyDetail:ui_action==="apply" 的漂移行换成界面说法。xray 的漂移一定是
+// 控制面观测到的「不一致」;sing-box 那句「未读取或与下发内容不一致」两种可能都
+// 有,所以只有在 xray 不在场(此时 ui_action=apply 只可能来自 sing-box)时才敢按
+// 「不一致」讲;xray 也在场时保持原句,免得把「没读到」说成「被改过」。
 function doctorApplyDetail(detail) {
   const XRAY = "配置和下发的不一致(节点上被改过)";
   const SINGBOX = "sing-box 配置未读取或与下发内容不一致";
   const MERGED = "节点上的配置和控制面不一致";
   const parts = String(detail).split(";");
-  const both = parts.some(p => p.includes(XRAY)) && parts.some(p => p.includes(SINGBOX));
-  const out = [];
-  let merged = false;
-  for (const p of parts) {
-    const hx = p.includes(XRAY), hs = p.includes(SINGBOX);
-    if (!hx && !hs) { out.push(p); continue; }
-    if (both) {
-      if (!merged) { out.push(MERGED); merged = true; }
-      continue;
-    }
-    if (hx) out.push(p.split(XRAY).join(MERGED));
-    if (hs) out.push(p.split(SINGBOX).join("节点上的 sing-box 配置和控制面不一致"));
-  }
-  return out.join(";");
+  const hasXray = parts.some(p => p.includes(XRAY));
+  return parts.map(p => {
+    if (p.includes(XRAY)) return p.split(XRAY).join(MERGED);
+    if (p.includes(SINGBOX) && !hasXray) return p.split(SINGBOX).join("节点上的 sing-box 配置和控制面不一致");
+    return p;
+  }).join(";");
 }
 
 function doctorPage() {
@@ -94,7 +87,7 @@ Object.assign(ACTS, {
   "doc-run": () => runDoctor(),
   // 跳到节点详情页;nodes.js 在详情画好后看到 AUTO_APPLY,就打开「应用到节点」的
   // 确认弹窗(用户确认才真正下发)。
-  "doc-apply": d => { window.AUTO_APPLY = +d.id; location.hash = "#nodes/" + d.id; },
+  "doc-apply": d => { window.AUTO_APPLY = { id: +d.id, at: Date.now() }; location.hash = "#nodes/" + d.id; },
 });
 
 // runDoctor:发一次请求。先用模块状态摆出「正在体检」再 paint,避免等响应期间

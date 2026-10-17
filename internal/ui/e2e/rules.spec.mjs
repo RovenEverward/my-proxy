@@ -212,6 +212,29 @@ test("普通删除不刺眼:编辑行和策略组抽屉的删除都不是红按�
   await page.click("#modal [data-act=modal-cancel]");
 });
 
+test("规则类型标签能省略,拖拽目标比悬停更明显", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#rules");
+  await expect(page.locator(".rp-row").first()).toBeVisible();
+  // .rp-ty 必须是能触发 text-overflow 的 display(inline-block),不是 inline-flex。
+  const ty = await page.locator(".rp-row").first().locator(".rp-ty").evaluate(el => {
+    const s = getComputedStyle(el);
+    return { display: s.display, overflow: s.overflow, ellipsis: s.textOverflow };
+  });
+  expect(ty.display).toBe("inline-block");
+  expect(ty.ellipsis).toBe("ellipsis");
+  expect(ty.overflow).toBe("hidden");
+  // 拖动悬停的行要比普通悬停更明显:两个背景色不能一样。
+  const first = page.locator(".rp-row").first();
+  await first.hover();
+  const hoverBG = await first.evaluate(el => getComputedStyle(el).backgroundColor);
+  const second = page.locator(".rp-row").nth(1);
+  await second.dispatchEvent("dragover");
+  await expect(second).toHaveClass(/over/);
+  const overBG = await second.evaluate(el => getComputedStyle(el).backgroundColor);
+  expect(overBG).not.toBe(hoverBG);
+});
+
 test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色", async ({ page }) => {
   const rgb = s => s.match(/[\d.]+/g).map(Number);
   const gray = (c, tol) => Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) <= tol;
@@ -237,16 +260,18 @@ test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色
     expect(c[0] + c[1] + c[2]).toBeGreaterThan(120);
   }
 
-  // 把第一条规则指向一个已不存在的策略组:只有它是红的。
-  await page.route(url => url.pathname === "/api/rules", async route => {
-    const body = await (await route.fetch()).json();
-    body.global[0].target = "group:9999";
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
-  });
+  // 把第一条规则指向一个已不存在的策略组:只有它是红的。数据由 Node 侧先取好
+  // (cpFetch 自带 429 重试),路由只回这一份,不再额外打控制面。
+  const shown = await getJSON("/api/rules");
+  expect(Array.isArray(shown.global) && shown.global.length > 0).toBe(true);
+  shown.global[0].target = "group:9999";
+  await page.route(url => url.pathname === "/api/rules", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shown) }));
   await page.reload();
   const err = page.locator(".rp-row").first().locator(".rp-to.err");
   await expect(err).toBeVisible();
   await expect(err).toHaveAttribute("title", "这个策略组已不存在");
+  // 不只靠颜色:读屏/键盘拿得到的文字也标出「已不存在」。
+  await expect(err.locator(".vh")).toHaveText("（已不存在）");
   const ec = rgb(await err.evaluate(el => getComputedStyle(el).color));
   expect(ec[0]).toBeGreaterThan(ec[1] + 40);
   expect(ec[0]).toBeGreaterThan(ec[2] + 40);

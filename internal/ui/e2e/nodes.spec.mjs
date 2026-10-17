@@ -269,6 +269,10 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
   await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
+  // 删除入口和节点详情一样是灰卡灰按钮,红色只留给确认框里最后那下。
+  const hzone = page.locator("#drawer.open .card").filter({ hasText: "删除入口" });
+  await expect(hzone).not.toHaveClass(/danger-zone/);
+  await expect(page.locator("[data-act=conn-host-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-host-rm]");
   await page.click("[data-act=modal-cancel]");
   expect(env.takeLog()).toEqual([]);
@@ -287,6 +291,9 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='4']");
   await page.click("#conn-form details.adv2 > summary");
+  // 删除入站也是灰卡灰按钮(这里打开的是「编辑连接」抽屉),不再用 danger-zone / c-bad。
+  const izone = page.locator("#drawer.open .dz").filter({ hasText: "删除连接" });
+  await expect(izone.locator("[data-act=conn-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-rm]");
   await expect(page.locator("#okb")).toBeDisabled();
   await expect(page.locator("#okb")).toHaveText("删除并应用到节点");
@@ -312,8 +319,8 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
 });
 
 // 「创建并应用到节点」:先建入站再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
-// 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,详情头部可以重试。
-test("创建并应用到节点:应用失败时入站保留,详情头部可重试", async ({ page }) => {
+// 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,头部换成刷新状态。
+test("创建并应用到节点:应用失败时入站保留,连不上时头部换成刷新", async ({ page }) => {
   await login(page, env);
   // 节点 1 的巡检状态取决于后台那一轮跑没跑到,这里固定成「连不上」,断言才稳。
   await page.route("**/api/nodes/1", async route => {
@@ -339,7 +346,7 @@ test("创建并应用到节点:应用失败时入站保留,详情头部可重试
   await expect(dis).toHaveAttribute("aria-disabled", "true");
   // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
   expect(await dis.evaluate(el => el.disabled)).toBe(false);
-  await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(dis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
   await expect(page.locator(".ph .vh")).toHaveText("节点连不上，连上后再应用");
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
 });
@@ -465,12 +472,15 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
   await expect(dis).toHaveAttribute("aria-disabled", "true");
   // 只是 aria-disabled,原生 disabled 没有,所以仍可聚焦、仍能读提示。
   expect(await dis.evaluate(el => el.disabled)).toBe(false);
-  await expect(dis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(dis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
   // 键盘/读屏:按钮可聚焦,aria-describedby 指向视觉隐藏的提示文字。
   await dis.focus();
   expect(await dis.evaluate(el => document.activeElement === el)).toBe(true);
   const whyID = await dis.getAttribute("aria-describedby");
   await expect(page.locator("#" + whyID)).toHaveText("节点连不上，连上后再应用");
+  // 悬停/键盘聚焦时,提示真的画出来(data-tip 的 ::after),不是只有一个属性。
+  await dis.focus();
+  expect(await dis.evaluate(el => getComputedStyle(el, "::after").content)).toContain("节点连不上");
   // 点击/回车都不能触发下发(不弹确认框,也不发请求)。
   // Playwright 把 aria-disabled 也当不可点,这里直接派发 click 事件,测的是页面自己的分发。
   await dis.dispatchEvent("click");
@@ -490,7 +500,7 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
   const mdis = menu.locator("[data-act=node-sync]");
   await expect(mdis).toHaveAttribute("aria-disabled", "true");
   expect(await mdis.evaluate(el => el.disabled)).toBe(false);
-  await expect(mdis).toHaveAttribute("title", "节点连不上，连上后再应用");
+  await expect(mdis).toHaveAttribute("data-tip", "节点连不上，连上后再应用");
   const mwhyID = await mdis.getAttribute("aria-describedby");
   await expect(page.locator("#" + mwhyID)).toHaveText("节点连不上，连上后再应用");
   await mdis.dispatchEvent("click");
@@ -522,7 +532,7 @@ test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
   await expect(primary).toHaveText("刷新状态");
   await expect(primary).toHaveAttribute("data-act", "node-check");
   await expect(primary).toBeEnabled();
-  // 菜单里也保留刷新项(主按钮已经出现,所以菜单里没有再放一份)。
+  // 菜单里不再重复放刷新项(主按钮已经换成「刷新状态」了)。
   await page.click("[data-act=node-menu]");
   await expect(page.locator("#node-menu [data-act=node-check]")).toHaveCount(0);
   // 写操作按钮因为没写权限都不出现。

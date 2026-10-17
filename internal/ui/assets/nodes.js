@@ -65,13 +65,19 @@ let NODES_TOTAL = null;
 
 // autoApplyPending:体检页的「应用到<节点>」跳到详情后,在这里打开确认弹窗。只认一次:
 // 找到可点的 node-sync 就触发它(头部主按钮或「⋯」菜单项都行),找不到(比如节点
-// 连不上,按钮是灰的)就说明白;两种情况都立刻清掉标志,刷新和轮询重绘不再弹。
+// 连不上,按钮是灰的)就说明白并把人引到「刷新状态」;两种情况都立刻清掉标志。
+// 标志带时间戳,超过 10 秒就当过期 —— 详情加载失败或用户中途离开都不会留到下次。
 function autoApplyPending(id) {
-  if (window.AUTO_APPLY !== id) return;
+  const a = window.AUTO_APPLY;
+  if (!a || a.id !== id) return;
   window.AUTO_APPLY = null;
+  if (Date.now() - a.at > 10000) return;
   const btn = document.querySelector('[data-act="node-sync"]:not([disabled]):not([aria-disabled=true])');
-  if (btn) ACTS["node-sync"](btn.dataset);
-  else toast("节点连不上，连上后再应用");
+  if (btn) ACTS["node-sync"]({ ...btn.dataset, from: "doctor" });
+  else {
+    toast("节点连不上，先点「刷新状态」，连上后再应用");
+    document.querySelector('[data-act="node-check"]')?.focus();
+  }
 }
 
 function nodeList(d) {
@@ -116,11 +122,11 @@ function nodeDetail(d) {
   const refreshPrimary = down;
   const tip = "节点连不上，连上后再应用";
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
-    ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" title="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
+    ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" data-tip="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
     ${refreshPrimary ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
       ${refreshPrimary ? "" : H`<button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>`}
-      ${W && !needApply ? (down ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why-m" title="${tip}">${ic("upload")}应用到节点</button><span id="sync-why-m" class="vh">${tip}</span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
+      ${W && !needApply ? (down ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why-m" data-tip="${tip}">${ic("upload")}应用到节点</button><span id="sync-why-m" class="vh">${tip}</span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
       ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
       ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
     </div></span></div>
@@ -299,7 +305,7 @@ Object.assign(ACTS, {
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。", ok: "应用到节点并重启",
+  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
     run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，核心已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });

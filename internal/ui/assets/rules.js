@@ -67,7 +67,7 @@ function rpPill(t, d = RP.d) {
   const gone = !!t && t !== "DIRECT" && t !== "REJECT" && !g;
   const k = gone ? "err" : t === "DIRECT" ? "dir" : t === "REJECT" ? "rej" : "grp";
   const icon = k === "dir" ? "↗ " : k === "rej" ? "⦸ " : !gone && g?.icon ? g.icon + " " : "";
-  return H`<span class="rp-to ${k}"${raw(gone ? ' title="这个策略组已不存在"' : "")}>${icon}${rpTargetName(t, d)}</span>`;
+  return H`<span class="rp-to ${k}"${raw(gone ? ' title="这个策略组已不存在"' : "")}>${icon}${rpTargetName(t, d)}${gone ? H`<span class="vh">（已不存在）</span>` : ""}</span>`;
 }
 const rpSet = (k, d = RP.d) => d.catalog.find(s => s.key === k);
 const rpValText = (r, d = RP.d) => r.type === "set" ? rpSet(r.value, d)?.name || r.value : r.type === "geoip" ? RULE_REGIONS[r.value] || r.value : r.value;

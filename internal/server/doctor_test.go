@@ -150,3 +150,86 @@ func TestDoctorUnreachableNodeHasNodeIDWithoutApplyAction(t *testing.T) {
 		t.Errorf("连不上的节点不该给 ui_action: %q", c.UIAction)
 	}
 }
+
+// 只有 sing-box 的节点读到漂移时也要给 ui_action=apply —— 界面靠它放「应用到节点」。
+func TestDoctorSingBoxDriftGivesApplyAction(t *testing.T) {
+	ops := &fakeNodeOps{}
+	e := newEnvWith(t, ops)
+	n := e.createNode("sb", "sb.example.com")
+	if err := e.st.SetCoreDeployed(n.ID, model.CoreSingBox, "sb-deployed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ops.check = &model.NodeStatus{NodeID: n.ID, Reachable: true, Active: true,
+		Cores: []model.CoreStatus{{Core: model.CoreSingBox, Active: true, StatsAvailable: true, ObservedHash: "sb-changed"}}}
+
+	code, raw := e.api("GET", "/api/doctor", nil)
+	if code != 200 {
+		t.Fatalf("doctor: %d %s", code, raw)
+	}
+	c := findCheck(t, decodeJSON[model.DoctorReport](t, raw), "节点 sb")
+	if c.UIAction != "apply" {
+		t.Errorf("sing-box 漂移该给 ui_action=apply: %q", c.UIAction)
+	}
+	if c.NodeID != n.ID {
+		t.Errorf("node_id: got %d want %d", c.NodeID, n.ID)
+	}
+	if c.Status != model.DoctorWarn || !strings.Contains(c.Detail, "sing-box 配置未读取或与下发内容不一致") {
+		t.Errorf("sing-box 漂移文案/结论变了: %+v", c)
+	}
+}
+
+// sing-box 没读到观测值时不算漂移:Detail 照旧,但不能给 ui_action,否则界面会把
+// 「没读到」当成「被改过」去覆盖。
+func TestDoctorSingBoxUnreadDoesNotOfferApply(t *testing.T) {
+	ops := &fakeNodeOps{}
+	e := newEnvWith(t, ops)
+	n := e.createNode("sbunread", "sbunread.example.com")
+	if err := e.st.SetCoreDeployed(n.ID, model.CoreSingBox, "sb-deployed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ops.check = &model.NodeStatus{NodeID: n.ID, Reachable: true, Active: true,
+		Cores: []model.CoreStatus{{Core: model.CoreSingBox, Active: true, StatsAvailable: true, ObservedHash: ""}}}
+
+	code, raw := e.api("GET", "/api/doctor", nil)
+	if code != 200 {
+		t.Fatalf("doctor: %d %s", code, raw)
+	}
+	c := findCheck(t, decodeJSON[model.DoctorReport](t, raw), "节点 sbunread")
+	if c.UIAction != "" {
+		t.Errorf("sing-box 未读取不该给 ui_action: %q", c.UIAction)
+	}
+	if c.Detail != "sing-box 配置未读取或与下发内容不一致" {
+		t.Errorf("sing-box 未读取的 Detail 被改了: %q", c.Detail)
+	}
+}
+
+// xray 漂移与 sing-box 未读取同时出现:xray 的漂移是真的,给 apply;但 Detail 里
+// sing-box 那句必须原样保留 —— 界面不能把「没读到」合并成「不一致」。
+func TestDoctorXrayDriftWithSingBoxUnreadKeepsUnreadDetail(t *testing.T) {
+	ops := &fakeNodeOps{}
+	e := newEnvWith(t, ops)
+	n := e.createNode("mixed", "mixed.example.com")
+	if err := e.st.SetNodeDeployed(n.ID, "xray-deployed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetCoreDeployed(n.ID, model.CoreSingBox, "sb-deployed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	ops.check = &model.NodeStatus{NodeID: n.ID, Reachable: true, Active: true, ObservedHash: "xray-changed",
+		Cores: []model.CoreStatus{{Core: model.CoreSingBox, Active: true, StatsAvailable: true, ObservedHash: ""}}}
+
+	code, raw := e.api("GET", "/api/doctor", nil)
+	if code != 200 {
+		t.Fatalf("doctor: %d %s", code, raw)
+	}
+	c := findCheck(t, decodeJSON[model.DoctorReport](t, raw), "节点 mixed")
+	if c.UIAction != "apply" {
+		t.Errorf("xray 漂移在场时该给 ui_action=apply: %q", c.UIAction)
+	}
+	if !strings.Contains(c.Detail, "配置和下发的不一致(节点上被改过)") {
+		t.Errorf("xray 漂移那句丢了: %q", c.Detail)
+	}
+	if !strings.Contains(c.Detail, "sing-box 配置未读取或与下发内容不一致") {
+		t.Errorf("sing-box 未读取那句必须保留: %q", c.Detail)
+	}
+}
