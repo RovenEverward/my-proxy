@@ -83,7 +83,7 @@ PAGES.plans = {
     const list = H`<div class="card">${plans.map(p => plRow(p, d))}</div>`;
     const only = plans.length === 1 && plans[0].is_default;
     const p0 = plans[0];
-    return H`${head}${list}${only ? H`<div class="callout stone mt">${ic("globe")}<div>所有 ${planCountText(p0.users, p0.active_users)} 个用户都在默认套餐,能用全部节点。要分开,就新建套餐。</div></div>` : ""}`;
+    return H`${head}${list}${only ? H`<div class="callout stone mt">${ic("globe")}<div>所有 ${planCountText(p0.users, p0.active_users)} 个用户都在默认套餐，能用全部节点。要分开，就新建套餐。</div></div>` : ""}`;
   },
   after(d) {
     if (d) document.querySelectorAll("#pl-nodes [data-ind]").forEach(x => { x.indeterminate = true; });

@@ -177,7 +177,7 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
   await page.click("[data-act=user-revoke]");
   await expect(page.locator("#user-menu")).toBeHidden();
   const modal = page.locator("#modal.open");
-  await expect(modal).toContainText("给 ui-relink 换一条新链接?");
+  await expect(modal).toContainText("给 ui-relink 换一条新链接？");
   await expect(modal).toContainText("旧链接马上失效");
   await expect(modal).toContainText("重新扫码或粘贴新链接");
   // 不是删除:主按钮不用红色危险样式。
@@ -191,7 +191,7 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
 
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-revoke]");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已换成新链接,旧链接已失效");
+  await expect(page.locator(".toast")).toContainText("已换成新链接，旧链接已失效");
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toContain("/api/users/ui-relink/revoke-sub");
   await expect(page.locator(".send-link")).not.toHaveAttribute("title", before);
@@ -210,6 +210,10 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   const empty = page.locator("#f-plans .plan", { hasText: "空的套餐" });
   await expect(empty.locator(".plan-n")).toHaveText("没有节点");
   await expect(page.locator("#f-plans .plan", { hasText: "默认套餐" }).locator(".plan-n")).toHaveText("2 个节点");
+  // 数字用正文字体(不是等宽),和「个」之间一个普通空格。
+  const pn = page.locator("#f-plans .plan", { hasText: "默认套餐" }).locator(".plan-n");
+  expect(await pn.evaluate(el => el.textContent)).toBe("2 个节点");
+  expect(await pn.evaluate(el => getComputedStyle(el).fontFamily)).toBe(await page.evaluate(() => getComputedStyle(document.body).fontFamily));
   await empty.click();
   const block = page.locator('#user-form .block:not([hidden])');
   await expect(block).toContainText("「空的套餐」里还没有节点");

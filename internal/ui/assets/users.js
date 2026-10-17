@@ -12,11 +12,11 @@ function parseBytes(s) {
   for (const [suf, m] of [["TB", 2 ** 40], ["GB", 2 ** 30], ["MB", 2 ** 20], ["KB", 2 ** 10], ["B", 1]]) {
     if (text.toUpperCase().endsWith(suf)) { mult = m; text = text.slice(0, -suf.length).trim(); break; }
   }
-  if (!text) throw new Error(`大小缺少数字: "${s}"`);
-  if (/^[+-]?\d+$/.test(text)) { const n = Number(text); if (n < 0) throw new Error(`大小不能是负数: "${s}"`); return n * mult; }
+  if (!text) throw new Error(`大小缺少数字： "${s}"`);
+  if (/^[+-]?\d+$/.test(text)) { const n = Number(text); if (n < 0) throw new Error(`大小不能是负数： "${s}"`); return n * mult; }
   const f = Number(text);
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text) || !isFinite(f)) throw new Error(`无法解析大小 "${s}",单位用 B/KB/MB/GB/TB`);
-  if (f < 0) throw new Error(`大小不能是负数: "${s}"`);
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text) || !isFinite(f)) throw new Error(`无法解析大小 "${s}"，单位用 B/KB/MB/GB/TB`);
+  if (f < 0) throw new Error(`大小不能是负数： "${s}"`);
   return Math.trunc(f * mult);
 }
 // parseExpire:YYYY-MM-DD → 本机时区当天 23:59:59(和 CLI 一样以操作机时区为准)。
@@ -73,7 +73,7 @@ function userPlanCell(u, d) {
              : H`<span class="sub">全部入站</span>`;
   }
   const extra = extrasOf(u, p, inbounds);
-  return H`<span class="pl-ptag"><span class="tag ${p.is_default ? "g" : ""}">${p.name}</span>${extra.length ? H`<span class="sub" title="额外授权:${extra.map(i => planInboundLabel(i)).join("、")}">+${extra.length}</span>` : ""}</span>`;
+  return H`<span class="pl-ptag"><span class="tag ${p.is_default ? "g" : ""}">${p.name}</span>${extra.length ? H`<span class="sub" title="额外授权：${extra.map(i => planInboundLabel(i)).join("、")}">+${extra.length}</span>` : ""}</span>`;
 }
 
 // extrasOf 返回用户额外授权里不在套餐范围内的入站对象;all_nodes 套餐固定为空。
@@ -137,12 +137,12 @@ PAGES.users = {
     if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 6)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
       ? emptyBox("search", "没有匹配的用户", "换个筛选条件或搜索词试试。", "")
-      : emptyBox("users", "还没有用户", "加一个用户,他就会拿到一条订阅地址。之后续期、停用、重置流量都在这里。", "", can("POST", "/api/users") ? H`<button class="btn pri sm" data-act="user-new">${ic("plus")}添加用户</button>` : "");
+      : emptyBox("users", "还没有用户", "加一个用户，他就会拿到一条订阅地址。之后续期、停用、重置流量都在这里。", "", can("POST", "/api/users") ? H`<button class="btn pri sm" data-act="user-new">${ic("plus")}添加用户</button>` : "");
     else {
       const P = d.page, end = P.offset + P.users.length;
       inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${P.users.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0"><td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
         <td>${userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
-        <div class="pager">显示 ${P.offset + 1}–${end},共 ${P.total} 个<span class="sp"></span><button class="btn sm" data-act="user-page" data-dir="-1" ${P.offset ? "" : raw("disabled")}>上一页</button><button class="btn sm" data-act="user-page" data-dir="1" ${end < P.total ? "" : raw("disabled")}>下一页</button></div>`;
+        <div class="pager">显示 ${P.offset + 1}–${end}，共 ${P.total} 个<span class="sp"></span><button class="btn sm" data-act="user-page" data-dir="-1" ${P.offset ? "" : raw("disabled")}>上一页</button><button class="btn sm" data-act="user-page" data-dir="1" ${end < P.total ? "" : raw("disabled")}>下一页</button></div>`;
     }
     const c = d ? d.counts : {};
     const planOpts = d ? d.plans.slice().sort((a, b) => (b.is_default - a.is_default) || (a.id - b.id)) : [];
@@ -184,7 +184,7 @@ function pullText(p) {
   if (sec < 3600) return `${who} ${Math.floor(sec / 60)} 分钟前拉取过`;
   return `${who} 在 ${sec < 86400 ? hm(d) : ymd(d)} 拉取过`;
 }
-const SEND_FORMATS = [["links", "分享链接", "一行一个节点,粘贴进 v2rayN、Shadowrocket"], ["base64-links", "Base64", "老客户端认的订阅格式"], ["clash-meta", "Clash Meta", "Clash Verge、Mihomo"], ["clash", "Clash", "老版 Clash 内核"], ["sing-box", "sing-box", "sing-box 官方客户端、Karing"], ["xray", "Xray", "Xray 内核的 JSON 配置"]];
+const SEND_FORMATS = [["links", "分享链接", "一行一个节点，粘贴进 v2rayN、Shadowrocket"], ["base64-links", "Base64", "老客户端认的订阅格式"], ["clash-meta", "Clash Meta", "Clash Verge、Mihomo"], ["clash", "Clash", "老版 Clash 内核"], ["sing-box", "sing-box", "sing-box 官方客户端、Karing"], ["xray", "Xray", "Xray 内核的 JSON 配置"]];
 // 「发给他」:创建后和用户详情共用。二维码由本机 /local/qr.svg 画,永远放在白底上(暗色也一样),保证能扫。
 function sendBlock(u, links, d) {
   const name = u.username, L = (links && links.auto) || "";
@@ -201,7 +201,7 @@ function sendBlock(u, links, d) {
         <button type="button" class="btn pri send-copy" data-act="copy" data-text="${L}">${ic("copy")}复制订阅链接</button>
         <div class="send-link mono" title="${L}">${L.replace(/^https?:\/\//, "")}</div>
         <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
-        <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入,会自动拿到适合它的格式。</p>
+        <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入，会自动拿到适合它的格式。</p>
       </div></div>
     ${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
     <details class="fmts"><summary>${ic("arrow", "car")}其他格式<span class="sub">客户端不认自动识别时再用</span></summary>
@@ -261,13 +261,13 @@ async function userEditor(name) {
   const limitText = u.data_limit ? (u.data_limit % 2 ** 30 === 0 ? u.data_limit / 2 ** 30 + "GB" : u.data_limit + "B") : "";
   openDrawer(H`<form id="user-form" novalidate><div class="dh"><h2>${isNew ? "添加用户" : "编辑 " + u.username}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db">
-    <div class="field"><label for="f-name">用户名</label><input class="in" id="f-name" name="username" value="${u.username}" ${isNew ? raw("autofocus") : raw("disabled")} placeholder="alice" autocomplete="off"><span class="h">字母、数字、下划线、点和减号,1–64 位${isNew ? "" : ";建好后不能改"}</span></div>
+    <div class="field"><label for="f-name">用户名</label><input class="in" id="f-name" name="username" value="${u.username}" ${isNew ? raw("autofocus") : raw("disabled")} placeholder="alice" autocomplete="off"><span class="h">字母、数字、下划线、点和减号，1–64 位${isNew ? "" : ";建好后不能改"}</span></div>
     <div class="field"><label id="f-plan-l">套餐</label><div class="plans" role="radiogroup" aria-labelledby="f-plan-l" id="f-plans">
       ${!isNew && u.plan_id == null ? H`<label class="plan"><input type="radio" name="plan" value="" checked disabled><span class="rd"></span><span class="plan-t"><b>未挂套餐</b><span class="sub">单独授权;选一个套餐后不能再移出</span></span></label>` : ""}
       ${planList.map(p => { const n = planNodeCount(p, nodes, inbounds); return H`<label class="plan"><input type="radio" name="plan" value="${p.id}" ${raw(plan === String(p.id) ? "checked" : "")}><span class="rd"></span><span class="plan-t"><b>${p.name}</b>${p.note || p.is_default ? H`<span class="sub">${p.note || "新用户默认挂这个"}</span>` : ""}</span><span class="plan-n ${n ? "" : "zero"}">${n ? `${n} 个节点` : "没有节点"}</span></label>`; })}</div>
-      ${planList.filter(p => !planNodeCount(p, nodes, inbounds)).map(p => H`<div class="block" role="alert" data-plan="${p.id}" hidden>${ic("warn")}<div><b>「${p.name}」里还没有节点</b><p>挂在它上面的用户什么都连不上。先给套餐加节点,或者换一个套餐。</p><div class="block-a"><a class="btn sm" href="#users/plans">${ic("plus")}给「${p.name}」加节点</a>${allPlan ? H`<button type="button" class="btn sm ghost" data-act="f-plan-all">换成「${allPlan.name}」</button>` : ""}</div></div></div>`)}</div>
-    <div class="two"><div class="field"><label for="f-limit">流量上限</label><input class="in" id="f-limit" name="limit" value="${limitText}" placeholder="100GB,留空不限"><span class="h">B / KB / MB / GB / TB,按 1024 进位</span></div>
-    <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD,留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
+      ${planList.filter(p => !planNodeCount(p, nodes, inbounds)).map(p => H`<div class="block" role="alert" data-plan="${p.id}" hidden>${ic("warn")}<div><b>「${p.name}」里还没有节点</b><p>挂在它上面的用户什么都连不上。先给套餐加节点，或者换一个套餐。</p><div class="block-a"><a class="btn sm" href="#users/plans">${ic("plus")}给「${p.name}」加节点</a>${allPlan ? H`<button type="button" class="btn sm ghost" data-act="f-plan-all">换成「${allPlan.name}」</button>` : ""}</div></div></div>`)}</div>
+    <div class="two"><div class="field"><label for="f-limit">流量上限</label><input class="in" id="f-limit" name="limit" value="${limitText}" placeholder="100GB，留空不限"><span class="h">B / KB / MB / GB / TB，按 1024 进位</span></div>
+    <div class="field"><label for="f-expire">到期日</label><input class="in" id="f-expire" name="expire" value="${u.expire_at ? ymd(new Date(u.expire_at)) : ""}" placeholder="YYYY-MM-DD，留空永不"><span class="h">本机时区当天 23:59:59</span></div></div>
     <details class="fmts more" id="f-more"><summary>${ic("arrow", "car")}更多选项<span class="sub">清零周期、额外授权、备注</span></summary><div class="more-b">
     <div class="field"><label>流量重置</label><div class="chips">${Object.entries(RESET).map(([k, t]) => H`<label class="chip"><input type="radio" name="reset" value="${k}" ${(u.reset_strategy || "none") === k ? raw("checked") : ""}>${t}</label>`)}</div></div>
     <div class="field"><label id="f-inb-label">额外授权</label><div class="chips">${inbounds.length ? inbounds.map(i => H`<label class="chip"><input type="checkbox" name="inb" value="${i.id}" ${sel.has(i.id) ? raw("checked") : ""}>${nodeName(i.node_id)} · ${inbTitle(i, null)}</label>`) : H`<span class="sub">还没有入站</span>`}</div><span class="h" id="f-inb-h"></span></div>
@@ -291,7 +291,7 @@ async function userEditor(name) {
     const planChanged = isNew ? planVal !== "" : (planVal !== "" && planVal !== currentPlan);
     const planName = planList.find(p => String(p.id) === planVal)?.name || "";
     let limit = 0, exp = null;
-    if (isNew && !USERNAME_RE.test(username)) err.push("用户名只能用字母、数字、下划线、点和减号,长度 1-64");
+    if (isNew && !USERNAME_RE.test(username)) err.push("用户名只能用字母、数字、下划线、点和减号，长度 1-64");
     try { limit = limitS ? parseBytes(limitS) : 0; } catch (e) { err.push(e.message); }
     try { exp = expS ? parseExpire(expS) : null; } catch (e) { err.push(e.message); }
     return { err, username, limit, exp, reset, inb, note, disabled: !!f.get("disabled"), planVal, planChanged };
@@ -308,7 +308,7 @@ async function userEditor(name) {
     if (isNew) { $("#f-why").hidden = !empty; $("#f-save").disabled = empty; }
     const label = $("#f-inb-label"), hint = $("#f-inb-h");
     if (label && hint) {
-      if (!p) { label.textContent = "可用入站"; hint.textContent = "一个都不选 = 全部入站,含以后新加的"; }
+      if (!p) { label.textContent = "可用入站"; hint.textContent = "一个都不选 = 全部入站，含以后新加的"; }
       else if (allNodes) { label.textContent = "额外授权"; hint.textContent = "全部节点套餐不需要额外授权"; }
       else { label.textContent = "额外授权(可选)"; hint.textContent = "在套餐之外再给这个用户开放的入站"; }
     }
@@ -372,16 +372,16 @@ Object.assign(ACTS, {
     const off = !!d.on, verb = off ? "停用" : "启用";
     const run = async () => { await readModify(d.name, m => { m.enabled = !off; }); toast(`已${verb}用户 ${d.name}`); await refreshDrawer(d.name); };
     if (!off) return run().catch(e => toast(e.message, true));
-    confirmBox({ title: `停用 ${d.name}?`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉,订阅里只剩「已停用」占位节点。记录保留,随时可以再启用。", ok: "停用", run });
+    confirmBox({ title: `停用 ${d.name}?`, text: "下一轮收敛(最多 30 秒)把他从所有节点上摘掉，订阅里只剩「已停用」占位节点。记录保留，随时可以再启用。", ok: "停用", run });
   },
-  "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量?`, text: "本期用量清零,累计用量不变。超限的用户会在下一轮收敛时恢复。", ok: "重置流量",
+  "user-reset": d => confirmBox({ title: `重置 ${d.name} 的本期流量？`, text: "本期用量清零，累计用量不变。超限的用户会在下一轮收敛时恢复。", ok: "重置流量",
     run: async () => { await write("POST", userPath(d.name) + "/reset-traffic", undefined, `已重置用户 ${d.name} 的流量`); await refreshDrawer(d.name); } }),
   // 换链接不是删除:不用红色,但要确认 —— 旧链接马上失效,他得重新导入。
-  "user-revoke": d => confirmBox({ title: `给 ${d.name} 换一条新链接?`, text: "旧链接马上失效,他的客户端要重新扫码或粘贴新链接才能更新订阅。已经连着的不会断。", ok: "换一条新链接",
-    run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换成新链接,旧链接已失效"); await refreshDrawer(d.name); } }),
+  "user-revoke": d => confirmBox({ title: `给 ${d.name} 换一条新链接？`, text: "旧链接马上失效，他的客户端要重新扫码或粘贴新链接才能更新订阅。已经连着的不会断。", ok: "换一条新链接",
+    run: async () => { await write("POST", userPath(d.name) + "/revoke-sub", undefined, "已换成新链接，旧链接已失效"); await refreshDrawer(d.name); } }),
   // ⋯ 菜单:点按钮开合;点菜单里的项或别处就收起。
   "user-menu": () => { const m = $("#user-menu"); if (m) m.hidden = !m.hidden; },
-  "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复:协议凭证与订阅 token 一起删掉,已经连上的客户端会断开,订阅地址立刻 404。只想让人连不上,用「停用」。", ok: "删除用户", danger: true, typed: d.name,
+  "user-rm": d => confirmBox({ title: `删除 ${d.name}?`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
     run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });
