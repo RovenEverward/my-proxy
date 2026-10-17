@@ -12,7 +12,7 @@ title: MPX
 <a class="btn btn-lg" href="./tutorial/quickstart#第-1-步-安装-mpx">下载 MPX</a>
 <a class="btn-ghost" href="./tutorial/quickstart">安装步骤 →</a>
 </div>
-<p class="dl-note">macOS、Windows、Linux 都有，下载以 <code>mpx-desktop_</code> 开头的安装包。打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。也有命令行版。</p>
+<p class="dl-note">macOS、Windows、Linux 都有，下载以 <code>mpx-desktop_</code> 开头的安装包。打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。AI 友好，也有命令行版。</p>
 </div>
 <figure class="tile hero-fig shot"><img class="only-light" src="/ui/setup-host.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码"><img class="only-dark" src="/ui/setup-host-dark.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码（深色）"><figcaption>首次安装：填 VPS<span>MPX 桌面窗口</span></figcaption></figure>
 </section>
@@ -69,7 +69,7 @@ title: MPX
 <div class="showcase-text">
 <p class="eyebrow">升级</p>
 <h2>升级：点一次</h2>
-<p>有新版本时右上角出现「更新」。点一次，服务器、各节点和你电脑上的 MPX 按顺序升好，窗口自己刷新。升级某台节点时，那台上的连接会断开一次，客户端会自动重连。</p>
+<p>有新版本时右上角出现「更新」。点一次，服务器、各节点和你电脑上的 MPX 按顺序升好，窗口自己刷新。</p>
 </div>
 <figure class="tile shot"><img class="only-light" src="/ui/update.png" width="1280" height="820" alt="更新弹窗：列出桌面程序、控制面和各节点的当前版本与目标版本"><img class="only-dark" src="/ui/update-dark.png" width="1280" height="820" alt="更新弹窗：列出桌面程序、控制面和各节点的当前版本与目标版本（深色）"><figcaption>一键更新<span>MPX 桌面窗口</span></figcaption></figure>
 </div>
