@@ -42,6 +42,9 @@ var updateSource = func() selfupdate.Source {
 
 // selfExecutable 返回本机 mpx 的绝对路径并解开符号链接 —— 与 cli 的
 // selfExecutable 同语义;不导出 cli 的私有变量,免得引入环依赖(cli 已依赖 ui)。
+//
+// 注意:它只在升级开始时问一次,得到的是新二进制的目标路径;升级把旧二进制改名成
+// <exe>.prev 之后,Linux 的 /proc/self/exe 会指向 .prev,重启时不能再问它。
 var selfExecutable = func() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -52,6 +55,13 @@ var selfExecutable = func() (string, error) {
 		return "", fmt.Errorf("解析本机可执行文件路径: %w", err)
 	}
 	return resolved, nil
+}
+
+// stripPrevSuffix 兜底修正升级路径:若拿到的已是改名后的 <exe>.prev(升级后再问
+// selfExecutable 就会这样),去掉 .prev 后缀指回新二进制,别把新版本写进备份名,
+// 也别在重启时又起旧版。
+func stripPrevSuffix(exe string) string {
+	return strings.TrimSuffix(exe, ".prev")
 }
 
 // updateViewBody 是 GET /local/update 的形状。
@@ -179,7 +189,7 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), updateInstallTimeout)
 	defer cancel()
 
-	from, to, changed, code, err := applyCLIUpdate(ctx, body.Version)
+	from, to, changed, _, code, err := applyCLIUpdate(ctx, body.Version)
 	if err != nil {
 		writeError(w, code, err.Error())
 		return
@@ -196,9 +206,11 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 // applyCLIUpdate 是 updateCLI 与一键更新(update_all.go)共用的本机升级实现:把
 // 本机二进制升到 version(空表示最新)。
 //
-// changed 报告二进制是否真的被换掉 —— 一键更新只在这个值为真时重启 mpx ui。出错时
-// code 是该回给页面的 HTTP 状态码,与 updateCLI 原来的口径一一对应。
-func applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, code int, err error) {
+// changed 报告二进制是否真的被换掉 —— 一键更新只在这个值为真时重启 mpx ui。exe 是
+// 这次实际写入的新二进制路径(升级前问到的目标路径,已去掉可能的 .prev 后缀),一键
+// 更新拿它去重启,免得重启时 os.Executable() 指到刚改名的 <exe>.prev。出错时 code
+// 是该回给页面的 HTTP 状态码,与 updateCLI 原来的口径一一对应。
+func applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
 	current := updateLocalVersion()
 	target := strings.TrimSpace(version)
 	explicit := target != ""
@@ -207,34 +219,37 @@ func applyCLIUpdate(ctx context.Context, version string) (from, to string, chang
 	if target == "" {
 		latest, lerr := src.Latest(ctx)
 		if lerr != nil {
-			return current, "", false, http.StatusBadGateway, lerr
+			return current, "", false, "", http.StatusBadGateway, lerr
 		}
 		target = latest
 	}
 
 	if derr := selfupdate.Decide(current, target, explicit, false); derr != nil {
 		if errors.Is(derr, selfupdate.ErrUpToDate) {
-			return current, current, false, 0, nil
+			return current, current, false, "", 0, nil
 		}
-		return current, target, false, http.StatusBadRequest, derr
+		return current, target, false, "", http.StatusBadRequest, derr
 	}
 
-	exe, eerr := selfExecutable()
+	path, eerr := selfExecutable()
 	if eerr != nil {
-		return current, target, false, http.StatusInternalServerError, eerr
+		return current, target, false, "", http.StatusInternalServerError, eerr
 	}
+	// 升级前问到的就是新二进制的目标路径;万一已经是改名后的 .prev(重复升级或
+	// 别的调用时机),兜底去掉后缀,保证写入与重启都落在真正的新二进制上。
+	path = stripPrevSuffix(path)
 	bin, _, ferr := src.Fetch(ctx, target, runtime.GOOS, runtime.GOARCH)
 	if ferr != nil {
-		return current, target, false, http.StatusBadGateway, ferr
+		return current, target, false, path, http.StatusBadGateway, ferr
 	}
-	if ierr := selfupdate.Install(exe, bin, target); ierr != nil {
+	if ierr := selfupdate.Install(path, bin, target); ierr != nil {
 		ic := http.StatusInternalServerError
 		if errors.Is(ierr, selfupdate.ErrNeedSudo) {
 			ic = http.StatusForbidden
 		}
-		return current, target, false, ic, ierr
+		return current, target, false, path, ic, ierr
 	}
-	return current, target, true, 0, nil
+	return current, target, true, path, 0, nil
 }
 
 // updateControl:POST /local/update/control,把请求原样转给控制面。
