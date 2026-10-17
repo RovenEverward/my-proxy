@@ -246,9 +246,32 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   await expect(page.locator("#drawer .created")).toHaveCount(0);
   // 本机向控制面取链接失败时,二维码改用页面手里的链接画,不留一张坏图。
   await page.route(/\/local\/qr\.svg\?u=/, r => r.fulfill({ status: 502, contentType: "application/json", body: "{\"error\":\"x\"}" }));
+  // 退回的二维码也是本机画的:整个过程页面只请求本机界面,不碰任何外部服务。
+  const hosts = new Set();
+  page.on("request", q => hosts.add(new URL(q.url()).origin));
   await page.reload();
   await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /\/local\/qr\.svg\?d=http/);
   expect(await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; })).toBe(true);
+  expect([...hosts]).toEqual([env.origin]);
+});
+
+test("抽屉窄视口:没设订阅前缀的提示一行显示,不折行且完整文案在 title", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await login(page, env);
+  await openUser(page, "ui-misc");
+  const line = page.locator("#drawer .send-ip-t");
+  await expect(line).toBeVisible();
+  const full = "链接里是服务器 IP，设好订阅地址后新旧链接都能用";
+  await expect(line).toHaveText(full);
+  await expect(line).toHaveAttribute("title", full);
+  const oneLine = await line.evaluate(el => {
+    const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    return el.scrollHeight <= lh * 1.5 && el.getClientRects().length === 1;
+  });
+  expect(oneLine).toBe(true);
+  // 390 宽也放得下整句(不靠省略号):「去设置」可以换到下一行。
+  expect(await line.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(page.locator("#drawer .send-ip a", { hasText: "去设置" })).toBeVisible();
 });
 
 test("删除用户:要逐字输入用户名才放行,和 mpx user rm 一致", async ({ page }) => {

@@ -10,7 +10,7 @@
 // 每次最多 checkBudget,上限给宽到十分钟。
 const DOCTOR_TIMEOUT_MS = 10 * 60 * 1000;
 // 三种结论的显示:颜色沿用状态点的 ok / warn / bad(绿 / 黄 / 红)。
-const DOC_ST = { ok: ["ok", "正常"], warn: ["warn", "警告"], fail: ["warn", "失败"] };
+const DOC_ST = { ok: ["ok", "正常"], warn: ["warn", "警告"], fail: ["bad", "失败"] };
 
 // DOC 是最近一次体检报告;null 表示还没跑过。放模块级而不是 DOM 里:页面每 30 秒
 // 会自动重绘一次,结论不能因此丢掉。
@@ -23,9 +23,12 @@ PAGES.doctor = {
   render() { return doctorPage(); },
 };
 
-const docStat = (checks, k, label) => H`<div class="card stat"><div class="l"><span class="dot ${DOC_ST[k][0]}"></span>${label}</div>
-  <div class="v" data-sum="${k}">${checks.filter(c => c.status === k).length}</div>
+const docStat = (checks, k, label) => {
+  const cnt = checks.filter(c => c.status === k).length;
+  return H`<div class="card stat"><div class="l"><span class="dot ${DOC_ST[k][0]}"></span>${label}</div>
+  <div class="v ${k === "fail" && cnt > 0 ? "c-bad" : ""}" data-sum="${k}">${cnt}</div>
   <div class="s">${k === "ok" ? "没有毛病" : k === "warn" ? "该看一眼,不算坏" : "要看,系统确实有毛病"}</div></div>`;
+};
 
 function doctorPage() {
   const head = H`<div class="ph"><div><h1>体检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>

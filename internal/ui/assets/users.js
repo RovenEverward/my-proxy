@@ -203,7 +203,7 @@ function sendBlock(u, links, d) {
         <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
         <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入,会自动拿到适合它的格式。</p>
       </div></div>
-    ${noPrefix ? H`<div class="send-ip">${ic("warn")}<span>链接里是服务器 IP。设好订阅地址后,新旧链接都能用。</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
+    ${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
     <details class="fmts"><summary>${ic("arrow", "car")}其他格式<span class="sub">客户端不认自动识别时再用</span></summary>
       <div class="fmt-l">${SEND_FORMATS.filter(([k]) => links && links[k]).map(([k, n, t]) => H`<div class="fmt"><div class="fmt-t"><b>${n}</b><span class="sub">${t}</span></div><button type="button" class="ib" data-act="copy" data-text="${links[k]}" title="复制 ${n} 链接" aria-label="复制 ${n} 链接">${ic("copy")}</button></div>`)}</div>
     </details></section>`;

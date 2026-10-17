@@ -21,6 +21,8 @@ let writeGen = 0; // 写请求的代数,见 pageData
 const nodeLabel = n => (n && (n.display || n.name)) || "";
 const NODE_LABELS = {};
 const labelOfName = name => NODE_LABELS[name] || name;
+// shortVer:版本号只取开头的 vX.Y.Z(伪版本、dirty 尾巴都舍掉),匹配不到就原样显示。
+const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); return m ? (m[0][0] === "v" ? m[0] : "v" + m[0]) : (v ?? ""); };
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 async function api(path, init = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -524,10 +526,10 @@ PAGES.overview = {
     ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次,${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
       : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}:连续失败,暂时跳过采样与收敛。</div></div>` : ""}
     <div class="grid g4">
-      ${stat("用户", users.total, H`<div class="seg-bar">${["active", "limited", "expired", "disabled"].map(k => H`<i class="${k}" style="flex:${n(k)}"></i>`)}</div>${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
+      ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
       ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个入口`)}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${s.version || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
+      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版,不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
     </div>
     <div class="grid g2 mt">
       <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>

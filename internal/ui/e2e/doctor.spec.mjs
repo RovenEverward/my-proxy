@@ -42,13 +42,26 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(rows.nth(1)).toContainText("到节点页点「应用到节点」覆盖回去");
   await expect(rows.nth(2)).toContainText("订阅 xray");
   await expect(rows.nth(2).locator(".st")).toHaveText("失败");
-  // 状态点黑白:失败和警告一样是空心圈,靠文字区分;红色只留给「连不上」。
-  await expect(rows.nth(2).locator(".dot")).toHaveClass(/warn/);
-  // 顶部汇总:ok/warn/fail 各一项,数字一律正文色。
+  // 失败恢复实心红点;警告仍是空心圈。
+  await expect(rows.nth(2).locator(".dot")).toHaveClass(/bad/);
+  // 顶部汇总:ok/warn/fail 各一项,只有失败数大于 0 时标红。
   await expect(page.locator("[data-sum=ok]")).toHaveText("1");
   await expect(page.locator("[data-sum=warn]")).toHaveText("1");
   await expect(page.locator("[data-sum=fail]")).toHaveText("1");
-  for (const k of ["ok", "warn", "fail"]) await expect(page.locator(`[data-sum=${k}]`)).not.toHaveClass(/c-(ok|warn|bad)/);
+  await expect(page.locator("[data-sum=fail]")).toHaveClass(/c-bad/);
+  for (const k of ["ok", "warn"]) await expect(page.locator(`[data-sum=${k}]`)).not.toHaveClass(/c-(ok|warn|bad)/);
+});
+
+test("报告里没有失败项时,汇总的失败是 0 且不上红", async ({ page }) => {
+  await login(page, env);
+  await page.route("**/api/doctor", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [
+    { name: "数据库", status: "ok", detail: "能读能写" },
+    { name: "节点 hk", status: "warn", detail: "配置和下发的不一致" },
+  ] }) }));
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  await expect(page.locator("[data-sum=fail]")).toHaveText("0");
+  await expect(page.locator("[data-sum=fail]")).not.toHaveClass(/c-bad/);
 });
 
 test("接口报错时把控制面的原话显示出来", async ({ page }) => {
