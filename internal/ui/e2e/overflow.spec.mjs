@@ -44,6 +44,7 @@ for (const theme of ["light", "dark"]) for (const server of SERVERS) {
       await page.waitForTimeout(300);
       expect(await overflowing(page), h).toEqual([]);
     }
-    await expect(page.locator(".profile span[title]")).toHaveAttribute("title", server);
+    // 名称是自动生成的 default 时卡片只显示地址(<b>),完整地址在 title 里。
+    await expect(page.locator(`.profile [title="${server}"]`)).toHaveCount(1);
   });
 }

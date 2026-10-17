@@ -340,7 +340,7 @@ function shell(page, body, crumb) {
   }
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
-  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
+  <div class="profile"${META.profiles ? raw(` data-act="profile-open" role="button" tabindex="0" title="切换控制面"`) : ""}><span class="dot ${CP_OK === true ? "ok" : CP_OK === false ? "bad" : ""}"></span><div class="pf-t"><b title="${cpName(META.profile, META.server) === cpAddr(META.server) ? META.server : cpName(META.profile, META.server)}">${cpName(META.profile, META.server)}</b>${cpName(META.profile, META.server) !== cpAddr(META.server) ? H`<span title="${META.server}">${cpAddr(META.server)}</span>` : ""}</div>${META.profiles ? ic("down", "pf-car") : ""}</div>
   ${raw(nav)}
   <div class="foot"><span>仅本机可访问 · token 不出本进程</span></div></aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
