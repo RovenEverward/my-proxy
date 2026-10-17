@@ -394,8 +394,8 @@ unit_addr() {
 # GIVEN 非空(用户传了 --addr)就以其为准;否则目标位置已有单元时,读它 ExecStart 里的
 # --addr 沿用 —— 升级时忘了带 --addr,不能把先前配好的 0.0.0.0 覆盖回仓库默认的回环,
 # 否则客户端拉不到订阅。没有旧单元、或读不出 --addr 时 RESOLVED_ADDR 为空,由调用方
-# 原样装仓库默认单元(127.0.0.1:8080)。只 mpx.service 这样;mpx-update.service 的
-# 健康检查固定打回环,不跟着沿用。
+# 原样装仓库默认单元(127.0.0.1:8080)。mpx-update.service 的健康检查地址由
+# update_addr 从这个结果推出来。
 resolve_addr() {
 	local unit="${2:-}" addr
 	RESOLVED_ADDR="${1:-}"
@@ -408,6 +408,21 @@ resolve_addr() {
 		note "读不出现有 mpx.service 的监听地址,按仓库默认(127.0.0.1:8080)装"
 	fi
 	RESOLVED_ADDR="$addr"
+}
+
+# update_addr ADDR:mpx-update.service 健康检查连的地址,结果放进 UPDATE_ADDR。
+# 检查只从本机连,所以控制面监听通配地址(0.0.0.0:P、[::]:P、:P)时连 127.0.0.1:P;
+# 绑在某个具体地址上(如 10.0.0.5:P、[::1]:P)时回环连不到,就连那个地址本身。
+# ADDR 为空(仓库默认 127.0.0.1:8080)时 UPDATE_ADDR 也为空,单元原样装。
+update_addr() {
+	local addr="${1:-}" host
+	UPDATE_ADDR=""
+	[[ -n "$addr" ]] || return 0
+	host="${addr%:*}"
+	case "$host" in
+		""|0.0.0.0|"[::]"|"::") UPDATE_ADDR="127.0.0.1:${addr##*:}" ;;
+		*) UPDATE_ADDR="$addr" ;;
+	esac
 }
 # <<< resolve_addr
 
@@ -458,12 +473,9 @@ resolve_addr "${ADDR:-}" "$PREFIX/etc/systemd/system/mpx.service"
 install_unit mpx.service "${RESOLVED_ADDR:-}"
 
 # 控制面升级用的两个单元:path 监视请求文件,service 由它拉起,以 root 执行换二进制。
-# health check 只从本机连控制面,所以 service 里的 --addr 固定成回环;控制面监听的
-# 是 0.0.0.0:P 时,这里就是 127.0.0.1:P。
-UPDATE_ADDR=""
-if [[ -n "$ADDR" ]]; then
-	UPDATE_ADDR="127.0.0.1:${ADDR##*:}"
-fi
+# 健康检查的地址跟着 mpx.service 最终的监听地址走(包括沿用旧单元的情况),
+# 不再只看这次有没有传 --addr。
+update_addr "${RESOLVED_ADDR:-}"
 install_unit mpx-update.service "$UPDATE_ADDR"
 install_unit mpx-update.path
 
