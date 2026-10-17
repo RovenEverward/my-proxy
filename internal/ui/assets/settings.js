@@ -1,10 +1,9 @@
-// 「订阅」「系统」两页(原设置页拆分):通用(先读后写、整体回写)、UA 识别规则(add / rm / move / reset)、
+// 「订阅」「系统」两页(原设置页拆分):通用(先读后写、整体回写)、UA 识别规则草稿、
 // 客户端模板(get / set / del)、设备(list / revoke)、备份下载。PUT /api/settings 是整体替换:每次写都先读回
 // 最新一份,只改这次动的地方,与 mpx settings 各子命令一样。
 "use strict";
 
 const TPL_FORMATS = ["clash-meta", "sing-box", "xray"];
-const RULE_RESULTS = ["clash-meta", "clash", "sing-box", "xray", "links", "base64-links", "block"];
 // asModelSettings:摆成 model.Settings 的 JSON 形状(nil 的 rules / templates 是 null)。
 const asModelSettings = v => ({ sub_url_prefix: v.sub_url_prefix || "", profile_title: v.profile_title || "", support_link: v.support_link || "", update_interval: v.update_interval || 0,
   webhook_url: v.webhook_url || "", notify_days_left: v.notify_days_left || 0, notify_usage_percent: v.notify_usage_percent || 0, rules: v.rules ?? null, templates: v.templates ?? null });
@@ -17,9 +16,7 @@ const GENERAL = [["sub_url_prefix", "订阅地址前缀", "s", "发给用户的�
   ["support_link", "支持链接", "s", ""], ["webhook_url", "Webhook", "s", "到期、超限等通知发到这里;留空不发"], ["notify_days_left", "到期前提醒(天)", "i", "0 表示关闭"], ["notify_usage_percent", "用量提醒(%)", "i", "0 表示关闭"]];
 // 原「设置」拆成两页(都还是同一份 settings,保存时先读回最新一份、只改自己那几项):
 // 「订阅」= 地址与显示 · 客户端识别 · 订阅底稿(高级);「系统」= 通知 · 设备与接入 · 备份与恢复 · 更新与版本。
-const SUB_TABS = [["", "地址与显示"], ["clients", "客户端识别"], ["templates", "订阅底稿"]];
 const SYS_TABS = [["", "通知"], ["devices", "设备与接入"], ["backup", "备份与恢复"], ["update", "更新与版本"]];
-const SUB_FIELDS = ["sub_url_prefix", "profile_title", "update_interval", "support_link"];
 const NOTIFY_FIELDS = ["webhook_url", "notify_days_left", "notify_usage_percent"];
 const tabsOf = (page, tabs, t) => H`<div class="tabs">${tabs.map(([k, l]) => H`<a class="${t === k ? "on" : ""}" href="#${page}${k ? "/" + k : ""}">${l}${k === "templates" ? H`<small class="tab-adv">高级</small>` : ""}</a>`)}</div>`;
 const tabKey = (tabs, r) => tabs.some(x => x[0] === (r[1] || "")) ? (r[1] || "") : "";
@@ -33,33 +30,6 @@ function settingsForm(s, W, keys, inner) {
     <div class="err" id="s-err" role="alert"></div>
     ${W ? H`<div class="flex8 end"><button type="button" class="btn" data-act="set-revert">还原</button><button type="submit" class="btn pri" id="s-save">保存</button></div>` : ""}</form>`;
 }
-
-PAGES.sub = {
-  title: "订阅",
-  crumb: r => H`<a href="#sub">订阅</a><i>/</i><b>${(SUB_TABS.find(t => t[0] === tabKey(SUB_TABS, r)) || SUB_TABS[0])[1]}</b>`,
-  async load(r) {
-    const settings = await api("/api/settings");
-    if (tabKey(SUB_TABS, r) !== "templates") return { settings };
-    // 列表要显示大小与行数,所以把三份生效正文都取回来(GET 没自定义时返回内置默认)。
-    const tpl = Object.fromEntries(await Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])));
-    return { settings, tpl };
-  },
-  render(d, r) {
-    const t = tabKey(SUB_TABS, r);
-    const head = H`<div class="ph"><div><h1>订阅</h1><p>用户拿到的链接长什么样、客户端拿到什么格式</p></div></div>${tabsOf("sub", SUB_TABS, t)}`;
-    if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
-    const s = d.settings, W = can("PUT", "/api/settings");
-    if (t === "") {
-      const by = Object.fromEntries(GENERAL.map(g => [g[0], g])), f = k => settingsField(s, W, by[k]);
-      return H`${head}<div class="grid g2">${settingsForm(s, W, SUB_FIELDS, H`${f("sub_url_prefix")}<div class="two">${f("profile_title")}${f("update_interval")}</div>${f("support_link")}`)}
-        <div class="card pad16 self-start"><div class="sub mb8">用户拿到的链接</div><p class="sub">${s.sub_url_prefix ? "" : H`<b>还没设订阅地址：</b>发出去的链接会直接带服务器 IP。`}订阅地址形如 <code>${s.sub_url_prefix || "http://服务器 IP:端口"}/sub/&lt;token&gt;</code>。</p>
-        <div class="callout stone mt"><div>标题里的 <code>{USERNAME}</code> 会换成用户名。</div></div></div></div>`;
-    }
-    if (t === "clients") return clientRulesCard(head, s, W);
-    return templatesTab(head, s, d.tpl || {});
-  },
-  after(d, r) { settingsAfter(d, r); },
-};
 
 PAGES.system = {
   title: "系统",
@@ -87,14 +57,6 @@ PAGES.system = {
   },
   after(d, r) { settingsAfter(d, r); },
 };
-
-function clientRulesCard(head, s, W) {
-      const R = s.rules || [];
-      return H`${head}<div class="card"><div class="ch">客户端识别<small>· 自上而下，先命中先用 · 共 ${R.length} 条</small><span class="sp"></span>${W ? H`<button class="btn ghost sm" data-act="rule-reset">恢复默认</button><button class="btn sm" data-act="rule-add">${ic("plus")}加规则</button>` : ""}</div>
-        ${R.map((x, i) => H`<div class="row"><span class="sub mono w18">${i + 1}</span><code class="ell grow">${x.pattern}</code><span class="sub ua-to" aria-label="发">${ic("arrow")}</span><span class="tag">${x.result}</span>
-          ${W ? H`<button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button class="ib sm" data-act="rule-move" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button class="ib sm" data-act="rule-rm" data-i="${i}" aria-label="删除">${ic("x", "sm")}</button>` : ""}</div>`)}
-        <div class="row sub">没命中任何规则的客户端拿到分享链接(links)。规则从上往下比对，想调整优先级就上下移动。</div></div>`;
-    }
 
 function devicesTab(head, d) {
       const D = d.devices || [], X = can("DELETE", "/api/devices");
@@ -178,32 +140,13 @@ function devicePasswordCard(PW, PWOFF) {
 /* ---- 模板 ---- */
 // 每种格式的真实含义,出自 internal/render 与 internal/server/templates.go。
 const TPL_META = {
-  "clash-meta": { lang: "yaml", L: "YAML", ext: ".yaml", inject: "proxies", how: "注入 proxies,rule-providers / proxy-groups / rules / dns 原样带出;必须有顶层 rule-providers 段" },
-  "sing-box": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "注入节点 outbounds，并把 proxy / auto / direct / block 四个占位 tag 换成本次节点的版本" },
-  "xray": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "每个入口生成一份完整配置：节点作为第一条 outbound 插进模板的 outbounds，其余原样" },
+  "clash-meta": { lang: "yaml", L: "YAML", ext: ".yaml", inject: "proxies", how: "节点放进 proxies，分流规则、策略组和 DNS 原样带出。必须有顶层 rule-providers 段。" },
+  "sing-box": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "节点放进 outbounds，proxy、auto、direct、block 四个占位换成这次的节点。" },
+  "xray": { lang: "json", L: "JSON", ext: ".json", inject: "outbounds", how: "每条连接方式生成一份完整配置，节点是第一条 outbound，其余原样。" },
 };
 const tplBytes = t => new TextEncoder().encode(t).length;
 const tplLines = t => t ? t.split("\n").length - (t.endsWith("\n") ? 1 : 0) : 0;
 const tplSize = n => n < 1024 ? `${n} B` : `${(n / 1024).toFixed(n < 10240 ? 1 : 0)} KB`;
-
-function templatesTab(head, s, bodies) {
-  const W = can("PUT", "/api/settings/templates/x"), D = can("DELETE", "/api/settings/templates/x");
-  const custom = f => !!(s.templates && s.templates[f]);
-  const n = TPL_FORMATS.filter(custom).length;
-  const rows = TPL_FORMATS.map(f => { const m = TPL_META[f], b = bodies[f] || "", c = custom(f); return H`<tr data-act="tpl-open" data-f="${f}" tabindex="0">
-    <td><div class="u"><span class="fi">${ic("tpl")}</span><div><b class="bold mono">${f}</b><div class="sub tpl-how">${m.how}</div></div></div></td>
-    <td class="hide-m"><span class="tag">${m.L}</span></td>
-    <td>${c ? H`<span class="pill on">自定义</span>` : H`<span class="pill">内置默认</span>`}</td>
-    <td class="num hide-m">${b ? tplSize(tplBytes(b)) : "—"}</td><td class="num hide-m">${b ? tplLines(b) : "—"}</td>
-    <td class="num"><div class="flex6 end"><button class="btn sm" data-act="tpl-open" data-f="${f}">${W ? (c ? "编辑" : "查看 / 自定义") : "查看"}</button>${c && D ? H`<button class="btn ghost sm c-bad" data-act="tpl-del" data-f="${f}">恢复内置</button>` : ""}</div></td></tr>`; });
-  return H`${head}
-  <div class="card pad16 mb tpl-intro"><div class="u"><span class="fi lg">${ic("tpl")}</span><div class="grow">
-    <b class="b6">订阅底稿</b><p class="sub mt4">用户拉 clash-meta / sing-box / xray 订阅时，控制面把这个人能用的节点注入模板，模板里的其余部分(分流规则、策略组、DNS…)原样发给所有人。没存自定义底稿的格式用内置默认。</p></div></div>
-    ${n === 0 ? H`<div class="callout stone mt12"><div><b>三种格式都在用内置默认</b> —— 这对多数人就够了。想改分流或 DNS：点「查看 / 自定义」在内置模板上直接改;也可以先存成文件改完，再用抽屉里的「从文件读…」传回来。</div></div>` : ""}</div>
-  <div class="card"><div class="ch">订阅底稿<small>· ${n} 个自定义 / ${TPL_FORMATS.length} 种格式</small></div>
-    <div class="tw"><table class="tpl-t"><thead><tr><th>格式</th><th class="hide-m">语言</th><th>状态</th><th class="num hide-m">大小</th><th class="num hide-m">行数</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="row sub">clash(原版)、links、base64-links 不用模板：前者固定输出最小集合，后两者是纯分享链接。控制面不记录模板的修改时间。</div></div>`;
-}
 
 // jsonErrAt 找出 JSON 第一处语法错误的字符偏移(新版浏览器的 JSON.parse 报错不带位置)。
 function jsonErrAt(t) {
@@ -251,7 +194,7 @@ async function templateDrawer(f) {
     <div id="tpl-ed"></div>
     <div class="ed-s"><span class="tag">${m.L}</span><span id="tpl-pos">行 1，列 1</span><span id="tpl-size"></span><span id="tpl-dirty" class="c-warn"></span><span class="sp"></span><span id="tpl-ok"></span></div>
     <div class="callout bad mt8 hidden" id="tpl-err" role="alert"></div></div>
-  <div class="df">${W ? H`<label class="btn sm ghost">${ic("up")}从文件读…<input type="file" id="tpl-file" accept="${m.ext},.txt,.yml" hidden></label>${m.lang === "json" ? H`<button type="button" class="btn sm ghost" id="tpl-fmt">格式化</button>` : ""}<button type="button" class="btn sm ghost" id="tpl-revert" disabled>撤销改动</button>` : ""}<span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save" disabled>保存</button>` : ""}</div></form>`, "wide");
+  <div class="df">${c && can("DELETE", "/api/settings/templates/x") ? H`<button type="button" class="btn ghost sm" data-act="tpl-del" data-f="${f}">恢复内置</button>` : ""}${W ? H`<label class="btn sm ghost">${ic("up")}从文件读…<input type="file" id="tpl-file" accept="${m.ext},.txt,.yml" hidden></label>${m.lang === "json" ? H`<button type="button" class="btn sm ghost" id="tpl-fmt">格式化</button>` : ""}<button type="button" class="btn sm ghost" id="tpl-revert" disabled>撤销改动</button>` : ""}<span class="sp" style="flex:1"></span><button type="button" class="btn" data-act="close">关闭</button>${W ? H`<button type="submit" class="btn pri" id="tpl-save" disabled>保存</button>` : ""}</div></form>`, "wide");
   const err = $("#tpl-err"), save = $("#tpl-save");
   const showErr = (r, server, jump = true) => { err.classList.toggle("hidden", !r); err.innerHTML = r ? val(H`${ic("warn")}<div>${server ? H`<b>服务端拒收：</b>` : ""}${r.msg}${r.line ? H` <button type="button" class="lnk" id="tpl-goto">跳到第 ${r.line} 行</button>` : ""}</div>`) : ""; if (r?.line) { ed.mark(r.line, jump); $("#tpl-goto").onclick = () => { ed.mark(r.line); ed.focus(); }; } };
   let t = 0;
@@ -288,27 +231,6 @@ Object.assign(ACTS, {
     run: async () => { await write("DELETE", "/api/devices/" + d.id); toast(`已吊销设备 ${d.name}`); await load(true, true); } }),
   "dpw-off": () => confirmBox({ title: "关闭设备密码接入？", text: "之后新设备不能用设备密码接入;已接入的设备不受影响。要再开，在这里设一个新密码即可。", ok: "关闭设备密码接入", danger: true,
     run: async () => { await write("DELETE", "/api/device-password", undefined, "已关闭设备密码接入;已接入的设备不受影响"); } }),
-  "rule-add": () => confirmBox({ title: "加一条客户端识别规则", text: "PATTERN 是 Go 正则，不区分大小写就以 (?i) 开头。顺序即优先级：宽的正则会盖住后面的。第一次改动会把内置默认一起落库。", ok: "加规则",
-    extra: H`<div class="field"><label for="r-pat">User-Agent 正则</label><input class="in mono" id="r-pat" placeholder="(?i)karing" autocomplete="off"></div>
-      <div class="two"><div class="field"><label for="r-res">命中后返回</label><select class="in" id="r-res">${RULE_RESULTS.map(x => H`<option>${x}</option>`)}</select></div>
-      <div class="field"><label for="r-idx">插到第几位</label><input class="in mono" id="r-idx" placeholder="留空加在最后" inputmode="numeric"></div></div>`,
-    run: async () => {
-      const pattern = $("#r-pat").value, result = $("#r-res").value, idx = $("#r-idx").value.trim();
-      if (!pattern) throw new Error("正则不能为空");
-      let at;
-      await modifySettings(s => {
-        const R = s.rules || [];
-        at = R.length;
-        if (idx) { const i = /^\d+$/.test(idx) ? +idx : NaN; if (!(i >= 1 && i <= R.length + 1)) throw new Error(`序号 ${idx} 超出范围：当前 ${R.length} 条`); at = i - 1; }
-        R.splice(at, 0, { pattern, result }); s.rules = R;
-      });
-      toast(`已加规则 ${at + 1}: ${pattern} → ${result}`); await load(true, true);
-    } }),
-  "rule-rm": d => { const i = +d.i; confirmBox({ title: `删掉第 ${i + 1} 条规则？`, text: "删完如果一条不剩，就回到内置默认。", ok: "删除规则", danger: true,
-    run: async () => { await modifySettings(s => { s.rules.splice(i, 1); }); toast(`已删掉第 ${i + 1} 条规则`); await load(true, true); } }); },
-  "rule-move": (d, b) => busy(b, async () => { const i = +d.i, to = +d.to; await modifySettings(s => { const [x] = s.rules.splice(i, 1); s.rules.splice(to, 0, x); }); toast(`已把第 ${i + 1} 条挪到第 ${to + 1} 位`); await load(true, true); }),
-  "rule-reset": () => confirmBox({ title: "恢复内置默认规则？", text: "清掉全部自定义规则，回到内置默认那套(认得出主流客户端及其改名版)。", ok: "恢复默认", danger: true,
-    run: async () => { await modifySettings(s => { s.rules = null; }); toast("已恢复内置默认规则"); await load(true, true); } }),
   // 备份经 fetch 取回再存盘:直接点链接遇上限流(429)会把错误 JSON 当文件存下来。
   "backup": (d, b) => busy(b, async () => {
     let res;
@@ -329,3 +251,312 @@ Object.assign(ACTS, {
     ok: "删除自定义底稿", danger: true, typed: d.f,
     run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已恢复 ${d.f} 为内置订阅底稿`); closeOverlays(); await load(true, true); } }),
 });
+
+const PV_CLIENTS = [["Clash Verge", "clash-verge/v2.0.3"], ["Shadowrocket", "Shadowrocket/2070 CFNetwork"], ["sing-box", "SFI/1.11.4"]];
+
+// 格式的说法:名字按对象叫,后半句说用户会拿到什么。
+const FMT = {
+  "clash-meta": ["Clash Meta 配置", "带完整分流和策略组"], clash: ["Clash 配置", "精简版，只有节点和基本规则"],
+  "sing-box": ["sing-box 配置", "带完整分流"], xray: ["Xray 配置", "每个节点一份完整配置"],
+  "base64-links": ["节点链接 · Base64", "只有节点，没有分流"], links: ["节点链接", "每行一条，只有节点"], block: ["不给订阅", "返回 404"],
+};
+const FMT_ORDER = ["clash-meta", "clash", "sing-box", "xray", "base64-links", "links", "block"];
+const toRe = p => { const i = /^\(\?i\)/.test(p); try { return new RegExp(p.replace(/^\(\?i\)/, ""), i ? "i" : ""); } catch { return null; } };
+// 浏览器的正则报错是英文,换成一句人话;服务端(Go regexp)仍是最终裁决。
+const RE_WHY = [[/Unterminated group|Unmatched '\)'/, "圆括号没配对"], [/Unterminated character class/, "方括号没配对"], [/Nothing to repeat/, "重复符前面缺了要重复的内容"], [/\\ at end of pattern/, "末尾多了一个反斜杠"]];
+const reErr = p => { if (!p.trim()) return "正则不能为空"; try { new RegExp(p.replace(/^\(\?i\)/, "")); return ""; } catch (e) { return "这条正则写错了：" + ((RE_WHY.find(([r]) => r.test(e.message)) || [0, "写法不对"])[1]) + "。"; } };
+const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.length; i++) { const r = toRe(rules[i].pattern); if (r && r.test(ua)) return i; } return rules.length; };
+const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
+const clone = v => JSON.parse(JSON.stringify(v));
+
+let SUB = null;          // { orig, draft, err, saving, pv }
+let RD = null;           // 规则抽屉里的草稿 { rules, ua }
+let ADV_OPEN = false;
+
+const FIELDS = [["sub_url_prefix", "订阅地址"], ["profile_title", "订阅名"], ["update_interval", "刷新间隔"], ["support_link", "支持链接"]];
+function changes() {
+  if (!SUB) return [];
+  const out = FIELDS.filter(([k]) => String(SUB.draft[k] ?? "") !== String(SUB.orig[k] ?? "")).map(x => x[1]);
+  if (!sameRules(SUB.draft.rules, SUB.orig.rules)) out.push("客户端识别规则");
+  return out;
+}
+const ipBase = () => META.server || location.origin;
+const subBase = d => (d.sub_url_prefix || ipBase());
+
+/* ---- 第一段:地址与显示 ---- */
+function prefixWarn(d) {
+  return d.sub_url_prefix ? "" : H`<div class="callout stone s5-warn" id="pfx-warn">${ic("info")}<div><b>不填就会把服务器 IP 发给用户。</b>现在发出去的链接是 <code>${ipBase()}/sub/…</code>，谁拿到链接都能看到这台服务器的地址。</div></div>`;
+}
+function addrForm(d, W) {
+  const ro = W && !SUB.saving ? "" : raw("readonly");
+  return H`<div class="s5-form">
+    <div class="field"><label for="f-prefix">订阅地址</label>
+      <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
+      <span class="h">发给用户的链接以它开头，一般是你的域名，前面接反向代理。</span>
+      <span class="s5-field-err" id="pfx-err" role="alert">${SUB.fieldErrors?.sub_url_prefix || ""}</span><div id="pfx-slot">${prefixWarn(d)}</div></div>
+    <div class="field"><label for="f-title">订阅名</label>
+      <div class="s5-inrow"><input class="in" id="f-title" data-k="profile_title" value="${d.profile_title}" placeholder="{USERNAME}" autocomplete="off" ${ro}>
+      ${W ? H`<button type="button" class="btn sm" data-act="s5-ins">${ic("plus")}插入用户名</button>` : ""}</div>
+      <span class="h">客户端订阅列表里显示的名字。<code>{USERNAME}</code> 会换成每个人的用户名。</span></div>
+    <div class="two">
+      <div class="field"><label for="f-int">刷新间隔</label>
+        <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
+        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h">客户端多久自动更新一次。填 0 交给客户端自己决定。</span></div>
+      <div class="field"><label for="f-help">支持链接</label>
+        <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
+        <span class="h">客户端里的帮助按钮会打开它。可以不填。</span></div>
+    </div></div>`;
+}
+function preview(d) {
+  const PV = SUB.preview;
+  const title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
+  const [cn, ua] = PV_CLIENTS[SUB.pv];
+  const R = d.rules && d.rules.length ? d.rules : SUB.builtin, i = hit(R, ua), f = i < R.length ? R[i].result : "links";
+  const iv = +d.update_interval || 0, base = subBase(d), noPfx = !d.sub_url_prefix;
+  const host = base.replace(/^https?:\/\//, ""), scheme = base.slice(0, base.length - host.length);
+  return H`<div class="pv-h"><span class="sub">${SUB.users.length ? H`<select class="in" id="pv-user" aria-label="预览用户">${SUB.users.map(u => H`<option value="${u.username}" ${u.username === PV.user ? raw("selected") : ""}>${u.username}</option>`)}</select>` : PV.user} 的客户端里会看到${SUB.users.length ? "" : H`<span class="tag lab">示例</span>`}</span><span class="sp"></span>
+      <div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div></div>
+    <div class="pv-app">
+      <div class="pv-prof"><span class="pv-ico">${ic("sub")}</span><div class="grow"><b class="pv-t">${title}</b>
+        <div class="pv-m"><span>${fmtBytes(PV.used)} / ${PV.limit ? fmtBytes(PV.limit) : "不限流量"}</span> · <span>${PV.expire ? `${PV.expire} 到期` : "永不过期"}</span></div></div>
+        ${d.support_link ? H`<span class="pv-help" title="${d.support_link}">${ic("help")}</span>` : ""}</div>
+      <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
+      <div class="pv-meta"><span>${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "由客户端决定多久更新"}</span>${d.support_link ? H`<span class="ell">${ic("help")}${d.support_link.replace(/^https?:\/\//, "")}</span>` : ""}</div>
+      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span><span class="sub">还有 ${PV.more} 个</span></div>` : ""}
+    </div>
+    ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>/sub/${PV.token}</code>
+      <button type="button" class="ib sm" data-act="copy" data-text="${base}/sub/${PV.token}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
+    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>，${(FMT[f] || FMT.links)[1]}。</p>`;
+}
+function addrCard(d, W) {
+  return H`<section class="card s5-sec" id="sec-addr"><div class="ch">地址与显示<small>· 用户拿到的链接，和客户端里显示的样子</small></div>
+    <div class="s5-addr">${addrForm(d, W)}<div class="s5-pv" id="pv">${preview(d)}</div></div></section>`;
+}
+
+/* ---- 第二段:客户端识别 ---- */
+function ruleList(R, O) {
+  return H`<div class="zebra">${R.map((r, i) => { const n = r.label, [fn, fd] = FMT[r.result] || [r.result, ""];
+    const chg = !O[i] || O[i].pattern !== r.pattern || O[i].result !== r.result;
+    return H`<button type="button" class="zr ${chg ? "chg" : ""}" data-act="s5-rules" data-i="${i}"><span class="zr-n">${i + 1}</span>
+      <span class="zr-c">${n ? n : H`<code>${r.pattern.replace(/^\(\?i\)/, "")}</code>`}</span>
+      <span class="zr-to">${ic("arrow")}</span><span class="zr-f"><b>${fn}</b><span class="sub">${fd}</span>${chg ? H`<span class="tag lab zr-chg">改过</span>` : ""}</span></button>`; })}
+    <div class="zr zr-last"><span class="zr-n">${ic("more")}</span><span class="zr-c">其他客户端</span><span class="zr-to">${ic("arrow")}</span>
+      <span class="zr-f"><b>节点链接</b><span class="sub">用浏览器打开会看到订阅页</span></span></div></div>`;
+}
+function clientsCard(d, W) {
+  const R = d.rules && d.rules.length ? d.rules : SUB.builtin, custom = !sameRules(R, SUB.builtin);
+  return H`<section class="card s5-sec" id="sec-clients"><div class="ch">客户端识别<small>· 同一条链接，不同客户端各自拿到能用的格式</small><span class="sp"></span>
+      <span class="pill ${custom ? "on" : ""}">${custom ? `自定义 · ${R.length} 条` : "内置规则"}</span>
+      ${W ? H`<button type="button" class="btn sm" data-act="s5-rules">${ic("sliders")}自定义规则</button>` : ""}</div>
+    ${ruleList(R, SUB.orig.rules && SUB.orig.rules.length ? SUB.orig.rules : SUB.builtin)}
+    <p class="s5-note">从上往下认，先认出的先用。想加新客户端或改格式，点「自定义规则」。</p></section>`;
+}
+
+/* ---- 第三段:高级 · 订阅底稿 ---- */
+const TPL_ROWS = [["clash-meta", "Clash Meta", "Clash Verge 等拿到的配置。分流规则、策略组、DNS 都在这里"], ["sing-box", "sing-box", "sing-box、Hiddify 拿到的配置"], ["xray", "Xray", "每个节点生成一份完整配置"]];
+function advCard(d, bodies) {
+  const custom = f => !!(d.templates && d.templates[f]), n = TPL_ROWS.filter(([f]) => custom(f)).length;
+  return H`<section class="card s5-sec s5-adv ${ADV_OPEN ? "open" : ""}" id="sec-adv">
+    <button type="button" class="ch s5-sum" data-act="s5-adv" aria-expanded="${ADV_OPEN}"><span class="s5-sum-i">${ic("tpl")}</span>
+      <span class="s5-sum-t">高级 · 订阅底稿<small>分流规则、策略组和 DNS 写在这里，多数人不用改。</small></span><span class="sp"></span>
+      <span class="sub">${n ? `${n} 种自定义` : "3 种都用内置"}</span>${ic("down", "s5-car")}</button>
+    ${ADV_OPEN ? H`<div class="zebra">${TPL_ROWS.map(([f, name, desc]) => { const b = bodies[f] || "";
+      return H`<button type="button" class="zr zr-tpl" data-act="tpl-open" data-f="${f}"><span class="zr-c"><b>${name}</b><span class="sub">${desc}</span></span>
+        <span class="pill ${custom(f) ? "on" : ""}">${custom(f) ? "自定义" : "内置"}</span><span class="sub mono hide-m">${b ? `${tplLines(b)} 行 · ${tplSize(tplBytes(b))}` : ""}</span>
+        <span class="btn sm">${ic("tpl")}打开</span></button>`; })}</div>
+      <p class="s5-note">节点会被自动放进底稿，其余部分原样发给所有人。原版 Clash 和节点链接不用底稿。</p>` : ""}</section>`;
+}
+
+/* ---- 保存条 ---- */
+function saveBar() {
+  const c = changes();
+  if (!can("PUT", "/api/settings") || !c.length) return "";
+  return H`<div class="s5-bar" role="region" aria-label="未保存的改动"><span class="s5-bar-t"><b>有 ${c.length} 处改动</b><span class="sub ell" title="${c.join("、")}">${c.join("、")}</span></span>
+    ${SUB.err ? H`<span class="s5-bar-err" role="alert">${SUB.err}</span>` : ""}<span class="sp"></span>
+    <button type="button" class="btn" data-act="s5-discard" ${SUB.saving ? raw("disabled") : ""}>放弃</button>
+    <button type="button" class="btn pri ${SUB.saving ? "busy" : ""}" data-act="s5-save" ${SUB.saving ? raw("disabled") : ""}>保存</button></div>`;
+}
+function refresh() {
+  if (route[0] !== "sub") return;
+  const pv = $("#pv"); if (pv) pv.innerHTML = val(preview(SUB.draft));
+  const ps = $("#pfx-slot"); if (ps) ps.innerHTML = val(prefixWarn(SUB.draft));
+  for (const el of document.querySelectorAll(".s5 [data-k]")) el.readOnly = SUB.saving || !can("PUT", "/api/settings");
+  wirePreview();
+  if ($("#pfx-err")) $("#pfx-err").textContent = SUB.fieldErrors?.sub_url_prefix || "";
+  if ($("#int-err")) $("#int-err").textContent = SUB.fieldErrors?.update_interval || "";
+  const sb = $("#sb"); if (sb) sb.innerHTML = val(saveBar());
+}
+
+PAGES.sub = {
+  title: "订阅",
+  crumb: () => H`<b>订阅</b>`,
+  async load(r) {
+    if (r[1] === "templates") ADV_OPEN = true;
+    const [settings, builtin, users, pulls, nodes, inbounds, plans] = await Promise.all([
+      api("/api/settings"), api("/api/settings/builtin-rules"), subUsers(),
+      api("/api/sub-pulls").catch(() => []), api("/api/nodes").catch(() => []),
+      api("/api/inbounds").catch(() => []), api("/api/plans").catch(() => []),
+    ]);
+    const recent = [...(pulls || [])].sort((a, b) => new Date(b.last_pulled_at) - new Date(a.last_pulled_at)).find(p => users.some(u => u.username === p.username));
+    const user = users.find(u => u.username === SUB?.preview.user) || users.find(u => u.username === recent?.username) || users[0];
+    const preview = await subPreview(user, { users, nodes, inbounds, plans });
+    const tpl = ADV_OPEN ? await subTemplates() : {};
+    return { settings, builtin, users, nodes, inbounds, plans, preview, tpl };
+  },
+  render(d) {
+    const head = H`<div class="ph"><div><h1>订阅</h1><p>用户拿到的链接、客户端里的显示，和不同客户端拿到的格式</p></div></div>`;
+    if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
+    if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
+    if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0 };
+    // 刷新不丢草稿，已经打开的底稿与用户数据仍取最新值。
+    Object.assign(SUB, { builtin: d.builtin, users: d.users, preview: d.preview });
+    const W = can("PUT", "/api/settings");
+    return H`${head}<div class="s5">${addrCard(SUB.draft, W)}${clientsCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
+  },
+  after(d, r) {
+    if (!d) { subAnchorKey = ""; return; }
+    if (!SUB) return;
+    wirePreview();
+    subAnchor(r);
+    for (const el of document.querySelectorAll("[data-k]")) el.addEventListener("input", () => {
+      const k = el.dataset.k; let v = el.value;
+      if (k === "update_interval") v = /^\d+$/.test(v.trim()) ? +v.trim() : v;
+      SUB.draft[k] = v; SUB.err = ""; SUB.fieldErrors = {}; refresh();
+    });
+  },
+};
+
+/* ---- 「自定义规则」抽屉 ---- */
+function rulesBody() {
+  const R = RD.rules, h = hit(R, RD.ua);
+  return H`<div class="field rd-test"><label for="rd-ua">${ic("flask")}试一个客户端</label>
+      <input class="in mono" id="rd-ua" value="${RD.ua}" placeholder="粘贴 User-Agent，比如 clash-verge/v2.0.3" autocomplete="off" spellcheck="false">
+      <span class="h" id="rd-hit">${RD.ua ? (h < R.length ? H`命中第 <b>${h + 1}</b> 条，拿到 <b>${FMT[R[h].result]?.[0] || R[h].result}</b>。` : H`一条都没命中，拿到 <b>节点链接</b>。`) : "看看它会命中哪一条。"}</span></div>
+    <div class="rd-list">${R.map((r, i) => { const e = reErr(r.pattern);
+      return H`<div class="rd-row ${i === h ? "hit" : ""} ${RD.focus === i ? "focus" : ""}" data-i="${i}"><span class="zr-n">${i + 1}</span>
+        <div class="rd-main"><input class="in mono" data-rp="${i}" value="${r.pattern}" aria-label="第 ${i + 1} 条的 User-Agent 正则" spellcheck="false">
+          ${r.label ? H`<span class="h">${r.label}</span>` : ""}${e ? H`<span class="rd-err">${e}</span>` : ""}</div>
+        <span class="zr-to">${ic("arrow")}</span>
+        <select class="in" data-rf="${i}" aria-label="第 ${i + 1} 条拿到的格式">${FMT_ORDER.map(f => H`<option value="${f}" ${f === r.result ? raw("selected") : ""}>${(FMT[f] || FMT.links)[0]}</option>`)}</select>
+        <span class="rd-ops"><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button type="button" class="ib sm" data-act="rd-rm" data-i="${i}" aria-label="删除">${ic("trash")}</button></span></div>`; })}
+      <div class="rd-row rd-last"><span class="zr-n">${ic("more")}</span><div class="rd-main"><span>其他客户端</span></div><span class="zr-to">${ic("arrow")}</span><span class="rd-fixed">节点链接</span><span class="rd-ops"></span></div></div>
+    <button type="button" class="btn sm" data-act="rd-add">${ic("plus")}加一条</button>
+    <p class="s5-note">按 Go 正则写，开头加 <code>(?i)</code> 就不分大小写。具体的放前面，宽的放后面，免得盖住前面的。</p>`;
+}
+function rulesDrawer(focus) {
+  const R = SUB.draft.rules && SUB.draft.rules.length ? SUB.draft.rules : SUB.builtin;
+  RD = { rules: clone(R), ua: "", focus: focus ?? -1 };
+  openDrawer(H`<div class="dh"><div class="dt"><h2>自定义规则</h2><span class="sub">按 User-Agent 认客户端，从上往下比，先命中的先用</span></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+    <div class="db rd-db" id="rd-body">${rulesBody()}</div>
+    <div class="df"><button type="button" class="btn ghost" data-act="rd-reset">${ic("undo")}恢复内置</button><span class="sp" style="flex:1"></span><span class="df-why" id="rd-why"></span><button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" data-act="rd-done" id="rd-done">完成</button></div>`, "wide");
+  rdWire();
+  if (focus != null) requestAnimationFrame(() => document.querySelector(`.rd-row[data-i="${focus}"]`)?.scrollIntoView({ block: "center" }));
+}
+function rdPaint() { const y = $("#rd-body").scrollTop; $("#rd-body").innerHTML = val(rulesBody()); $("#rd-body").scrollTop = y; rdWire(); }
+function rdWire() {
+  const bad = RD.rules.some(r => reErr(r.pattern));
+  $("#rd-done").disabled = bad; $("#rd-why").innerHTML = bad ? val(H`${ic("warn")}先改好写错的正则`) : "";
+  $("#rd-ua").addEventListener("input", e => { RD.ua = e.target.value; const p = e.target.selectionStart; rdPaint(); const n = $("#rd-ua"); n.focus(); n.setSelectionRange(p, p); });
+  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("change", () => { const r = RD.rules[+el.dataset.rp]; if (r.pattern !== el.value) delete r.label; r.pattern = el.value; rdPaint(); });
+  for (const el of document.querySelectorAll("[data-rf]")) el.addEventListener("change", () => { RD.rules[+el.dataset.rf].result = el.value; rdPaint(); });
+}
+
+Object.assign(ACTS, {
+  "s5-ins": () => { if (SUB.saving || !can("PUT", "/api/settings")) return; const el = $("#f-title"), p = el.selectionStart ?? el.value.length; el.value = el.value.slice(0, p) + "{USERNAME}" + el.value.slice(el.selectionEnd ?? p); el.dispatchEvent(new Event("input")); el.focus(); },
+  "s5-pv": d => { SUB.pv = +d.i; refresh(); },
+  "s5-adv": async () => {
+    ADV_OPEN = !ADV_OPEN; paint();
+    if (ADV_OPEN) {
+      try { const data = current.data; data.tpl = await subTemplates(); if (current.data === data && route[0] === "sub") paint(); }
+      catch (e) { toast(e.message, true); }
+    }
+  },
+  "s5-rules": d => { if (can("PUT", "/api/settings") && !SUB.saving) rulesDrawer(d.i != null ? +d.i : undefined); },
+  "s5-discard": () => { if (SUB.saving) return; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; paint(); },
+  "s5-save": async () => {
+    if (!can("PUT", "/api/settings") || SUB.saving || !changes().length) return;
+    const d = SUB.draft, errors = {};
+    if (d.sub_url_prefix && !/^https?:\/\//.test(d.sub_url_prefix)) errors.sub_url_prefix = "订阅地址要以 http:// 或 https:// 开头";
+    if (!/^\d+$/.test(String(d.update_interval)) || !Number.isSafeInteger(+d.update_interval)) errors.update_interval = "刷新间隔要是非负整数";
+    SUB.fieldErrors = errors;
+    if (Object.keys(errors).length) { SUB.err = Object.values(errors).join("；"); refresh(); return; }
+    SUB.saving = true; SUB.err = ""; refresh();
+    const ks = FIELDS.map(x => x[0]).filter(k => String(d[k] ?? "") !== String(SUB.orig[k] ?? ""));
+    const rules = !sameRules(d.rules, SUB.orig.rules), n = changes().length;
+    try {
+      await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
+      SUB = null; toast(`已保存 ${n} 处改动`); await load(true, true);
+    } catch (e) {
+      SUB.saving = false;
+      if (e.status === 400 && e.message.includes("订阅地址")) SUB.fieldErrors.sub_url_prefix = e.message;
+      SUB.err = `没保存上：${e.message.replace(/[。.]$/, "")}。改动还在，可以再点一次保存。`; refresh();
+    }
+  },
+  "rd-mv": d => { const i = +d.i, to = +d.to; const [x] = RD.rules.splice(i, 1); RD.rules.splice(to, 0, x); rdPaint(); },
+  "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },
+  "rd-add": () => { RD.rules.push({ pattern: "(?i)", result: "clash-meta" }); rdPaint(); const els = document.querySelectorAll("[data-rp]"); const el = els[els.length - 1]; el.focus(); el.setSelectionRange(4, 4); },
+  "rd-reset": () => { RD.rules = clone(SUB.builtin); rdPaint(); },
+  "rd-done": () => { if (RD.rules.some(r => reErr(r.pattern))) return; SUB.draft.rules = clone(RD.rules.length ? RD.rules : SUB.builtin); SUB.err = ""; closeOverlays(); paint(); },
+});
+
+// 用户列表分页取全，预览下拉和默认人选使用同一份数据。
+async function subUsers() {
+  const users = [];
+  for (let offset = 0; ; offset = users.length) {
+    const page = await api(`/api/users?limit=1000&offset=${offset}`);
+    users.push(...page.users);
+    if (!page.users.length || users.length >= page.total) return users;
+  }
+}
+function subTemplates() {
+  return Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
+}
+async function subPreview(u, data) {
+  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "东京 A", proto: "VLESS · Reality", more: 3 };
+  const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0 };
+  try { const links = await api(userPath(u.username) + "/links"); out.token = (links.auto || "").split("/sub/")[1] || ""; }
+  catch (e) { toast(e.message, true); }
+  // 与订阅下发一样，套餐节点、套餐入站和额外授权取并集，排除排水与满员入站。
+  // 授权数据不全时不猜测，省略无法确认的节点行。
+  if (u.status !== "active") return out;
+  const available = data.nodes.filter(n => !n.draining).flatMap(n => {
+    const i = data.inbounds.find(i => {
+      if (i.node_id !== n.id || subAllows(u, i, data.plans) !== true) return false;
+      if (!i.max_users) return true;
+      const active = data.users.filter(v => v.status === "active"), auth = active.map(v => subAllows(v, i, data.plans));
+      return !auth.includes(null) && auth.filter(Boolean).length < i.max_users;
+    });
+    return i ? [{ n, i }] : [];
+  });
+  if (available.length) {
+    const { n, i } = available[0]; out.node = nodeLabel(n); out.proto = `${i.protocol.toUpperCase()}${i.security && i.security !== "none" ? " · " + i.security : ""}`; out.more = available.length - 1;
+  }
+  return out;
+}
+function subAllows(u, i, plans) {
+  if ((u.inbound_ids || []).includes(i.id)) return true;
+  if (!u.plan_id) return !(u.inbound_ids || []).length;
+  const p = plans.find(p => p.id === u.plan_id);
+  return p ? !!(p.all_nodes || (p.node_ids || []).includes(i.node_id) || (p.inbound_ids || []).includes(i.id)) : null;
+}
+let subPreviewSeq = 0;
+function wirePreview() {
+  $("#pv-user")?.addEventListener("change", async e => {
+    const state = SUB, data = current.data, seq = ++subPreviewSeq;
+    const user = state.users.find(u => u.username === e.target.value);
+    // 先切名字和用量，取链接期间不展示上一个人的 token。
+    state.preview = { user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "" };
+    data.preview = state.preview; refresh();
+    const preview = await subPreview(user, data);
+    if (seq !== subPreviewSeq || SUB !== state) return;
+    state.preview = preview; data.preview = preview; refresh();
+  });
+}
+let subAnchorKey = "";
+function subAnchor(r) {
+  const key = r.join("/");
+  if (subAnchorKey === key) return;
+  subAnchorKey = key;
+  const id = r[1] === "clients" ? "sec-clients" : r[1] === "templates" ? "sec-adv" : "sec-addr";
+  requestAnimationFrame(() => { if (route.join("/") === key) document.getElementById(id)?.scrollIntoView({ block: "start" }); });
+}

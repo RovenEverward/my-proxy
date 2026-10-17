@@ -61,47 +61,39 @@ test("通用设置:只改一项,其余字段、规则、模板都不丢;与 sett
   expect(after.rules[0]).toEqual({ pattern: "(?i)karing", result: "sing-box" });
 });
 
-test("识别规则:add / move / rm / reset 与 CLI 一致,删除和恢复默认要确认", async ({ page }) => {
+test("识别规则：抽屉里增删排序只改草稿，页面统一保存", async ({ page }) => {
   await login(page, env);
-  const add = await viaCLI("settings", "rules", "add", "(?i)hiddify", "--result", "clash-meta", "--index", "2");
+  const before = await getSettings();
   await page.goto(env.origin + "/#settings/rules");
-  await page.click("[data-act=rule-add]");
-  await page.fill("#r-pat", "(?i)hiddify");
-  await page.selectOption("#r-res", "clash-meta");
-  await page.fill("#r-idx", "2");
-  await expect(page.locator("#modal.open")).not.toContainText("mpx ");
-  await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已加规则 2");
-  expect(normalize(env.takeLog(), [])).toEqual(add.reqs);
-  await putSettings(add.before);
-
-  const move = await viaCLI("settings", "rules", "move", "1", "2");
-  await page.reload();
-  await page.click("[data-act=rule-move][data-i='0'][data-to='1']");
-  await expect(page.locator(".toast")).toContainText("挪到第 2 位");
-  expect(normalize(env.takeLog(), [])).toEqual(move.reqs);
-  await putSettings(move.before);
-
-  const rm = await viaCLI("settings", "rules", "rm", "1");
-  await page.reload();
-  await page.click("[data-act=rule-rm][data-i='0']");
-  await page.click("[data-act=modal-cancel]");
+  await page.click(".ch [data-act=s5-rules]");
+  env.takeLog();
+  await page.click("[data-act=rd-add]");
+  const added = page.locator("[data-rp]").last();
+  await added.fill("(?i)^myclient/");
+  await added.press("Tab");
+  await page.locator('[data-act=rd-mv][aria-label="上移"]').last().click();
+  await page.locator("[data-act=rd-rm]").last().click();
+  await page.click("[data-act=rd-done]");
+  await expect(page.locator("#sb")).toContainText("客户端识别规则");
   expect(env.takeLog()).toEqual([]);
-  await page.click("[data-act=rule-rm][data-i='0']");
-  await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已删掉第 1 条");
-  expect(normalize(env.takeLog(), [])).toEqual(rm.reqs);
-  await putSettings(rm.before);
-
-  const reset = await viaCLI("settings", "rules", "reset");
-  await page.reload();
-  await page.click("[data-act=rule-reset]");
-  await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已恢复内置默认规则");
-  expect(normalize(env.takeLog(), [])).toEqual(reset.reqs);
+  await page.click("[data-act=s5-save]");
+  await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
   const after = await getSettings();
-  expect(after.templates.xray).toBe(reset.before.templates.xray); // 模板没丢
-  expect(after.webhook_url).toBe(reset.before.webhook_url);
+  expect(after.rules).not.toEqual(before.rules);
+  expect(after.templates).toEqual(before.templates);
+  expect(after.webhook_url).toBe(before.webhook_url);
+  await page.click(".ch [data-act=s5-rules]");
+  await page.click("[data-act=rd-reset]");
+  await page.click("[data-act=rd-done]");
+  // 恢复内置也要经过页面保存条，完成抽屉时还未写库。
+  expect((await getSettings()).rules).toEqual(after.rules);
+  // 上一次保存的 toast 可能还在,等这次 PUT 真的回来再读库。
+  const put = page.waitForResponse(r => r.request().method() === "PUT" && /\/api\/settings$/.test(r.url()));
+  await page.click("[data-act=s5-save]");
+  expect((await put).status()).toBe(200);
+  await expect(page.locator("#sb")).toBeEmpty();
+  const builtin = await (await cp("/api/settings/builtin-rules")).json();
+  expect((await getSettings()).rules).toEqual(builtin);
 });
 
 test("模板:set / del 与 CLI 一致(正文原样发出)", async ({ page }) => {
@@ -114,7 +106,7 @@ test("模板:set / del 与 CLI 一致(正文原样发出)", async ({ page }) => 
   await env.cli("settings", "template", "del", "sing-box");
   const delCLI = normalize(env.takeLog(), []);
   await page.goto(env.origin + "/#settings/templates");
-  await expect(page.locator("tr[data-f='sing-box']")).toContainText("内置默认");
+  await expect(page.locator(".zr-tpl[data-f='sing-box']")).toContainText("内置");
   await page.click("button[data-act=tpl-open][data-f='sing-box']");
   const ta = page.locator("#tpl-ed textarea");
   await expect(ta).toHaveValue(builtin); // 原文,不经 JSON 重排
@@ -124,7 +116,8 @@ test("模板:set / del 与 CLI 一致(正文原样发出)", async ({ page }) => 
   await page.click("#tpl-save");
   await expect(page.locator(".toast")).toContainText("已保存 sing-box 订阅底稿");
   expect(normalize(env.takeLog(), [])).toEqual(setCLI);
-  await expect(page.locator("tr[data-f='sing-box']")).toContainText("自定义");
+  await expect(page.locator(".zr-tpl[data-f='sing-box']")).toContainText("自定义");
+  await page.click("button[data-act=tpl-open][data-f='sing-box']");
   await page.click("button[data-act=tpl-del][data-f='sing-box']");
   await expect(page.locator("#okb")).toBeDisabled(); // 危险操作:要输入格式名
   await page.fill("#typed", "sing-box");

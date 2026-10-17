@@ -106,9 +106,10 @@ test("删除节点:节点列表立刻更新", async ({ page }) => {
 test("恢复内置模板:模板列表立刻显示内置默认", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#settings/templates");
-  await expect(page.locator("tr[data-f='xray']")).toContainText("自定义");
+  await expect(page.locator(".zr-tpl[data-f='xray']")).toContainText("自定义");
+  await page.click("button[data-act=tpl-open][data-f='xray']");
   await page.click("button[data-act=tpl-del][data-f='xray']");
   await page.fill("#typed", "xray");
   await page.click("#okb");
-  await expect(page.locator("tr[data-f='xray']")).toContainText("内置默认", NOW);
+  await expect(page.locator(".zr-tpl[data-f='xray']")).toContainText("内置", NOW);
 });

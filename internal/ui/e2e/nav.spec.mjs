@@ -30,7 +30,10 @@ for (const [from, to] of [
     await login(page, env);
     await page.goto(env.origin + "/#" + from);
     await expect(page).toHaveURL(new RegExp("#" + to.replace("/", "\\/") + "$"));
-    await expect(page.locator(".tabs a.on")).toHaveCount(1);
+    if (to.startsWith("sub")) {
+      await expect(page.locator(".tabs")).toHaveCount(0);
+      await expect(page.locator(to.endsWith("clients") ? "#sec-clients" : to.endsWith("templates") ? "#sec-adv.open" : "#sec-addr")).toBeInViewport();
+    } else await expect(page.locator(".tabs a.on")).toHaveCount(1);
   });
 }
 
@@ -99,9 +102,9 @@ test("订阅页只改订阅那几项,通知字段原样带回;系统页反过来
   const before = seeded;
   await page.goto(env.origin + "/#sub");
   await expect(page.locator("#s-webhook_url")).toHaveCount(0);
-  await page.fill("#s-sub_url_prefix", "https://sub.example.com");
-  await page.click("#s-save");
-  await expect(page.locator(".toast")).toContainText("已保存订阅设置");
+  await page.fill("#f-prefix", "https://sub.example.com");
+  await page.click("[data-act=s5-save]");
+  await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
   expect(puts).toHaveLength(1);
   expect(puts[0].sub_url_prefix).toBe("https://sub.example.com");
   expect(puts[0].webhook_url).toBe(before.webhook_url);
