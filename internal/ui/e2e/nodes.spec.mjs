@@ -1,4 +1,4 @@
-// 节点、入站、入口页的写操作:每一条都和对应的 mpx node / inbound / host 命令对照。
+// 节点、连接方式、对外地址页的写操作:每一条都和对应的 mpx node / inbound / host 命令对照。
 // 节点地址是 127.0.0.1:1,SSH 立刻被拒,于是下发、安装、体检都会失败 —— 正好检查页面
 // 把控制面的原话报出来。
 import { test, expect } from "@playwright/test";
@@ -8,7 +8,7 @@ let env;
 const cliTry = async (...a) => { try { await env.cli(...a); } catch { /* 失败也要比请求 */ } };
 test.beforeAll(async () => {
   env = await startEnv();
-  // 节点 1/2、3/4 两两是 twin;入站 1/2、3/4 分别挂在节点 1/2 上;入口 1/2 挂在入站 1/2 上。
+  // 节点 1/2、3/4 两两是 twin;连接方式 1/2、3/4 分别挂在节点 1/2 上;对外地址 1/2 挂在连接方式 1/2 上。
   for (const n of ["cli-n", "ui-n", "cli-rm", "ui-rm"]) await env.seed("node", "add", n, "--address", "127.0.0.1", "--ssh-port", "1");
   for (const port of ["443", "2000"]) for (const node of ["1", "2"]) await env.seed("inbound", "add", "--node", node, "--protocol", "vless", "--port", port, "--security", "reality", "--sni", "www.cloudflare.com", "--reality-dest", "www.cloudflare.com:443", "--tag", `t-${node}-${port}`);
   for (const inb of ["1", "2"]) await env.seed("host", "add", "--inbound", inb, "--remark", "入口", "--address", "a.example.com");
@@ -27,7 +27,7 @@ async function openConnEdit(page, id) {
   await expect(page.locator("#drawer.open")).toHaveCount(0);
   // 保存后整页重画:按下和松开要是落在新旧两个元素上,浏览器就不发 click。所以等这一轮取数、
   // 重画结束(<html data-loading> 摘掉)再点,只点一次 —— 连点会多耗限流桶,控制面回 429 反而更慢。
-  // 点行尾的铅笔:行中间可能正好是「N 个入口」展开按钮。
+  // 点行尾的铅笔:行中间可能正好是「N 个对外地址」展开按钮。
   await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
   await page.locator(`.cx-row[data-id='${id}'] button[data-act=conn-edit]`).click();
   await expect(page.locator("#drawer.open #conn-form")).toBeVisible({ timeout: 20000 });
@@ -175,14 +175,14 @@ for (const [title, args, act, fill] of [
   });
 }
 
-test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async ({ page }) => {
+test("添加连接方式:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async ({ page }) => {
   await login(page, env);
   const opt = { ids: ["1", "2"] };
   env.takeLog();
   await env.cli("inbound", "add", "--node", "1", "--protocol", "vless", "--port", "8080", "--network", "ws", "--ws-path", "/ws", "--max-users", "50");
   await env.cli("inbound", "add", "--node", "1", "--protocol", "hysteria2", "--port", "8443", "--sni", "hy.example.com", "--cert-file", "/etc/c.pem", "--key-file", "/etc/k.pem");
   const fromCLI = take([], opt);
-  // 节点详情的「连接方式」卡片:添加连接 → 其他协议… 打开完整入站表单。
+  // 节点详情的「连接方式」卡片:添加连接 → 其他协议… 打开完整连接方式表单。
   await page.goto(env.origin + "/#nodes/2");
   await page.click(".conn-card [data-act=conn-new]");
   await page.click("#drawer.open [data-act=conn-other]");
@@ -193,7 +193,7 @@ test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async
   await page.fill("#i-max_users", "50");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
   await page.click("#x-later");
-  await expect(page.locator(".toast")).toContainText("已创建入站");
+  await expect(page.locator(".toast")).toContainText("已创建连接方式");
   await page.click(".conn-card [data-act=conn-new]");
   await page.click("#drawer.open [data-act=conn-other]");
   await expect(page.locator("#drawer.open #i-port")).toHaveValue(""); // 旧抽屉关上后还在 DOM 里,等新表单
@@ -206,11 +206,11 @@ test("添加入站:与 mpx inbound add 一致(含 QUIC 默认 udp + tls)", async
   await page.fill("#i-key_file", "/etc/k.pem");
   await expect(page.locator("#inb-form")).not.toContainText("mpx ");
   await page.click("#x-later");
-  await expect(page.locator(".toast")).toContainText("已创建入站");
+  await expect(page.locator(".toast")).toContainText("已创建连接方式");
   expect(take([], opt)).toEqual(fromCLI);
 });
 
-test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
+test("编辑连接方式:与 mpx inbound edit 一致", async ({ page }) => {
   await login(page, env);
   const names = ["t-1-443", "t-2-443"], opt = { ids: ["1", "2"], drop: ["reality_pub", "short_ids"] };
   env.takeLog();
@@ -218,7 +218,7 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   const fromCLI = take(names, opt);
   await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='2']");
-  // 入站字段收在编辑连接抽屉的「高级」里。
+  // 连接方式字段收在编辑连接抽屉的「高级」里。
   await page.click("#conn-form details.adv2 > summary");
   await page.fill("#i-port", "9443");
   await page.fill("#i-sni", "www.example.com");
@@ -233,7 +233,7 @@ test("编辑入站:与 mpx inbound edit 一致", async ({ page }) => {
   expect(take(names, opt)).toEqual(fromCLI);
 });
 
-test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page }) => {
+test("对外地址:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page }) => {
   await login(page, env);
   const opt = { ids: ["1", "2"] };
   env.takeLog();
@@ -245,7 +245,7 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   const rmCLI = take([], opt);
 
   await page.goto(env.origin + "/#nodes/2");
-  // 入口按钮在编辑连接抽屉的「高级」里。
+  // 对外地址按钮在编辑连接抽屉的「高级」里。
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-new][data-inb='2']");
   await page.fill("#h-remark", "直连");
@@ -253,24 +253,24 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   await page.fill("#h-alpn", "h2,http/1.1");
   await expect(page.locator("#host-form")).not.toContainText("mpx ");
   await page.click("#h-save");
-  await expect(page.locator(".toast")).toContainText("已创建入口「直连」");
+  await expect(page.locator(".toast")).toContainText("已创建对外地址「直连」");
   expect(take([], opt)).toEqual(addCLI);
 
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
-  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「入口」");
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑对外地址「入口」");
   await page.fill("#h-address", "");
   await page.fill("#h-remark", "备用");
   await expect(page.locator("#host-form")).not.toContainText("mpx ");
   await page.click("#h-save");
-  await expect(page.locator(".toast")).toContainText("已更新入口「备用」");
+  await expect(page.locator(".toast")).toContainText("已更新对外地址「备用」");
   expect(take([], opt)).toEqual(editCLI);
 
   await openConnEdit(page, 2);
   await page.click("[data-act=conn-host-edit][data-id='2']");
-  await expect(page.locator("#drawer.open h2")).toHaveText("编辑入口「备用」");
-  // 删除入口和节点详情一样是灰卡灰按钮,红色只留给确认框里最后那下。
-  const hzone = page.locator("#drawer.open .card").filter({ hasText: "删除入口" });
+  await expect(page.locator("#drawer.open h2")).toHaveText("编辑对外地址「备用」");
+  // 删除对外地址和节点详情一样是灰卡灰按钮,红色只留给确认框里最后那下。
+  const hzone = page.locator("#drawer.open .card").filter({ hasText: "删除对外地址" });
   await expect(hzone).not.toHaveClass(/danger-zone/);
   await expect(page.locator("[data-act=conn-host-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-host-rm]");
@@ -278,11 +278,44 @@ test("入口:add / edit / rm 与 mpx host 一致,删除要确认", async ({ page
   expect(env.takeLog()).toEqual([]);
   await page.click("[data-act=conn-host-rm]");
   await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已删除入口「备用」");
+  await expect(page.locator(".toast")).toContainText("已删除对外地址「备用」");
   expect(take([], opt)).toEqual(rmCLI);
 });
 
-test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", async ({ page }) => {
+test("删除节点确认框:没输入名字时禁用,输入后按钮实心红底白字", async ({ page }) => {
+  await login(page, env);
+  await openNode(page, 2);
+  await page.click("[data-act=node-rm]");
+  const okb = page.locator("#okb");
+  // 逐字确认之前按钮禁用(可以浅、可以灰)。
+  await expect(okb).toBeDisabled();
+  await page.fill("#typed", "ui-n");
+  await expect(okb).toBeEnabled();
+  const badRGB = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  const solid = async () => okb.evaluate(el => { const s = getComputedStyle(el); return { bg: s.backgroundColor, fg: s.color }; });
+  let st = await solid();
+  expect(st.bg).toBe(badRGB);
+  expect(st.fg).toBe("rgb(255, 255, 255)");
+  // 悬停、键盘聚焦时也必须是实心红底白字。
+  await okb.hover();
+  st = await solid();
+  expect(st.bg).toBe(badRGB);
+  expect(st.fg).toBe("rgb(255, 255, 255)");
+  await okb.focus();
+  st = await solid();
+  expect(st.bg).toBe(badRGB);
+  expect(st.fg).toBe("rgb(255, 255, 255)");
+  await page.click("#modal [data-act=modal-cancel]");
+});
+
+test("删除连接方式与节点:要逐字输入名字才放行,和 CLI 一致", async ({ page }) => {
   await login(page, env);
   let opt = { ids: ["3", "4"] };
   env.takeLog();
@@ -291,7 +324,7 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await page.goto(env.origin + "/#nodes/2");
   await page.click(".cx-row[data-act=conn-edit][data-id='4']");
   await page.click("#conn-form details.adv2 > summary");
-  // 删除入站也是灰卡灰按钮(这里打开的是「编辑连接」抽屉),不再用 danger-zone / c-bad。
+  // 删除连接方式也是灰卡灰按钮(这里打开的是「编辑连接」抽屉),不再用 danger-zone / c-bad。
   const izone = page.locator("#drawer.open .dz").filter({ hasText: "删除连接" });
   await expect(izone.locator("[data-act=conn-rm]")).not.toHaveClass(/c-bad/);
   await page.click("[data-act=conn-rm]");
@@ -300,7 +333,7 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   await expect(page.locator("#altb")).toBeDisabled();
   await page.fill("#typed", "t-2-2000");
   await page.click("#altb");
-  await expect(page.locator(".toast")).toContainText("已删除入站「t-2-2000」");
+  await expect(page.locator(".toast")).toContainText("已删除连接方式「t-2-2000」");
   expect(take([], opt)).toEqual(inbCLI);
 
   env.takeLog();
@@ -318,9 +351,9 @@ test("删除入站与节点:要逐字输入名字才放行,和 CLI 一致", asyn
   expect(r.status).toBe(404);
 });
 
-// 「创建并应用到节点」:先建入站再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
+// 「创建并应用到节点」:先建连接方式再走现有的 POST /api/nodes/{id}/sync。这里 SSH 连不上,
 // 应用失败要把原因告诉使用者,入站照样建好,卡片留着「有改动未应用」,头部换成刷新状态。
-test("创建并应用到节点:应用失败时入站保留,连不上时头部换成刷新", async ({ page }) => {
+test("创建并应用到节点:应用失败时连接方式保留,连不上时头部换成刷新", async ({ page }) => {
   await login(page, env);
   // 节点 1 的巡检状态取决于后台那一轮跑没跑到,这里固定成「连不上」,断言才稳。
   await page.route("**/api/nodes/1", async route => {
@@ -351,7 +384,7 @@ test("创建并应用到节点:应用失败时入站保留,连不上时头部换
   await expect(page.locator(".conn-card .ch .tag.pend")).toHaveText("有改动未应用");
 });
 
-test("旧入站地址与子路径跳到节点列表", async ({ page }) => {
+test("旧连接方式地址与子路径跳到节点列表", async ({ page }) => {
   await login(page, env);
   for (const hash of ["inbounds", "inbounds/2"]) {
     await page.goto(env.origin + "/#" + hash);

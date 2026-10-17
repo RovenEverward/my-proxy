@@ -148,6 +148,9 @@ test("重置流量、换一条新链接:要确认,和 CLI 一致", async ({ page
   await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("已重置");
   expect(normalize(env.takeLog(), names)).toEqual(resetCLI);
+  // 重置的确认框是异步收尾的:等它真的关掉再开换链接的框,否则前一个 async run
+  // 结束时会把后开的框一起关掉(满负载下偶发,单独跑不复现)。
+  await expect(page.locator("#modal.open")).toHaveCount(0);
 
   // 换链接本身(确认框、请求、拉取状态)单独在下面的用例里测,这里只比对和 CLI 一致。
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-revoke]");

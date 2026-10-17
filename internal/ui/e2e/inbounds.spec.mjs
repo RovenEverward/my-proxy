@@ -1,4 +1,4 @@
-// 节点详情的连接方式:默认值与自定义的显示、多入口展开、名称与节点不符提醒、
+// 节点详情的连接方式:默认值与自定义的显示、多对外地址展开、名称与节点不符提醒、
 // 添加连接抽屉的端口顺延。数据只造 203.0.113.x / 198.51.100.x 与 example.com。
 import { test, expect } from "@playwright/test";
 import { startEnv, login } from "./env.mjs";
@@ -17,8 +17,8 @@ test.beforeAll(async () => {
   await env.seed("inbound", "add", "--node", "1", "--tag", "jp-reality", "--protocol", "vless", "--port", "8443", "--security", "reality", "--sni", "www.example.com", "--reality-dest", "www.example.com:443", "--flow", "xtls-rprx-vision");
   await env.seed("inbound", "add", "--node", "1", "--tag", "jp-ws", "--protocol", "vless", "--port", "2087", "--network", "ws", "--ws-path", "/ws", "--security", "none");
   await env.seed("inbound", "add", "--node", "2", "--tag", "us-reality", "--protocol", "vless", "--port", "8443", "--security", "reality", "--sni", "www.example.com", "--reality-dest", "www.example.com:443");
-  // 东京 WS 的第一个入口写错了地方(美国),节点在东京 → 该提醒;
-  // 第二个入口完全跟随节点(没起名、没地址),用来验证「N 个入口」展开与默认值。
+  // 东京 WS 的第一个对外地址写错了地方(美国),节点在东京 → 该提醒;
+  // 第二个对外地址完全跟随节点(没起名、没地址),用来验证「N 个对外地址」展开与默认值。
   // 它必须真的全默认,否则 customAddr() 会按「用了自定义地址」显示。
   await env.seed("host", "add", "--inbound", "2", "--remark", "🇺🇸 美国 CDN", "--address", "cdn.example.com", "--port", "443");
   await env.seed("host", "add", "--inbound", "2", "--remark", "", "--address", "");
@@ -60,14 +60,14 @@ test("默认值灰色、自定义带铅笔;只有多入口才可展开", async (
   await expect(plain.locator(".cx-addr .cx-v")).not.toHaveClass(/\bon\b/);
   await expect(plain.locator(".cx-name .cx-pen")).toHaveCount(0);
   await expect(plain.locator(".cx-more")).toHaveCount(0);
-  // WS:第一个入口自定义了名字和地址,且有两个入口。
+  // WS:第一个对外地址自定义了名字和地址,且有两个对外地址。
   const ws = rows.filter({ has: page.locator('.ptag[title="VLESS WS"]') });
-  // 「N 个入口」展开的是行下面的一段(.cx-subs 与 .cx-row 平级,不在行里面)。
-  const wsCard = group(page).locator(".cx", { hasText: "2 个入口" });
+  // 「N 个对外地址」展开的是行下面的一段(.cx-subs 与 .cx-row 平级,不在行里面)。
+  const wsCard = group(page).locator(".cx", { hasText: "2 个对外地址" });
   await expect(ws.locator(".cx-name .cx-v")).toHaveClass(/on/);
   await expect(ws.locator(".cx-name .cx-pen")).toHaveCount(1);
   await expect(ws.locator(".cx-addr .cx-v")).toHaveClass(/on/);
-  await expect(ws.locator(".cx-more")).toContainText("2 个入口");
+  await expect(ws.locator(".cx-more")).toContainText("2 个对外地址");
   await expect(wsCard.locator(".cx-subs")).toHaveCount(0);
   await ws.locator(".cx-more").click();
   await expect(wsCard.locator(".cx-subs")).toBeVisible();
@@ -166,14 +166,14 @@ test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着�
   await expect(page.locator(".ph [data-act=node-sync]")).toHaveText("应用到节点");
 });
 
-test("编辑连接:名称与地址在顶上,入站字段在「高级」里", async ({ page }) => {
+test("编辑连接:名称与地址在顶上,连接方式字段在「高级」里", async ({ page }) => {
   await goto(page, 2);
   await group(page).locator(".cx-row").first().click();
   const dr = page.locator("#drawer.open");
   await expect(dr.locator("h2")).toContainText("洛杉矶 A");
   await expect(dr.locator("#d-name")).toBeVisible();
   await expect(dr.locator("#d-addr")).toBeVisible();
-  // 入站字段收在折叠的「高级」里,展开前不可见。
+  // 连接方式字段收在折叠的「高级」里,展开前不可见。
   await expect(dr.locator("#i-port")).not.toBeVisible();
   await dr.locator("details.adv2 > summary").click();
   await expect(dr.locator("#i-port")).toHaveValue("8443");

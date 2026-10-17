@@ -1,4 +1,4 @@
-// 添加节点向导:第 1 步前端校验、第 2 步入站校验、装公钥失败回退、
+// 添加节点向导:第 1 步前端校验、第 2 步连接方式校验、装公钥失败回退、
 // 成功全流程与 CLI 逐条对照,以及装核心失败与登记链接。
 import { test, expect } from "@playwright/test";
 import { startEnv, normalize, login, cpFetch } from "./env.mjs";
@@ -86,7 +86,7 @@ test("成功全流程:请求与 CLI 一致", async ({ page }) => {
     "--network", "tcp", "--security", "reality", "--sni", "www.cloudflare.com",
     "--reality-dest", "www.cloudflare.com:443", "--flow", "xtls-rprx-vision");
   const cliInb = (await apiJSON("/api/inbounds")).filter(i => i.node_id === cliNode.id).at(-1);
-  // 向导建的入口不起名(订阅里跟随节点显示名),对照的 CLI 也不带 --remark。
+  // 向导建的对外地址不起名(订阅里跟随节点显示名),对照的 CLI 也不带 --remark。
   await env.cli("host", "add", "--inbound", String(cliInb.id));
   const cliRaw = threeOnly(env.takeLog());
 
@@ -119,7 +119,7 @@ test("成功全流程:请求与 CLI 一致", async ({ page }) => {
   const ids = [cliNode.id, cliInb.id, uiNode.id, uiInb.id].map(String);
   expect(normalize(uiRaw, names, { ids })).toEqual(normalize(cliRaw, names, { ids }));
 
-  await expect(page.locator(".kvw")).toContainText("REALITY · 443 · 1 个入口");
+  await expect(page.locator(".kvw")).toContainText("REALITY · 443 · 1 个对外地址");
   await page.click("#w-view");
   await expect(page).toHaveURL(new RegExp("#nodes/" + uiNode.id));
   await noLeak(page);
@@ -154,8 +154,8 @@ test("登记链接打开原登记抽屉", async ({ page }) => {
   await expect(page.locator("#n-address")).toBeVisible();
 });
 
-// v0.9.5:建入站前先看节点端口。默认的 443 被占时自动换备选端口;自己填的端口被占时
-// 停下说清楚,「改端口」后从建入站那步接着跑,不重建节点。
+// v0.9.5:建连接方式前先看节点端口。默认的 443 被占时自动换备选端口;自己填的端口被占时
+// 停下说清楚,「改端口」后从建连接方式那步接着跑,不重建节点。
 async function stubNodePost(page) {
   await page.route("**/api/nodes", async route => {
     if (route.request().method() !== "POST") return route.continue();
@@ -191,7 +191,7 @@ test("端口:默认 443 被占时自动换 2087", async ({ page }) => {
   await noLeak(page);
 });
 
-test("端口:自己填的端口被占时停下,改端口后接着建入站", async ({ page }) => {
+test("端口:自己填的端口被占时停下,改端口后接着建连接方式", async ({ page }) => {
   await stubNodePost(page);
   await page.route("**/api/nodes/*/ports", route => route.fulfill({ json: busyPorts }));
   let nodePosts = 0;
