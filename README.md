@@ -202,8 +202,10 @@ mpx update rollback cli          # 本机 CLI 退回上一版
 **从 v0.6.0 及以前升级时**，还要在 VPS 上跑一次安装脚本，装上本机升级需要的组件，之后就能在本机升级了：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash -s -- --version v0.6.1
+curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install.sh | sudo bash -s -- --version v0.6.1 --addr 0.0.0.0:8080
 ```
+
+`--addr` 写成当初装的监听地址（`mpx init` 默认是 `0.0.0.0:8080`）。新版脚本没给 `--addr` 时会沿用现有 mpx.service 里的监听地址，写上更保险。
 
 每版改了什么写在 [CHANGELOG.md](CHANGELOG.md) 和 [Releases 页](https://github.com/RovenEverward/my-proxy/releases)。没有发布件、也不方便联网时，可以把二进制直接递给脚本：`sudo ./deploy/install.sh /tmp/mpx`。
 

@@ -34,11 +34,11 @@ const updateStaleControlNotice = "控制面版本过旧，不提供节点核心�
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "查看本机 CLI、控制面与各节点核心的版本",
+	Short: "查看本机、控制面与各节点核心的版本",
 	Long: `显示三部分各自的当前版本与目标/最新版本,以及现在能不能升级。
 
-- 本机 CLI:这一份 mpx 自己的版本;查更新用的是控制面问到的最新发布,CLI 自己
-  不直接连 GitHub。
+- 本机 CLI:这一份 mpx 自己的版本;桌面构建里它就是桌面程序,表格里那一行
+  也叫「桌面程序」。查更新用的是控制面问到的最新发布,CLI 自己不直接连 GitHub。
 - 控制面:控制面二进制的版本,以及后台任务查到的上游最新发布。
 - 节点核心:每台节点上装着的每个核心各一行 —— 一台节点两种核心都装就有两行。
 
@@ -64,6 +64,19 @@ var updateHeaders = []string{"部分", "当前", "目标/最新", "状态"}
 // 不注入一个已知值的话,所有"版本一致/不一致"的用例都会落进空版本那一支,真正
 // 要测的分支一个也测不到。
 var localVersion = buildinfo.Version
+
+// localDesktop 报告本进程是不是桌面构建,做成变量便于测试注入(与 localVersion
+// 同理:go test 编出来的都是普通 CLI 构建,不注入就永远测不到「桌面程序」那一支)。
+var localDesktop = buildinfo.Desktop
+
+// localLayerName 是版本表与提示里本机那一层的名字:桌面构建运行的就是桌面程序,
+// 同一份表格里那一行叫「桌面程序」;普通构建仍叫「本机 CLI」。
+func localLayerName() string {
+	if localDesktop() {
+		return "桌面程序"
+	}
+	return "本机 CLI"
+}
 
 // runUpdate 取一次版本信息并打印。mpx update 与 mpx update show 都走这里。
 func runUpdate(cmd *cobra.Command, args []string) error {
@@ -156,7 +169,7 @@ func cliUpdatePart(control model.UpdatePart) model.UpdatePart {
 // cli 那一行的状态后面追加最近一次自更新的结果。
 func updateRows(cli, control model.UpdatePart, nodes []model.UpdateNodeCore, cliLast *selfupdate.State) [][]string {
 	rows := [][]string{
-		{"本机 CLI", updateVersionText(cli.Current), dash(cli.Latest), updatePartStatus(cli) + cliLastSuffix(cliLast)},
+		{localLayerName(), updateVersionText(cli.Current), dash(cli.Latest), updatePartStatus(cli) + cliLastSuffix(cliLast)},
 		{"控制面", updateVersionText(control.Current), dash(control.Latest), updatePartStatus(control) + controlLastSuffix(control.Last)},
 	}
 	for _, n := range nodes {
@@ -256,7 +269,7 @@ func warnVersionMismatch(cli, control string) {
 	if updatecheck.SameMajorMinor(cli, control) {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "注意：本机 CLI 是 %s，控制面是 %s，主/次版本不一致；有些接口可能对不上，建议把两者升到同一代\n", cli, control)
+	fmt.Fprintf(os.Stderr, "注意：%s 是 %s，控制面是 %s，主/次版本不一致；有些接口可能对不上，建议把两者升到同一代\n", localLayerName(), cli, control)
 }
 
 // loadCLILast 读本机 CLI 上一次自更新的状态。读不到就返回 nil —— 没升级过

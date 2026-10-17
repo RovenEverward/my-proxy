@@ -43,10 +43,9 @@ test("按钮只在有没显示名的节点时出现,plan 先于 apply", async ({
 
   await open.click();
   await expect(page.locator("#modal.open h2")).toHaveText("批量识别显示名");
-  // 说明里明确节点 IP 会发给第三方;等价命令也在。
+  // 说明里明确节点 IP 会发给第三方;弹窗里不再出现命令。
   await expect(page.locator("#modal")).toContainText("ipwho.is");
-  await expect(page.locator("#modal")).toContainText("mpx node relabel --all --dry-run");
-  await expect(page.locator("#modal")).toContainText("mpx node relabel --all --yes");
+  await expect(page.locator("#modal")).not.toContainText("mpx ");
   expect(calls).toEqual([]); // 打开弹窗本身不发请求
 
   await page.click("#rl-plan");

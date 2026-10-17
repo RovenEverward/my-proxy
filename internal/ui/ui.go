@@ -47,10 +47,11 @@ type Options struct {
 	// Setup 非空时启用 /local/setup/*;Upstream 为空时页面进入首次安装模式。
 	Setup SetupRunner
 	// Connect 非空时启用 /local/setup/connect*(setup 模式下接入已有控制面,等价
-	// mpx connect)。为 nil 时两个接口都 404。
+	// mpx connect);再实现 ConnectNamedRunner 时,/local/profiles/connect* 也开
+	// (正常模式下添加新控制面)。为 nil 时这些接口都 404。
 	Connect ConnectRunner
-	// Profiles 非空时启用 /local/profiles(列出)与 /local/profiles/use(切换)。
-	// 为 nil 时两个接口都 404。
+	// Profiles 非空时启用 /local/profiles(列出)、/local/profiles/use(切换)与
+	// /local/profiles/connect*(添加控制面,还要 Connect 在)。为 nil 时 404。
 	Profiles ProfileSource
 	// Relabel 非空时启用 /local/relabel/plan 与 /local/relabel/apply。为 nil 时 404。
 	Relabel RelabelRunner
@@ -255,6 +256,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"relabel":     s.opts.Relabel != nil,
 			"mode":        mode,
 			"cli_version": buildinfo.Version(),
+			// fingerprint 是当前配置档记下的控制面证书指纹,http 控制面为空;
+			// connect 报告能不能在页面里接入新控制面。都是只加的字段,旧页面忽略。
+			"fingerprint": s.currentFingerprint(),
+			"connect":     s.opts.Connect != nil,
 		})
 		return
 	}

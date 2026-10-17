@@ -106,8 +106,8 @@ func profileForServer(cfg Config, server string) (string, Profile, bool) {
 // 切换时用 loadConfig / cfg.pick / transportFor 解析出转发要用的东西。
 type profilesRunner struct{}
 
-// List:返回配置档的名字与地址,current 先按配置文件里的 current 打勾。
-// token 与指纹绝不进返回值。
+// List:返回配置档的名字与地址,current 先按配置文件里的 current 打勾。指纹是要
+// 给人核对的信息(等价 mpx status 里的「证书指纹」),一并带上;token 绝不进返回值。
 func (profilesRunner) List() ([]ui.ProfileInfo, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -115,7 +115,8 @@ func (profilesRunner) List() ([]ui.ProfileInfo, error) {
 	}
 	out := make([]ui.ProfileInfo, 0, len(cfg.Profiles))
 	for name, p := range cfg.Profiles {
-		out = append(out, ui.ProfileInfo{Name: name, Server: p.Server, Current: name == cfg.Current})
+		out = append(out, ui.ProfileInfo{Name: name, Server: p.Server, Current: name == cfg.Current,
+			Fingerprint: p.Fingerprint})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

@@ -112,8 +112,8 @@ test("编辑套餐:与 mpx plan edit 一致", async ({ page }) => {
   await page.fill("#pl-name", "ui-改后");
   await page.fill("#pl-note", "换过");
   await page.locator(".pl-n label", { hasText: "东京 A" }).click();
-  // 抽屉里的等价命令就是上面那条 CLI(edit 按改前 → 改后的差异给 flag)。
-  await expect(page.locator("#pl-cmd")).toHaveText("mpx plan edit \"ui-改前\" --add-node \"🇯🇵 东京 A\" --name \"ui-改后\" --note \"换过\"");
+  // 抽屉里不再展示等价命令。
+  await expect(page.locator("#pl-form")).not.toContainText("mpx ");
   await page.click("#pl-save");
   await expect(page.locator(".toast")).toContainText("已保存");
   expect(normalize(env.takeLog(), names, { ids: [String(cliPlan.id), String(uiPlan.id)] })).toEqual(fromCLI);

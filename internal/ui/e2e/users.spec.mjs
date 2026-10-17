@@ -49,7 +49,8 @@ test("新建用户:与 mpx user add 一致", async ({ page }) => {
   await page.locator("label.chip", { hasText: "每周" }).click();
   await page.locator('label.chip:has(input[name="inb"][value="2"])').click();
   await page.fill("#f-note", "新同事");
-  await expect(page.locator("#f-cmd")).toHaveText("mpx user add ui-new --limit 1.5TB --reset-strategy weekly --expire 2027-02-03 --inbounds 2 --plan \"测试套餐\" --note \"新同事\"");
+  // 表单里不再展示等价命令。
+  await expect(page.locator("#user-form")).not.toContainText("mpx ");
   await page.click("#f-save");
   await expect(page.locator("#drawer.open h2")).toHaveText("ui-new");
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
@@ -105,7 +106,7 @@ test("停用要确认、取消不发请求;停用与启用和 CLI 一致", async
 
   await openUser(page, "ui-toggle");
   await page.click("[data-act=user-toggle]");
-  await expect(page.locator("#modal.open")).toContainText("mpx user disable ui-toggle");
+  await expect(page.locator("#modal.open")).toContainText("停用 ui-toggle?");
   await page.click("[data-act=modal-cancel]");
   await page.waitForTimeout(300);
   expect(env.takeLog()).toEqual([]);

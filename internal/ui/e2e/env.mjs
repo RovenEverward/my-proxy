@@ -3,6 +3,7 @@
 import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -137,6 +138,80 @@ export async function startSetupEnv() {
     link, origin: new URL(link).origin,
     async stop() { cp.kill(); await sleep(200); rmSync(dir, { recursive: true, force: true }); },
   };
+}
+
+// startConnectEnv:给「接入已有控制面」用的环境。一台真控制面(同端口提供
+// HTTPS,证书指纹从 /api/status 的 tls_fingerprint 读回),先用管理 token 设好
+// 一个设备密码;另按需起配置为空的 mpx ui(startUI):每个用例一台,谁接入
+// 成功切到正常模式都不影响别的用例。返回的 u 兼容 login(page, u) 的形状。
+export async function startConnectEnv() {
+  const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-cp-"));
+  const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
+  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "" };
+  const cpPort = await freePort();
+  const procs = [];
+  const uiDirs = [];
+  const serve = spawn(bin, ["serve", "--addr", `127.0.0.1:${cpPort}`, "--db", path.join(dir, "mpx.db"), "--auto-locate=false"],
+    { env, stdio: ["ignore", "pipe", "pipe"] });
+  procs.push(serve);
+  let serveOut = "";
+  serve.stdout.on("data", d => { serveOut += d; }); serve.stderr.on("data", d => { serveOut += d; });
+  const cpURL = `http://127.0.0.1:${cpPort}`;
+  let fp = "";
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(cpURL + "/api/status", { headers: { Authorization: "Bearer " + TOKEN } });
+      if (r.ok) { fp = (await r.json()).tls_fingerprint || ""; if (fp) break; }
+    } catch {}
+    if (i > 300) throw new Error("控制面没起来:\n" + serveOut);
+    await sleep(100);
+  }
+  const pw = "Device-Entry-445566";
+  const r = await cpFetch(cpURL + "/api/device-password", {
+    method: "PUT", headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify({ password: pw }),
+  });
+  if (!r.ok) throw new Error("设设备密码失败: " + r.status + " " + (await r.text()));
+
+  const startUI = async () => {
+    const udir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-ui-"));
+    uiDirs.push(udir);
+    const uenv = { ...process.env, HOME: udir, USERPROFILE: udir, XDG_CONFIG_HOME: udir, MPX_SERVER: "", MPX_TOKEN: "", MPX_PROFILE: "" };
+    const cp = spawn(bin, ["ui", "--no-open", "--addr", "127.0.0.1:0"], { env: uenv, stdio: ["ignore", "pipe", "pipe"] });
+    procs.push(cp);
+    const link = await new Promise((res, rej) => {
+      let out = "";
+      cp.stdout.on("data", d => { out += d; const m = /http:\/\/\S+\?k=\S+/.exec(out); if (m) res(m[0]); });
+      cp.stderr.on("data", d => { out += d; });
+      cp.on("exit", c => rej(new Error("mpx ui 退出了: " + c + "\n" + out)));
+    });
+    return { link, origin: new URL(link).origin, dir: udir, cookies: null };
+  };
+  return {
+    fp, pw, cpPort, cpURL, bin, startUI,
+    async stop() {
+      for (const p of procs) p.kill();
+      await sleep(200);
+      rmSync(dir, { recursive: true, force: true });
+      for (const d of uiDirs) rmSync(d, { recursive: true, force: true });
+    },
+  };
+}
+
+// httpsJSON 直接对控制面的 HTTPS 管理口发一次 JSON 请求。自签证书过不了 CA
+// 校验,这里只做连通(设备密码换成败本身就是被测行为,按指纹校验是 pin 包的事)。
+export function httpsJSON(port, method, p, body, headers = {}) {
+  return new Promise((res, rej) => {
+    const req = https.request({ host: "127.0.0.1", port, path: p, method, headers,
+      agent: new https.Agent({ rejectUnauthorized: false }) }, r => {
+      let b = "";
+      r.on("data", c => { b += c; });
+      r.on("end", () => { let j = null; try { j = JSON.parse(b); } catch {} res({ status: r.statusCode, json: j, text: b }); });
+    });
+    req.on("error", rej);
+    req.end(body === undefined ? "" : JSON.stringify(body));
+  });
 }
 
 // 登录:用一次性链接换 cookie。

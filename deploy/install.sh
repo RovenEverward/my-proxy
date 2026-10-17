@@ -3,7 +3,7 @@
 # 在控制面这台机器上安装或更新 mpx。装和更新是同一条命令。
 #
 # 每次都是「换二进制 → 补齐用户和目录 → 备好 token 与 SSH 密钥 → 写单元 → 重启」,
-# 已经存在的东西(token、数据库、密钥)一律不动,所以重复跑是安全的。
+# 已经存在的东西(token、数据库、密钥、配好的监听地址)一律不动,所以重复跑是安全的。
 #
 # 这个脚本只管控制面。节点上装 xray 是 `mpx node install` 的事(由控制面自己 SSH
 # 过去做);操作者本机的命令行用 deploy/install-cli.sh(或 Windows 上的
@@ -201,6 +201,7 @@ usage() {
 
 默认监听 127.0.0.1:8080。--addr 换成别的地址就写进 systemd 单元;0.0.0.0:8080
 会让订阅从公网可达;管理接口在同一端口上走 HTTPS(自签证书,按指纹认)。
+没传 --addr 而机器上已有 mpx.service 时,沿用单元里现有的监听地址,不改回默认。
 
 二进制按顺序找:参数 → GitHub Releases → 本机 Go 编译。不会自动捡本机上现成的 mpx 文件。
 EOF
@@ -374,6 +375,43 @@ fi
 
 echo "==> systemd 单元"
 
+# >>> resolve_addr(install.sh 的测试会把这一段原样拿出来,对着 MPX_PREFIX 下的临时目录跑)
+# unit_addr UNIT:从现有单元的 ExecStart 里读出 --addr 后面的值;没有就输出空串。
+# 「--addr 值」和「--addr=值」两种写法都认。
+unit_addr() {
+	awk '
+		/^ExecStart=/ { line = $0 }
+		END {
+			if (line == "") exit
+			n = split(line, f, /[ \t]+/)
+			for (i = 1; i < n; i++) if (f[i] == "--addr") { print f[i+1]; exit }
+			for (i = 1; i <= n; i++) if (f[i] ~ /^--addr=/) { print substr(f[i], 8); exit }
+		}
+	' "$1"
+}
+
+# resolve_addr GIVEN UNIT:决定 mpx.service 最终用的监听地址,结果放进 RESOLVED_ADDR。
+# GIVEN 非空(用户传了 --addr)就以其为准;否则目标位置已有单元时,读它 ExecStart 里的
+# --addr 沿用 —— 升级时忘了带 --addr,不能把先前配好的 0.0.0.0 覆盖回仓库默认的回环,
+# 否则客户端拉不到订阅。没有旧单元、或读不出 --addr 时 RESOLVED_ADDR 为空,由调用方
+# 原样装仓库默认单元(127.0.0.1:8080)。只 mpx.service 这样;mpx-update.service 的
+# 健康检查固定打回环,不跟着沿用。
+resolve_addr() {
+	local unit="${2:-}" addr
+	RESOLVED_ADDR="${1:-}"
+	if [[ -n "$RESOLVED_ADDR" ]]; then return 0; fi
+	[[ -n "$unit" && -f "$unit" ]] || return 0
+	addr="$(unit_addr "$unit")"
+	if [[ -n "$addr" ]]; then
+		note "沿用现有 mpx.service 的监听地址 $addr"
+	else
+		note "读不出现有 mpx.service 的监听地址,按仓库默认(127.0.0.1:8080)装"
+	fi
+	RESOLVED_ADDR="$addr"
+}
+# <<< resolve_addr
+
+# >>> install_unit(install.sh 的测试会把这一段原样拿出来跑)
 # fetch_unit NAME:优先用脚本旁边那份;`curl | sudo bash` 的时候旁边什么都没有,
 # 去仓库里取一份。打印最终可用的路径。
 fetch_unit() {
@@ -389,7 +427,7 @@ fetch_unit() {
 }
 
 # install_unit NAME [ADDR]:装一份单元。ADDR 为空就原样装;非空时把文件里现有的
-# --addr 换成 ADDR。
+# --addr 换成 ADDR。目标位置跟着 PREFIX 走(测试把它指到临时目录)。
 #
 # 替换后的单元写到 $TMP,不改仓库里那份 —— 从源码目录跑这个脚本是常规用法,
 # 就地 sed 会把工作区改脏,下次 git status 里多出一处莫名其妙的改动。
@@ -398,7 +436,7 @@ fetch_unit() {
 install_unit() {
 	local name="$1" addr="${2:-}" src unit
 	src="$(fetch_unit "$name")"
-	unit="/etc/systemd/system/$name"
+	unit="$PREFIX/etc/systemd/system/$name"
 	if [[ -n "$addr" ]]; then
 		grep -q -- '--addr ' "$src" || die "$src 里没有 --addr,没法替换监听地址"
 		sed "s|--addr [^ ]*|--addr $addr|" "$src" > "$TMP/$name.final"
@@ -410,12 +448,14 @@ install_unit() {
 	fi
 	install -m 0644 "$src" "$unit"
 }
+# <<< install_unit
 
-# --addr 只在换了监听地址时才动单元:默认那份是仓库里的原文,直接装。
-if [[ -n "$ADDR" ]]; then
-	[[ "$ADDR" == *:* ]] || die "--addr 要写成 地址:端口(比如 0.0.0.0:8080)"
-fi
-install_unit mpx.service "${ADDR:-}"
+# mpx.service 的监听地址:用户传的 --addr 优先;没传就沿用现有单元的;两边都没有
+# 才原样装仓库默认那份(127.0.0.1:8080)。沿用还是默认,resolve_addr 会打出来。
+resolve_addr "${ADDR:-}" "$PREFIX/etc/systemd/system/mpx.service"
+[[ -z "$RESOLVED_ADDR" || "$RESOLVED_ADDR" == *:* ]] \
+	|| die "--addr 要写成 地址:端口(比如 0.0.0.0:8080)"
+install_unit mpx.service "${RESOLVED_ADDR:-}"
 
 # 控制面升级用的两个单元:path 监视请求文件,service 由它拉起,以 root 执行换二进制。
 # health check 只从本机连控制面,所以 service 里的 --addr 固定成回环;控制面监听的
@@ -443,8 +483,8 @@ if ! systemctl is-active --quiet mpx; then
 	die "mpx 没起来,上面是它的状态和最近的日志"
 fi
 
-if [[ -n "$ADDR" ]]; then
-	BOUND="$ADDR"
+if [[ -n "$RESOLVED_ADDR" ]]; then
+	BOUND="$RESOLVED_ADDR"
 else
 	BOUND=127.0.0.1:8080
 fi
@@ -457,9 +497,9 @@ EOF
 
 FP="$(cat /var/lib/mpx/tls-fingerprint 2>/dev/null || true)"
 SHOWN=127.0.0.1:8080
-[[ -n "$ADDR" ]] && SHOWN="<这台机器的地址>:${BOUND##*:}"
+[[ -n "$RESOLVED_ADDR" ]] && SHOWN="<这台机器的地址>:${BOUND##*:}"
 
-if [[ -z "$ADDR" ]]; then
+if [[ -z "$RESOLVED_ADDR" ]]; then
 	cat <<EOF
 它只监听回环 —— 要从别的机器管它,拉一条隧道:
 

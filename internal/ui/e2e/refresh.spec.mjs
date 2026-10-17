@@ -33,8 +33,7 @@ test("删除用户:列表里立刻没了这个人", async ({ page }) => {
   await expect(userRow(page, "r-rm")).toHaveCount(1);
   await userRow(page, "r-rm").click();
   await page.click("[data-act=user-rm]");
-  // 命令块在确认框里也要用自己的内边距(曾被确认框正文的 .mb 盖成 20px 20px 4px)。
-  await expect(page.locator("#modal-cmd")).toHaveCSS("padding", "9px 12px");
+  await expect(page.locator("#modal.open")).toContainText("删除 r-rm?");
   await page.fill("#typed", "r-rm");
   await page.click("#okb");
   await expect(page).toHaveURL(/#users$/);

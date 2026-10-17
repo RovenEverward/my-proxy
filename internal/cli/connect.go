@@ -167,6 +167,38 @@ func connectAndSaveQuiet(server, fp, password, name string) (connectResult, stri
 	return res, profile, nil
 }
 
+// connectAndSaveProfile 是 connectAndSaveQuiet 的带档名版:存进名为 profile 的
+// **新**配置档并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
+// 它,不能把 default 或别的档里已有的 token 覆盖掉。不经过 saveProfile:那里写死
+// 了 --profile/default,而且会覆盖同名档。
+func connectAndSaveProfile(server, fp, password, name, profile string) (connectResult, error) {
+	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
+	raw, err := c.do("POST", "/api/connect", map[string]string{"password": password, "device_name": name})
+	if err != nil {
+		return connectResult{}, err
+	}
+	res, err := decode[connectResult](raw)
+	if err != nil {
+		return connectResult{}, err
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return connectResult{}, err
+	}
+	if _, ok := cfg.Profiles[profile]; ok {
+		return connectResult{}, fmt.Errorf("配置档 %s 已存在,请换一个名字", profile)
+	}
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]Profile{}
+	}
+	cfg.Profiles[profile] = Profile{Server: server, Token: res.Token, Fingerprint: fp}
+	cfg.Current = profile
+	if err := saveConfig(cfg); err != nil {
+		return connectResult{}, err
+	}
+	return res, nil
+}
+
 type connectResult struct {
 	DeviceID int64  `json:"device_id"`
 	Name     string `json:"name"`

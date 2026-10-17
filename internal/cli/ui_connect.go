@@ -57,3 +57,33 @@ func (connectRunner) Connect(ctx context.Context, server, fingerprint, password,
 		Profile:     profile,
 	}, nil
 }
+
+// ConnectProfile:与 Connect 同一件事,但存进名为 profile 的**新**配置档 —— 页面
+// 正常模式的「添加控制面」用它。不覆盖已有档:名字被占用直接报错,让页面提示换名
+// (别把 default 里好好的 token 冲掉)。
+func (connectRunner) ConnectProfile(ctx context.Context, server, fingerprint, password, name, profile string) (*ui.SetupResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = defaultDeviceName()
+	}
+	res, err := connectAndSaveProfile(server, fingerprint, password, name, profile)
+	if err != nil {
+		return nil, err
+	}
+	up, err := url.Parse(server)
+	if err != nil || up.Host == "" {
+		return nil, fmt.Errorf("控制面地址 %q 看不懂", server)
+	}
+	return &ui.SetupResult{
+		HostPort:    up.Host,
+		Fingerprint: fingerprint,
+		Connected:   true,
+		Upstream:    up,
+		Token:       res.Token,
+		Transport:   pin.Transport(fingerprint),
+		Profile:     profile,
+	}, nil
+}

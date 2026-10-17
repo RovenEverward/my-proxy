@@ -10,7 +10,7 @@ test.afterAll(async () => { await env?.stop(); });
 
 const REPORT = { checks: [
   { name: "数据库", status: "ok", detail: "能读能写" },
-  { name: "节点 hk", status: "warn", detail: "配置和下发的不一致(节点上被改过)", hint: "mpx node sync hk 覆盖回去" },
+  { name: "节点 hk", status: "warn", detail: "配置和下发的不一致(节点上被改过)", hint: "到节点页点「下发配置」覆盖回去" },
   { name: "订阅 xray", status: "fail", detail: "渲染失败:模板第 3 行不是合法 JSON", hint: "改掉模板的语法错误" },
 ] };
 
@@ -20,7 +20,7 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await page.route("**/api/doctor", r => { hits.push(r.request().method()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(REPORT) }); });
   await page.goto(env.origin + "/#doctor");
   await expect(page.locator("h1")).toHaveText("自检");
-  await expect(page.locator(".ph p")).toContainText("mpx doctor");
+  await expect(page.locator(".ph p")).not.toContainText("mpx ");
   await expect(page.locator("[data-act=doc-run]")).toBeVisible();
   // 页面停一会儿也不许自己发:自检不是只读的便宜请求。
   await page.waitForTimeout(500);
@@ -39,7 +39,7 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(rows.nth(1).locator(".st")).toHaveText("警告");
   await expect(rows.nth(1).locator(".dot")).toHaveClass(/warn/);
   await expect(rows.nth(1)).toContainText("配置和下发的不一致");
-  await expect(rows.nth(1)).toContainText("mpx node sync hk 覆盖回去");
+  await expect(rows.nth(1)).toContainText("到节点页点「下发配置」覆盖回去");
   await expect(rows.nth(2)).toContainText("订阅 xray");
   await expect(rows.nth(2).locator(".st")).toHaveText("失败");
   await expect(rows.nth(2).locator(".dot")).toHaveClass(/bad/);
