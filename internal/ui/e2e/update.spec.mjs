@@ -213,3 +213,72 @@ test("页面隐藏时不发轮询,回到可见立刻恢复", async ({ page }) =>
   });
   await expect.poll(() => calls.gets, { timeout: 5000 }).toBeGreaterThan(1);
 });
+
+// 桌面端后台预下载:prefetch.state 决定主按钮的文字与可点性。三种状态都用
+// page.route 改 /local/update 的响应,不需要真的新版本。
+const withPrefetch = pf => ({ ...available, desktop: true, prefetch: pf });
+
+test("预下载中:按钮显示百分比且不可点,弹窗开着每 2 秒刷新", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/local/update", r => {
+    calls++;
+    // 第一次 45%,之后 60%:证明弹窗真的在轮询。
+    const bytes = calls === 1 ? 45 : 60;
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(withPrefetch({ version: "v1.1.0", state: "downloading", bytes, total: 100 })) });
+  });
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  const ok = page.locator("#upd-ok");
+  await expect(ok).toHaveText("正在后台下载… 45%");
+  await expect(ok).toBeDisabled();
+  // 2 秒后自动刷新:进度变成 60%,按钮仍不可点。
+  await expect(ok).toHaveText("正在后台下载… 60%", { timeout: 6000 });
+  await expect(ok).toBeDisabled();
+  expect(calls).toBeGreaterThan(1);
+});
+
+test("预下载中不知道总大小时不显示百分比", async ({ page }) => {
+  await mockUpdate(page, withPrefetch({ version: "v1.1.0", state: "downloading", bytes: 0, total: 0 }));
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  await expect(page.locator("#upd-ok")).toHaveText("正在后台下载…");
+  await expect(page.locator("#upd-ok")).toBeDisabled();
+});
+
+test("下载失败:提示稍后自动重试,小链接立即重试会发 POST", async ({ page }) => {
+  const state = { retried: 0 };
+  await mockUpdate(page, withPrefetch({ version: "v1.1.0", state: "failed", bytes: 0, total: 100, error: "网络断了" }));
+  await page.route("**/local/update/prefetch", r => {
+    state.retried++;
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  // 点「立即重试」之后后台回到下载中,轮询会看到新状态。
+  await page.route("**/local/update", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(withPrefetch(state.retried ? { version: "v1.1.0", state: "downloading", bytes: 10, total: 100 } : { version: "v1.1.0", state: "failed", bytes: 0, total: 100, error: "网络断了" })) }));
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  const modal = page.locator("#modal.open");
+  await expect(modal).toContainText("下载失败，稍后自动重试");
+  const retry = page.locator("#upd-retry");
+  await expect(retry).toHaveText("立即重试");
+  await expect(page.locator("#upd-ok")).toBeDisabled();
+  await retry.click();
+  await expect.poll(() => state.retried).toBe(1);
+  await expect(page.locator("#upd-ok")).toHaveText("正在后台下载… 10%", { timeout: 6000 });
+});
+
+test("预下载就绪:按钮恢复为可点的「重启以更新」", async ({ page }) => {
+  await mockUpdate(page, withPrefetch({ version: "v1.1.0", state: "ready", bytes: 100, total: 100 }));
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  const ok = page.locator("#upd-ok");
+  await expect(ok).toHaveText("重启以更新");
+  await expect(ok).toBeEnabled();
+});
+
+test("没有 prefetch 字段:保持原来的按钮逻辑", async ({ page }) => {
+  await mockUpdate(page, { ...available, desktop: true });
+  await login(page, env);
+  await page.locator("#upd-pill").click();
+  await expect(page.locator("#upd-ok")).toHaveText("重启以更新");
+  await expect(page.locator("#upd-ok")).toBeEnabled();
+});

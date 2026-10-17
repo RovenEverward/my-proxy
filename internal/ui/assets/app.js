@@ -186,7 +186,7 @@ async function refreshUpdatePill(force) {
   const b = $("#upd-pill");
   if (b) b.hidden = !showUpdatePill(u);
 }
-function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
+function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -218,10 +218,58 @@ function openUpdateModal() {
   ${(c.release_url || l.release_url) ? H`<p><a class="u-link" target="_blank" rel="noopener" href="${c.release_url || l.release_url}">查看发布说明</a></p>` : ""}
   <p class="sub mt">${u.desktop ? "将依次升级控制面、节点、桌面程序,完成后自动重启。" : "将依次升级控制面、节点、本机程序,完成后自动重启。"}</p>
   <div class="err" id="upd-err" role="alert"></div></div>
-  <div class="mf"><button class="btn" data-act="update-skip">稍后</button><button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`);
+  ${updFooter(u, false)}`);
   $("#scrim").classList.add("open"); m.classList.add("open");
-  setTimeout(() => $("#upd-ok")?.focus(), 50);
+  updPollStop();
+  updPollStart();
+  if (!(u.prefetch && u.prefetch.state === "downloading")) setTimeout(() => $("#upd-ok")?.focus(), 50);
 }
+// 弹窗脚下那一排:有 prefetch 字段时主按钮跟着后台下载状态走;没有这个字段
+// (老 mpx ui)保持原来的「重启以更新」。kept 为真时省略「稍后」(轮询只换按钮排)。
+function updFooter(u, kept) {
+  const p = u && u.prefetch;
+  const skip = kept ? "" : H`<button class="btn" data-act="update-skip">稍后</button>`;
+  if (!p) return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`;
+  if (p.state === "downloading") {
+    const pct = p.total > 0 ? " " + Math.min(100, Math.floor((p.bytes || 0) * 100 / p.total)) + "%" : "";
+    return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply" disabled>正在后台下载…${pct}</button></div>`;
+  }
+  if (p.state === "failed") {
+    return H`<div class="mf">${skip}${H`<span class="sub">下载失败，稍后自动重试</span><button class="btn ghost sm" id="upd-retry" data-act="update-prefetch-retry">立即重试</button>`}<button class="btn pri" id="upd-ok" data-act="update-apply" disabled>重启以更新</button></div>`;
+  }
+  return H`<div class="mf">${skip}<button class="btn pri" id="upd-ok" data-act="update-apply">重启以更新</button></div>`;
+}
+// 弹窗开着时每 2 秒问一次 /local/update,只更新按钮那一排,不打断正文滚动。
+// 进入下载中以外的状态就停;关掉弹窗也停。
+let updPollTimer = 0;
+function updPollStop() { clearTimeout(updPollTimer); updPollTimer = 0; }
+function updPollStart() {
+  updPollStop();
+  const p = UPDATE && UPDATE.prefetch;
+  if (!p || p.state !== "downloading") return;
+  updPollTimer = setTimeout(updPollTick, 2000);
+}
+async function updPollTick() {
+  updPollTimer = 0;
+  if (!$("#modal.open") || updAll) return;
+  let u;
+  try { u = await api("/local/update"); } catch { updPollTimer = setTimeout(updPollTick, 2000); return; }
+  UPDATE = u; updAt = Date.now();
+  const p = u.prefetch;
+  if (p && p.state === "downloading") updAdjustDownloading(p);
+  else { const mf = $("#modal .mf"); if (mf) mf.replaceWith(dom(updFooter(u, true))); }
+  if (p && p.state === "downloading") updPollTimer = setTimeout(updPollTick, 2000);
+}
+// 下载中只改文字,不重画整排按钮,免得每 2 秒把焦点/布局抖一下。
+function updAdjustDownloading(p) {
+  const b = $("#upd-ok");
+  if (!b) return;
+  const pct = p.total > 0 ? " " + Math.min(100, Math.floor((p.bytes || 0) * 100 / p.total)) + "%" : "";
+  b.textContent = "正在后台下载…" + pct;
+  b.disabled = true;
+}
+// dom 把 H 片段变成可以 replaceWith 的节点。
+function dom(html) { const t = document.createElement("template"); t.innerHTML = val(html).trim(); return t.content.firstElementChild; }
 // 一键更新:POST /local/update/all 启动编排,GET ?since= 增量拉进度直到
 // done / failed / restarting。409 表示已有一轮在跑,直接进轮询。
 let updAll = null;
@@ -440,6 +488,7 @@ function inlineMd(t) {
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); requestAnimationFrame(() => { d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
   $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
+  updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
 }
 function toast(text, bad) { document.querySelector(".toast")?.remove(); const e = document.createElement("div"); e.className = "toast" + (bad ? " bad" : ""); e.setAttribute("role", "status"); e.innerHTML = val(H`${ic(bad ? "warn" : "check")}${text}`); document.body.append(e); setTimeout(() => e.remove(), bad ? 6000 : 2600); }
@@ -588,6 +637,15 @@ const ACTS = {
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
+  // 「立即重试」:让后台立刻再下一次,不等退避;随后接着每 2 秒看进度。
+  "update-prefetch-retry": async () => {
+    try { await api("/local/update/prefetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
+    catch (e) { const box = $("#upd-err"); if (box) box.textContent = e.message; return; }
+    if (UPDATE && UPDATE.prefetch) UPDATE.prefetch.state = "downloading";
+    const mf = $("#modal .mf");
+    if (mf) mf.replaceWith(dom(updFooter(UPDATE, true)));
+    updPollStart();
+  },
   "profile-open": () => openProfiles(),
   // 「添加控制面…」:关掉弹窗,交给 setup.js 里的接入表单(同一套取指纹→核对→
   // 设备密码的手续,存成新控制面再切过去)。
