@@ -261,10 +261,12 @@ const FMT = {
   "base64-links": ["节点链接 · Base64", "只有节点，没有分流"], links: ["节点链接", "每行一条，只有节点"], block: ["不给订阅", "返回 404"],
 };
 const FMT_ORDER = ["clash-meta", "clash", "sing-box", "xray", "base64-links", "links", "block"];
-const toRe = p => { const i = /^\(\?i\)/.test(p); try { return new RegExp(p.replace(/^\(\?i\)/, ""), i ? "i" : ""); } catch { return null; } };
-// 浏览器的正则报错是英文,换成一句人话;服务端(Go regexp)仍是最终裁决。
-const RE_WHY = [[/Unterminated group|Unmatched '\)'/, "圆括号没配对"], [/Unterminated character class/, "方括号没配对"], [/Nothing to repeat/, "重复符前面缺了要重复的内容"], [/\\ at end of pattern/, "末尾多了一个反斜杠"]];
-const reErr = p => { if (!p.trim()) return "正则不能为空"; try { new RegExp(p.replace(/^\(\?i\)/, "")); return ""; } catch (e) { return "这条正则写错了：" + ((RE_WHY.find(([r]) => r.test(e.message)) || [0, "写法不对"])[1]) + "。"; } };
+const toRe = p => {
+  const flags = /^\(\?([ims]+)\)/.exec(p);
+  try { return new RegExp(flags ? p.slice(flags[0].length) : p, flags ? [...new Set(flags[1])].join("") : ""); } catch { return null; }
+};
+// 浏览器只能辅助预览，Go regexp 由控制面最终检查。
+const reErr = p => p.trim() ? "" : "正则不能为空";
 const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.length; i++) { const r = toRe(rules[i].pattern); if (r && r.test(ua)) return i; } return rules.length; };
 const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -273,7 +275,8 @@ let SUB = null;          // { orig, draft, err, saving, pv, leaveTarget }
 let RD = null;           // 规则抽屉里的草稿 { rules, ua }
 let ADV_OPEN = false;
 // 应用内对话框自己收:不碰抽屉,和 modal-cancel 行为一致。
-const subCloseModal = () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); };
+const subCloseModal = () => closeModal();
+const subLeave = target => { if (typeof target === "function") target(); else if (target) location.hash = target; else paint(); };
 
 const FIELDS = [["sub_url_prefix", "订阅地址"], ["profile_title", "订阅名"], ["update_interval", "刷新间隔"], ["support_link", "支持链接"]];
 function changes() {
@@ -314,7 +317,9 @@ function preview(d) {
   const title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
   const [cn, ua] = PV_CLIENTS[SUB.pv];
   const R = d.rules && d.rules.length ? d.rules : SUB.builtin, i = hit(R, ua), f = i < R.length ? R[i].result : "links";
-  const iv = +d.update_interval || 0, base = subBase(d), noPfx = !d.sub_url_prefix;
+  const iv = +d.update_interval || 0, noPfx = !d.sub_url_prefix;
+  const link = d.sub_url_prefix === SUB.orig.sub_url_prefix && PV.auto ? PV.auto : subBase(d).replace(/\/+$/, "") + "/sub/" + PV.token;
+  const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
   const host = base.replace(/^https?:\/\//, ""), scheme = base.slice(0, base.length - host.length);
   return H`<div class="pv-h"><span class="sub">${SUB.users.length ? H`<select class="in" id="pv-user" aria-label="预览用户">${SUB.users.map(u => H`<option value="${u.username}" ${u.username === PV.user ? raw("selected") : ""}>${u.username}</option>`)}</select>` : PV.user} 的客户端里会看到${SUB.users.length ? "" : H`<span class="tag lab">示例</span>`}</span><span class="sp"></span>
       <div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div></div>
@@ -326,8 +331,8 @@ function preview(d) {
       <div class="pv-meta"><span>${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "由客户端决定多久更新"}</span>${d.support_link ? H`<span class="ell">${ic("help")}${d.support_link.replace(/^https?:\/\//, "")}</span>` : ""}</div>
       ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
     </div>
-    ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>/sub/${PV.token}</code>
-      <button type="button" class="ib sm" data-act="copy" data-text="${base}/sub/${PV.token}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
+    ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>${tail}</code>
+      <button type="button" class="ib sm" data-act="copy" data-text="${link}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
     <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>，${(FMT[f] || FMT.links)[1]}。</p>`;
 }
 function addrCard(d, W) {
@@ -395,7 +400,6 @@ function refresh() {
 async function saveSub() {
   if (!can("PUT", "/api/settings") || SUB.saving || !changes().length) return false;
   const d = SUB.draft, errors = {};
-  if (d.sub_url_prefix && !/^https?:\/\//.test(d.sub_url_prefix)) errors.sub_url_prefix = "订阅地址要以 http:// 或 https:// 开头";
   if (!/^\d+$/.test(String(d.update_interval)) || !Number.isSafeInteger(+d.update_interval)) errors.update_interval = "刷新间隔要是非负整数";
   SUB.fieldErrors = errors;
   if (Object.keys(errors).length) { SUB.err = Object.values(errors).join("；"); refresh(); return false; }
@@ -404,7 +408,9 @@ async function saveSub() {
   const rules = !sameRules(d.rules, SUB.orig.rules), n = changes().length;
   try {
     await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
-    SUB = null; toast(`已保存 ${n} 处改动`); await load(true, true);
+    // 不清空 SUB:重载回来前页面上的按钮仍要能用;草稿记成已保存,重载时换成控制面的最新值。
+    SUB.saving = false; SUB.err = ""; SUB.fieldErrors = {}; SUB.orig = clone(SUB.draft); refresh();
+    toast(`已保存 ${n} 处改动`); await load(true, true);
     return true;
   } catch (e) {
     SUB.saving = false;
@@ -416,16 +422,35 @@ async function saveSub() {
 
 // 离开确认:有未保存改动去别的页时,拦下来弹应用内对话框;同页锚点(#sub/clients 等)不算离开。
 function subLeaveModal(target) {
-  const c = changes();
+  if (modalCleanup) closeModal();
+  const state = SUB, c = changes();
   SUB.leaveTarget = target;
-  const m = $("#modal");
-  m.innerHTML = val(H`<div class="mbody"><h2>有 ${c.length} 处改动还没保存</h2>
+  const m = $("#modal"), previous = document.activeElement;
+  const attrs = ["role", "aria-modal", "aria-labelledby"].map(k => [k, m.getAttribute(k)]);
+  m.setAttribute("role", "dialog"); m.setAttribute("aria-modal", "true"); m.setAttribute("aria-labelledby", "sub-leave-title");
+  const trap = e => {
+    if (e.key !== "Tab") return;
+    const buttons = [...m.querySelectorAll("button:not(:disabled)")];
+    const first = buttons[0], last = buttons[buttons.length - 1];
+    if (!m.contains(document.activeElement) || (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+      e.preventDefault(); (e.shiftKey ? last : first)?.focus();
+    }
+  };
+  document.addEventListener("keydown", trap, true);
+  modalCleanup = () => {
+    clearTimeout(focusTimer); document.removeEventListener("keydown", trap, true);
+    for (const [k, v] of attrs) { if (v == null) m.removeAttribute(k); else m.setAttribute(k, v); }
+    if (SUB === state) SUB.leaveTarget = null;
+    if (previous?.isConnected) previous.focus();
+    else $('.profile[data-act="cp-toggle"]')?.focus();
+  };
+  m.innerHTML = val(H`<div class="mbody"><h2 id="sub-leave-title">有 ${c.length} 处改动还没保存</h2>
     <p>离开「订阅」页这些改动就会丢：</p>
     <ul class="s5-leave-list">${c.map(x => H`<li>${x}</li>`)}</ul>
     <div class="err" id="modal-err" role="alert"></div></div>
     <div class="mf"><button class="btn" data-act="sub-leave-stay">留下</button><button class="btn" data-act="sub-leave-drop">不保存</button><button class="btn pri" id="sub-leave-ok" data-act="sub-leave-save">保存并离开</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
-  setTimeout(() => $("#sub-leave-ok")?.focus(), 50);
+  const focusTimer = setTimeout(() => $("#sub-leave-ok")?.focus(), 50);
 }
 
 PAGES.sub = {
@@ -481,7 +506,7 @@ function rulesBody() {
     <div class="rd-list">${R.map((r, i) => { const e = reErr(r.pattern);
       return H`<div class="rd-row ${i === h ? "hit" : ""} ${RD.focus === i ? "focus" : ""}" data-i="${i}"><span class="zr-n">${i + 1}</span>
         <div class="rd-main"><input class="in mono" data-rp="${i}" value="${r.pattern}" aria-label="第 ${i + 1} 条的 User-Agent 正则" spellcheck="false">
-          ${r.label ? H`<span class="h">${r.label}</span>` : ""}${e ? H`<span class="rd-err">${e}</span>` : ""}</div>
+          ${r.label ? H`<span class="h">${r.label}</span>` : ""}${e ? H`<span class="rd-err">${e}</span>` : !toRe(r.pattern) ? H`<span class="h">浏览器没法预览这条，保存时由控制面检查</span>` : ""}</div>
         <span class="zr-to">${ic("arrow")}</span>
         <select class="in" data-rf="${i}" aria-label="第 ${i + 1} 条拿到的格式">${FMT_ORDER.map(f => H`<option value="${f}" ${f === r.result ? raw("selected") : ""}>${(FMT[f] || FMT.links)[0]}</option>`)}</select>
         <span class="rd-ops"><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button type="button" class="ib sm" data-act="rd-rm" data-i="${i}" aria-label="删除">${ic("trash")}</button></span></div>`; })}
@@ -499,12 +524,22 @@ function rulesDrawer(focus) {
   if (focus != null) requestAnimationFrame(() => document.querySelector(`.rd-row[data-i="${focus}"]`)?.scrollIntoView({ block: "center" }));
 }
 function rdPaint() { const y = $("#rd-body").scrollTop; $("#rd-body").innerHTML = val(rulesBody()); $("#rd-body").scrollTop = y; rdWire(); }
+// change 可能在 Tab 的失焦阶段触发，等焦点移动完再记录目标并重绘。
+function rdChangePaint() {
+  setTimeout(() => {
+    if (!$("#rd-body") || !$("#drawer.open")) return;
+    const el = document.activeElement;
+    const selector = el?.id === "rd-ua" ? "#rd-ua" : el?.matches("[data-rp]") ? `[data-rp="${el.dataset.rp}"]` : el?.matches("[data-rf]") ? `[data-rf="${el.dataset.rf}"]` : el?.matches("[data-act][data-i]") ? `[data-act="${el.dataset.act}"][data-i="${el.dataset.i}"]` : null;
+    rdPaint();
+    if (selector) $("#rd-body").querySelector(selector)?.focus();
+  }, 0);
+}
 function rdWire() {
   const bad = RD.rules.some(r => reErr(r.pattern));
   $("#rd-done").disabled = bad; $("#rd-why").innerHTML = bad ? val(H`${ic("warn")}先改好写错的正则`) : "";
   $("#rd-ua").addEventListener("input", e => { RD.ua = e.target.value; const p = e.target.selectionStart; rdPaint(); const n = $("#rd-ua"); n.focus(); n.setSelectionRange(p, p); });
-  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("change", () => { const r = RD.rules[+el.dataset.rp]; if (r.pattern !== el.value) delete r.label; r.pattern = el.value; rdPaint(); });
-  for (const el of document.querySelectorAll("[data-rf]")) el.addEventListener("change", () => { RD.rules[+el.dataset.rf].result = el.value; rdPaint(); });
+  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("change", () => { const r = RD.rules[+el.dataset.rp]; if (r.pattern !== el.value) delete r.label; r.pattern = el.value; rdChangePaint(); });
+  for (const el of document.querySelectorAll("[data-rf]")) el.addEventListener("change", () => { RD.rules[+el.dataset.rf].result = el.value; rdChangePaint(); });
 }
 
 Object.assign(ACTS, {
@@ -520,15 +555,17 @@ Object.assign(ACTS, {
   "s5-rules": d => { if (can("PUT", "/api/settings") && !SUB.saving) rulesDrawer(d.i != null ? +d.i : undefined); },
   "s5-discard": () => {
     if (!SUB || SUB.saving) return;
-    const dropped = clone(SUB.draft);
+    const state = SUB, dropped = {};
+    for (const [k] of FIELDS) if (String(SUB.draft[k] ?? "") !== String(SUB.orig[k] ?? "")) dropped[k] = SUB.draft[k];
+    if (!sameRules(SUB.draft.rules, SUB.orig.rules)) dropped.rules = clone(SUB.draft.rules);
     SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; paint();
-    toast("已放弃改动", false, { label: "撤销", run: () => { SUB.draft = dropped; SUB.err = ""; SUB.fieldErrors = {}; paint(); } });
+    toast("已放弃改动", false, { label: "撤销", run: () => { if (SUB !== state) return; Object.assign(SUB.draft, clone(dropped)); SUB.err = ""; SUB.fieldErrors = {}; paint(); } });
   },
   "s5-save": () => saveSub(),
   // 离开确认的三个选择:留下(地址已由 hashchange 守卫换回)、不保存直接走、保存成功再走。
   "sub-leave-stay": () => subCloseModal(),
-  "sub-leave-drop": () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; if (t) location.hash = t; else paint(); },
-  "sub-leave-save": async () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; if (await saveSub() && t) location.hash = t; },
+  "sub-leave-drop": () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; SUB.draft = clone(SUB.orig); SUB.err = ""; SUB.fieldErrors = {}; subLeave(t); },
+  "sub-leave-save": async () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; if (await saveSub()) subLeave(t); },
   "rd-mv": d => { const i = +d.i, to = +d.to; const [x] = RD.rules.splice(i, 1); RD.rules.splice(to, 0, x); rdPaint(); },
   "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },
   "rd-add": () => { RD.rules.push({ pattern: "(?i)", result: "clash-meta" }); rdPaint(); const els = document.querySelectorAll("[data-rp]"); const el = els[els.length - 1]; el.focus(); el.setSelectionRange(4, 4); },
@@ -551,7 +588,7 @@ function subTemplates() {
 async function subPreview(u, data) {
   if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3 };
   const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0 };
-  try { const links = await api(userPath(u.username) + "/links"); out.token = (links.auto || "").split("/sub/")[1] || ""; }
+  try { const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || ""; const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); }
   catch (e) { toast(e.message, true); }
   // 与订阅下发一样，套餐节点、套餐入站和额外授权取并集，排除排水与满员入站。
   // 授权数据不全时不猜测，省略无法确认的节点行。

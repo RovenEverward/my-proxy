@@ -205,7 +205,8 @@ async function refreshUpdatePill(force) {
   const b = $("#upd-pill");
   if (b) b.hidden = !showUpdatePill(u);
 }
-function closeModal() { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
+let modalCleanup = null;
+function closeModal() { const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -636,7 +637,7 @@ let DRAWER_RAF = 0;
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
   cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
-  $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open");
+  $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open");
   updPollStop();
   if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
 }
@@ -720,7 +721,8 @@ async function openProfiles() {
   for (const b of m.querySelectorAll(".pfitem")) b.addEventListener("click", () => useProfile(b.dataset.name, b));
 }
 // useProfile:切到 name。成功整页刷新,让所有页面数据都跟着新控制面重来。
-async function useProfile(name, el) {
+async function useProfile(name, el, confirmed = false) {
+  if (!confirmed && PAGES[route[0]]?.canLeave && await PAGES[route[0]].canLeave(() => useProfile(name, null, true)) === false) return;
   if (el) { el.disabled = true; el.classList.add("busy"); }
   try {
     await api("/local/profiles/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
@@ -809,7 +811,7 @@ const ACTS = {
   reload: () => load(true),
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
-  "modal-cancel": () => { $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); },
+  "modal-cancel": () => closeModal(),
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
   "update-open": async () => { if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch {} } openUpdateModal(); },
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
@@ -873,7 +875,7 @@ addEventListener("hashchange", async () => {
     try { ok = await p.canLeave(nextKey); } catch { ok = true; }
     if (!ok) { history.replaceState(null, "", "#" + here); return; }
   }
-  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); $("#modal").classList.remove("open"); $("#scrim").classList.remove("open"); }
+  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open"); }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。

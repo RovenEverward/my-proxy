@@ -54,7 +54,7 @@ test("改订阅名即时预览，输入焦点保留，保存条列出一处改�
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
-test("前缀缺协议时字段红字提示且不发 PUT，刷新间隔也校验非负整数", async ({ page }) => {
+test("前缀缺协议由控制面返回字段红字，刷新间隔仍校验非负整数", async ({ page }) => {
   const puts = [];
   page.on("request", r => { if (r.method() === "PUT") puts.push(r); });
   await open(page);
@@ -69,7 +69,8 @@ test("前缀缺协议时字段红字提示且不发 PUT，刷新间隔也校验�
     await page.fill("#f-int", value); await save(page);
     await expect(page.locator("#int-err")).toContainText("非负整数");
   }
-  expect(puts).toEqual([]);
+  expect(puts).toHaveLength(1);
+  expect(puts[0].postDataJSON().sub_url_prefix).toBe("sub.example.com");
 });
 
 test("前缀尾斜杠原样发送，由服务端规范化后读回", async ({ page }) => {
@@ -298,4 +299,147 @@ test("底稿抽屉「语法正确」用墨色不是绿色", async ({ page }) => 
   const [r, g, b] = m.slice(1).map(Number);
   expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThan(16);
   expect(Math.max(r, g, b)).toBeLessThan(64);
+});
+
+test("放弃后后台刷新，撤销只恢复原先改过的键", async ({ page }) => {
+  await open(page);
+  await page.fill("#f-title", "撤销的标题");
+  await page.click("[data-act=s5-discard]");
+  await putSettings({ sub_url_prefix: "https://fresh.example.com", update_interval: 72 });
+  await page.evaluate(() => load(true));
+  await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
+  await page.locator(".toast .toast-act").click();
+  await expect(page.locator("#f-title")).toHaveValue("撤销的标题");
+  await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
+  await expect(page.locator("#f-int")).toHaveValue("72");
+  await expect(page.locator("#sb")).toContainText("有 1 处改动");
+});
+
+test("旧前缀未改时可保存标题，PUT 保留原前缀", async ({ page }) => {
+  let stored = { ...await settings(), sub_url_prefix: "sub.example.com" };
+  const puts = [];
+  await page.route("**/api/settings", r => {
+    if (r.request().method() === "PUT") { stored = r.request().postDataJSON(); puts.push(stored); }
+    return r.fulfill({ json: stored });
+  });
+  await open(page);
+  await page.fill("#f-title", "旧前缀标题");
+  await save(page);
+  await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
+  expect(puts).toHaveLength(1);
+  expect(puts[0].sub_url_prefix).toBe("sub.example.com");
+  await expect(page.locator("#sb")).toBeEmpty();
+});
+
+test("未编辑前缀的预览和复制逐字保留控制面的旧链接", async ({ page }) => {
+  const stored = { ...await settings(), sub_url_prefix: "https://old.example.com/sub///" };
+  const auto = "https://old.example.com/sub///sub/token-old";
+  await page.route("**/api/settings", r => r.fulfill({ json: stored }));
+  await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto } }));
+  await open(page);
+  await expect(page.locator(".pv-link code")).toHaveText(auto);
+  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", auto);
+  await page.fill("#f-title", "只改标题");
+  await expect(page.locator(".pv-link code")).toHaveText(auto);
+});
+
+test("编辑前缀时取最后一段订阅令牌并去掉全部尾斜杠", async ({ page }) => {
+  await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto: "https://old.example.com/sub/path/sub/token-last" } }));
+  await open(page);
+  await page.fill("#f-prefix", "https://new.example.com/sub///");
+  const expected = "https://new.example.com/sub/sub/token-last";
+  await expect(page.locator(".pv-link code")).toHaveText(expected);
+  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", expected);
+});
+
+test("Go 正则允许完成，浏览器不支持的规则提示交由控制面检查", async ({ page }) => {
+  await open(page);
+  await page.click("[data-act=s5-rules]");
+  // 前导 Go flags 可预览，作用域 flags 在支持它的浏览器里也能使用。
+  for (const pattern of ["(?m)^Clash", "(?is)^clash"]) {
+    await page.fill('[data-rp="0"]', pattern);
+    await page.locator('[data-rp="0"]').press("Tab");
+    await page.fill("#rd-ua", "CLASH");
+    if (pattern.includes("is")) await expect(page.locator("#rd-hit")).toContainText("命中第 1 条");
+    await expect(page.locator("#rd-done")).toBeEnabled();
+  }
+  await page.fill('[data-rp="0"]', "(?i:clash)");
+  await page.locator('[data-rp="0"]').press("Tab");
+  await expect(page.locator("#rd-done")).toBeEnabled();
+  await page.click("#rd-done");
+  await page.click("[data-act=s5-rules]");
+  // Go 命名组在 JS 中无法编译，仍可完成并由控制面保存。
+  await page.fill('[data-rp="0"]', "(?P<client>clash)");
+  await page.locator('[data-rp="0"]').press("Tab");
+  await expect(page.locator('.rd-row[data-i="0"] .h')).toHaveText("浏览器没法预览这条，保存时由控制面检查");
+  await page.fill("#rd-ua", "clash");
+  await expect(page.locator('.rd-row[data-i="0"]')).not.toHaveClass(/hit/);
+  await expect(page.locator("#rd-done")).toBeEnabled();
+  await page.click("#rd-done"); await save(page);
+  await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
+  await page.click("[data-act=s5-rules]");
+  await page.fill('[data-rp="0"]', ""); await page.locator('[data-rp="0"]').press("Tab");
+  await expect(page.locator("#rd-done")).toBeDisabled();
+  await page.fill('[data-rp="0"]', "["); await page.locator('[data-rp="0"]').press("Tab");
+  await expect(page.locator("#rd-done")).toBeEnabled();
+  await page.click("#rd-done"); await save(page);
+  await expect(page.locator("#sb")).toContainText("规则正则不合法");
+});
+
+test("切换控制面先确认草稿，留下取消，不保存或保存后才切换", async ({ page }) => {
+  const calls = [];
+  await page.route("**/local/profiles", r => r.fulfill({ json: [
+    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
+  ] }));
+  await page.route("**/local/profiles/use", r => { calls.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await open(page);
+  const choose = async () => {
+    if (await page.locator(".profile[data-act=cp-toggle]").getAttribute("aria-expanded") !== "true") await page.click(".profile[data-act=cp-toggle]");
+    await page.click(".cp-pop [data-act=cp-switch]");
+    await page.click('.pfitem[data-name="other"]');
+    await expect(page.locator("#modal.open h2")).toContainText("还没保存");
+  };
+  await page.fill("#f-title", "切换前草稿");
+  await choose();
+  await page.getByRole("button", { name: "留下", exact: true }).click();
+  await expect(page.locator("#modal.open")).toHaveCount(0);
+  expect(calls).toEqual([]);
+  await expect(page.locator("#f-title")).toHaveValue("切换前草稿");
+  await choose(); await page.getByRole("button", { name: "不保存", exact: true }).click();
+  await expect.poll(() => calls.length).toBe(1);
+  await expect(page.locator("#f-title")).toHaveValue("{USERNAME}");
+  await page.fill("#f-title", "切换前保存");
+  await choose(); await page.getByRole("button", { name: "保存并离开", exact: true }).click();
+  await expect.poll(() => calls.length).toBe(2);
+  expect((await settings()).profile_title).toBe("切换前保存");
+});
+
+test("离页对话框声明名称，Tab 循环限制在内部并在关闭时还原焦点", async ({ page }) => {
+  await open(page);
+  await page.fill("#f-title", "焦点测试");
+  const nav = page.locator('.side a.nav[href="#nodes"]');
+  await nav.click();
+  const dialog = page.getByRole("dialog", { name: "有 1 处改动还没保存" });
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(page.locator("#sub-leave-ok")).toBeFocused();
+  const buttons = dialog.getByRole("button");
+  await page.keyboard.press("Tab"); await expect(buttons.nth(0)).toBeFocused();
+  await page.keyboard.press("Shift+Tab"); await expect(buttons.nth(2)).toBeFocused();
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("Tab");
+    expect(await dialog.evaluate(e => e.contains(document.activeElement))).toBe(true);
+  }
+  await page.getByRole("button", { name: "留下", exact: true }).click();
+  await expect(nav).toBeFocused();
+  await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
+});
+
+test("规则修改后 Tab 的目标格式控件保留焦点，格式修改也保留焦点", async ({ page }) => {
+  await open(page); await page.click("[data-act=s5-rules]");
+  await page.fill('[data-rp="0"]', "(?i)^focus");
+  await page.locator('[data-rp="0"]').press("Tab");
+  await expect(page.locator('[data-rf="0"]')).toBeFocused();
+  await expect(page.locator('.rd-row[data-i="0"] .rd-main .h')).toHaveCount(0);
+  await page.selectOption('[data-rf="0"]', "sing-box");
+  await expect(page.locator('[data-rf="0"]')).toBeFocused();
 });
