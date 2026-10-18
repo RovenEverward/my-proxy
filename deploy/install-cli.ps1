@@ -171,7 +171,9 @@ try {
 	# ---- 装上去并确认它真的能跑 ---------------------------------------------
 	# 先落到 .new 试跑一次:半路失败的话,原来那个还能用。
 	if (-not (Test-Path $Prefix)) { New-Item -ItemType Directory -Path $Prefix -Force | Out-Null }
-	$new = "$Dest.new"
+	# 临时文件要以 .exe 结尾:Windows 只执行 PATHEXT 里的扩展名,叫 mpx.exe.new 的话
+	# 下面的试跑一定失败。
+	$new = Join-Path $Prefix 'mpx.new.exe'
 	Copy-Item $Src $new -Force
 	try {
 		& $new --help 2>&1 | Out-Null
