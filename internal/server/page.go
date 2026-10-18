@@ -3,13 +3,19 @@ package server
 import (
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"rsc.io/qr"
 	"strings"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/ui"
 )
+
+// htmlString 是已经拼好的 HTML 片段(二维码 SVG)。页面模板用 text/template,
+// 它把 string 原样写出,所以这里只需要一个有名字的类型,不必再挂过滤器。
+type htmlString = template.HTML
 
 // 订阅页是给浏览器看的那一屏,和客户端的订阅共用同一个地址:只有当这次请求
 // 本来就要拿到默认的 links、而且对方报明自己是浏览器(Accept 带 text/html)
@@ -33,12 +39,18 @@ type subPageData struct {
 	// 保存新地址的唯一机会。
 	Capabilities []subCapability
 	Rotated      string
-	Links        []subPageLink
+	// FontBase 是 @font-face 里字体路径的相对前缀,按当前请求路径算(见 fontBase)。
+	FontBase string
+	Links    []subPageLink
 	// QRSVG 是 Links 第一条地址的二维码,在服务端画成内联 SVG,页面不依赖外部脚本。
-	QRSVG  template.HTML
+	QRSVG  htmlString
 	QRName string
 }
 
+// 页面模板不用 HTML 版(它按上下文自动转义 HTML 模板):模板里的 URL 写在 JS
+// 字符串和 <code> 里,自动转义会把地址中的 & 改写成 &amp;,复制出去就不再是
+// 原来那条地址。用户输入只有用户名,在模板里用 html 过滤器显式转义;二维码
+// SVG 以 htmlString 原样写出。
 var subPageTmpl = template.Must(template.New("subpage").Parse(subPageHTML))
 
 // serveSubPage 渲染浏览器看的订阅页。用户不可用时照常给页面,只是徽章上写明
@@ -55,6 +67,7 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 		ExpireText: expireText(user.ExpireAt, now),
 		Token:      user.SubToken,
 		Rotated:    rotated,
+		FontBase:   fontBase(r.URL.Path),
 	}
 	if user.DataLimit > 0 {
 		data.BarShow = true
@@ -93,6 +106,49 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 	if err := subPageTmpl.Execute(w, data); err != nil {
 		s.logger.Error("渲染订阅页失败", "username", user.Username, "error", err)
 	}
+}
+
+// fontBase 按当前页面地址算字体路径的相对前缀。
+//
+// 订阅页可能落在 /sub/<token>(订阅本体)或 /sub/<token>/rotate(换地址后这一次
+// 渲染),而字体固定挂在 /sub/-/fonts/ 下 —— 用相对路径,只转发 /sub/ 的反向
+// 代理也能取到字体,不必知道控制面挂在哪一层前缀后面。
+func fontBase(path string) string {
+	rest := strings.Trim(strings.TrimPrefix(path, "/sub/"), "/")
+	n := 0
+	for _, seg := range strings.Split(rest, "/") {
+		if seg != "" {
+			n++
+		}
+	}
+	if n < 1 {
+		n = 1
+	}
+	return strings.Repeat("../", n-1) + "-/fonts/"
+}
+
+// handleSubFont 把内置字体发给浏览器看的订阅页。名字只认白名单里的两个文件:
+// 字体目录里还有字表和许可文件,它们不该从这个公网可达、无鉴权的入口发出去。
+//
+// 字体随二进制一起内置、内容不变,可以长缓存。订阅页可能落在 /sub/ 下的任意
+// 深层(换地址后的页面是 /sub/<token>/rotate),但不管从哪一层取,发出去的都是
+// 同一份文件。
+func (s *Server) handleSubFont(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name != "MonaSansVF.woff2" && name != "NotoSansSC-subset.woff2" {
+		writeError(w, http.StatusNotFound, "字体不存在")
+		return
+	}
+	data, err := fs.ReadFile(ui.Fonts(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "字体不存在")
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // handleRotateSub 是页面上"换个订阅地址"按钮的落点:用路径里的 token 换一个新
@@ -223,20 +279,23 @@ func clamp(v, lo, hi int64) int64 {
 }
 
 // 订阅页的样式与文档站一致:黑白无彩、细线卡片、8px 圆角;只有状态徽章和
-// 危险操作带颜色。全部内联,不引外部字体、脚本和样式。
+// 危险操作带颜色。全部内联,字体只取同源 /sub/-/fonts/ 下的内置文件,不引外部
+// 脚本和样式。
 const subPageHTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{.Username}} 的订阅</title>
+<title>{{.Username | html}} 的订阅</title>
 <style>
+@font-face { font-family: "Mona Sans VF"; src: url({{.FontBase}}MonaSansVF.woff2) format("woff2"); font-weight: 200 900; font-display: swap; }
+@font-face { font-family: "Noto Sans SC"; src: url({{.FontBase}}NotoSansSC-subset.woff2) format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF; }
 :root { color-scheme: light dark;
   --canvas:#fff; --stone:#f4f4f4; --ink:#0a0a0a; --muted:#737373; --faint:#a3a3a3; --line:rgba(0,0,0,.07);
   --card:0 0 0 1px #0000000f,0 1px 2px -1px #0000000f,0 2px 4px 0 #0000000a;
   --ok:#1a7f37; --warn:#9a6700; --bad:#c4342d; --off:#737373; --ok-bg:#1a7f3714; --warn-bg:#9a670014; --bad-bg:#c4342d12; --off-bg:#7373731a;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif;
+  --sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif;
   --mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
 @media (prefers-color-scheme: dark) { :root {
   --canvas:#08090a; --stone:#16171a; --ink:#ededef; --muted:#9a9aa0; --faint:#5b5d64; --line:rgba(255,255,255,.08);
@@ -317,7 +376,7 @@ button.warn:hover { background: var(--bad); color: #fff; }
 {{end}}
 <section class="card">
 <p class="eyebrow">MPX 订阅</p>
-<div class="head"><h1>{{.Username}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
+<div class="head"><h1>{{.Username | html}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
 <div class="stats">
 <div class="stat"><span class="k">流量</span><span class="v">{{.Usage}}</span>{{if .BarShow}}<span class="bar" title="{{.Percent}}%"><i style="width:{{.Percent}}%"></i></span>{{end}}</div>
 <div class="stat"><span class="k">到期</span><span class="v">{{.ExpireText}}</span></div>

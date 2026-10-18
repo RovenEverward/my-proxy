@@ -27,6 +27,23 @@ import (
 //go:embed assets
 var assets embed.FS
 
+// Fonts 给控制面的订阅页用:同一份内置字体。
+//
+// 订阅页与 mpx ui 的页面不在同一个进程里(前者在控制面,后者在本机),但字体
+// 只该打包一次,所以控制面从这里取同一个 embed 里的字体目录,而不是各存一份。
+func Fonts() fs.FS {
+	sub, err := fs.Sub(assets, "assets/fonts")
+	if err != nil {
+		return emptyFonts{}
+	}
+	return sub
+}
+
+// emptyFonts 是 Fonts 出错时的退化值:读什么都报不存在,而不是 panic。
+type emptyFonts struct{}
+
+func (emptyFonts) Open(string) (fs.File, error) { return nil, fs.ErrNotExist }
+
 // CSP 只放行同源脚本与样式。行内 style 属性(进度条宽度这类)单独放行;
 // 行内脚本、eval、外部资源一律不行。
 const csp = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; " +
@@ -354,8 +371,9 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 }
 
 const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
-<style>@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900}</style>
-<body style="font:14px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC','PingFang SC',sans-serif;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
+<style>@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap}</style>
+<body style="font:14px/1.6 'Mona Sans VF',-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC','PingFang SC',sans-serif;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
 <div style="position:fixed;top:0;left:0;right:0;height:var(--mygo-titlebar-height,0px);--app-region:drag"></div>
 <h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`

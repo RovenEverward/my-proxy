@@ -179,6 +179,9 @@ func (s *Server) routes() {
 	sub.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
 	// 订阅页上的"换个订阅地址":鉴权就是这个 token 本身(见 handleRotateSub)。
 	sub.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
+	// 订阅页的内置字体。挂在 /sub/ 下、用四段路径,是为了让只转发 /sub/ 的
+	// 反向代理也能取到字体,而且永远不会撞上三段式的 /sub/{token}/{format}。
+	sub.HandleFunc("GET /sub/-/fonts/{name}", s.handleSubFont)
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()

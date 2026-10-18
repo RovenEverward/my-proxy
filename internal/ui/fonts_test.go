@@ -124,3 +124,45 @@ func TestCJKSubsetCoversUI(t *testing.T) {
 		t.Errorf("%s 里的「%c」(U+%04X) 不在中文字体子集里;跑 scripts/build-cjk-font.py 重新生成", f, r, r)
 	}
 }
+
+// 子集要收全 GB2312 一级和二级字(6763 个),不能只收一级:用户名、入口备注
+// 这类用户自己写的字经常落在二级里。这里抽 16 个二级字做哨兵,任何一个是
+// 用一级字拼不出来的,不在子集里就说明字还是旧的、只收了一级。
+//
+// 子集是按 scripts/build-cjk-font.py 生成后才算数的:旧字体预计会在这里失败,
+// 重新生成后即通过。
+func TestSubsetCoversLevel2NameChars(t *testing.T) {
+	const names = "鑫琪婷璐萱岚桢昕炜曦晗瑜钰"
+	list, err := os.ReadFile("assets/fonts/NotoSansSC-subset.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitN(string(list), "\n", 3)
+	if len(lines) < 2 {
+		t.Fatal("NotoSansSC-subset.txt 格式不对")
+	}
+	have := map[rune]bool{}
+	for _, r := range lines[1] {
+		have[r] = true
+	}
+	var missing []string
+	for _, r := range names {
+		if !have[r] {
+			missing = append(missing, fmt.Sprintf("「%c」(U+%04X)", r, r))
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("二级字不在中文字体子集里:%s;跑 scripts/build-cjk-font.py 重新生成", strings.Join(missing, "、"))
+	}
+}
+
+// 登录页也要用 Mona Sans VF,而且是字体栈里的第一个:会话失效的那一刻看到
+// 的就是它,字体要和主页面一致。
+func TestLoginPageUsesMonaSans(t *testing.T) {
+	if !strings.Contains(loginPage, `@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900`) {
+		t.Error(`登录页没有指向本地 /fonts/MonaSansVF.woff2 的 "Mona Sans VF" @font-face`)
+	}
+	if !strings.Contains(loginPage, `font:14px/1.6 'Mona Sans VF',`) {
+		t.Error(`登录页的字体栈第一个应是 "Mona Sans VF"`)
+	}
+}
