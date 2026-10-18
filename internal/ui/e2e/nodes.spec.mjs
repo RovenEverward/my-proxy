@@ -167,6 +167,8 @@ function fakeJobs(page, opts) {
     const jobs = opts.active ?? (run ? [J(opts.kind || "diagnose", { id: 91 })] : []);
     return route.fulfill({ json: { jobs: u.searchParams.get("active") ? jobs : (opts.recent || []) } });
   });
+  // 起任务:POST /api/nodes/5/(diagnostics|install)/jobs。Playwright 先看后注册的那一条,** 会一直
+  // 匹配到路径末尾,所以这条要放在上面那条 .../jobs* 之后,否则写请求也被当成列表读掉。
   page.route(`**/api/nodes/5/${opts.kind || "diagnose"}/jobs*`, route => {
     st.posts++; st.phase = "running";
     return route.fulfill({ status: opts.reused ? 200 : 202, json: opts.reused ? { reused: true, job: J(opts.kind || "diagnose") } : { job: J(opts.kind || "diagnose") } });

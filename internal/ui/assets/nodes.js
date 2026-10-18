@@ -61,9 +61,11 @@ PAGES.nodes = {
     return { nodes };
   },
   render(d, r) { return r[1] ? nodeDetail(d) : nodeList(d); },
-  // after:详情画好后(innerHTML 已换),有正在跑的体检/安装就接着盯它、放回刚做完的结论;
-  // 刚从体检页带过来 AUTO_APPLY 时替用户打开「应用到节点」的确认弹窗。d 为空是骨架那一次,都不做。
-  after(d, r) { if (d && r[1]) jobsAfter(d); autoApplyPending(+r[1]); },
+  // after:详情画好后(innerHTML 已换),先把体检页带过来的 AUTO_APPLY 用掉:能应用就替用户
+  // 打开「应用到节点」的确认弹窗,不能就说明白。之后才接手正在跑的体检/安装 —— 顺序不能反:
+  // 没有正在跑的任务时 jobsAfter 会把轮询停掉,那一停会把确认框一起收掉。
+  // d 为空是骨架那一次,确认框不做,但标志照样清掉(与以前一样)。
+  after(d, r) { if (r[1]) autoApplyPending(+r[1], d); if (d && r[1]) jobsAfter(d); },
 };
 // NODE_LABEL_BY_ID:节点 id → 显示名。列表页一拉到节点就顺手记下(见 PAGES.nodes.load),
 // 提示里那句「已开始在 🇯🇵 东京 A 上安装 xray」和轮询时的提示都用得着它。
@@ -185,13 +187,16 @@ let NODES_TOTAL = null;
 // 找到可点的 node-sync 就触发它(头部主按钮或「⋯」菜单项都行),找不到(比如节点
 // 连不上,按钮是灰的)就说明白并把人引到「刷新状态」;两种情况都立刻清掉标志。
 // 标志带时间戳,超过 10 秒就当过期 —— 详情加载失败或用户中途离开都不会留到下次。
-function autoApplyPending(id) {
+// 名字从这一份详情(d)里取:按钮上的 data-label 可能还是列表页记下的旧名字。
+function autoApplyPending(id, d) {
   const a = window.AUTO_APPLY;
   if (!a || a.id !== id) return;
   window.AUTO_APPLY = null;
   if (Date.now() - a.at > 10000) return;
   const btn = document.querySelector('[data-act="node-sync"]:not([disabled]):not([aria-disabled=true])');
-  if (btn) ACTS["node-sync"]({ ...btn.dataset, from: "doctor" });
+  const meta = btn ? { ...btn.dataset } : { id };
+  if (d?.node && d.node.id === id) Object.assign(meta, { name: d.node.name, label: nodeLabel(d.node) });
+  if (btn) ACTS["node-sync"]({ ...meta, from: "doctor" });
   else {
     toast("节点连不上，先点「刷新状态」，连上后再应用");
     document.querySelector('[data-act="node-check"]')?.focus();
@@ -292,6 +297,9 @@ function nodeDetail(d) {
   const needApply = INB_PENDING.has(id) || hashDrift || neverApplied || drift;
   // 只有「模板换了写法」这一条要找应用时,按它说,不混进「配置被改过」「还没应用过」。
   const applyWhy = INB_PENDING.has(id) || hashDrift || neverApplied ? "" : drift ? "新版本改了节点配置的写法，应用一次才生效" : "";
+  // 标题与确认框里的节点名用显示名:详情拉回来的这一份(可能被改写)先记下,没有显示名时
+  // 退到内部名(同 jobStarted)。页眉按钮上的 data-label 只是兜底。
+  NODE_LABEL_BY_ID[id] = { id, name: n.name, display: n.display || "" };
   // 连不上时主按钮改成「刷新状态」—— 它是只读的 GET ?fresh=1,有读权限就能点;要应用也
   // 推不动,按 needApply 的位置换成灰按钮/灰菜单项(aria-disabled,仍可聚焦,读屏读得到原因)。
   // 只有主按钮真的换成「刷新状态」时,「⋯」里才去掉刷新项。
@@ -485,19 +493,22 @@ async function busy(btn, fn) {
 // 到十几分钟,不该把人留在弹窗里。提示一句已经在跑,再用刚从任务带回的那一份重画详情
 // (「正在…」的提示和变灰的按钮都由它决定)。job 随确认框进来,名字也就带得动。
 function jobStarted(d, kind, res, core) {
-  const id = +d.id, label = d.label || d.name, j = res?.job;
+  // 控制面没给任务(既不是收下的 202、也不是复用的 200):这不算开始,照着原来的做法
+  // 把原话留在确认框里,别关框、别提示「已开始」。
+  if (!res?.job) throw new Error("控制面没有说明这次" + (kind === "diagnose" ? "体检" : "安装") + "有没有开始");
+  const id = +d.id, label = d.label || d.name, j = res.job;
   NODE_LABEL_BY_ID[id] = NODE_LABEL_BY_ID[id] || { id, name: d.name, display: d.label };
-  toast(res?.reused ? JOB_TEXT[kind].reused : JOB_TEXT[kind].started(label, core));
   // 刚起过一次:这次进节点以来的「上次没做完」不再问,免得被自己刚起的任务盖住。
   jobAsked.add(id); jobAsk[id] = true;
-  closeModal();
-  // 先把这次接下的任务摆进当前详情(data 还是同一份,只是任务换了),重画一遍让人马上看见;
-  // 新数据随后由 load 取回。没带回任务时不出手,交给这次 load 的结果。
-  const run = j ? [j, ...(current.data?.jobs?.active || []).filter(x => x.id !== j.id)] : (current.data?.jobs?.active || []);
-  if (j && route[0] === "nodes" && +route[1] === id) {
+  // 先把这次接下的任务摆进当前详情(data 还是同一份,只是任务换了),重画一遍让人马上看见。
+  // 这一步在关确认框之前:画出来时框还开着,不会顺手去问一次「最近一次做完没有」。
+  if (route[0] === "nodes" && +route[1] === id) {
+    const run = [j, ...(current.data?.jobs?.active || []).filter(x => x.id !== j.id)];
     current = { ...current, data: { ...(current.data || {}), jobs: { active: run, last: null } }, loading: false, at: new Date() };
     paint();
   }
+  closeModal();
+  toast(res.reused ? JOB_TEXT[kind].reused : JOB_TEXT[kind].started(label, core));
   load(true, true);
 }
 
@@ -509,9 +520,10 @@ Object.assign(ACTS, {
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启代理程序：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
-    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，代理程序已重启`); await api(nodePath(d.id) + "?fresh=1").catch(() => null); // 应用完马上现场查一次:不然卡片要等下一轮检查才变回「已是最新」
-      await load(true, true); } }),
+  // 标题与「已应用到…」用显示名:按钮上的 data-label 可能还是列表页记下的旧名字。
+  "node-sync": d => { const label = nodeLabel(NODE_LABEL_BY_ID[+d.id]) || d.label || d.name; return confirmBox({ title: `把配置应用到 ${label}？`, text: "把当前配置推到节点并重启代理程序：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
+    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${label}，代理程序已重启`); await api(nodePath(d.id) + "?fresh=1").catch(() => null); // 应用完马上现场查一次:不然卡片要等下一轮检查才变回「已是最新」
+      await load(true, true); } }); },
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
     confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",

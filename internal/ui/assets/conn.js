@@ -181,9 +181,16 @@ function connPending(n, opts = {}) {
   if (!INB_PENDING.has(n.id)) return "";
   return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${!opts.tagOnly && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
 }
-// 给灰字说明用的节点名:不带国旗。
-const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";
+// 给灰字说明用的节点名:不带国旗。显示名是「🇺🇸 洛杉矶 B」这种旗子 + 空格的写法,
+// 旗子去掉后开头那个空格也一起去掉;万一剩下的只有旗子和空格,用内部名。
+const plainNodeName = n => {
+  const name = nodeLabel(n) || n?.name;
+  return String(name || "").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || String(n?.name || "").trim() || "节点";
+};
 const restartNote = n => `会重启${plainNodeName(n)} 上的代理，已连着的用户会断开几秒`;
+// pendingToast:「改了要应用」的提示统一从这里拼 —— 只保存不应用之后提示节点上有改动待应用。
+// 节点名用 plainNodeName(不带国旗),中间的标点与收尾说明同一套。
+const pendingToast = (done, n, tail = "随时可以应用") => toast(`${done}；${plainNodeName(n)} 显示「有改动未应用」，${tail}`);
 // 抽屉底部:次要「只…，稍后应用」+ 主按钮「…并应用到节点」,主按钮下面一行灰字。
 function applyFoot(n, main, later, id = "i-save") {
   return H`<div class="df df-apply"><div class="df-row"><button type="button" class="btn" id="x-later">${later}</button><button type="submit" class="btn pri" id="${id}">${main}</button></div><p class="df-note" id="x-note">${restartNote(n)}</p></div>`;
@@ -354,7 +361,7 @@ async function inboundEditor(id, presetNode) {
         done = `已更新连接方式 ${inbTitle(updated, nodes.find(n => n.id === updated.node_id))}`;
       }
       if (st.need && now) await applyAfterWrite(st.node, done);
-      else toast(st.need ? `${done}；${plainNodeName(st.node)} 显示「有改动未应用」，随时可以应用` : done);
+      else if (st.need) pendingToast(done, st.node); else toast(done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -422,7 +429,7 @@ async function connectionEditor(inbID) {
       }
       const st = mode.state(), done = msgs.length ? msgs.join("；") : "已保存";
       if (st.need && mode.now()) await applyAfterWrite(n, done);
-      else toast(st.need ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，随时可以应用` : done);
+      else if (st.need) pendingToast(done, n); else toast(done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -481,7 +488,7 @@ function drawAddConnection() {
       const created = await write("POST", "/api/inbounds", body);
       const done = `已添加 ${inbTitle(created, node)}`;
       if (mode.now()) await applyAfterWrite(node, done);
-      else toast(`${done}；${plainNodeName(node)} 显示「有改动未应用」，随时可以应用`);
+      else pendingToast(done, node);
       closeOverlays(); load(true, true);
     } catch (e2) { err.textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -588,7 +595,7 @@ const CONN_ACTS = {
     const del = async now => {
       await write("DELETE", inbPath(d.id));
       if (n && now) await applyAfterWrite(n, done);
-      else toast(n ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，应用后节点才停止监听` : done);
+      else if (n) pendingToast(done, n, "应用后节点才停止监听"); else toast(done);
       closeOverlays(); load(true, true);
     };
     confirmBox({ title: `删除连接「${title}」？`, text: H`不可恢复：挂在它上面的对外地址一起删掉，用它的客户端下次刷新订阅后就没了这个对外地址。${n ? H`<br><span class="sub">${restartNote(n)}</span>` : ""}`,
