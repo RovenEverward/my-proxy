@@ -100,9 +100,16 @@ func (s *Store) ApplyCoreTrafficSample(sample model.TrafficSample, core model.Co
 	if err := affectedOrNotFound(res, "用户 "+sample.Username+" 或可记账的流量范围"); err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO traffic_samples(username,node_id,sampled_at,uplink,downlink,core,generation) VALUES (?,?,?,?,?,?,?)`, sample.Username, sample.NodeID, normalizeTime(sample.SampledAt).Unix(), sample.Uplink, sample.Downlink, core, sample.Generation)
+	sampledAt := normalizeTime(sample.SampledAt).Unix()
+	_, err = tx.Exec(`INSERT INTO traffic_samples(username,node_id,sampled_at,uplink,downlink,core,generation) VALUES (?,?,?,?,?,?,?)`, sample.Username, sample.NodeID, sampledAt, sample.Uplink, sample.Downlink, core, sample.Generation)
 	if err != nil {
 		return err
+	}
+	// 只有真的有流量才刷新活跃时间:重启行、零基准行与没变化的采样都不是「在用」。
+	if total > 0 {
+		if err := markUserActive(tx, sample.Username, sample.NodeID, sampledAt); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
