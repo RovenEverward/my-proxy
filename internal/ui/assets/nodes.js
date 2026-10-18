@@ -65,7 +65,7 @@ PAGES.nodes = {
   // 打开「应用到节点」的确认弹窗,不能就说明白。之后才接手正在跑的体检/安装 —— 顺序不能反:
   // 没有正在跑的任务时 jobsAfter 会把轮询停掉,那一停会把确认框一起收掉。
   // d 为空是骨架那一次,确认框不做,但标志照样清掉(与以前一样)。
-  after(d, r) { if (r[1]) autoApplyPending(+r[1], d); if (d && r[1]) jobsAfter(d); },
+  after(d, r) { if (d && r[1]) { autoApplyPending(+r[1], d); jobsAfter(d); } },
 };
 // NODE_LABEL_BY_ID:节点 id → 显示名。列表页一拉到节点就顺手记下(见 PAGES.nodes.load),
 // 提示里那句「已开始在 🇯🇵 东京 A 上安装 xray」和轮询时的提示都用得着它。

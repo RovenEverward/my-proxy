@@ -102,7 +102,9 @@ func (s *Server) rateLimit(l *ipRateLimiter, next http.Handler) http.Handler {
 // /sub/ 开头的路径(订阅本体与 rotate),/api 罩整个管理面。
 const (
 	subRate, subBurst = 10.0, 30.0
-	apiRate, apiBurst = 5.0, 10.0
+	// 桌面端 / mpx ui 的代理把所有请求都从一个 IP 进来,一次页面加载就有约 15 个请求
+	// 同时打上来,桶要比「单运维手工操作」的口径宽出这 15 个的量。
+	apiRate, apiBurst = 10.0, 60.0
 	// 桶闲置多久可以扔。比客户端刷新间隔长一点,免得一轮重连就把桶删掉。
 	bucketIdle = 10 * time.Minute
 )

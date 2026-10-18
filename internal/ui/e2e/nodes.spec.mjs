@@ -6,6 +6,9 @@ import { test, expect } from "@playwright/test";
 import { startEnv, normalize, login, cpFetch } from "./env.mjs";
 
 let env;
+// FIXED_ID:「添加节点」那一条用例建的节点会被别的用例删掉或改号,后台任务的用例于是另用一台
+// 专给它们用的节点(fixed-n),id 在 beforeAll 里建完就记下来,全程不变。
+let FIXED_ID;
 const cliTry = async (...a) => { try { await env.cli(...a); } catch { /* 失败也要比请求 */ } };
 test.beforeAll(async () => {
   env = await startEnv();
@@ -13,6 +16,12 @@ test.beforeAll(async () => {
   for (const n of ["cli-n", "ui-n", "cli-rm", "ui-rm"]) await env.seed("node", "add", n, "--address", "127.0.0.1", "--ssh-port", "1");
   for (const port of ["443", "2000"]) for (const node of ["1", "2"]) await env.seed("inbound", "add", "--node", node, "--protocol", "vless", "--port", port, "--security", "reality", "--sni", "www.cloudflare.com", "--reality-dest", "www.cloudflare.com:443", "--tag", `t-${node}-${port}`);
   for (const inb of ["1", "2"]) await env.seed("host", "add", "--inbound", inb, "--remark", "入口", "--address", "a.example.com");
+  // 后台任务用例专用的节点:建在最后,id 从控制面读回来,不靠按顺序数。
+  await env.seed("node", "add", "fixed-n", "--address", "127.0.0.1", "--ssh-port", "1");
+  const r = await cpFetch(env.cpURL + "/api/nodes", { headers: { Authorization: "Bearer " + env.token } });
+  const nodes = await r.json();
+  FIXED_ID = (nodes || []).find(n => n.name === "fixed-n")?.id;
+  if (!FIXED_ID) throw new Error("没找到 fixed-n 节点");
 });
 test.afterAll(async () => { await env?.stop(); });
 
@@ -151,38 +160,40 @@ test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致",
 // 后台任务的同步形式:界面发的是 .../jobs,和 CLI 的同步接口只差这一段路径(请求体、参数都一样)。
 const syncOf = p => p.replace(/\/(diagnostics|install)\/jobs(\?|$)/, "/$1$2");
 
-// 用后台上任务的用例:节点 5 的详情、任务列表、任务本身全由 route 回答,不发到真控制面。
+// 用后台上任务的用例:节点 FIXED_ID(fixed-n)的详情、任务列表、任务本身全由 route 回答,不发到真控制面。
 // 节点名字固定成 fixed-n,确认框和提示里的名字就有得比。返回两本账:起了几次任务、现场查过几次。
 function fakeJobs(page, opts) {
   const st = { posts: 0, fresh: 0, phase: "running" };
-  page.route("**/api/nodes/5", async route => {
+  page.route(`**/api/nodes/${FIXED_ID}`, async route => {
     const u = new URL(route.request().url());
     if (u.searchParams.get("fresh")) st.fresh++;
     const res = await route.fetch(), n = await res.json();
-    n.id = 5; n.name = "fixed-n"; n.display = "";
+    n.id = FIXED_ID; n.name = "fixed-n"; n.display = "";
     await route.fulfill({ response: res, json: n });
   });
-  page.route("**/api/nodes/5/jobs*", route => {
+  page.route(`**/api/nodes/${FIXED_ID}/jobs*`, route => {
     const u = new URL(route.request().url()), run = st.phase === "running";
     const jobs = opts.active ?? (run ? [J(opts.kind || "diagnose", { id: 91 })] : []);
     return route.fulfill({ json: { jobs: u.searchParams.get("active") ? jobs : (opts.recent || []) } });
   });
-  // 起任务:POST /api/nodes/5/(diagnostics|install)/jobs。Playwright 先看后注册的那一条,** 会一直
+  // 起任务:POST /api/nodes/{id}/(diagnostics|install)/jobs。路径段和用例里的 kind 对不上
+  // (体检是 diagnostics、安装是 install),先换算。Playwright 先看后注册的那一条,** 会一直
   // 匹配到路径末尾,所以这条要放在上面那条 .../jobs* 之后,否则写请求也被当成列表读掉。
-  page.route(`**/api/nodes/5/${opts.kind || "diagnose"}/jobs*`, route => {
+  const seg = { diagnose: "diagnostics", install: "install" }[opts.kind || "diagnose"];
+  page.route(`**/api/nodes/${FIXED_ID}/${seg}/jobs*`, route => {
     st.posts++; st.phase = "running";
     return route.fulfill({ status: opts.reused ? 200 : 202, json: opts.reused ? { reused: true, job: J(opts.kind || "diagnose") } : { job: J(opts.kind || "diagnose") } });
   });
   // GET /api/jobs/{id}:轮询只管做完没有;用例把 phase 改成 done 之后,这边就按结束报(opts.end)。
-  page.route("**/api/jobs/91", route => route.fulfill({ json: J(st.phase === "running" ? "running" : (opts.end || "done"), { id: 91, kind: opts.kind || "diagnose", node_id: 5 }) }));
+  page.route("**/api/jobs/91", route => route.fulfill({ json: J(st.phase === "running" ? "running" : (opts.end || "done"), { id: 91, kind: opts.kind || "diagnose", node_id: FIXED_ID }) }));
   return st;
 }
-const J = (status, extra = {}) => ({ id: 91, kind: "diagnose", node_id: 5, status, started_at: "2026-01-01T02:00:00Z", finished_at: status === "running" ? null : "2026-01-01T02:05:00Z", code: status === "running" ? "" : "0", error: "", ui_hint: "", result: null, ...extra });
+const J = (status, extra = {}) => ({ id: 91, kind: "diagnose", node_id: FIXED_ID, status, started_at: "2026-01-01T02:00:00Z", finished_at: status === "running" ? null : "2026-01-01T02:05:00Z", code: status === "running" ? "" : "0", error: "", ui_hint: "", result: null, ...extra });
 
 test("体检:开始后立刻关掉确认框并提示已开始,详情里马上显示正在体检", async ({ page }) => {
   await login(page, env);
   const st = fakeJobs(page, { kind: "diagnose" });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-diagnose]");
   await page.click("#okb");
@@ -202,7 +213,7 @@ test("体检:开始后立刻关掉确认框并提示已开始,详情里马上显
 test("体检:离开这个页面再回来,还在跑;完成后提示体检完成并重读详情", async ({ page }) => {
   await login(page, env);
   const st = fakeJobs(page, { kind: "diagnose" });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-diagnose]");
   await page.click("#okb");
@@ -211,7 +222,7 @@ test("体检:离开这个页面再回来,还在跑;完成后提示体检完成�
   // 换到别的页再回来:任务还在跑,详情照样显示正在体检(不是新起的一个)。
   await page.goto(env.origin + "/#nodes");
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("#job-callout")).toContainText("正在体检（开始于 10:00）");
   expect(st.posts).toBe(1);
 
@@ -225,7 +236,7 @@ test("体检:离开这个页面再回来,还在跑;完成后提示体检完成�
 test("安装:开始后提示已开始在 fixed-n 上安装,详情里显示正在安装", async ({ page }) => {
   await login(page, env);
   fakeJobs(page, { kind: "install" });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-install]");
   await page.selectOption("#i-core", "xray");
@@ -240,7 +251,7 @@ test("安装:开始后提示已开始在 fixed-n 上安装,详情里显示正在
 test("体检:这台已经在体检了,再点提示接着等它做完", async ({ page }) => {
   await login(page, env);
   fakeJobs(page, { kind: "diagnose", reused: true, active: [] });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-diagnose]");
   await page.click("#okb");
@@ -254,9 +265,9 @@ test("体检:上次没做完(控制面重启)时给灰字提示,再点就行", a
   const recent = J("interrupted", { finished_at: new Date(Date.now() - 60_000).toISOString(), error: "控制面重启了，这次没做完" });
   fakeJobs(page, { kind: "diagnose", active: [], recent: [recent] });
   // 进节点的第一次读先记下「还没有在跑的」,紧接着的那次读才问最近一次做完没有。
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await expect(page.locator("#job-notice")).toContainText("上次体检没做完：控制面重启了。再点一次「体检」就行。");
   const cls = await page.locator("#job-notice .callout").evaluate(el => getComputedStyle(el).backgroundColor);
@@ -270,7 +281,7 @@ test("体检:上次没做完是 24 小时以前的,不再提", async ({ page }) 
   await login(page, env);
   const recent = J("interrupted", { finished_at: new Date(Date.now() - 2 * 864e5).toISOString() });
   fakeJobs(page, { kind: "diagnose", active: [], recent: [recent] });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await expect(page.locator("#job-notice")).toHaveCount(1);
   await expect(page.locator("#job-notice")).not.toContainText("没做完");
@@ -279,7 +290,7 @@ test("体检:上次没做完是 24 小时以前的,不再提", async ({ page }) 
 test("体检/安装:确认文案说可以关掉页面,做完会显示结果", async ({ page }) => {
   await login(page, env);
   fakeJobs(page, { kind: "diagnose", active: [] });
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await page.click("[data-act=node-diagnose]");
   await expect(page.locator("#modal.open .mbody p").first()).toHaveText("在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟。可以关掉这个页面，做完会在节点上显示结果。");
   await page.click("[data-act=modal-cancel]");
@@ -326,7 +337,7 @@ test("安装:做完提示已装好并启动,带上版本", async ({ page }) => {
   const st = fakeJobs(page, { kind: "install" });
   await page.unroute("**/api/jobs/91");
   await page.route("**/api/jobs/91", route => route.fulfill({ json: J(st.phase === "running" ? "running" : "done", { kind: "install", result: { node: "fixed-n", core: "xray", version: "26.4.1" } }) }));
-  await page.goto(env.origin + "/#nodes/5");
+  await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-install]");
   await page.click("#okb");
