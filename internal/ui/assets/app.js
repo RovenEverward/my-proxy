@@ -121,7 +121,7 @@ function nodeSt(n) {
   if (!n.status) return n.draining ? stBadge("info", "已暂停分配") : stBadge("", "未体检");
   if (!n.status.reachable) return stBadge("bad", "连不上");
   if (n.draining) return stBadge("info", "已暂停分配");
-  if (!n.status.active) return stBadge("warn", "核心未运行");
+  if (!n.status.active) return stBadge("warn", "代理程序未运行");
   return stBadge("ok", "运行中");
 }
 // 快到期:剩 7 天以内(与原型确认的阈值一致)。快用完:按控制面的通知阈值。
@@ -426,7 +426,7 @@ function shell(page, body, crumb) {
   const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}">${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
   const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
-  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${META.cli_version || ""}</small></div>
+  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${shortVer(META.cli_version)}</small></div>
   ${cpCard()}
   ${nav}</aside>
   <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
@@ -677,7 +677,7 @@ function afterWrite() { setTimeout(() => load(true, true), 0); }
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
 function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   const m = $("#modal");
-  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}${title}</h2><p>${text}</p>
+  modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}<span class="mt-t">${title}</span></h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);

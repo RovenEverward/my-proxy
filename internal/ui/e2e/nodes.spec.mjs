@@ -300,8 +300,9 @@ test("删除节点确认框:没输入名字时禁用,输入后按钮实心红底
     return c;
   });
   const solid = async () => okb.evaluate(el => { const s = getComputedStyle(el); return { bg: s.backgroundColor, fg: s.color }; });
+  // 禁用时是灰底,背景有过渡动画:等它停在实心红上再比。
+  await expect.poll(async () => (await solid()).bg).toBe(badRGB);
   let st = await solid();
-  expect(st.bg).toBe(badRGB);
   expect(st.fg).toBe("rgb(255, 255, 255)");
   // 悬停、键盘聚焦时也必须是实心红底白字。
   await okb.hover();
@@ -464,8 +465,8 @@ test("节点详情文案:证书卡、在线用户、安装与体检按钮", asyn
   await expect(cert.locator(".s")).toHaveText("没有用到 TLS 的连接方式");
   const online = page.locator(".row").filter({ hasText: "在线用户" });
   await expect(online.locator(".sub")).toHaveText("实时查看每个用户连着几个 IP");
-  const install = page.locator(".row").filter({ hasText: "安装核心" });
-  await expect(install.locator(".sub")).toHaveText("把核心装到这台节点上并启动，会用当前配置");
+  const install = page.locator(".row").filter({ hasText: "安装代理程序" });
+  await expect(install.locator(".sub")).toHaveText("把代理程序装到这台节点上并启动，会用当前配置");
   await expect(install.locator("[data-act=node-install]")).toHaveText("安装");
   await expect(page.locator("[data-act=node-diagnose]")).toHaveText("开始体检");
 });

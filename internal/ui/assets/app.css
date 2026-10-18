@@ -1,9 +1,12 @@
 @font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
 @font-face{font-family:"Mona Sans Mono VF";src:url(/fonts/MonaSansMonoVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+/* 中文:随程序带的 Noto Sans SC 可变字重子集(SIL OFL 1.1,见 fonts/OFL-NotoSansSC.txt),不走系统字体、不连 CDN。
+   字表由 scripts/build-cjk-font.py 生成:GB2312 一级常用字 + 界面里出现的全部中文和全角标点。 */
+@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF}
 :root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#0a0a0a;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
---lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--info) 30%,transparent);--flag-edge:rgba(0,0,0,.14);
+--lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--flag-edge:rgba(0,0,0,.14);
 --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#fffbeb;
---ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF","OPPO Sans 4.0","PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC",monospace}
+--ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace}
 [data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#ededef;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
 --lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;--flag-edge:rgba(255,255,255,.22);
 --ok:#3fb950;--warn:#e3a008;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#271d08}
@@ -165,6 +168,8 @@ textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:12.5px;li
 .callout svg{flex:none;margin-top:1px;width:16px;height:16px}.callout .ico-warn{color:var(--warn)}.callout .ico-bad{color:var(--bad)}
 .ill svg{width:24px;height:24px}.ill.bad{background:var(--bad-bg);color:var(--bad)}
 .ib svg.sm{width:13px;height:13px}.btn[disabled]{opacity:.45;cursor:default}
+/* 危险按钮禁用时是灰底浅灰字(不是淡红),可点时才变实心红。 */
+.btn.danger[disabled],.btn.danger[disabled]:hover{background:var(--stone);color:var(--faint);opacity:1}
 .c-bad{color:var(--bad)}.c-warn{color:var(--warn)}.c-faint{color:var(--faint)}
 .sk.h26{height:26px}.sk.w60{width:60%}.sk.w80{width:80%}
 .stale{margin-left:6px;color:var(--warn)}
@@ -186,7 +191,7 @@ a.row{color:inherit}
 .chip input{position:absolute;opacity:0;pointer-events:none}.chip{position:relative;user-select:none}
 .chip:has(input:checked){background:var(--ink);color:var(--canvas);font-weight:540}
 .chip:has(input:disabled){opacity:.45;cursor:default}
-.chip:has(input:focus-visible){outline:2px solid var(--info);outline-offset:2px}
+.chip:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:2px}
 .links{display:grid;gap:6px}.links .lk{display:flex;align-items:center;gap:8px;font-size:12.5px}.links .lk span{min-width:86px;color:var(--muted)}.links .lk code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .search input::-webkit-search-cancel-button{display:none}
 .in.bad{box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 30%,transparent)}
@@ -201,7 +206,7 @@ a.row{color:inherit}
 tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .row:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .btn:focus-visible,.ib:focus-visible,.seg button:focus-visible,.tabs a:focus-visible,.nav:focus-visible,.mnav a:focus-visible,.rp-start:focus-visible,.lnk:focus-visible{outline:2px solid var(--info);outline-offset:2px}
-.sw input:focus-visible+i{outline:2px solid var(--info);outline-offset:2px}
+.sw input:focus-visible+i{outline:2px solid var(--ink);outline-offset:2px}
 .ib.sm{width:24px;height:24px;flex:none}
 @media (max-width:860px){.search.in-card{display:flex;width:100%;margin-top:6px}.tb{flex-wrap:wrap}}
 .search svg{width:14px;height:14px;flex:none}
@@ -211,6 +216,7 @@ tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .hrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.mt2{margin-top:2px}.mb14{margin-bottom:14px}.b6{font-weight:600}.fw4{font-weight:400}
 .ch.wrap{flex-wrap:wrap;row-gap:6px}
 .summary{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2)}.summary li{margin:2px 0}
+.sum-raw{margin-top:4px;font-size:12px;color:var(--muted)}.sum-raw>summary{cursor:pointer;width:max-content}.sum-raw .summary{color:var(--muted);font-size:11.5px;word-break:break-all}
 pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:12px/1.55 var(--mono);color:var(--ink2);overflow:auto;max-height:calc(100vh - 160px);white-space:pre}
 details.adv{margin:0 0 14px}details.adv>summary{cursor:pointer;font-size:12.5px;font-weight:530;color:var(--muted);margin-bottom:12px;list-style-position:inside}
 select.in{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer}
@@ -272,7 +278,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-tyc{width:84px;flex:none;min-width:0}
 /* 规则类型:固定的 84px 列,里面是灰底文字标签,保证后面值列不错位 */
 .rp-ty{display:inline-block;line-height:22px;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint)}
+.rp-v{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%}.rp-a{color:var(--faint);display:inline-flex;align-items:center}.rp-a svg{width:13px;height:13px}
 .rp-to{display:inline-flex;align-items:center;height:24px;padding:0 9px;border-radius:7px;font-size:12.5px;font-weight:530;white-space:nowrap;background:var(--stone)}
 /* 去向一律灰底文字标签:直连、拦截、策略组都用同一种灰底,红色只留给失效的策略组 */
 .rp-to.dir,.rp-to.rej,.rp-to.grp{color:var(--ink2);background:var(--stone)}
@@ -286,7 +292,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-g{cursor:pointer;align-items:flex-start}.rp-g:hover{background:var(--hover)}.rp-gi{font-size:20px;width:28px}.rp-g>svg{width:14px;color:var(--faint);margin-top:4px}
 .rp-empty{padding:30px 28px;text-align:center}.rp-empty h4{margin:22px 0 4px;font-size:15px;font-weight:620}
 .rp-flow{display:flex;align-items:center;justify-content:center;gap:14px}.rp-fb{display:flex;flex-direction:column;gap:5px;padding:12px 14px;border-radius:10px;background:var(--stone);font-size:12px;color:var(--muted);text-align:left;min-width:150px}
-.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--ink);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);font-size:18px}
+.rp-fb b{color:var(--ink);font-size:12.5px}.rp-fb .on{color:var(--ink);font-weight:560}.rp-fb.wide{min-width:220px}.rp-arr{color:var(--faint);display:inline-flex;align-items:center}.rp-arr svg{width:18px;height:18px}
 .rp-starts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px;text-align:left}
 .rp-start{display:flex;flex-direction:column;gap:6px;padding:16px;border:0;border-radius:12px;background:var(--canvas);cursor:pointer;align-items:flex-start}.rp-start:hover{background:var(--hover)}.rp-start.rec{background:var(--stone)}
 .rp-start b{font-size:13.5px}.rp-start>span:not(.pill){color:var(--muted);font-size:12px;flex:1}.rp-start em{font-style:normal;font-size:12px;font-weight:540;display:flex;align-items:center;gap:4px}.rp-start em svg{width:13px;height:13px}
@@ -452,6 +458,9 @@ details.adv2>summary span{font-weight:400;color:var(--muted);font-size:12px;marg
    右边让出按钮的宽;内容卡片从这条下面开始,右上角不再被按钮压住。 */
 html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
 html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-titlebar-height,52px);padding:0 calc(var(--mygo-titlebar-inset-right,138px) + 12px) 0 20px;background:var(--base);border-radius:0;border:0;box-shadow:none;backdrop-filter:none;z-index:29;--app-region:drag}
+/* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
+html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
+html.tb-right .modal{top:calc(50% + var(--mygo-titlebar-height,52px) / 2)}
 @media (max-width:860px){html.tb-right .top{left:0}}
 
 /* 抽屉底部「…并应用到节点」:次要 + 主按钮一行,主按钮下面一行灰字说明会重启。 */
@@ -546,7 +555,7 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 
 /* 第 5 步原型:「订阅」页。只用 app.css 的变量;不画线,分块靠面和留白。 */
 .s5{display:grid;gap:14px}
-.s5-sec{padding-bottom:6px}
+.s5-sec{padding-bottom:6px;scroll-margin-top:64px}
 .s5-sec>.ch{padding:16px 18px 10px;font-size:14px}
 .s5-note{margin:6px 18px 12px;font-size:12px;color:var(--muted)}
 .s5-note code,.s5 .h code,.s5-warn code{font-size:11.5px}
@@ -644,3 +653,13 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .s5-warn svg{color:var(--muted)}.pv-h #pv-user{display:inline-block;width:auto;height:28px;padding:2px 24px 2px 6px;font:inherit}
 @media(max-width:860px){.zr-tpl{grid-template-columns:minmax(0,1fr) auto auto}.s5-bar-t .sub{display:inline;white-space:normal}.s5-bar-t{flex-wrap:wrap}}
 .doc-d [data-act=doc-apply]{margin-left:10px;vertical-align:baseline}
+
+/* 分流规则卡片头(「添加规则」)吸顶,停在 52px 顶栏下面;实底,下面的行不透上来。 */
+.rp-card>.ch{position:sticky;top:52px;z-index:4;background:var(--panel);border-radius:12px 12px 0 0}
+/* 占位文字用浅灰,和已填的值分得开。 */
+.in::placeholder{color:var(--faint);opacity:1}
+/* 中文段落避免末行只剩一两个字(不支持的引擎忽略);不拆开的词包 .nw。 */
+p,.sub,.h{text-wrap-style:pretty}
+.nw{white-space:nowrap}
+/* 弹窗标题:图标和文字之间才有间距,文字里的旗帜按正常空格排。 */
+.modal h2 .mt-t{display:inline;min-width:0}

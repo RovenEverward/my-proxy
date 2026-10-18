@@ -3,7 +3,9 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -182,50 +184,101 @@ func parseUserTraffic(out string) (map[string]UserTraffic, error) {
 	return result, nil
 }
 
+// ErrOnlineStatsOff 表示节点上的 xray 配置没开 statsUserOnline:这时在线 API
+// 只会返回空,不能当成「没人在线」报给用户。应用一次配置(v0.9.12 起的配置
+// 都带这个开关)之后才读得到。
+var ErrOnlineStatsOff = errors.New("这台节点的配置还没打开在线统计，读不到在线用户；把配置应用到节点一次就能读到")
+
+// onlineStatsOffMarker 是节点上配置没开在线统计时脚本打印的标记。
+const onlineStatsOffMarker = "MPX_ONLINE_STATS_OFF"
+
+// onlineSep 分隔一次 SSH 里多条 statsonlineiplist 的输出。
+const onlineSep = "@@MPX-ONLINE@@"
+
 // OnlineIPs 现场读出节点上每个用户此刻的在线 IP 列表。
 //
-// 用的是 `xray api statsgetallonlineusers` —— 它一次性返回整棵 onlineMap,
-// 不用为每个用户各发一次 `statsonlineiplist`(后者对一台节点上几百个用户会跑
-// 几百次 API 调用)。返回的 username → ips 的顺序不保证稳定。
+// 两步,都在一次 SSH 里:先确认配置开了 statsUserOnline(没开就返回
+// ErrOnlineStatsOff,而不是一份空名单),再 `xray api statsgetallonlineusers`
+// 拿到在线的计数名(形如 user>>>alice>>>online,见 xray app/stats/command),
+// 然后每人一次 `statsonlineiplist -email` 取 IP。返回 username → ips,顺序不保证。
 //
 // 不落库、不缓存:这个名单每一秒都在变,存了也是过期的;调用方要趋势就自己轮询。
 func OnlineIPs(ctx context.Context, r Runner, n model.Node) (map[string][]string, error) {
-	out, err := apiRun(ctx, r, n, "statsgetallonlineusers", nil)
+	check := `grep -Eq '"statsUserOnline"[[:space:]]*:[[:space:]]*true' ` + shellQuote(n.ConfigPathOrDefault()) + ` || { echo ` + onlineStatsOffMarker + `; exit 0; }; `
+	out, err := r.RunWithInput(ctx, n, check+xrayBin+`"$XRAY_BIN" api statsgetallonlineusers `+apiServer(n), nil)
 	if err != nil {
 		return nil, err
 	}
-	return parseOnlineIPs(out)
+	if strings.Contains(out, onlineStatsOffMarker) {
+		return nil, ErrOnlineStatsOff
+	}
+	users, err := parseOnlineUsers(out)
+	if err != nil || len(users) == 0 {
+		return map[string][]string{}, err
+	}
+	var b strings.Builder
+	b.WriteString(xrayBin)
+	for _, u := range users {
+		b.WriteString(`"$XRAY_BIN" api statsonlineiplist ` + apiServer(n) + ` -email ` + shellQuote(u) + `; echo ` + onlineSep + `; `)
+	}
+	out, err = r.RunWithInput(ctx, n, b.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseOnlineIPLists(out)
 }
 
-// onlineUserEntry 是 statsgetallonlineusers 返回里单个用户的条目。
-//
-// 字段名按 xray protojson 的命名习惯猜:user / ips。
-// 剩下的字段(每个 IP 的最近活跃时间戳)目前用不上,这里不解析 —— 需要时再加。
-type onlineUserEntry struct {
-	User string   `json:"user"`
-	IPs  []string `json:"ips"`
-}
-
-type onlineUsersResponse struct {
-	Users []onlineUserEntry `json:"users"`
-}
-
-func parseOnlineIPs(out string) (map[string][]string, error) {
+// parseOnlineUsers 解析 statsgetallonlineusers:{"users":["user>>>alice>>>online",...]}。
+// 没人在线时 xray 打印 {}。
+func parseOnlineUsers(out string) ([]string, error) {
 	out = strings.TrimSpace(out)
 	start := strings.Index(out, "{")
 	if start < 0 {
 		return nil, fmt.Errorf("读不到 statsgetallonlineusers 响应:%s", out)
 	}
-	var resp onlineUsersResponse
+	var resp struct {
+		Users []string `json:"users"`
+	}
 	if err := json.Unmarshal([]byte(out[start:]), &resp); err != nil {
 		return nil, fmt.Errorf("解析 statsgetallonlineusers 响应失败: %w", err)
 	}
-	result := make(map[string][]string, len(resp.Users))
-	for _, u := range resp.Users {
-		if u.User == "" {
+	var users []string
+	for _, name := range resp.Users {
+		parts := strings.Split(name, ">>>")
+		if len(parts) == 3 && parts[0] == "user" && parts[2] == "online" && parts[1] != "" {
+			users = append(users, parts[1])
+		}
+	}
+	return users, nil
+}
+
+// parseOnlineIPLists 解析多段 statsonlineiplist 输出,每段
+// {"name":"user>>>alice>>>online","ips":{"203.0.113.7":1760000000}}。
+func parseOnlineIPLists(out string) (map[string][]string, error) {
+	result := map[string][]string{}
+	for _, chunk := range strings.Split(out, onlineSep) {
+		chunk = strings.TrimSpace(chunk)
+		start := strings.Index(chunk, "{")
+		if start < 0 {
 			continue
 		}
-		result[u.User] = u.IPs
+		var resp struct {
+			Name string           `json:"name"`
+			IPs  map[string]int64 `json:"ips"`
+		}
+		if err := json.Unmarshal([]byte(chunk[start:]), &resp); err != nil {
+			return nil, fmt.Errorf("解析 statsonlineiplist 响应失败: %w", err)
+		}
+		parts := strings.Split(resp.Name, ">>>")
+		if len(parts) != 3 || parts[1] == "" || len(resp.IPs) == 0 {
+			continue
+		}
+		ips := make([]string, 0, len(resp.IPs))
+		for ip := range resp.IPs {
+			ips = append(ips, ip)
+		}
+		sort.Strings(ips)
+		result[parts[1]] = ips
 	}
 	return result, nil
 }

@@ -236,7 +236,7 @@ const subPageHTML = `<!DOCTYPE html>
   --canvas:#fff; --stone:#f4f4f4; --ink:#0a0a0a; --muted:#737373; --faint:#a3a3a3; --line:rgba(0,0,0,.07);
   --card:0 0 0 1px #0000000f,0 1px 2px -1px #0000000f,0 2px 4px 0 #0000000a;
   --ok:#1a7f37; --warn:#9a6700; --bad:#c4342d; --off:#737373; --ok-bg:#1a7f3714; --warn-bg:#9a670014; --bad-bg:#c4342d12; --off-bg:#7373731a;
-  --sans:"OPPO Sans 4.0","OPPO Sans","PingFang SC","Geist",-apple-system,BlinkMacSystemFont,system-ui,"Microsoft YaHei",sans-serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif;
   --mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace; }
 @media (prefers-color-scheme: dark) { :root {
   --canvas:#08090a; --stone:#16171a; --ink:#ededef; --muted:#9a9aa0; --faint:#5b5d64; --line:rgba(255,255,255,.08);

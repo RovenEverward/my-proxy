@@ -139,7 +139,7 @@ test("装核心失败:给出原因和重试", async ({ page }) => {
   await page.fill("#w-pw", PW);
   await page.click("#w-next");
   await page.click("#w-start");
-  await expect(page.locator(".plist li.fail")).toContainText("装核心并应用配置");
+  await expect(page.locator(".plist li.fail")).toContainText("装代理程序并应用配置");
   await expect(page.locator("#w-retry")).toContainText("重试安装");
   await expect(page.locator("#w-later")).toBeVisible();
   const uiNode = (await apiJSON("/api/nodes")).find(n => n.name === "node-2");

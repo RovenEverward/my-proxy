@@ -198,7 +198,7 @@ else
       MPX_TOKEN=ci-token MPX_SERVER=$API MPX_APP_SMOKE_ROUTE=update
     check_result "更新弹窗冒烟" "$?" "$UPDATE_LOG" "$UPDATE_PNG"
     grep -q 'modal=open' "$UPDATE_LOG" || { echo "更新弹窗冒烟:弹窗没打开" >&2; FAIL=1; }
-    grep -q 'tagfont=.*Microsoft YaHei UI' "$UPDATE_LOG" || { echo "更新弹窗冒烟:徽章字体栈里没有中文无衬线回退" >&2; FAIL=1; }
+    grep -q 'tagfont=.*Noto Sans SC' "$UPDATE_LOG" || { echo "更新弹窗冒烟:徽章字体栈里没有中文无衬线回退" >&2; FAIL=1; }
 
     # 5) 标题栏:总览页浅色/深色各一张,Windows 上同时产出整窗截图
     #    app-windows-titlebar-<theme>-window.png(只有页面之外的按钮才看得出

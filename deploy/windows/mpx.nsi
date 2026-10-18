@@ -6,24 +6,19 @@
 ;     -DSRCEXE="$(pwd)/mpx.exe" -DOUTFILE="$(pwd)/mpx_0.7.2_windows_amd64_setup.exe" \
 ;     deploy/windows/mpx.nsi
 ;
-; 不签名。只用 NSIS 自带的东西(MUI2 / LogicLib / WinMessages / x64),不依赖
-; EnVar、NsProcess 这类需要另外下载的插件:
-;   - 改 PATH 是直接读改写 HKCU\Environment\Path,比对时给整串两侧补 ';',按
-;     ";<目录>;" 精确匹配,既不误伤同名前缀的目录,也不会留下多余的 ';';
-;   - 让已开的程序(资源管理器等)看到新 PATH 靠内置 SendMessage 广播
-;     WM_SETTINGCHANGE,带超时兜底,不会卡死。
-
-; NSIS 默认的字符串缓冲区只有 1024 字符,而用户的 PATH 完全可能更长。缓冲区不够
-; 时 ReadRegStr 会截断,后面再写回去就把 PATH 截短了(丢用户数据)。这里在 include
-; 之前把它抬到 8192 —— 必须放在所有 include 之前,NSIS 才认。
-!undef NSIS_MAX_STRLEN
-!define NSIS_MAX_STRLEN 8192
+; 不签名。只用 NSIS 自带的东西(MUI2 / LogicLib / x64 / nsExec)。
+;
+; 用户 PATH 不在 NSIS 里读改写,交给刚装好的 `mpx.exe winpath add|remove <目录>`:
+; NSIS 的字符串缓冲区是编译 NSIS 时定死的(CI 用的 Ubuntu nsis 包是 1024 字符,
+; 脚本里 !define NSIS_MAX_STRLEN 改不了它)。PATH 超过这个长度时 ReadRegStr 读失败
+; 返回空串,旧脚本把空串当成没有 PATH,写回去只剩安装目录 —— v0.7.4 到 v0.9.11 的
+; setup.exe 因此会清空或截断长 PATH。mpx winpath 没有长度上限,不展开 %VAR%、
+; 保留 REG_EXPAND_SZ,只动我们那一项,写前备份,任何一步出错都不写。
 
 Unicode true
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
-!include "WinMessages.nsh"
 !include "x64.nsh"
 
 !ifndef VERSION
@@ -49,124 +44,19 @@ InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
-; ==== PATH 读改写用的全局变量(NSIS 的函数没有局部变量,只能用全局的) ====
-Var PathValue      ; 被搜索/被替换的整串(两侧补 ';')
-Var PathNeedle     ; 要找的子串,形如 ";<目录>;"
-Var PathReplacement
-Var PathResult
-Var PathIndex
-Var PathNeedleLen
-Var PathSlice
-Var PathSliceLen
-Var PathFound
-Var PathTmp
-Var PathLen
-
-!define MUI_ABORTWARNING
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
-
-!insertmacro MUI_UNPAGE_CONFIRM
-!insertmacro MUI_UNPAGE_INSTFILES
-
-!insertmacro MUI_LANGUAGE "SimpChinese"
-!insertmacro MUI_LANGUAGE "English"
-
-Function .onInit
-  ; 发布件是 amd64 二进制,32 位 Windows 上跑不了。
-  ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "${APPNAME} 只提供 64 位 Windows 安装包,当前系统不是 64 位。"
-    Abort
-  ${EndIf}
-FunctionEnd
-
-; 在 $PathValue 里找 $PathNeedle(StrCmp 大小写不敏感),命中则 $PathFound=1。
-Function PathContains
-  StrCpy $PathFound 0
-  StrLen $PathNeedleLen $PathNeedle
-  StrCpy $PathIndex 0
-  ${If} $PathNeedleLen == 0
-    StrCpy $PathFound 1
-    Return
-  ${EndIf}
-  PathContains_loop:
-    StrCpy $PathSlice $PathValue $PathNeedleLen $PathIndex
-    StrLen $PathSliceLen $PathSlice
-    ${If} $PathSliceLen < $PathNeedleLen
-      Return
-    ${EndIf}
-    StrCmp $PathSlice $PathNeedle 0 PathContains_next
-      StrCpy $PathFound 1
-      Return
-    PathContains_next:
-      IntOp $PathIndex $PathIndex + 1
-      Goto PathContains_loop
-FunctionEnd
-
-; 下面两个函数只被卸载段调用。NSIS 要求卸载段能 Call 的函数名以 un. 开头,所以名
-; 字带 un. 前缀(前缀不等于「自动属于卸载器」,定义与调用都要显式写)。
-; 把 $PathValue 里所有 $PathNeedle 换成 $PathReplacement,结果放 $PathResult。
-Function un.PathRemoveAll
-  StrCpy $PathResult ""
-  StrLen $PathNeedleLen $PathNeedle
-  StrCpy $PathIndex 0
-  ${If} $PathNeedleLen == 0
-    StrCpy $PathResult $PathValue
-    Return
-  ${EndIf}
-  un.PathRemove_loop:
-    StrCpy $PathSlice $PathValue $PathNeedleLen $PathIndex
-    StrLen $PathSliceLen $PathSlice
-    ${If} $PathSliceLen < $PathNeedleLen
-      StrCpy $PathSlice $PathValue 8192 $PathIndex
-      StrCpy $PathResult "$PathResult$PathSlice"
-      Return
-    ${EndIf}
-    StrCmp $PathSlice $PathNeedle 0 un.PathRemove_next
-      StrCpy $PathResult "$PathResult$PathReplacement"
-      IntOp $PathIndex $PathIndex + $PathNeedleLen
-      Goto un.PathRemove_loop
-    un.PathRemove_next:
-      StrCpy $PathSlice $PathValue 1 $PathIndex
-      StrCpy $PathResult "$PathResult$PathSlice"
-      IntOp $PathIndex $PathIndex + 1
-      Goto un.PathRemove_loop
-FunctionEnd
-
-; 去掉 $PathValue 两侧各一个字符(补上的 ';'),结果放 $PathTmp。空串则给空。
-Function un.PathUnwrap
-  StrLen $PathLen $PathValue
-  ${If} $PathLen <= 2
-    StrCpy $PathTmp ""
-  ${Else}
-    IntOp $PathLen $PathLen - 2
-    StrCpy $PathTmp $PathValue $PathLen 1
-  ${EndIf}
-FunctionEnd
-
 Section "Install"
   SetOutPath "$INSTDIR"
   File "${SRCEXE}"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; ==== 当前用户 PATH:没有 $INSTDIR 这一项才追加,然后广播 WM_SETTINGCHANGE ====
-  ReadRegStr $PathValue HKCU "Environment" "Path"
-  StrCpy $PathTmp "$PathValue"                 ; 原值先留一份
-  StrCpy $PathValue ";$PathTmp;"               ; 两侧补 ';' 后按整项匹配
-  StrCpy $PathNeedle ";$INSTDIR;"
-  Call PathContains
-  ${If} $PathFound == 0
-    ${If} $PathTmp == ""
-      StrCpy $PathTmp "$INSTDIR"
-    ${Else}
-      StrCpy $PathTmp "$PathTmp;$INSTDIR"
+  ; ==== 当前用户 PATH:交给 mpx winpath(见文件头)。失败时 PATH 一字不改,提示手动加 ====
+  nsExec::ExecToLog '"$INSTDIR\mpx.exe" winpath add "$INSTDIR"'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "没有改动用户 PATH(退出码 $0)。请手动把 $INSTDIR 加进用户环境变量 Path。"
+    ${IfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION "没能把 $INSTDIR 加进用户 PATH,你的 PATH 没有被改动。$\r$\n请在「编辑账户的环境变量」里手动把它加进 Path。"
     ${EndIf}
-    WriteRegExpandStr HKCU "Environment" "Path" "$PathTmp"
-    ; 广播:让已经开着的进程(资源管理器、终端)重新读环境变量。/TIMEOUT 防
-    ; 某个窗口不响应时把安装卡住。
-    SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
   ${EndIf}
 
   ; ==== 「程序和功能」登记(64 位视图) ====
@@ -184,16 +74,12 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
-  ; ==== 从当前用户 PATH 里移除安装目录 ====
-  ReadRegStr $PathValue HKCU "Environment" "Path"
-  StrCpy $PathValue ";$PathValue;"             ; 两侧补 ';'
-  StrCpy $PathNeedle ";$INSTDIR;"
-  StrCpy $PathReplacement ";"
-  Call un.PathRemoveAll
-  StrCpy $PathValue $PathResult
-  Call un.PathUnwrap                          ; -> $PathTmp
-  WriteRegExpandStr HKCU "Environment" "Path" "$PathTmp"
-  SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
+  ; ==== 从当前用户 PATH 里移除安装目录:同样交给 mpx winpath,失败就不动 PATH ====
+  nsExec::ExecToLog '"$INSTDIR\mpx.exe" winpath remove "$INSTDIR"'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "没有改动用户 PATH(退出码 $0)。如果 Path 里还有 $INSTDIR,可以手动删掉。"
+  ${EndIf}
 
   Delete "$INSTDIR\mpx.exe"
   Delete "$INSTDIR\uninstall.exe"

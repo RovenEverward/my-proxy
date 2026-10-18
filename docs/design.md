@@ -45,7 +45,7 @@ mpx 是一个自建代理节点的控制面:一台机器上跑一个服务,管�
       <path class="mp-ahd" d="M 0 0 L 10 5 L 0 10 z"/>
     </marker>
   </defs>
-  <g font-family="'Mona Sans VF', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif">
+  <g font-family="'Mona Sans VF', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'PingFang SC', 'Noto Sans', Helvetica, Arial, sans-serif">
     <rect x="16" y="42" width="150" height="60" rx="10" class="mp-bx"/>
     <text x="91" y="68" class="mp-t" text-anchor="middle">操作机</text>
     <text x="91" y="88" class="mp-s" text-anchor="middle">mpx CLI</text>
@@ -142,6 +142,16 @@ CLI 那一行有一个例外:`mpx init` 会 SSH。它是**在控制面存在之�
 | 订阅渲染与节点配置渲染不共用代码 | 两边目标不同:一个是「怎么连」,一个是「怎么被连」;硬合成会到处是分支 | 两处模板各自维护 |
 | 一个端口按首字节分流:HTTPS 给管理接口,HTTP 给订阅 | 不用再放行第二个端口;代理客户端普遍不认自签证书,订阅只能留在 HTTP | 订阅链路仍是明文,订阅 token 可被链路窃听(与此前相同) |
 | 排水和容量上限只在订阅层生效 | 不动节点上已经建立的连接 | 不是硬踢人,要等客户端下次刷新 |
+
+## 界面字体
+
+界面（浏览器里的 `mpx ui` 和桌面窗口共用一套资源）的字体全部随程序打包，从本地 `/fonts/` 载入，不连 CDN：
+
+- **西文：** Mona Sans VF（可变字重）；等宽用 Mona Sans Mono VF。
+- **中文：** Noto Sans SC 可变字重子集（`NotoSansSC-subset.woff2`，约 1 MB）。字表是 GB2312 一级常用字，加上界面、Go 源码里的提示和更新记录中出现的全部中文、全角标点，由 `scripts/build-cjk-font.py` 生成；`internal/ui/fonts_test.go` 会检查界面上的每个中文字都在子集里，改了文案冒出新字就要重新生成。
+- **字体栈：** `"Mona Sans VF", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "PingFang SC", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"`。等宽栈的中文同样回退到 Noto Sans SC。Windows 上 Segoe UI 没有中文字形，中文落到随程序带的 Noto Sans SC；macOS 上系统字体自带苹方。
+- **不用微软雅黑：** 字体栈和页面里都不写它，`fonts_test.go` 会拦。
+- **许可：** Mona Sans 和 Noto Sans SC 都是 SIL OFL 1.1，许可文件和字体放在一起（`fonts/OFL.txt`、`fonts/OFL-NotoSansSC.txt`）。
 
 ## 不做的事
 

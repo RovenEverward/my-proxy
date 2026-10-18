@@ -88,7 +88,7 @@
 - `/api` 与 `/sub` 速率限制 —— `internal/server/ratelimit.go`,两个独立桶、`/sub` 松 `/api` 紧、按 RemoteAddr 分桶不解析 XFF;
 - `mpx node drain / undrain` —— 订阅层的开关,不动 xray;`inbound --max-users` 同理,见 [decisions.md](decisions.md) 第 30 条;
 - SSH `ControlMaster` 复用 —— `sshArgs` 加 `ControlMaster=auto` + `ControlPath=<TMPDIR>/mpx-ssh-%C` + `ControlPersist=60s`,一轮巡检的几条远端命令共用一条 TCP;
-- `mpx node online` —— `xray api statsgetallonlineusers` 一次拿全在线名单,不落库不缓存。
+- `mpx node online` —— `xray api statsgetallonlineusers` 拿在线的人、`statsonlineiplist` 取 IP(要求节点配置开 `statsUserOnline`,v0.9.12 起默认开),不落库不缓存。
 
 **验证**:`gofmt` / `go vet` / `go test ./...` 绿;缓存命中、ETag-304、drain 后订阅少一台节点、`--max-users` 满后新订阅不再发该入站、`mpx node online` 拿到名单这几条都过了一遍。
 

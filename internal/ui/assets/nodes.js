@@ -23,7 +23,7 @@ function dropEmptyOutbound(o) { if (!o.outbound_ip) delete o.outbound_ip; return
 function coreText(s) {
   if (!s) return "还没检查过";
   if (s.cores?.length) return s.cores.map(c => `${c.core} ${c.active ? "运行中" : "未运行"}${c.version ? " · " + c.version : ""}`).join(" / ");
-  return s.version ? `xray ${s.active ? "运行中" : "未运行"}` : "没装核心";
+  return s.version ? `xray ${s.active ? "运行中" : "未运行"}` : "没装代理程序";
 }
 // previewDisplay:和服务端 model.NodeDisplay 同一套拼法(旗帜 + 城市/国家 + 字母),只用来预览;
 // 国家中文名浏览器自己有(Intl.DisplayNames),HK/MO 用 CLDR 短名,与服务端一致。
@@ -82,13 +82,13 @@ function autoApplyPending(id) {
 
 function nodeList(d) {
   const W = can("POST", "/api/nodes");
-  const head = H`<tr><th>节点</th><th>状态</th><th class="hide-m">核心</th><th class="hide-m">配置</th><th class="hide-m">SSH</th><th class="num hide-m">检查于</th></tr>`;
+  const head = H`<tr><th>节点</th><th>状态</th><th class="hide-m">代理程序</th><th class="hide-m">配置</th><th class="hide-m">SSH</th><th class="num hide-m">检查于</th></tr>`;
   let inner;
   if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(5, 6)}</tbody></table>`;
   else if (!d.nodes.length) inner = emptyBox("nodes", "还没有节点", "填 VPS 的地址和 SSH 密码，自动装好并加进订阅。点下面的「添加节点」开始。", "", W ? H`<div style="display:grid;gap:10px;justify-items:center"><button class="btn pri sm" data-act="node-wizard">${ic("plus")}添加节点</button><a class="lnk wlnk" data-act="node-new" href="#">已能免密 SSH，直接登记</a></div>` : "");
   else inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${d.nodes.map(n => H`<tr data-href="#nodes/${n.id}" tabindex="0"><td><b class="bold">${nodeLabel(n)}</b><div class="sub mono">${n.address}</div></td><td>${nodeSt(n)}</td>
-    <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : H`<span class="sub">—</span>`}</td>
-    <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : "—"}</td></tr>`)}</tbody></table></div>`;
+    <td class="hide-m">${n.status?.cores?.length ? n.status.cores.map(c => H`<span class="tag">${c.core}</span> `) : n.status?.version ? H`<span class="tag">xray</span> <span class="sub">${n.status.version}</span>` : ""}</td>
+    <td class="hide-m">${driftCell(n)}</td><td class="hide-m mono sub">${sshText(n)}</td><td class="num sub hide-m">${n.status ? sinceText(n.status.checked_at) : ""}</td></tr>`)}</tbody></table></div>`;
   // 「批量识别显示名」只在有实现、且确实还有没显示名的节点时出现。
   const needRelabel = d && META.relabel && d.nodes.some(n => !n.display);
   return H`<div class="ph"><div><h1>节点</h1><p>状态来自控制面的定时检查</p></div><div class="sp"></div>
@@ -100,6 +100,58 @@ function driftCell(n) {
   if (!n.deployed_hash) return H`<span class="sub">还没应用过</span>`;
   if (!n.status?.observed_hash) return H`<span class="sub">未知</span>`;
   return n.status.observed_hash === n.deployed_hash ? stBadge("ok", "已是最新") : stBadge("warn", "有改动未应用");
+}
+
+// 体检结论是控制面写进报告的原话(存在库里,旧报告也照原样回来),里面有内部叫法和英文状态。
+// 这里逐条翻成人话;原话收进「详情」,排查时还看得到。新加的结论句式要在 polish.spec 的
+// SUMMARY_CORPUS 里补一条样例(TestSummaryCorpusCoversCheckup 会对照 checkup.go 检查)。
+const SUM_TARGET = { netflix: "Netflix", youtube: "YouTube", chatgpt: "ChatGPT", openai: "ChatGPT", disney: "Disney+", "disney+": "Disney+" };
+const SUM_STATUS = { unknown: "没测出结果", unavailable: "不能用", failed: "没通过", partial: "只通过了一部分", skipped: "跳过了", canceled: "被中断了", cancelled: "被中断了", timeout: "超时了" };
+const SUM_NET = new Map([["DNS", "域名解析"], ["ICMP", "ping"], ["HTTP", "网页请求"], ["路由", "路由追踪"]]);
+const sumStatus = st => SUM_STATUS[st] || "没通过";
+function plainSummary(lines, d) {
+  const conn = id => { const i = (d.inbounds || []).find(x => x.id === +id); return i ? `「${inbTitle(i, d.node)}」` : "一个连接方式"; };
+  const rules = [
+    [/^融合怪 \S+: (ok|success|done|completed|finished)$/i, () => ""],
+    [/^融合怪 \S+: (canceled|cancelled)$/i, () => "完整测评被中断，没有跑完"],
+    [/^融合怪 \S+: /, () => "完整测评没有跑完"],
+    [/^融合怪测评未完成/, () => "完整测评没有跑完"],
+    [/^融合怪缺少可用测速结果/, () => "完整测评没测出网速，另外补测了一次"],
+    [/^独立速度补测已完成/, () => "补测网速已完成"],
+    [/^独立速度补测未运行/, () => "时间用完了，没有补测网速"],
+    [/^独立速度补测未完成/, () => "补测网速没有完成"],
+    [/^入站 (\d+)\/入口 \d+ (\S+) 本次实测 (\S+):/, (m) => `通过${conn(m[1])}访问 ${SUM_TARGET[m[2].toLowerCase()] || m[2]}：${sumStatus(m[3])}`],
+    [/^入站 (\d+)\/入口 \d+ 检测失败/, (m) => `${conn(m[1])}的连通检测没通过`],
+    [/^入站 (\d+) 证书检查失败/, (m) => `${conn(m[1])}的证书检查没通过`],
+    [/^入站 (\d+) 证书剩余 (-?\d+) 天/, (m) => +m[2] > 0 ? `${conn(m[1])}的证书还剩 ${m[2]} 天` : `${conn(m[1])}的证书已过期`],
+    [/^节点代理服务未运行/, () => "节点上的代理程序没在运行"],
+    [/^节点实测配置哈希与最后下发的配置不一致/, () => "节点上的配置和控制面不一致"],
+    [/^节点没有已下发配置哈希/, () => "还没把配置应用到节点，没法判断配置是否一致"],
+    [/^(节点配置哈希未读到|读取配置漂移基准失败)/, () => "没读到节点上的配置，没法判断配置是否一致"],
+    [/^(xray|sing-box) 服务未运行/, (m) => `${m[1]} 没在运行`],
+    [/^(xray|sing-box) 检查失败/, (m) => `${m[1]} 检查没通过`],
+    [/^sing-box 配置漂移检查/, () => "sing-box 的配置没法确认是否一致"],
+    [/^节点地址在体检期间变化/, () => "体检期间节点地址变了，结果可能不准"],
+    [/^网络检测未完成/, () => "网络检测没有跑完"],
+    [/^测评未运行/, () => "这次没有跑测评"],
+    [/^体检中断/, () => "体检中途被打断，已保存做完的部分"],
+    [/^网络检测工具不可用: (.+)$/, (m) => `节点上缺少检测工具「${m[1]}」`],
+    [/^(\S+) (\S+) 测速 (\S+):/, (m) => `测网速（${m[1]}）${sumStatus(m[3])}`],
+    [/^(IPv4|IPv6|ipv4|ipv6) IP 检测 (\S+):/, (m) => `${m[1].toUpperCase().replace("IPV", "IPv")} 地址检测${sumStatus(m[2])}`],
+    [/^(.+) (DNS|ICMP|HTTP|路由) (\S+):/, (m) => `访问 ${m[1]} 的${SUM_NET.get(m[2])}${sumStatus(m[3])}`],
+    [/^读取入站失败/, () => "读不到这台节点的连接方式"],
+    [/^节点没有配置入站/, () => "节点还没有连接方式，没做连通检测"],
+    [/^报告超过 256 KiB/, () => "报告太长，部分细节没有保存"],
+  ];
+  const out = [];
+  for (const line of lines) {
+    if (!line) continue;
+    const r = rules.find(([re]) => re.test(line));
+    const t = r ? r[1](line.match(r[0])) : "有一项检查没通过，原话见「详情」";
+    if (t && !out.includes(t)) out.push(t);
+  }
+  // 「被中断」已经说明没跑完,不再重复一条「没有跑完」。
+  return out.includes("完整测评被中断，没有跑完") ? out.filter(t => t !== "完整测评没有跑完") : out;
 }
 
 function nodeDetail(d) {
@@ -133,7 +185,7 @@ function nodeDetail(d) {
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
   ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
-    <div class="card stat"><div class="l">核心</div><div class="v f18">${s?.version || "—"}</div><div class="s">${coreText(s)}</div></div>
+    <div class="card stat"><div class="l">代理程序</div><div class="v f18">${s?.version || "—"}</div><div class="s">${coreText(s)}</div></div>
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有用到 TLS 的连接方式"}</div></div>
   </div>
@@ -141,12 +193,12 @@ function nodeDetail(d) {
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装核心</b><div class="sub">把核心装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
+      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
+    ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
-  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt node-danger"><div class="ch">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的连接方式会一起删掉，订阅里不再有它。节点上已装的核心和配置不会被清理。</div></div><span class="sp"></span><button class="btn sm" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除节点</button></div></div>` : ""}`;
+  ${can("DELETE", "/api/nodes/x") ? H`<div class="card mt node-danger"><div class="ch">危险操作</div><div class="row"><div><b class="bold">删除节点</b><div class="sub">它上面的连接方式会一起删掉，订阅里不再有它。节点上已装的代理程序和配置文件会留着。</div></div><span class="sp"></span><button class="btn sm" data-act="node-rm" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">删除节点</button></div></div>` : ""}`;
 }
 
 /* ---- 编辑器:add / edit ---- */
@@ -305,15 +357,15 @@ Object.assign(ACTS, {
   "node-edit": d => nodeEditor(+d.id),
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
-  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启核心：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
-    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，核心已重启`); await load(true, true); } }),
+  "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启代理程序：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
+    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，代理程序已重启`); await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
     confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
-  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装核心？`, text: "控制面下载发布包(有缓存)，经 SSH 送到节点，应用当前配置并启动。慢链路上要几分钟，期间别关这个页面。", ok: "安装",
-    extra: H`<div class="two"><div class="field"><label for="i-core">核心</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
+  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟；关掉这个页面安装也会继续，回到节点页刷新就能看到结果。", ok: "安装",
+    extra: H`<div class="two"><div class="field"><label for="i-core">代理程序</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
       const core = $("#i-core").value, v = $("#i-ver").value.trim();
@@ -324,10 +376,16 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、出口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟，做完前关掉这个页面会中断体检。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
-    const r = await api(nodePath(d.id) + "/online");
+    let r;
+    // 读不到就明说读不到,不能落成「没有在线用户」。409 = 节点配置没开在线统计,应用一次配置就好。
+    try { r = await api(nodePath(d.id) + "/online"); } catch (e) {
+      if (!e.status || e.status < 400) throw e;
+      const fix = e.status === 409 && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm mt" data-act="node-sync" data-id="${d.id}" data-label="${d.label || ""}" data-name="${d.name || ""}">把配置应用到节点</button>` : "";
+      return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>${e.message}</p>${fix}</div>`);
+    }
     infoDrawer(`${d.label || r.node} 在线`, H`现场读出的结果`, r.online.length
       ? H`<div class="tw"><table><thead><tr><th>用户</th><th class="num">IP 数</th><th>IP</th></tr></thead><tbody>${r.online.map(e => H`<tr><td><b class="bold">${e.user}</b></td><td class="num">${e.count}</td><td class="mono sub">${(e.ips || []).join(", ")}</td></tr>`)}</tbody></table></div>`
       : emptyBox("users", "没有在线用户", "此刻没有用户连在这台节点上。", ""));
@@ -336,7 +394,7 @@ Object.assign(ACTS, {
     const cfg = await api(nodePath(d.id) + "/config");
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: "不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的核心和配置不会被清理；只想让新订阅别再发它，用「暂停分配」。", ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: H`不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的代理程序和配置文件会留着；只想让新订阅别再发它，用<span class="nw">「暂停分配」</span>。`, ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 

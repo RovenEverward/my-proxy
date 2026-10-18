@@ -27,7 +27,7 @@ PAGES.rules = {
     return { routing, rules, groups, catalog, members, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
-    const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。从上往下比对，第一条对上的生效 · 改完客户端更新订阅即可</p></div></div>`;
+    const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。改完，客户端更新一次订阅就生效。</p></div></div>`;
     if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     RP.d = d;
     const R = d.rules, G = d.groups;
@@ -91,8 +91,8 @@ function modeBanner(d) {
 
 function rpEmpty(d) {
   const W = can("POST", "/api/routing/migrate");
-  return H`<div class="card rp-empty"><div class="rp-flow"><div class="rp-fb"><b>你打开一个网站</b><span class="mono">netflix.com</span></div><span class="rp-arr">→</span>
-    <div class="rp-fb wide"><b>按规则从上往下对</b><span>广告 → 拦截</span><span>国内网站 → 直连</span><span class="on">流媒体 → 📺 流媒体</span><span>其他全部 → ⚡ 自动选择</span></div><span class="rp-arr">→</span>
+  return H`<div class="card rp-empty"><div class="rp-flow"><div class="rp-fb"><b>你打开一个网站</b><span class="mono">netflix.com</span></div><span class="rp-arr">${ic("arrow")}</span>
+    <div class="rp-fb wide"><b>按规则从上往下对</b><span>广告 → 拦截</span><span>国内网站 → 直连</span><span class="on">流媒体 → 📺 流媒体</span><span>其他全部 → ⚡ 自动选择</span></div><span class="rp-arr">${ic("arrow")}</span>
     <div class="rp-fb"><b>走对应的出口</b><span>策略组挑出的节点</span></div></div>
     <h4>还没有分流规则</h4><p class="sub">先选一套起步方案，之后随时增删、拖动排序、改去向。</p>
     ${W ? H`<div class="rp-starts">
@@ -107,7 +107,7 @@ function rpRow(r, i, own, editable) {
   return H`<div class="rp-row ${r.enabled ? "" : "off"} ${own && RP.scope ? "own" : ""}" ${raw(editable ? "draggable=\"true\"" : "")} data-i="${i}">
     <span class="rp-grip" title="拖动排序">${editable ? "⋮⋮" : ""}</span><span class="rp-n">${i + 1}</span>
     <span class="rp-tyc"><span class="rp-ty">${RULE_TYPES[r.type] || r.type}</span></span><span class="rp-v ${r.type === "set" ? "" : "mono"}" title="${rpValText(r)}">${rpValText(r)}${set ? H` <span class="sub">${set.desc}</span>` : ""}${r.note ? H` <span class="sub">· ${r.note}</span>` : ""}</span>
-    <span class="rp-a">→</span>${rpPill(r.target)}
+    <span class="rp-a">${ic("arrow")}</span>${rpPill(r.target)}
     <span class="sp"></span>${own && RP.scope ? H`<span class="pill on">仅 ${RP.scope}</span>` : ""}
     ${editable ? H`<label class="sw" title="${r.enabled ? "停用" : "启用"}"><input type="checkbox" data-act="rp-toggle" data-i="${i}" aria-label="启用第 ${i + 1} 条" ${raw(r.enabled ? "checked" : "")}><i></i></label>
     <button class="ib sm" data-act="rp-edit" data-i="${i}" title="编辑" aria-label="编辑第 ${i + 1} 条">${ic("more")}</button>` : ""}</div>`;
@@ -119,7 +119,7 @@ function rpEditRow() {
     : H`<input class="in mono" id="re-val" value="${e.value}" autocomplete="off" spellcheck="false" placeholder="${{ suffix: "example.com(含子域名)", keyword: "google", cidr: "91.108.4.0/22" }[e.type]}">`;
   return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : "✎"}</span>
     <select class="in w140" id="re-type" aria-label="类型">${Object.entries(RULE_TYPES).map(([k, t]) => H`<option value="${k}" ${raw(k === e.type ? "selected" : "")}>${t}</option>`)}</select>
-    <div class="grow">${valIn}</div><span class="rp-a">→</span><select class="in w220" id="re-to" aria-label="去向">${rpTargetOptions(e.target)}</select>
+    <div class="grow">${valIn}</div><span class="rp-a">${ic("arrow")}</span><select class="in w220" id="re-to" aria-label="去向">${rpTargetOptions(e.target)}</select>
     <button class="btn pri sm" data-act="rp-save">${e.isNew ? "添加" : "保存"}</button><button class="btn ghost sm" data-act="rp-cancel">取消</button>${e.isNew ? "" : H`<button class="ib sm" data-act="rp-del" title="删除" aria-label="删除这条">${ic("x")}</button>`}
     <div class="err" id="re-err" role="alert" style="flex-basis:100%"></div></div>`;
 }
@@ -130,9 +130,9 @@ function rpRulesCard(d) {
     <div class="rp-sec">全局规则(只读，去「全部用户」里改)</div>` : "";
   const base = sc ? (R.user_rules || []).length : 0;
   const finalSel = sc ? R.user_final || "" : R.final;
-  return H`<div class="card">${sc ? "" : H`<div class="ch">从上往下匹配，第一条对上的生效<span class="sp"></span>${W ? H`<button class="btn sm" data-act="rp-builtin">${ic("plus")}内置规则组</button><button class="btn pri sm" data-act="rp-add">${ic("plus")}添加规则</button>` : ""}</div>${RP.edit?.isNew ? rpEditRow() : ""}`}
+  return H`<div class="card rp-card">${sc ? "" : H`<div class="ch">从上往下匹配，第一条对上的生效<span class="sp"></span>${W ? H`<button class="btn sm" data-act="rp-builtin">${ic("plus")}内置规则组</button><button class="btn pri sm" data-act="rp-add">${ic("plus")}添加规则</button>` : ""}</div>${RP.edit?.isNew ? rpEditRow() : ""}`}
     <div class="rp-list">${own}${R.global.map((r, i) => sc ? rpRow({ ...r }, base + i, false, false) : rpRow(r, i, true, W))}
-    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">→</span>
+    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">${ic("arrow")}</span>
       ${W ? H`<select class="in w220" id="rp-final" aria-label="其他全部的去向">${rpTargetOptions(finalSel, d, sc ? `跟随全局(${rpTargetName(R.final)})` : null)}</select>` : rpPill(finalSel || R.final)}<span class="sp"></span></div></div></div>`;
 }
 
