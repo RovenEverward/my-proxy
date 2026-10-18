@@ -401,10 +401,13 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
     await page.fill('[data-rp="0"]', pattern);
     await page.locator('[data-rp="0"]').press("Tab");
     await page.fill("#rd-ua", "CLASH");
-    // 试框的说法是「会拿到 … 这条」,并对上的那行标 hit。
+    // 试框的说法是「会拿到 … 这条」,并对上的那行标 hit。对上的不一定是第 0 条:
+    // 内置的前几条(如 karing)可能先接住这个标识,标准的是唯一一行 hit 和它说的是同一条。
     if (pattern.includes("is")) {
       await expect(page.locator("#rd-hit")).toContainText("会拿到");
-      await expect(page.locator('.rd-row[data-i="0"]')).toHaveClass(/hit/);
+      const row = page.locator(".rd-row.hit");
+      await expect(row).toHaveCount(1);
+      await expect(page.locator("#rd-hit .b5-res")).toContainText(`对上的是「客户端标识里含 ${await row.locator("[data-rp]").inputValue()}」这条`);
     }
     await expect(page.locator("#rd-done")).toBeEnabled();
   }

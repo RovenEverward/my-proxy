@@ -167,13 +167,17 @@ function presKey(d, u) {
   if (presKnown(d) && p.online) return 4e12 + (p.online_ips || 0);
   return p.last_active_at ? +new Date(p.last_active_at) : -4e12 + +new Date(u.created_at || 0) / 1e3;
 }
-// 默认按最近在线倒序;从未连接的不管正序倒序都排最后,所以先按「有没有最后在线时间」
-// 分成两段,再按 dir 排同段里的先后,最后按用户名兜底(时间一样时顺序才是稳的)。
+// 默认按最近在线倒序,点表头后反过来;从未连接的不管正序倒序都排最后,所以先按「有没有
+// 最后在线时间」分成两段,再按 dir 排同段里的先后,最后按用户名兜底(时间一样时顺序才是稳的)。
+// 在线的固定在最前(IP 多的靠前):在不在线是「现在」的先后,不跟着方向翻转;同段里再按方向排。
+// 只翻转时间会让正序时最久没连的排到在线的人前面(两小时前不算最新,但排第一也说不通)。
 const presCompare = d => (a, b) =>
-  (!!b.presence?.last_active_at - !!a.presence?.last_active_at) || US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
+  ((!!b.presence?.online) - (!!a.presence?.online)) ||
+  (!!b.presence?.last_active_at - !!a.presence?.last_active_at) ||
+  US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
 // 某台节点连不上时的灰条:不是用户做错了什么,只是数据旧了,所以用灰色不用红色。
-// 节点名是一整块(.nm):名字里的旗帜会被换成一张图,不包一块的话整句会被拆成好几截。
-const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span><span class="nm">${presNodeText(d, sn.node_id)}</span> 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";
+// 整句是一个 .pres-note 的直接子元素 span,里面不再套块:节点名里的旗帜换成图后仍在这一句里。
+const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span>${presNodeText(d, sn.node_id)} 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";
 // 在线人数放在工具栏右边,不进状态筛选:筛选是账号状态(互斥),在线是另一回事;默认
 // 排序已经把在线的人排在最上面。读不到在线状态时直说「读不到」,不写「0 人在线」。
 function presSum(d) {
@@ -352,8 +356,12 @@ function userDrawer(u, links, d) {
   img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
 }
 // drawerUser:抽屉里画的那个人 = 用户本身 + 最近连接接口带回的在线情况(和列表页打开抽屉时同一份)。
-// 列表条目里的 presence 来自另一次请求,可能比 activity 旧;activity 里有就用它的,旧控制面不给就照原样。
-const drawerUser = d => d.activity && d.activity.presence ? { ...d.user, presence: d.activity.presence } : d.user;
+// 列表条目里的 presence 来自另一次请求,可能比 activity 旧;activity 里有就用它的。activity 里没有
+// (旧控制面,或者没算出来)时用列表里同一个人的那份,列表没有这个人才当作没有。
+const drawerUser = d => {
+  const p = d.activity?.presence || d.page?.users?.find(u => u.username === d.user.username)?.presence;
+  return p ? { ...d.user, presence: p } : d.user;
+};
 async function refreshDrawer(name) {
   await load(true, true);
   const d = current.data;

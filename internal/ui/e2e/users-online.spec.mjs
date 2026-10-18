@@ -152,8 +152,10 @@ test("排序:默认最新在前;点表头反过来;从未连接的不管正反�
   expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "hana", "ivy"]);
   await page.click("[data-act=pres-sort]");
   await expect(page.locator("th.th-sort")).toHaveAttribute("aria-sort", "ascending");
+  // 反过来以后时间近的在后、最久没连的在前,但在线的仍在最前:现在在线的人排在不在线的前面,
+  // 不按「多久前有流量」排。
   const asc = await order(page);
-  expect(asc).toEqual(["jun", "gus", "fang", "evan", "dora", "chen", "alice", "bob", "hana", "ivy"]);
+  expect(asc).toEqual(["chen", "alice", "bob", "gus", "jun", "fang", "evan", "dora", "hana", "ivy"]);
   await page.click("[data-act=pres-sort]");
   await expect(page.locator("th.th-sort")).toHaveAttribute("aria-sort", "descending");
   expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "hana", "ivy"]);
@@ -162,7 +164,8 @@ test("排序:默认最新在前;点表头反过来;从未连接的不管正反�
 test("节点连不上:灰条写从几点起连不上,「看节点」去节点页;那台上的人写「连不上，可能还在线」", async ({ page }) => {
   await open(page, { presence: { ...LIVE, stale_nodes: [{ node_id: 2, since: at(3 * MIN) }] } });
   const note = page.locator(".pres-note");
-  await expect(note.locator("span")).toHaveText(/^东京 B 从 \d{2}:\d{2} 起连不上，这台上的在线状态停在 \d+ (秒|分钟)前。$/);
+  // 灰条里还有时钟图标和旗帜,整句是它第一个直接的 span 子元素。
+  await expect(note.locator(":scope > span").first()).toHaveText(/^东京 B 从 \d{2}:\d{2} 起连不上，这台上的在线状态停在 \d+ (秒|分钟)前。$/);
   await expect(note.locator("a")).toHaveAttribute("href", "#nodes/2");
   // 灰色,不是红色。
   const [r, g, b] = await note.evaluate(e => getComputedStyle(e).backgroundColor.match(/\d+/g).slice(0, 3).map(Number));

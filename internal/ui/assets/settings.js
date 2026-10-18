@@ -371,8 +371,12 @@ function b5Card(d) {
     <p class="b5-cap">流量和到期日按每个人的套餐显示，这里不用改。<br>${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>。</p>`;
 }
 // 订阅名编辑框:「用户名」是一块整体的标签,存的时候换回 {USERNAME}。
-const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>');
-function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/\n/g, ""); }
+// 标签后面总留一个空的文字节点(零宽空格):标签本身不可编辑,光标落在它后面需要有个能放光标
+// 的地方;没有的话 Control+End 之后接着打的字会跑到标签前面(保存出来的订阅名是「{USERNAME}测试 」
+// 而不是「测试 {USERNAME}」)。读值时把这个占位字符去掉。
+const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>') + "&#8203;";
+// 读值时去掉占位用的零宽空格(b5TokHTML 在标签后面留的那个,不算进订阅名)。
+function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/[\n\u200b]/g, ""); }
 function b5TitleRes(d) {
   const t = d.profile_title || "", other = SUB.users.find(u => u.username !== SUB.preview.user)?.username || "bob";
   const has = t.includes("{USERNAME}"), me = t.replaceAll("{USERNAME}", SUB.preview.user), you = t.replaceAll("{USERNAME}", other);
@@ -471,16 +475,21 @@ async function saveSub() {
     await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
     // 不清空 SUB:重载回来前页面上的按钮仍要能用;草稿记成已保存,重载时换成控制面的最新值。
     SUB.saving = false; SUB.err = ""; SUB.fieldErrors = {}; SUB.orig = clone(SUB.draft);
-    // 地址改了:控制面给的旧链接和它当时的开头都作废,预览改用令牌按新地址拼。
-    if (ks.includes("sub_url_prefix") && SUB.preview) Object.assign(SUB.preview, { auto: "", appliedPrefix: "" });
+    // 地址改了:控制面给的旧链接和它当时的开头都作废,预览改用令牌按新地址拼。重载回来前,
+    // 开头就是刚存下的那个(库里存的已去掉尾斜杠);没填时退回原来那台(旧开头或控制面地址)。
+    if (ks.includes("sub_url_prefix") && SUB.preview) {
+      const saved = String(d.sub_url_prefix || "").replace(/\/+$/, "");
+      Object.assign(SUB.preview, { auto: "", appliedPrefix: saved || SUB.preview.appliedPrefix });
+    }
     refresh();
     toast(`已保存 ${n} 处改动`); await load(true, true);
     return true;
   } catch (e) {
     SUB.saving = false;
     // 按字段名认错(旧控制面不报字段名,退回按原话里的「订阅地址」认);页面上统一叫「链接开头」。
-    if (e.status === 400 && (e.field === "sub_url_prefix" || e.message.includes("订阅地址"))) {
-      SUB.fieldErrors.sub_url_prefix = e.message.replace("订阅地址", "链接开头");
+    // 新控制面不报字段名时,原话里写的是「链接开头」(v0.7 前后改的措辞),两种说法都认。
+    if (e.status === 400 && (e.field === "sub_url_prefix" || e.message.includes("订阅地址") || e.message.includes("链接开头"))) {
+      SUB.fieldErrors.sub_url_prefix = e.message.replaceAll("订阅地址", "链接开头");
       SUB.err = "没保存上：链接开头的格式不对，改好再保存。"; refresh(); $("#f-prefix")?.focus();
       return false;
     }
@@ -570,7 +579,7 @@ PAGES.sub = {
       t.addEventListener("input", () => {
         let v = b5TokVal(t);
         // 有人手打了 {USERNAME}:换成标签块,光标放到最后。
-        if (t.textContent.includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
+        if (t.textContent.replace(/[\n\u200b]/g, "").includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
         SUB.draft.profile_title = v; SUB.err = ""; delete SUB.fieldErrors.profile_title; refresh();
       });
     }
@@ -621,17 +630,24 @@ function rulesDrawer(focus) {
     <div class="db rd-db" id="rd-body">${rulesBody()}</div>
     <div class="df"><button type="button" class="btn ghost" data-act="rd-reset">${ic("undo")}恢复内置</button><span class="sp" style="flex:1"></span><span class="df-why" id="rd-why"></span><button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" data-act="rd-done" id="rd-done">完成</button></div>`, "wide");
   rdWire();
-  // 新加的一条(「加一条」传 -1)滚到中间,光标放进它的标识框,接着就能打字。打开抽屉的按钮
-  // 点完后还想把焦点收回自己身上,所以等焦点先落稳再看;已经在抽屉里(用户自己点了别处)就不抢。
+  // 加一条:新的一条滚到中间,光标放进它的标识框,接着就能打字。有些平台点完按钮以后才把焦点
+  // 交回按钮(它不在抽屉里),那时再抢一次;焦点已经落在新行上(重画后被认出来)就不再动。
+  // 已经在抽屉里别的控件上 = 用户自己点了,不抢。
   if (focus === -1) setTimeout(() => {
-    const drawer = $("#drawer.open");
-    if (!RD || RD.focus !== focus || !drawer) return;
-    const row = document.querySelector(`.rd-row[data-i="${focus}"]`);
-    row?.scrollIntoView({ block: "center" });
-    // 已经在抽屉里别的控件上(用户自己点了)= 不抢;焦点还停在抽屉外面(刚点开)= 放进新的一条。
-    if (drawer.contains(document.activeElement)) return;
-    document.querySelector(`[data-rp="${focus}"]`)?.focus();
+    if (!RD || RD.focus !== focus || !$("#drawer.open")) return;
+    if (document.activeElement?.matches?.("[data-rp]") || $("#drawer.open").contains(document.activeElement)) return;
+    focusNewRow(focus, true);
   }, 0);
+}
+// focusNewRow 把光标放进第 i 条规则的标识框:先滚到看得见的地方,焦点在抽屉外面才抢。
+function focusNewRow(i, onlyIfOutside) {
+  const drawer = $("#drawer.open");
+  if (!drawer || !RD) return;
+  const input = drawer.querySelector(`[data-rp="${i}"]`);
+  if (!input) return;
+  input.closest(".rd-row")?.scrollIntoView({ block: "center" });
+  if (onlyIfOutside && drawer.contains(document.activeElement)) return;
+  input.focus();
 }
 function rdPaint() { const y = $("#rd-body").scrollTop; $("#rd-body").innerHTML = val(rulesBody()); $("#rd-body").scrollTop = y; rdWire(); }
 // change 可能在 Tab 的失焦阶段触发，等焦点移动完再记录目标并重绘。
@@ -681,7 +697,7 @@ Object.assign(ACTS, {
   "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },
   // 新的一条插在「其他所有客户端」前面,光标放进标识框里,接着就能打字。
   "rd-add": () => { const i = RD.rules.findIndex(r => b5Parse(r.pattern).all), at = i < 0 ? RD.rules.length : i;
-    RD.rules.splice(at, 0, { pattern: "(?i)", result: "clash-meta" }); rdPaint(); document.querySelector(`[data-rp="${at}"]`)?.focus(); },
+    RD.rules.splice(at, 0, { pattern: "(?i)", result: "clash-meta" }); rdPaint(); focusNewRow(at); },
   "rd-reset": () => { RD.rules = clone(SUB.builtin); rdPaint(); },
   "rd-done": () => { if ($("#rd-done").disabled) return; SUB.draft.rules = clone(RD.rules.length ? RD.rules : SUB.builtin); SUB.err = ""; closeOverlays(); paint(); },
   "b5-try": d => { RD.ua = d.ua; rdPaint(); },

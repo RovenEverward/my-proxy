@@ -37,10 +37,13 @@ test("链接卡片给出完整链接;没填链接开头时用控制面地址开�
   const cpAlice = await (await cp("/api/users/alice/links")).json();
   await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
-  expect(alice.auto.startsWith(cpAlice.auto.slice(0, cpAlice.auto.lastIndexOf("/sub/")) + "/sub/")).toBe(true);
-  expect(alice.auto.endsWith("/sub/" + cpAlice.auto.split("/sub/").pop())).toBe(true);
-  // mpx ui 转发时自己改写了 Host(mpx ui 的地址),控制面按它拼;只加的 base 字段说的就是这个开头。
+  // 经 mpx ui 和直接问控制面拿到的是同一条:转发时 Host 换成控制面的地址(internal/ui/ui.go 的
+  // r.Out.Host = 控制面),控制面按请求的 Host 拼,两边看到的一样。
+  expect(alice.auto).toBe(cpAlice.auto);
+  // 只加的 base 字段就是这条链接的开头,和提问的那一边的地址一致。
   expect(alice.base).toBe(env.origin);
+  expect(cpAlice.base).toBe(env.cpURL);
+  expect(alice.auto.startsWith(alice.base + "/sub/")).toBe(true);
   // 页面把开头按控制面这次用的那个画出来,经 mpx ui 时它不一定等于页面地址。
   const pre = alice.auto.slice(0, alice.auto.lastIndexOf("/sub/"));
   await expect(page.locator(".lk-pre")).toHaveText(pre);
@@ -114,7 +117,12 @@ test("识别规则抽屉的试框说「会拿到」，没有「不分大小写�
   await page.fill("#rd-ua", "clash-verge/v2.0.3");
   await expect(page.locator("#rd-hit")).toContainText("会拿到");
   await expect(page.locator("#rd-hit")).toContainText("Clash Meta 配置");
-  await expect(page.locator('.rd-row[data-i="0"]')).toHaveClass(/hit/);
+  // 对上的不一定是第 0 条(内置的前几条都可能先接住这个标识):标准的是唯一一行 hit,
+  // 它的标识框就是试框说的那条规则,拿到的格式也和试框一致。
+  const row = page.locator(".rd-row.hit");
+  await expect(row).toHaveCount(1);
+  await expect(page.locator("#rd-hit .b5-res")).toContainText(`对上的是「客户端标识里含 ${await row.locator("[data-rp]").inputValue()}」这条`);
+  await expect(row.locator("[data-rf]")).toHaveValue("clash-meta");
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.locator("#drawer.open")).not.toContainText("不分大小写");
 });
