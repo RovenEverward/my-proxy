@@ -248,7 +248,11 @@ PAGES.users = {
     if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
     if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
-    if (d && r[1] && d.user) userDrawer(d.user, d.links, d);
+    if (d && r[1] && d.user) {
+      // 抽屉里的在线情况跟着最近连接一起取到(activity 里带着 presence);旧控制面不给,就照原样。
+      const u = d.activity && d.activity.presence ? { ...d.user, presence: d.activity.presence } : d.user;
+      userDrawer(u, d.links, d);
+    }
   },
 };
 let USERS_TOTAL = null;

@@ -30,26 +30,43 @@ func (s *Store) migrateActivity() error {
 		return fmt.Errorf("建 node_sampled 表: %w", err)
 	}
 
-	// 只在表空时回填一次:按 (用户, 节点, 核心) 用 LAG 算相邻采样的累计值差,
-	// 差为正的就是那一刻有流量;重启行与零基准行的差不是正数,自然被排除。
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM user_activity`).Scan(&count); err != nil {
-		return fmt.Errorf("读取 user_activity 行数: %w", err)
+	// 回填只做一次:做过就在 routing_state 的 migration_marks 里记一笔(与分流迁移
+	// 用同一处落点),以后启动不再扫 traffic_samples。记号只在回填写完之后才写。
+	done, err := s.migrationDone(userActivityBackfillKey)
+	if err != nil {
+		return err
 	}
-	if count > 0 {
+	if done {
 		return nil
 	}
-	if _, err := s.db.Exec(`INSERT OR IGNORE INTO user_activity(username,node_id,last_active_at)
+	// 按 (用户, 节点, 核心) 用 LAG 算相邻采样的累计值差,差为正的就是那一刻有流量;
+	// 重启行与零基准行的差不是正数,自然被排除。只认 users 里还有的人:已经删掉的
+	// 用户留着名字的历史采样不该再长出活跃时间,否则同名用户再建出来会捡回旧时间。
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("回填 user_activity: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO user_activity(username,node_id,last_active_at)
 		SELECT t.username,t.node_id,MAX(t.sampled_at) FROM (
 			SELECT username,node_id,sampled_at,(uplink+downlink)-LAG(uplink+downlink) OVER (PARTITION BY username,node_id,core ORDER BY id) AS d
 			FROM traffic_samples
-		) t JOIN nodes n ON n.id=t.node_id
+		) t JOIN nodes n ON n.id=t.node_id JOIN users u ON u.username=t.username
 		WHERE t.d > 0
 		GROUP BY t.username,t.node_id`); err != nil {
 		return fmt.Errorf("回填 user_activity: %w", err)
 	}
+	if err := markMigrationDone(tx, userActivityBackfillKey); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交 user_activity 回填: %w", err)
+	}
 	return nil
 }
+
+// userActivityBackfillKey 是 user_activity 回填在 routing_state.migration_marks 里的名字。
+const userActivityBackfillKey = "user_activity_backfill"
 
 // markUserActive 记下用户在这台节点上刚有流量。只往前走,不会被更早的时间覆盖。
 // 它与流量采样在同一个事务里写,提交后活跃时间不会落后于采样。

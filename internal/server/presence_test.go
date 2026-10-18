@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -139,6 +140,54 @@ func TestPresenceStaleNode(t *testing.T) {
 	}
 }
 
+// 旧节点早了有一阵子、最后活跃离节点停下也过了余量:人仍然带着最后活跃时间与所在
+// 节点,不在线,标 stale。
+func TestPresenceStaleNodeBeyondSlackKeepsLastActive(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	e := newEnv(t)
+	node := e.createNode("node-1", "203.0.113.10")
+	e.createUser("alice")
+	// 五分钟前有流量,节点也停在那一刻:超过旧节点门槛(90 秒),且在余量(2 分钟)
+	// 之外,但不到两个余量。
+	since := now.Add(-5 * time.Minute)
+	writeActivity(t, e, "alice", node.ID, since)
+	if err := e.st.MarkNodeSampled(node.ID, since); err != nil {
+		t.Fatalf("记采样时间: %v", err)
+	}
+
+	sum, got := listPresence(t, e)
+
+	p := got["alice"]
+	if p.Online {
+		t.Fatalf("旧节点上的人不该判在线:%+v", p)
+	}
+	// 旧节点判定只看这台节点自己的采样时间:节点停在五分钟前,这人就是在那之前
+	// 结束的,仍标 stale(不论最后一次流量离节点停下的那一刻有多远)。
+	if !p.Stale {
+		t.Fatalf("最后用的是旧节点,应当标 stale:%+v", p)
+	}
+	if p.LastActiveAt == nil || !p.LastActiveAt.Equal(since.UTC()) {
+		t.Fatalf("最后活跃时间 = %v, want %v", p.LastActiveAt, since)
+	}
+	if p.LastNodeID == nil || *p.LastNodeID != node.ID {
+		t.Fatalf("最后所在节点 = %v, want %d", p.LastNodeID, node.ID)
+	}
+	if len(p.OnlineNodes) != 0 {
+		t.Fatalf("旧节点不该算进在线节点:%v", p.OnlineNodes)
+	}
+	// 活跃记录的回答里也是同一份。
+	code, data := e.api("GET", "/api/users/alice/activity", nil)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d(%s)", code, data)
+	}
+	if act := decodeJSON[userActivity](t, data); act.Presence.LastActiveAt == nil || act.Presence.Online || !act.Presence.Stale {
+		t.Fatalf("活跃记录里的 presence 应当带着最后活跃时间、不在线、标 stale:%+v", act.Presence)
+	}
+	if sum.Online != 0 {
+		t.Fatalf("抬头在线人数 = %d, want 0", sum.Online)
+	}
+}
+
 // 在线名单快照:刚连上还没传数据的人也算在线,并带上他连了几个 IP。
 func TestPresenceSnapshotAddsOnline(t *testing.T) {
 	ops := &fakeOnlineOps{}
@@ -227,6 +276,59 @@ func TestUserActivityEndpoint(t *testing.T) {
 	code, _ = e.api("GET", "/api/users/nobody/activity", nil)
 	if code != http.StatusNotFound {
 		t.Fatalf("不存在的用户状态码 = %d, want 404", code)
+	}
+}
+
+// 活跃记录的回答带着这个人的在线情况:字段与列表条目里的 presence 同一个形状,
+// 在线的人与从没连过的人各一份。
+func TestUserActivityCarriesPresence(t *testing.T) {
+	ops := &fakeOnlineOps{}
+	e := newEnvWith(t, ops)
+	node := e.createNode("node-1", "203.0.113.10")
+	e.createUser("alice")
+	e.createUser("bob")
+	now := time.Now().Truncate(time.Second)
+	if err := e.st.MarkNodeSampled(node.ID, now); err != nil {
+		t.Fatalf("记采样时间: %v", err)
+	}
+	ops.snaps = map[int64]model.OnlineSnapshot{
+		node.ID: {NodeID: node.ID, At: now, Users: map[string][]string{"alice": {"203.0.113.5"}}},
+	}
+
+	code, data := e.api("GET", "/api/users/alice/activity", nil)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d(%s)", code, data)
+	}
+	got := decodeJSON[userActivity](t, data)
+	if !got.Presence.Online || got.Presence.OnlineIPs != 1 || len(got.Presence.OnlineNodes) != 1 || got.Presence.OnlineNodes[0] != node.ID {
+		t.Fatalf("alice 的 presence = %+v, want 在线、节点 %d 上一个 IP", got.Presence, node.ID)
+	}
+	// 与列表里同一个人的那份一致。
+	_, listed := listPresence(t, e)
+	if want := listed["alice"]; !reflect.DeepEqual(got.Presence, want) {
+		t.Fatalf("活跃记录里的 presence %+v 与列表里的 %+v 对不上", got.Presence, want)
+	}
+
+	// 从没连过的人:零值,online_nodes 是 [] 而不是 null。
+	code, data = e.api("GET", "/api/users/bob/activity", nil)
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d(%s)", code, data)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("解析响应: %v", err)
+	}
+	var pres map[string]json.RawMessage
+	if err := json.Unmarshal(raw["presence"], &pres); err != nil {
+		t.Fatalf("解析 presence: %v(%s)", err, data)
+	}
+	for _, key := range []string{"online", "online_ips", "online_nodes", "last_active_at", "last_node_id"} {
+		if _, ok := pres[key]; !ok {
+			t.Fatalf("presence 少了 %q:%s", key, data)
+		}
+	}
+	if string(pres["online"]) != "false" || string(pres["online_nodes"]) != "[]" || string(pres["last_active_at"]) != "null" {
+		t.Fatalf("从没连过的人 presence 应当是零值:%s", data)
 	}
 }
 

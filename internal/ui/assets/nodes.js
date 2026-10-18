@@ -47,7 +47,7 @@ PAGES.nodes = {
   async load(r) {
     if (r[1]) {
       const id = +r[1];
-      if (jobNode !== id) { jobNode = id; jobAsk = {}; jobAsked = new Set(); jobsAfterReady = false; jobPollStop(); }
+      if (jobNode !== id) { jobNode = id; jobAsk = {}; jobAsked = new Set(); jobsAfterReady = false; jobRunning = new Map(); jobPollStop(); }
       // 体检报告没有就是 404,不算页面错误。
       const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
       // 连接方式由 conn.js 组件取数与渲染。
@@ -70,7 +70,7 @@ PAGES.nodes = {
 let NODE_LABEL_BY_ID = {};
 // JOB_TEXT 把体检、安装两种任务的界面说法放在一处:只是叫法的差别,请求与数据共用一套。
 const JOB_TEXT = {
-  diagnose: { started: label => `已开始在 ${label} 上体检`, reused: "这台节点已经在体检了，接着等它做完就行", done: "体检完成", running: t => `正在体检（开始于 ${t}）。可以离开这个页面，做完会自动显示。`, last: "上次体检没做完：控制面重启了。再点一次「体检」就行。" },
+  diagnose: { started: label => `已开始在 ${label} 上体检`, reused: "这台节点已经在体检了，接着等它做完就行", done: () => "体检完成", running: t => `正在体检（开始于 ${t}）。可以离开这个页面，做完会自动显示。`, last: "上次体检没做完：控制面重启了。再点一次「体检」就行。" },
   install: { started: (label, core) => `已开始在 ${label} 上安装 ${core}`, reused: "这台节点已经在安装了，接着等它做完就行", done: (label, core, v) => `已在 ${label} 上装好并启动 ${core} ${v || ""}`.trim(), running: (t, core) => `正在安装 ${core}（开始于 ${t}）…`, last: "上次安装没做完：控制面重启了。再点一次「安装」就行。" },
 };
 // jobLabel:这台节点在界面上怎么叫(显示名)。
@@ -95,8 +95,10 @@ async function loadNodeJobs(id) {
 // jobAsk:节点 id → 上一次读到过正在跑的任务;jobAsked:这次进节点以来已经读过没有。
 // 普通刷新(每 30 秒、写完再读)不再反复问「最近一次做完没有」;重新进一次节点才重新问。
 // jobNode 是现在打开的是哪台节点,换了就从头算。jobsAfterReady 用来跳过进节点后的第一次画。
+// jobRunning 是上一次读到的在跑任务(id → 任务),只属于 jobNode 这台节点:画的时候
+// current.data 已经是新的了,要跟「刚做完的」比只能靠它。
 let jobAsk = {}, jobAsked = new Set(), jobNode = null, jobsAfterReady = false;
-const jobSeen = () => new Map((current.data?.jobs?.active || []).map(j => [j.id, j]));
+let jobRunning = new Map();
 
 // 详情里「正在…」和「上次没做完」两块的位置:任务一变就在原地换掉,不整页重画
 // (整页重画会把焦点、滚动位置都抖一下)。占位块排在详情页正文的最前面,跟着标题走。
@@ -106,17 +108,21 @@ function jobsAfter(d) {
   if (!d?.node || d.node.id !== id) return;
   const jobs = d.jobs || null, run = (jobs?.active || []).find(j => j.status === "running") || null;
   // 刚做完的那一个:第一次读到 d 时先记下来(不提示:那是进来之前的事),
-  // 之后从「正在跑」变成别的状态的就是刚做完的,要提示并刷新详情。
-  const seen = jobSeen();
+  // 之后从「正在跑」里消失或不再在跑的就是刚做完的,要提示并刷新详情。
+  const seen = jobRunning, now = (jobs?.active || []).filter(j => j.status === "running");
+  jobRunning = new Map(now.map(j => [j.id, j]));
   if (!jobsAfterReady) jobsAfterReady = true;
-  else if (seen.size) {
-    const gone = [...seen.values()].find(j => !(jobs?.active || []).some(x => x.id === j.id && x.status === "running"));
-    if (gone) jobSettle(gone);
+  else {
+    // 一件任务刚做完、另一件刚开始时两件一起处理,不能只认其中一件。
+    for (const j of seen.values()) if (!now.some(x => x.id === j.id)) jobSettle(j);
   }
   fillJobSlots(d);
-  if (run && !jobTimer) jobPollStart(id);
-  if (!run) jobPollStop();
+  // 正在跑就接着盯;jobPollActive 表示已经有一个在盯(或正在重读),不再起第二个。
+  if (run) jobPollStart(id);
+  else jobPollStop();
 }
+// jobFresh:去 GET /api/jobs/{id} 拿一件任务的最新样子。读不到就算了,退回手里这一份。
+async function jobFresh(j) { return await api("/api/jobs/" + j.id).catch(() => null) || j; }
 function fillJobSlots(d) {
   const jobs = d?.jobs, n = d?.node;
   if (!jobs || !n) return;
@@ -133,30 +139,39 @@ function fillJobSlots(d) {
 }
 // jobCallout:正在跑的是墨色提示,上次没做完的是灰色提示。
 function jobCallout(kind, d) {
-  const jobs = d.jobs, j = kind === "callout" ? (jobs.active || []).find(x => x.status === "running") : jobs.last, t = JOB_TEXT[j.kind];
-  if (!j || !t) return "";
+  const jobs = d.jobs, j = kind === "callout" ? (jobs.active || []).find(x => x.status === "running") : jobs.last;
+  if (!j) return "";
+  const t = JOB_TEXT[j.kind];
+  if (!t) return "";
   if (kind === "callout") return H`<div class="callout stone mb" role="status">${ic(j.kind === "diagnose" ? "pulse" : "dl")}<div><b>${t.running(hm(new Date(j.started_at)), j.core)}</b></div></div>`;
   return H`<div class="callout mb mt">${ic("clock")}<div>${t.last}</div></div>`;
 }
-// 盯一个正在跑的任务:每 3 秒问一次 GET /api/jobs/{id};换页、换节点就停。同一时间只有一个计时器。
-let jobTimer = 0, jobPollFor = null;
-function jobPollStop() { clearTimeout(jobTimer); jobTimer = 0; jobPollFor = null; }
-function jobStillHere(id) { return jobPollFor === id && route[0] === "nodes" && +route[1] === id && !!$("#job-callout"); }
+// 盯一个正在跑的任务:每 3 秒重读一次详情(里面带着这台节点的任务),换页、换节点就停。
+// jobPollFor 是正在盯的节点,jobPollActive 表示这一轮还没走完(计时器在等,或正在重读):
+// 重读期间画出来的 jobsAfter 看到它就不要再起一轮,否则会自己叠出好几个计时器。
+// 下一轮只在这次重读走完之后才排。
+let jobTimer = 0, jobPollFor = null, jobPollActive = false;
+function jobPollStop() { clearTimeout(jobTimer); jobTimer = 0; jobPollFor = null; jobPollActive = false; }
+function jobStillHere(id) { return jobPollActive && jobPollFor === id && route[0] === "nodes" && +route[1] === id && !!$("#job-callout"); }
 function jobPollStart(id) {
-  jobPollStop(); jobPollFor = id;
+  if (jobPollActive && jobPollFor === id) return;
+  jobPollStop(); jobPollFor = id; jobPollActive = true;
   jobPollTick(id);
 }
 async function jobPollTick(id) {
   jobTimer = 0;
   if (!jobStillHere(id)) return;
   await load(true);
-  if (!jobStillHere(id)) return;
+  // 停了就不再排下一轮:这一轮的重读可能把停止时留下的旧计时器又写了回来。
+  if (!jobStillHere(id)) { jobTimer = 0; return; }
   jobTimer = setTimeout(() => jobPollTick(id), 3000);
 }
 // jobSettle:任务刚结束。做完给一句提示;没做完、被打断就把原话(界面说法优先)显示在详情里;
 // 然后现场查一次状态、重读详情 —— 体检报告、安装后的版本都跟着出来。
 async function jobSettle(done) {
+  done = await jobFresh(done);
   const id = done.node_id, t = JOB_TEXT[done.kind];
+  jobRunning.delete(done.id);
   if (done.status === "done") toast(t.done(jobLabel(id), done.result?.core || done.core || "", done.result?.version || done.version || ""));
   else if (done.status !== "interrupted") toast((done.ui_hint || done.error) ? `${done.kind === "diagnose" ? "体检" : "安装"}没做成：${done.ui_hint || done.error}` : `${done.kind === "diagnose" ? "体检" : "安装"}没做成`, true);
   jobPollStop();
@@ -289,8 +304,6 @@ function nodeDetail(d) {
   const runWhy = run ? (run.kind === "diagnose" ? "这台节点正在体检，等它做完再点" : "这台节点正在安装，等它做完再点") : "";
   const busyAttrs = (kind, whyID) => run && run.kind === kind ? ` aria-disabled="true" aria-describedby="${whyID}" data-tip="${runWhy}"` : "";
   const busyWhy = (kind, whyID) => run && run.kind === kind ? H`<span id="${whyID}" class="vh">${runWhy}</span>` : "";
-  // 写到页眉按钮上的那几项:详情里的操作也带着它们。
-  const seed = `data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"`;
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
     ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" data-tip="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
     ${refreshPrimary ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${applyWhy ? raw(` aria-describedby="sync-drift-why"`) : ""}>应用到节点</button>${applyWhy ? H`<span id="sync-drift-why" class="vh">${applyWhy}</span>` : ""}` : ""}
@@ -313,8 +326,8 @@ function nodeDetail(d) {
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" ${raw(seed)}${raw(busyAttrs("diagnose", "diag-why"))}>开始体检</button>${busyWhy("diagnose", "diag-why")}` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" ${raw(seed)}${raw(busyAttrs("install", "inst-why"))}>安装</button>${busyWhy("install", "inst-why")}</div>` : ""}
+      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${raw(busyAttrs("diagnose", "diag-why"))}>开始体检</button>${busyWhy("diagnose", "diag-why")}` : ""}</div>
+    ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${raw(busyAttrs("install", "inst-why"))}>安装</button>${busyWhy("install", "inst-why")}</div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>

@@ -62,10 +62,11 @@ func TestUserActivityWrittenOnlyOnPositiveDelta(t *testing.T) {
 	}
 }
 
-// 回填:表空时按历史采样重算一次,取上次累计值增长的那一行的时刻。
+// 回填:没有记号时按历史采样重算一次,取上次累计值增长的那一行的时刻。
 func TestMigrateActivityBackfill(t *testing.T) {
 	s := newTestStore(t)
 	n := newTestNode(t, s, "hk")
+	newTestUser(t, s, "alice")
 
 	base := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 	rows := []struct {
@@ -89,6 +90,9 @@ func TestMigrateActivityBackfill(t *testing.T) {
 	if _, err := s.db.Exec(`DELETE FROM user_activity`); err != nil {
 		t.Fatalf("清空 user_activity: %v", err)
 	}
+	if _, err := s.db.Exec(`DELETE FROM routing_state`); err != nil {
+		t.Fatalf("清掉迁移记号: %v", err)
+	}
 	if err := s.migrateActivity(); err != nil {
 		t.Fatalf("migrateActivity: %v", err)
 	}
@@ -98,15 +102,60 @@ func TestMigrateActivityBackfill(t *testing.T) {
 		t.Fatalf("回填的活跃时间应当是 %v,实际 %v", want, got)
 	}
 
-	// 表里已有记录时不再回填。
-	if _, err := s.db.Exec(`UPDATE user_activity SET last_active_at = ?`, base.Add(9*time.Minute).Unix()); err != nil {
-		t.Fatalf("改活跃时间: %v", err)
+	// 做过一次就记下了:表被清空也不再回填。
+	if _, err := s.db.Exec(`DELETE FROM user_activity`); err != nil {
+		t.Fatalf("清空 user_activity: %v", err)
 	}
 	if err := s.migrateActivity(); err != nil {
 		t.Fatalf("migrateActivity(第二次): %v", err)
 	}
-	if got := activityAt(t, s, "alice", n.ID); !got.Equal(base.Add(9 * time.Minute)) {
-		t.Fatalf("已有记录时不应回填,实际 %v", got)
+	if list, err := s.ListUserActivity(); err != nil || len(list) != 0 {
+		t.Fatalf("记过之后不该再回填,实际 %v / %v", list, err)
+	}
+}
+
+// 回填只认 users 里还有的人:已经删掉的名字下面的历史采样不长出活跃时间。
+func TestMigrateActivityBackfillSkipsUnknownUsers(t *testing.T) {
+	s := newTestStore(t)
+	n := newTestNode(t, s, "hk")
+	newTestUser(t, s, "alice")
+
+	base := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	for _, row := range []struct {
+		username string
+		offset   time.Duration
+		up, down int64
+	}{
+		{"alice", 0, 100, 100},
+		{"alice", time.Minute, 160, 150},
+		// 没在 users 里的名字(gone):有流量,但不该被回填。
+		{"gone", 0, 100, 100},
+		{"gone", time.Minute, 160, 150},
+	} {
+		if _, err := s.db.Exec(`INSERT INTO traffic_samples(username,node_id,sampled_at,uplink,downlink,core) VALUES(?,?,?,?,?,?)`,
+			row.username, n.ID, base.Add(row.offset).Unix(), row.up, row.down, model.CoreXray); err != nil {
+			t.Fatalf("写采样行: %v", err)
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM user_activity`); err != nil {
+		t.Fatalf("清空 user_activity: %v", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM routing_state`); err != nil {
+		t.Fatalf("清掉迁移记号: %v", err)
+	}
+	if err := s.migrateActivity(); err != nil {
+		t.Fatalf("migrateActivity: %v", err)
+	}
+
+	list, err := s.ListUserActivity()
+	if err != nil {
+		t.Fatalf("ListUserActivity: %v", err)
+	}
+	if len(list) != 1 || list[0].Username != "alice" || list[0].NodeID != n.ID {
+		t.Fatalf("回填只该有 alice 在节点 %d 上的一条,实际 %v", n.ID, list)
+	}
+	if !list[0].LastActiveAt.Equal(base.Add(time.Minute)) {
+		t.Fatalf("alice 的活跃时间应当是 %v,实际 %v", base.Add(time.Minute), list[0].LastActiveAt)
 	}
 }
 

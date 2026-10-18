@@ -45,7 +45,8 @@ type OnlineSnapshotSource interface {
 // userPresence 是一个用户在列表里的在线情况。
 //
 // 它只挂在列表的条目上,不进 userView:userView 是 PUT 的整体替换形状,往里加
-// 字段等于让人能写一份「在线」上来,而它是算出来的。
+// 字段等于让人能写一份「在线」上来,而它是算出来的。GET /api/users/{name}/activity
+// 的回答里也带一份(字段名同样是 presence),那只是读,不是能写回去的东西。
 type userPresence struct {
 	Online       bool       `json:"online"`
 	OnlineIPs    int        `json:"online_ips"`
@@ -124,7 +125,8 @@ func (s *Server) presence(now time.Time) (presenceSummary, map[string]*userPrese
 		sum.StaleNodes = append(sum.StaleNodes, staleNode{NodeID: id, Since: staleSince[id]})
 	}
 
-	// 最近一次有流量:只取每个人最大的那个时刻,以及它所在的节点。
+	// 最近一次有流量:取每个人最大的那个时刻,以及它所在的节点。读出来的时刻不一定
+	// 按顺序排,一律按时刻比,不靠先来后到。
 	type lastActive struct {
 		at     time.Time
 		nodeID int64
@@ -137,13 +139,16 @@ func (s *Server) presence(now time.Time) (presenceSummary, map[string]*userPrese
 		}
 	}
 	for name, l := range last {
-		if stale := staleSince[l.nodeID]; !stale.IsZero() {
-			// 旧节点:过了余量就不再算它上面的人还在用,只留最后活跃时间。
-			if l.at.Before(stale.Add(-activityStaleSlack)) {
-				continue
-			}
+		if _, stale := staleSince[l.nodeID]; stale {
+			// 旧节点:最后活跃时间照给,余量内标 stale(说不准还在用),过了余量只
+			// 当作已经不在用 —— 两种情况都不算在线,区别只在这一个标记。旧的判定
+			// 只看这台节点自己的采样时间,不看这人别的节点上更晚的流量。
 			at, id := l.at, l.nodeID
-			byUser[name] = &userPresence{OnlineNodes: []int64{}, LastActiveAt: &at, LastNodeID: &id, Stale: true}
+			p := &userPresence{OnlineNodes: []int64{}, LastActiveAt: &at, LastNodeID: &id}
+			if !l.at.Before(staleSince[l.nodeID].Add(-activityStaleSlack)) {
+				p.Stale = true
+			}
+			byUser[name] = p
 			continue
 		}
 		at, id := l.at, l.nodeID
@@ -217,10 +222,14 @@ func containsInt64(list []int64, v int64) bool {
 }
 
 // userActivity 是 GET /api/users/{username}/activity 的响应。
+//
+// Presence 与列表条目里的 presence 同一个形状:用户详情抽屉读的是这个接口,没有它
+// 就看不出这个人此刻在不在线。没有活跃记录的人是零值,online_nodes 仍是 []。
 type userActivity struct {
 	Segments  []userActivitySegment `json:"segments"`
 	IPs       []userActivityIP      `json:"ips"`
 	UpdatedAt *time.Time            `json:"updated_at"`
+	Presence  userPresence          `json:"presence"`
 }
 
 // userActivitySegment 是一段连续使用。End 为 null 表示这段还没结束:用户此刻
@@ -264,9 +273,12 @@ func (s *Server) handleUserActivity(w http.ResponseWriter, r *http.Request) {
 	out := userActivity{Segments: make([]userActivitySegment, 0, len(segs)), IPs: []userActivityIP{}, UpdatedAt: sum.UpdatedAt}
 	online := map[int64]bool{}
 	if p := pres[name]; p != nil {
+		out.Presence = *p
 		for _, id := range p.OnlineNodes {
 			online[id] = true
 		}
+	} else {
+		out.Presence.OnlineNodes = []int64{}
 	}
 	for _, seg := range segs {
 		end := seg.End
