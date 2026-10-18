@@ -185,15 +185,15 @@ function nodeDetail(d) {
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
   ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
-    <div class="card stat"><div class="l">代理程序</div><div class="v f18">${s?.version || "—"}</div><div class="s">${coreText(s)}</div></div>
+    <div class="card stat"><div class="l">代理程序</div><div class="v f18">${s?.version || ""}</div><div class="s">${coreText(s)}</div></div>
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
-    <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : "—"}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有用到 TLS 的连接方式"}</div></div>
+    <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : ""}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有用到 TLS 的连接方式"}</div></div>
   </div>
   <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
+      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
     ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
@@ -312,7 +312,7 @@ function relabelModal() {
   const m = $("#modal");
   let plans = null;
   modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>批量识别显示名</h2>
-  <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>)，先出「旧名 → 新名」对照表。已经有显示名的节点会跳过，用户写过的值不会被覆盖。</p>
+  <p>对还没有显示名的节点各做一次识别(控制面按节点 IP 问 ipwho.is,<b>节点 IP 会发给这个第三方</b>)，先出旧名和新名的对照表。已经有显示名的节点会跳过，用户写过的值不会被覆盖。</p>
   <div id="rl-table"></div><div class="err" id="rl-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>
   <button class="btn" id="rl-plan">${ic("globe")}生成对照表</button>
@@ -383,9 +383,11 @@ Object.assign(ACTS, {
   "node-online": (d, b) => busy(b, async () => {
     let r;
     // 读不到就明说读不到,不能落成「没有在线用户」。409 = 节点配置没开在线统计,应用一次配置就好。
+    // 其他错误原话是英文的 SSH 报错,还带内部名:主句只说显示名和怎么办,原话收进「详情」。
     try { r = await api(nodePath(d.id) + "/online"); } catch (e) {
       if (!e.status || e.status < 400) throw e;
-      const fix = e.status === 409 && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm mt" data-act="node-sync" data-id="${d.id}" data-label="${d.label || ""}" data-name="${d.name || ""}">把配置应用到节点</button>` : "";
+      if (e.status !== 409) return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>连不上${d.label || "这台节点"}，这次读不到在线名单。稍后再试，或者先「刷新状态」看看节点是不是在线。</p><details class="sum-raw"><summary>详情${ic("down")}</summary><div class="mono">${e.message}</div></details></div>`);
+      const fix = can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm mt" data-act="node-sync" data-id="${d.id}" data-label="${d.label || ""}" data-name="${d.name || ""}">把配置应用到节点</button>` : "";
       return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>${e.message}</p>${fix}</div>`);
     }
     infoDrawer(`${d.label || r.node} 在线`, H`现场读出的结果`, r.online.length
@@ -396,7 +398,7 @@ Object.assign(ACTS, {
     const cfg = await api(nodePath(d.id) + "/config");
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
-  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: H`不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的代理程序和配置文件会留着；只想让新订阅别再发它，用<span class="nw">「暂停分配」</span>。`, ok: "删除节点", danger: true, typed: d.name,
+  "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: H`不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的代理程序和配置文件会留着；只想让新订阅<span class="nw">别再发它</span>，用<span class="nw">「暂停分配」</span>。`, ok: "删除节点", danger: true, typed: d.name,
     run: async () => { await write("DELETE", nodePath(d.id), undefined, `已删除节点 ${d.label || d.name}`); location.hash = "nodes"; } }),
 });
 

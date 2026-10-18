@@ -98,14 +98,14 @@ function rpEmpty(d) {
     ${W ? H`<div class="rp-starts">
       <button class="rp-start rec" data-act="rp-migrate"><span class="pill on">推荐</span><b>沿用现在的分流</b><span>把现在的模板转换成规则表：国内直连、拦广告、各类网站走对应分组，其他自动选最快。</span><em>转换 ${ic("arrow")}</em></button>
       <button class="rp-start" data-act="rp-blank" data-k="all"><b>全部走代理</b><span>只建一个「自动选择」组，除了局域网，所有网站都走它。</span><em>用这套 ${ic("arrow")}</em></button>
-      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部 → 自动选择」，你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>` : ""}</div>`;
+      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部」走「自动选择」，你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>` : ""}</div>`;
 }
 
 function rpRow(r, i, own, editable) {
   if (editable && RP.edit && !RP.edit.isNew && RP.edit.i === i) return rpEditRow();
   const set = r.type === "set" ? rpSet(r.value) : null;
   return H`<div class="rp-row ${r.enabled ? "" : "off"} ${own && RP.scope ? "own" : ""}" ${raw(editable ? "draggable=\"true\"" : "")} data-i="${i}">
-    <span class="rp-grip" title="拖动排序">${editable ? "⋮⋮" : ""}</span><span class="rp-n">${i + 1}</span>
+    <span class="rp-grip" title="拖动排序">${editable ? ic("grip") : ""}</span><span class="rp-n">${i + 1}</span>
     <span class="rp-tyc"><span class="rp-ty">${RULE_TYPES[r.type] || r.type}</span></span><span class="rp-v ${r.type === "set" ? "" : "mono"}" title="${rpValText(r)}">${rpValText(r)}${set ? H` <span class="sub">${set.desc}</span>` : ""}${r.note ? H` <span class="sub">· ${r.note}</span>` : ""}</span>
     <span class="rp-a">${ic("arrow")}</span>${rpPill(r.target)}
     <span class="sp"></span>${own && RP.scope ? H`<span class="pill on">仅 ${RP.scope}</span>` : ""}
@@ -117,7 +117,7 @@ function rpEditRow() {
   const valIn = e.type === "set" ? H`<select class="in" id="re-val">${d.catalog.map(s => H`<option value="${s.key}" ${raw(s.key === e.value ? "selected" : "")}>${s.name} · ${s.desc}</option>`)}</select>`
     : e.type === "geoip" ? H`<select class="in" id="re-val">${Object.entries(RULE_REGIONS).map(([k, s]) => H`<option value="${k}" ${raw(k === e.value ? "selected" : "")}>${s}</option>`)}</select>`
     : H`<input class="in mono" id="re-val" value="${e.value}" autocomplete="off" spellcheck="false" placeholder="${{ suffix: "example.com(含子域名)", keyword: "google", cidr: "91.108.4.0/22" }[e.type]}">`;
-  return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : "✎"}</span>
+  return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : ic("edit")}</span>
     <select class="in w140" id="re-type" aria-label="类型">${Object.entries(RULE_TYPES).map(([k, t]) => H`<option value="${k}" ${raw(k === e.type ? "selected" : "")}>${t}</option>`)}</select>
     <div class="grow">${valIn}</div><span class="rp-a">${ic("arrow")}</span><select class="in w220" id="re-to" aria-label="去向">${rpTargetOptions(e.target)}</select>
     <button class="btn pri sm" data-act="rp-save">${e.isNew ? "添加" : "保存"}</button><button class="btn ghost sm" data-act="rp-cancel">取消</button>${e.isNew ? "" : H`<button class="ib sm" data-act="rp-del" title="删除" aria-label="删除这条">${ic("x")}</button>`}
@@ -132,7 +132,7 @@ function rpRulesCard(d) {
   const finalSel = sc ? R.user_final || "" : R.final;
   return H`<div class="card rp-card">${sc ? "" : H`<div class="ch">从上往下匹配，第一条对上的生效<span class="sp"></span>${W ? H`<button class="btn sm" data-act="rp-builtin">${ic("plus")}内置规则组</button><button class="btn pri sm" data-act="rp-add">${ic("plus")}添加规则</button>` : ""}</div>${RP.edit?.isNew ? rpEditRow() : ""}`}
     <div class="rp-list">${own}${R.global.map((r, i) => sc ? rpRow({ ...r }, base + i, false, false) : rpRow(r, i, true, W))}
-    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">${ic("arrow")}</span>
+    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">${ic("infinity")}</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">${ic("arrow")}</span>
       ${W ? H`<select class="in w220" id="rp-final" aria-label="其他全部的去向">${rpTargetOptions(finalSel, d, sc ? `跟随全局(${rpTargetName(R.final)})` : null)}</select>` : rpPill(finalSel || R.final)}<span class="sp"></span></div></div></div>`;
 }
 
@@ -253,7 +253,7 @@ async function rpMove(from, to) {
   try { await rpPut(list, version, `已移到第 ${to + 1} 条`); } catch (e) { toast(e.message, true); }
 }
 async function rpSetFinal(v) {
-  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部 → ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { toast(e.message, true); }
+  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部改走 ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { toast(e.message, true); }
 }
 
 Object.assign(ACTS, {

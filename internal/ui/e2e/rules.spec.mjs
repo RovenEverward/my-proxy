@@ -91,7 +91,8 @@ test("停用、拖动排序、删除、兜底:与 mpx rule toggle / move / rm / 
   const cliFinal = await viaCLI("rule", "final", "直连");
   await page.reload();
   await page.selectOption("#rp-final", "DIRECT");
-  await expect(page.locator(".toast")).toContainText("其他全部 → 直连");
+  // v0.9.12:toast 里的「→」换成了「改走」(文字,不再用箭头符号)。
+  await expect(page.locator(".toast")).toContainText("其他全部改走 直连");
   expect(norm(env.takeLog())).toEqual(cliFinal);
 });
 let snapshot;

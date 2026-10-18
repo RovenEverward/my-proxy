@@ -86,6 +86,9 @@ const ICONS = {
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  infinity: '<path d="M12 12c-2-2.7-3.6-4-5.3-4a4 4 0 0 0 0 8c1.7 0 3.3-1.3 5.3-4zm0 0c2 2.7 3.6 4 5.3 4a4 4 0 0 0 0-8c-1.7 0-3.3 1.3-5.3 4z"/>',
 };
 const ic = (n, cls = "") => raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
@@ -220,13 +223,13 @@ function updTitle(u) {
 function updRow(name, p) {
   p = p || {};
   const to = p.latest || "—";
-  return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
+  return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span>${ic("arrow", "upd-arrow")}<span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
 }
 // 节点核心一行:「🇺🇸 洛杉矶 A · xray 26.3.27 → 26.4.1」;已在推荐版本上的只报现版本。
 function nodeUpdRow(n) {
   const up = nodeUpgradable(n);
   return H`<div class="upd-row"><b>${labelOfName(n.name)}</b><span class="sub">${n.core}</span>
-  ${up ? H`<span class="mono">${n.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
+  ${up ? H`<span class="mono">${n.current || "未知"}</span>${ic("arrow", "upd-arrow")}<span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
   <span class="sp"></span>${up ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是推荐版本</span>`}</div>`;
 }
 // openUpdateModal 直接写 #modal,与 confirmBox 同一套 .mbody / .mf 结构。

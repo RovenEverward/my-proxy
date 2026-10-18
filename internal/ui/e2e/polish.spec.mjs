@@ -23,6 +23,13 @@ async function openDelete(page) {
   await page.click("[data-act=node-rm]");
   await expect(page.locator("#modal.open #okb")).toBeVisible();
 }
+// 键盘聚焦光圈只看 :focus-visible 那条规则。脚本里 focus() 不一定会让 :focus-visible 成立(浏览器按最近的输入方式算),
+// 所以先真的按一下 Tab 进入键盘导航,再把焦点挪到要找的控件上。
+async function keyboardFocus(page, selector) {
+  await page.keyboard.press("Tab");
+  await page.locator(selector).first().evaluate(el => el.focus());
+  return page.locator(selector).first().evaluate(el => ({ color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle, fv: el.matches(":focus-visible") }));
+}
 
 test("M1 普通 #sub 不自动滚动，页标题露着;#sub/clients 滚到段且段标题不在顶栏下", async ({ page }) => {
   await go(page, "sub");
@@ -69,6 +76,21 @@ test("M3 输入框聚焦光圈是中性色，不是蓝色(删除确认里的输�
   const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
   const cs = colorsIn(sh);
   for (const c of cs) expect(neutral(c), c).toBe(true);
+});
+
+test("M5 键盘聚焦光圈是中性色，不是蓝色(按钮、侧栏、选项卡、表格行)", async ({ page }) => {
+  await go(page, "users");
+  // 用户页同时有按钮、侧栏项、选项卡和可聚焦的表格行。
+  for (const sel of [".side .nav", ".page .btn", ".tabs a", "tbody tr[tabindex]"]) {
+    await expect(page.locator(sel).first()).toHaveCount(1);
+    // 光圈有过渡动画:轮询到它停下再读。
+    await expect(async () => {
+      const s = await keyboardFocus(page, sel);
+      expect(s.fv, `${sel} 没拿到键盘焦点`).toBe(true);
+      expect(s.style, sel).toBe("solid");
+      expect(neutral(s.color), `${sel} ${s.color}`).toBe(true);
+    }).toPass();
+  }
 });
 
 test("N1 侧栏版本号去掉伪版本尾巴", async ({ page }) => {
@@ -159,6 +181,14 @@ test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {
   await page.locator("main").evaluate(m => { m.scrollTop = 600; });
   await expect.poll(async () => { const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.bar); }).toBeLessThan(2);
   await expect(ch.locator("[data-act=rp-add]")).toBeInViewport();
+});
+
+test("N12 Windows 标题栏模式下内容已让出顶栏，分流卡片头吸顶贴 main 的顶", async ({ page }) => {
+  await go(page, "rules");
+  // 浏览器里没有 mygo 注入的标题栏:CSP 不让 addStyleTag,这里直接加 tb-right 类、设窗口高度变量(同 winFrame)。
+  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
+  await page.locator("main").evaluate(m => { m.scrollTop = 600; });
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
 });
 
 test("N11 订阅地址占位文字带「例如」，用浅灰", async ({ page }) => {

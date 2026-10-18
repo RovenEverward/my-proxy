@@ -22,7 +22,8 @@ const inbAutoTag = i => !i.tag || i.tag === `${i.protocol}-${i.port}`;
 const inbKind = i => [PROTO_NAMES[i.protocol] || i.protocol, NET_NAMES[i.network], i.security === "reality" ? "Reality" : i.security === "tls" ? "TLS" : ""].filter(Boolean).join(" ");
 // 列表行里的短标签(设计稿只给 64px):Reality / WS / gRPC…,没有传输层名时用协议名;全称放在 title 里。
 const inbShortKind = i => i.security === "reality" ? "Reality" : NET_NAMES[i.network] || PROTO_NAMES[i.protocol] || i.protocol;
-const inbReadable = (i, node) => `${node ? nodeLabel(node) + " · " : ""}${inbKind(i)} :${i.port}`;
+// 只在界面上用(inbTitle 的文字、删除按钮的 data-title):端口前不留空格,写成「VLESS Reality:8443」。
+const inbReadable = (i, node) => `${node ? nodeLabel(node) + " · " : ""}${inbKind(i)}:${i.port}`;
 const inbTitle = (i, node) => inbAutoTag(i) ? inbReadable(i, node) : inbTag(i);
 // 订阅里的名字:控制面按订阅同一套规则算好(sub_name);没起名的跟随节点显示名。
 // inbTitleById:从入站页已拉到的数据里找入站的可读写法;不在那页时退回「入站」。

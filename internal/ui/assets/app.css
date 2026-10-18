@@ -4,7 +4,7 @@
    字表由 scripts/build-cjk-font.py 生成:GB2312 一级常用字 + 界面里出现的全部中文和全角标点。 */
 @font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF}
 :root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#0a0a0a;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
---lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--flag-edge:rgba(0,0,0,.14);
+--lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--r-card:12px;--flag-edge:rgba(0,0,0,.14);
 --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#fffbeb;
 --ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace}
 [data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#ededef;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
@@ -52,8 +52,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .ro{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;background:var(--canvas);width:max-content;font-size:11px}
 /* main */
 /* 外层(html/body)一律不滚:内容区 main 自己滚。100vh 加边距、标题栏会超出视口,WebView2 就会在窗口最右边出一条整页高的系统滚动条。 */
-main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:12px;height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:12px 12px 0 0;background:var(--canvas);--app-region:drag}
+main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:var(--r-card);height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--canvas);--app-region:drag}
 .crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.crumb b{color:var(--ink);font-weight:560}.crumb i{font-style:normal;color:var(--faint)}
 .top .sp{flex:1}
 /* 拖拽区里能点的东西保持可点(浏览器里 --app-region 没有意义,外观不变)。 */
@@ -82,7 +82,7 @@ main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:12p
 .btn.danger{background:var(--bad);color:#fff}.btn.danger:hover,.btn.danger:focus-visible{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
 .btn.sm{height:28px;padding:0 10px;font-size:12.5px}
 /* cards */
-.card{background:var(--panel);border-radius:12px}
+.card{background:var(--panel);border-radius:var(--r-card)}
 .card:has(table){padding:0 6px 6px}
 .card>h3,.ch{display:flex;align-items:center;gap:8px;margin:0;padding:14px 16px;font-size:13px;font-weight:600}
 .ch .sp{flex:1}.ch small{font-weight:450;color:var(--muted)}
@@ -134,18 +134,18 @@ textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:12.5px;li
 .scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.28);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity 180ms}
 [data-theme=dark] .scrim{background:rgba(0,0,0,.55)}
 .scrim.open{opacity:1;pointer-events:auto}
-.drawer{position:fixed;z-index:31;top:8px;right:8px;bottom:8px;width:440px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;background:var(--canvas);border-radius:14px;box-shadow:var(--lift);transform:translateX(110%);transition:transform 260ms var(--ease)}
+.drawer{position:fixed;z-index:31;top:8px;right:8px;bottom:8px;width:440px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;background:var(--canvas);border-radius:var(--r-card);box-shadow:var(--lift);transform:translateX(110%);transition:transform 260ms var(--ease)}
 .drawer.open{transform:none}.drawer .dh{display:flex;align-items:center;gap:10px;padding:16px 18px}.drawer .dh h2{margin:0;font-size:15px;font-weight:620}
 .drawer .db{flex:1;overflow:auto;padding:18px}.drawer .df{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px}
-.modal{position:fixed;z-index:32;left:50%;top:50%;width:420px;max-width:calc(100vw - 32px);transform:translate(-50%,-46%) scale(.98);opacity:0;pointer-events:none;background:var(--canvas);border-radius:14px;box-shadow:var(--lift);transition:all 200ms var(--ease)}
+.modal{position:fixed;z-index:32;left:50%;top:50%;width:420px;max-width:calc(100vw - 32px);transform:translate(-50%,-46%) scale(.98);opacity:0;pointer-events:none;background:var(--canvas);border-radius:var(--r-card);box-shadow:var(--lift);transition:all 200ms var(--ease)}
 .modal.open{opacity:1;transform:translate(-50%,-50%);pointer-events:auto}
 .modal .mbody{padding:20px 20px 4px}.modal h2{margin:0 0 6px;font-size:15px;font-weight:620;display:flex;gap:10px;align-items:center}
-.modal p{margin:0 0 14px;color:var(--muted)}.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;background:var(--panel);border-radius:0 0 14px 14px}
+.modal p{margin:0 0 14px;color:var(--muted)}.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;background:var(--panel);border-radius:0 0 var(--r-card) var(--r-card)}
 .cmd{display:flex;gap:8px;align-items:center;padding:9px 12px;border-radius:8px;background:var(--stone);font:12px var(--mono);color:var(--ink2);overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
 .warnico{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:var(--bad-bg);color:var(--bad)}
 /* states */
 .empty{display:grid;place-items:center;text-align:center;padding:64px 24px;gap:6px}
-.empty .ill{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;background:var(--stone);color:var(--muted);margin-bottom:8px}.empty h4{margin:0;font-size:14px;font-weight:600}.empty p{margin:0 0 10px;color:var(--muted);max-width:360px}
+.empty .ill{width:56px;height:56px;border-radius:var(--r-card);display:grid;place-items:center;background:var(--stone);color:var(--muted);margin-bottom:8px}.empty h4{margin:0;font-size:14px;font-weight:600}.empty p{margin:0 0 10px;color:var(--muted);max-width:360px}
 .sk{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--stone) 25%,var(--hover) 37%,var(--stone) 63%);background-size:400% 100%;animation:sh 1.3s ease infinite}
 @keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
 .tabs{display:flex;gap:2px;margin-bottom:18px}
@@ -203,9 +203,9 @@ a.row{color:inherit}
 [aria-disabled=true]{opacity:.45;cursor:not-allowed}
 .search.in-card{width:220px;height:30px}
 .chk{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--ink2)}
-tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
-.row:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
-.btn:focus-visible,.ib:focus-visible,.seg button:focus-visible,.tabs a:focus-visible,.nav:focus-visible,.mnav a:focus-visible,.rp-start:focus-visible,.lnk:focus-visible{outline:2px solid var(--info);outline-offset:2px}
+tbody tr:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+.row:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+.btn:focus-visible,.ib:focus-visible,.seg button:focus-visible,.tabs a:focus-visible,.nav:focus-visible,.mnav a:focus-visible,.rp-start:focus-visible,.lnk:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .sw input:focus-visible+i{outline:2px solid var(--ink);outline-offset:2px}
 .ib.sm{width:24px;height:24px;flex:none}
 @media (max-width:860px){.search.in-card{display:flex;width:100%;margin-top:6px}.tb{flex-wrap:wrap}}
@@ -216,7 +216,10 @@ tbody tr:focus-visible{outline:2px solid var(--info);outline-offset:-2px}
 .hrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.mt2{margin-top:2px}.mb14{margin-bottom:14px}.b6{font-weight:600}.fw4{font-weight:400}
 .ch.wrap{flex-wrap:wrap;row-gap:6px}
 .summary{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2)}.summary li{margin:2px 0}
-.sum-raw{margin-top:4px;font-size:12px;color:var(--muted)}.sum-raw>summary{cursor:pointer;width:max-content}.sum-raw .summary{color:var(--muted);font-size:11.5px;word-break:break-all}
+.sum-raw{margin-top:4px;font-size:12px;color:var(--muted)}.sum-raw>summary{cursor:pointer;width:max-content}
+/* 「详情」不用系统自带的三角:文字后面跟一个向下的箭头,展开时转 180°(同 details.adv2)。 */
+.sum-raw>summary{display:flex;align-items:center;gap:4px;list-style:none}.sum-raw>summary::-webkit-details-marker{display:none}.sum-raw>summary svg{width:12px;height:12px;color:var(--muted);transition:transform 160ms var(--ease)}.sum-raw[open]>summary svg{transform:rotate(180deg)}
+.sum-raw .summary{color:var(--muted);font-size:11.5px;word-break:break-all}
 pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:12px/1.55 var(--mono);color:var(--ink2);overflow:auto;max-height:calc(100vh - 160px);white-space:pre}
 details.adv{margin:0 0 14px}details.adv>summary{cursor:pointer;font-size:12.5px;font-weight:530;color:var(--muted);margin-bottom:12px;list-style-position:inside}
 select.in{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer}
@@ -275,6 +278,9 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .rp-row[draggable]{cursor:grab}.rp-row.drag{opacity:.4}.rp-row.over{background:color-mix(in srgb,var(--ink) 10%,transparent)}.rp-row.off{opacity:.45}.rp-row.own{background:color-mix(in srgb,var(--ink) 3%,transparent)}
 .rp-row.editing{background:var(--canvas)}.rp-row.final{background:var(--canvas)}
 .rp-grip{width:12px;color:var(--faint);font-size:11px;letter-spacing:-2px}.rp-n{width:22px;text-align:right;font:500 11.5px var(--mono);color:var(--faint)}
+/* 拖动手柄、「编辑中」「兜底」这几格用图标,尺寸和图标的颜色跟旁边的灰色文字一致。 */
+.rp-grip svg,.rp-n svg{width:14px;height:14px;color:var(--faint)}
+.rp-grip svg{vertical-align:-2px}.rp-n svg{display:block;margin-left:auto}
 .rp-tyc{width:84px;flex:none;min-width:0}
 /* 规则类型:固定的 84px 列,里面是灰底文字标签,保证后面值列不错位 */
 .rp-ty{display:inline-block;line-height:22px;height:22px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font-size:12px;width:auto;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
@@ -368,7 +374,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .upd-notes>:last-child{margin-bottom:0}
 .upd-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink2);padding:3px 0}
 .upd-row b{font-weight:560;color:var(--ink);min-width:56px}
-.upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
+.upd-arrow{width:12px;height:12px;color:var(--faint);flex:none}.upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
 /* 一键更新的进度列表:事件按 step 分组,一组一个标题 */
 .upd-steps{max-height:280px;overflow:auto;margin:10px 0}
 .upd-step{font-size:11.5px;font-weight:560;color:var(--muted);margin:10px 0 3px}
@@ -461,6 +467,7 @@ html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-tit
 /* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
 html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
 html.tb-right .modal{top:calc(50% + var(--mygo-titlebar-height,52px) / 2)}
+html.tb-right .rp-card>.ch{top:0} /* main 已经在标题栏下面,吸顶不用再让出顶栏 */
 @media (max-width:860px){html.tb-right .top{left:0}}
 
 /* 抽屉底部「…并应用到节点」:次要 + 主按钮一行,主按钮下面一行灰字说明会重启。 */
@@ -655,7 +662,7 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .doc-d [data-act=doc-apply]{margin-left:10px;vertical-align:baseline}
 
 /* 分流规则卡片头(「添加规则」)吸顶,停在 52px 顶栏下面;实底,下面的行不透上来。 */
-.rp-card>.ch{position:sticky;top:52px;z-index:4;background:var(--panel);border-radius:12px 12px 0 0}
+.rp-card>.ch{position:sticky;top:52px;z-index:4;background:var(--panel);border-radius:var(--r-card) var(--r-card) 0 0}
 /* 占位文字用浅灰,和已填的值分得开。 */
 .in::placeholder{color:var(--faint);opacity:1}
 /* 中文段落避免末行只剩一两个字(不支持的引擎忽略);不拆开的词包 .nw。 */

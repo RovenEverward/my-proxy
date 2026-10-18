@@ -95,7 +95,7 @@ function renderConnectCP() {
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
   ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
   <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
-  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「系统 → 设备与接入」里重设")}` : ""}
+  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「系统」页的「设备与接入」里重设")}` : ""}
   <p class="sub">接入时会核对证书指纹，设备密码只用于这一次接入。</p>`,
   H`${btn(add ? "取消" : "上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
   $("#s-cp-addr").value = CN.addr; $("#s-cp-name").value = CN.name;
@@ -263,8 +263,8 @@ function applyPortProbe(p) {
   if (p.api_busy) {
     if (p.api_suggest) {
       if (S.portProbe !== p) S.addr = String(S.addr || "0.0.0.0:8080").replace(/:\d+$/, ":" + p.api_suggest);
-      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在下面「高级 → 监听地址」里改。`);
-    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在下面「高级 → 监听地址」里换一个端口。`);
+      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在下面「高级」里的「监听地址」改。`);
+    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在下面「高级」里的「监听地址」换一个端口。`);
   }
   if (p.inbound_busy && p.inbound_suggest) {
     if (S.portProbe !== p) S.inboundPort = +p.inbound_suggest;
