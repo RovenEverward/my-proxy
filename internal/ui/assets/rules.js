@@ -92,7 +92,7 @@ function modeBanner(d) {
 function rpEmpty(d) {
   const W = can("POST", "/api/routing/migrate");
   return H`<div class="card rp-empty"><div class="rp-flow"><div class="rp-fb"><b>你打开一个网站</b><span class="mono">netflix.com</span></div><span class="rp-arr">${ic("arrow")}</span>
-    <div class="rp-fb wide"><b>按规则从上往下对</b><span>广告 → 拦截</span><span>国内网站 → 直连</span><span class="on">流媒体 → 📺 流媒体</span><span>其他全部 → ⚡ 自动选择</span></div><span class="rp-arr">${ic("arrow")}</span>
+    <div class="rp-fb wide"><b>按规则从上往下匹配</b><span>广告${ic("arrow", "rp-fa")}拦截</span><span>国内网站${ic("arrow", "rp-fa")}直连</span><span class="on">流媒体${ic("arrow", "rp-fa")}📺 流媒体</span><span>其他全部${ic("arrow", "rp-fa")}⚡ 自动选择</span></div><span class="rp-arr">${ic("arrow")}</span>
     <div class="rp-fb"><b>走对应的出口</b><span>策略组挑出的节点</span></div></div>
     <h4>还没有分流规则</h4><p class="sub">先选一套起步方案，之后随时增删、拖动排序、改去向。</p>
     ${W ? H`<div class="rp-starts">

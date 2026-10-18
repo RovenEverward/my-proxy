@@ -27,8 +27,7 @@ async function openDelete(page) {
 test("M1 普通 #sub 不自动滚动，页标题露着;#sub/clients 滚到段且段标题不在顶栏下", async ({ page }) => {
   await go(page, "sub");
   await expect(page.locator("#f-title")).toBeVisible();
-  await page.waitForTimeout(300);
-  expect(await page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
+  await expect.poll(() => page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
   await expect(page.locator(".ph h1")).toHaveText("订阅");
   // 应用内从别的页(已经往下滚过)点侧栏进「订阅」,也停在顶上。
   await page.goto(env.origin + "/#rules"); await settle(page);
@@ -58,12 +57,17 @@ test("M2 删除按钮禁用时灰底浅灰字、不透明;可点时才是实心�
 test("M3 输入框聚焦光圈是中性色，不是蓝色(删除确认里的输入框)", async ({ page }) => {
   await openDelete(page);
   await page.focus("#typed");
-  await page.waitForTimeout(500); // 光圈有过渡动画,等它停下再读
+  // 光圈有过渡动画:轮询到它停下再读。
+  await expect(async () => {
+    const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
+    // 光圈得真的在(box-shadow 不是 none),再看它的颜色。
+    expect(sh.split("|")[0]).not.toBe("none");
+    const cs = colorsIn(sh);
+    expect(cs.length).toBeGreaterThan(0);
+    for (const c of cs) expect(neutral(c), c).toBe(true);
+  }).toPass();
   const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
-  // 光圈得真的在(box-shadow 不是 none),再看它的颜色。
-  expect(sh.split("|")[0]).not.toBe("none");
   const cs = colorsIn(sh);
-  expect(cs.length).toBeGreaterThan(0);
   for (const c of cs) expect(neutral(c), c).toBe(true);
 });
 
@@ -141,18 +145,14 @@ test("N9 有改动时滚到底，保存条不压住最后一行底稿(Xray)", as
   await page.fill("#f-title", "改一下");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
-  await page.waitForTimeout(200);
-  const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top }));
-  expect(r.last).toBeLessThanOrEqual(r.sb);
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top })); return r.last - r.sb; }).toBeLessThanOrEqual(0);
 });
 
 test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {
   await go(page, "rules");
   const ch = page.locator(".rp-card > .ch");
   await page.locator("main").evaluate(m => { m.scrollTop = 600; });
-  await page.waitForTimeout(200);
-  const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top }));
-  expect(Math.abs(r.ch - r.bar)).toBeLessThan(2);
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.bar); }).toBeLessThan(2);
   await expect(ch.locator("[data-act=rp-add]")).toBeInViewport();
 });
 
@@ -211,8 +211,15 @@ async function winFrame(page) {
 }
 async function clearOfCaption(page, sel) {
   const box = page.locator(sel).first();
-  await expect(box).toBeVisible(); await page.waitForTimeout(350); // 等滑入/淡入动画结束
-  const r = await box.boundingBox(), vw = page.viewportSize().width;
+  await expect(box).toBeVisible();
+  // 等滑入/淡入动画结束:轮询到位置不再变,再量它压不压窗口按钮。
+  let r, vw = page.viewportSize().width;
+  await expect(async () => {
+    const a = await box.boundingBox();
+    await page.waitForFunction(() => document.getAnimations().every(x => x.playState !== "running"));
+    r = await box.boundingBox();
+    expect(r).toEqual(a);
+  }).toPass();
   const hitsCaption = r.y < 52 && r.x + r.width > vw - 138;
   expect(hitsCaption, `${sel} 压到了窗口按钮:${JSON.stringify(r)}`).toBe(false);
 }

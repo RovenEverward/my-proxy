@@ -52,8 +52,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .ro{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;background:var(--canvas);width:max-content;font-size:11px}
 /* main */
 /* 外层(html/body)一律不滚:内容区 main 自己滚。100vh 加边距、标题栏会超出视口,WebView2 就会在窗口最右边出一条整页高的系统滚动条。 */
-main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:14px;height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:14px 14px 0 0;background:var(--canvas);--app-region:drag}
+main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:12px;height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 calc(28px + var(--mygo-titlebar-inset-right,0px)) 0 28px;border-radius:12px 12px 0 0;background:var(--canvas);--app-region:drag}
 .crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.crumb b{color:var(--ink);font-weight:560}.crumb i{font-style:normal;color:var(--faint)}
 .top .sp{flex:1}
 /* 拖拽区里能点的东西保持可点(浏览器里 --app-region 没有意义,外观不变)。 */
@@ -663,3 +663,4 @@ p,.sub,.h{text-wrap-style:pretty}
 .nw{white-space:nowrap}
 /* 弹窗标题:图标和文字之间才有间距,文字里的旗帜按正常空格排。 */
 .modal h2 .mt-t{display:inline;min-width:0}
+.rp-fb .rp-fa{width:12px;height:12px;vertical-align:-1px;margin:0 4px;color:var(--faint)}

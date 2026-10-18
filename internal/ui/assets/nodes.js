@@ -358,20 +358,22 @@ Object.assign(ACTS, {
   // 现场检查 = mpx node status <id>:GET ?fresh=1,结果由控制面落库。
   "node-check": (d, b) => busy(b, async () => { await api(nodePath(d.id) + "?fresh=1"); toast("状态已刷新"); await load(true, true); }),
   "node-sync": d => confirmBox({ title: `把配置应用到 ${d.label || d.name}？`, text: "把当前配置推到节点并重启代理程序：这台节点上所有人的连接会断一次。加人、删人、到期、超限不用手动应用，控制面每 30 秒自动跟上。" + (d.from === "doctor" ? "这次是从体检过来的：节点上的配置和控制面不一致，可能是你自己改的，也可能是别人改的。" : ""), ok: "应用到节点并重启",
-    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，代理程序已重启`); await load(true, true); } }),
+    run: async () => { await write("POST", nodePath(d.id) + "/sync", undefined, `已应用到 ${d.label || d.name}，代理程序已重启`); await api(nodePath(d.id) + "?fresh=1").catch(() => null); // 应用完马上现场查一次:不然卡片要等下一轮检查才变回「已是最新」
+      await load(true, true); } }),
   "node-drain": (d, b) => {
     if (d.on) return busy(b, async () => { await write("POST", nodePath(d.id) + "/undrain", undefined, `${d.label || d.name} 已恢复分配`); await load(true, true); });
     confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
   "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟；关掉这个页面安装也会继续，回到节点页刷新就能看到结果。", ok: "安装",
-    extra: H`<div class="two"><div class="field"><label for="i-core">代理程序</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
+    extra: H`<div class="two"><div class="field"><label for="i-core">代理程序</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box（hysteria2 / tuic）</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
       const core = $("#i-core").value, v = $("#i-ver").value.trim();
       let path = nodePath(d.id) + "/install?core=" + encodeURIComponent(core);
       if (v) path += "&version=" + encodeURIComponent(v);
       const res = await write("POST", path);
+      await api(nodePath(d.id) + "?fresh=1").catch(() => null); // 应用完马上现场查一次:不然卡片要等下一轮检查才变回「已是最新」
       toast(`已在 ${d.label || d.name} 上装好并启动 ${core} ${res?.version || ""}`);
       await load(true, true);
     } }),
