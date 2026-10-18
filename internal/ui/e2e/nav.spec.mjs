@@ -145,9 +145,12 @@ test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", a
   const theme = await page.locator(".top [data-act=theme]").boundingBox();
   expect(theme.x + theme.width).toBeLessThanOrEqual(vw - 138);
   expect(Math.abs(theme.y + theme.height / 2 - 26)).toBeLessThanOrEqual(1);
-  // 内容卡片从标题栏下面开始:右上角那块 138×52 里没有卡片。
+  // 内容卡片从标题栏下面开始:右上角那块 138×52 里没有卡片。顶栏就是主内容区的第一行(.top 是
+  // main 里的吸顶行),所以卡片要在顶栏底边以下,不是只在 52px 以下。
   const main = await page.locator("main").boundingBox();
   expect(main.y).toBeGreaterThanOrEqual(52);
+  const card = await page.locator(".card").first().boundingBox();
+  expect(card.y).toBeGreaterThanOrEqual(top.y + top.height);
 });
 
 // 外层(html/body)不滚:WebView2 在外层出滚动条时是整页高的系统浅色条,压在窗口按钮下面。

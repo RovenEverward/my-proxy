@@ -111,8 +111,19 @@ test("服务端 400 的订阅地址原话显示在字段下，草稿保留并可
   // 按字段名认出来的错误:保存条说的是「链接开头」的格式不对(别的错误才说「改动还在，可以再点一次保存。」)。
   await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
   await expect(page.locator("#sb")).not.toContainText("改动还在，可以再点一次保存。");
-  await expect(page.locator("#f-prefix")).toHaveValue("https://sub.example.com");
-  await page.unroute("**/api/settings"); await save(page);
+
+  // 控制面报字段名(field):同一句原话照样落在这一栏下面,保存条也用「链接开头」的说法。
+  await page.unroute("**/api/settings");
+  await page.route("**/api/settings", r => r.request().method() === "PUT" ? r.fulfill({ status: 400, json: { error: message, field: "sub_url_prefix" } }) : r.continue());
+  await page.fill("#f-prefix", "https://sub.example.org"); await save(page);
+  await expect(page.locator("#pfx-err")).toHaveText(message);
+  await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
+  await expect(page.locator("#f-prefix")).toHaveValue("https://sub.example.org");
+  await page.unroute("**/api/settings");
+  await page.fill("#f-prefix", "https://sub.example.com");
+  // 草稿再改过,这一栏下面的红字自己消失。
+  await expect(page.locator("#pfx-err")).toHaveText("");
+  await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
 });
 

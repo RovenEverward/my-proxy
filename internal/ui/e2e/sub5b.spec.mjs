@@ -28,18 +28,23 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
-// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是页面看到的控制面地址
-// (控制面按这次请求的 Host 拼,页面经 mpx ui 的转发取到),并有一条灰色说明。
+// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是控制面的地址
+// (控制面按这次请求的 Host 拼;请求经 mpx ui 转发过来,Host 是控制面的地址,不是页面地址),并有一条灰色说明。
 test("链接卡片给出完整链接;没填链接开头时用控制面地址开头并说明", async ({ page }) => {
   await open(page);
+  // 页面请求的那条(经 mpx ui)核对链接卡片;开头本身拿控制面的地址核对。
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
+  const cpAlice = await (await cp("/api/users/alice/links")).json();
   await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
-  expect(alice.auto.startsWith(env.origin + "/sub/")).toBe(true);
-  // 只加的 base 字段:控制面拼这条链接时用的开头,就是这次请求的 Host。
+  expect(alice.auto.startsWith(cpAlice.auto.slice(0, cpAlice.auto.lastIndexOf("/sub/")) + "/sub/")).toBe(true);
+  expect(alice.auto.endsWith("/sub/" + cpAlice.auto.split("/sub/").pop())).toBe(true);
+  // mpx ui 转发时自己改写了 Host(mpx ui 的地址),控制面按它拼;只加的 base 字段说的就是这个开头。
   expect(alice.base).toBe(env.origin);
-  await expect(page.locator(".lk-pre")).toHaveText(env.origin);
-  await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(env.origin.length));
+  // 页面把开头按控制面这次用的那个画出来,经 mpx ui 时它不一定等于页面地址。
+  const pre = alice.auto.slice(0, alice.auto.lastIndexOf("/sub/"));
+  await expect(page.locator(".lk-pre")).toHaveText(pre);
+  await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(pre.length));
   const note = page.locator("#pfx-warn");
   await expect(note).toHaveClass(/b5-note/);
   await expect(note).toContainText("没填，链接现在用服务器地址开头。");

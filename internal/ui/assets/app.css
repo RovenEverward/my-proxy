@@ -462,11 +462,10 @@ details.adv2>summary span{font-weight:400;color:var(--muted);font-size:12px;marg
 
 /* Windows 自绘标题栏(tb-right):系统三按钮在窗口右上角 52px 高的条里。顶栏挪到这条里、和按钮同一行垂直居中,
    右边让出按钮的宽;内容卡片从这条下面开始,右上角不再被按钮压住。 */
-html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
-/* main 按 grid 行撑满时会被「内容 + 上下 margin」顶大,标题栏让出的那 52px 就白算:卡片头吸顶
-   会停在顶栏底边下面(不带类时 main 的高度是写死的,显式撑满反而不起作用),main 也只滚到
-   这段空白的底边就不动了。这里把行高夹在可用高度里,让 main 真正停在标题栏下面。 */
-html.tb-right .app{grid-template-rows:minmax(0,calc(100% - var(--mygo-titlebar-height,52px)))}
+/* 让出标题栏的是 .app 这一个盒子:它是 100% 高、顶在窗口最上面的那个,把它的高去掉标题栏那一条,
+   行高照 grid 自己算 —— main 的 height:100% 就是行高,标题栏以下的内容区正好放下,不溢出、也不在
+   main 里多出一截滚不动的空白。main 自己的 8px 外边距不改:改了它,顶栏和侧栏、卡片就对不上了。 */
+html.tb-right .app{height:calc(100% - var(--mygo-titlebar-height,52px))}
 /* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
 html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
 html.tb-right .modal{top:calc(50% + var(--mygo-titlebar-height,52px) / 2)}
@@ -702,7 +701,9 @@ p,.sub,.h{text-wrap-style:pretty}
 .lk-copy{height:36px;flex:none;padding:0 14px}
 .lk-key{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px;margin-top:10px;padding:0 4px;font-size:12px;color:var(--muted)}
 .lk-key span{display:inline-flex;align-items:center;gap:8px}
-.sw{display:inline-block;width:18px;height:0;border-radius:2px}
+/* 链接卡片下面的图例线:别写成 .sw,开关(上面那条)也叫 .sw —— 碰到一起会把分流页每行的开关压成
+   0 高、里面的勾选框看不见,连点击都点不到。这里只按图例自己的类名取。 */
+.sw-pre,.sw-tail{display:inline-block;width:18px;height:0;border-radius:2px}
 .sw-pre{border-top:2px solid var(--ink)}.sw-tail{border-top:2px dotted var(--faint)}
 .b5-pfx{margin:0;max-width:620px}
 .b5-pfx .s5-field-err:empty{display:none}
@@ -811,6 +812,8 @@ table.ut tbody tr:hover{background:var(--hover)}
 /* 有节点连不上时的说明:灰,不是红(不是用户做错了什么,只是数据旧了) */
 .pres-note{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:9px 12px;border-radius:8px;background:var(--stone);color:var(--ink2);font-size:12.5px}
 .pres-note svg{width:15px;height:15px;color:var(--muted);flex:none}.pres-note .lnk{margin-left:auto;color:var(--ink);font-weight:540;white-space:nowrap}
+/* 句子里的节点名:旗帜换成图以后要它自己成块,别让整句被拆开(见 users.js staleNote)。 */
+.nm{white-space:nowrap}
 
 /* 抽屉 */
 .ud-pres{padding:14px 16px;border-radius:12px;background:var(--panel);display:grid;gap:10px}
