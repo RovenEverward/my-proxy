@@ -84,7 +84,7 @@ func TestUserCSVImportPlanColumn(t *testing.T) {
 	c := testClient(t, handler)
 
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"bob,1GB,2027-01-01,启用,none,全部,全球,备注一",
 		"carol,2GB,2027-02-01,启用,none,全部,,备注二",
 	}, "\n") + "\n"
@@ -133,7 +133,7 @@ func TestUserCSVImportUnknownPlanFailsRow(t *testing.T) {
 	}
 	c := testClient(t, handler)
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"bob,1GB,2027-01-01,启用,none,全部,不存在的套餐,备注一",
 		"carol,2GB,2027-02-01,启用,none,全部,全球,备注二",
 	}, "\n") + "\n"
