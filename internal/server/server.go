@@ -189,6 +189,7 @@ func (s *Server) routes() {
 	s.routingRoutes(api)
 	s.planRoutes(api)
 	s.diagnosticRoutes(api)
+	s.jobRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/update", s.handleUpdate)
 	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的

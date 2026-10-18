@@ -323,59 +323,77 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 // 和 sync 的分工:sync 只管把配置送过去(核心得已经在节点上),install 负责把核心
 // 和它的服务准备出来。install 自己会下发一次配置,所以全新机器上跑完 install 就
 // 能用了,sync 只留给"只改了配置、不动核心"的场合。
+//
+// 同 sync:install 可能跑十几分钟,客户端断连不该把它半途杀掉,所以执行那一步
+// 用的是 context.Background()。想关掉页面也装完的,走 POST /api/nodes/{id}/install/jobs。
 func (s *Server) handleInstallNode(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.pathID(w, r)
+	n, core, version, ok := s.prepareInstall(w, r)
 	if !ok {
 		return
+	}
+	code, body := s.runInstall(n, core, version)
+	writeJSON(w, code, body)
+}
+
+// prepareInstall 校验一次安装请求:节点在不在、通道接没接、核心名合不合法、入站
+// 端口有没有被别的程序占着。不合法的请求由它自己写好 404 / 501 / 400 / 409,
+// 调用方看 ok 就返回。同步接口和后台任务接口共用这一份。
+func (s *Server) prepareInstall(w http.ResponseWriter, r *http.Request) (n *model.Node, core model.Core, version string, ok bool) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return nil, "", "", false
 	}
 	n, err := s.store.GetNode(id)
 	if err != nil {
 		s.writeStoreError(w, err, "节点")
-		return
+		return nil, "", "", false
 	}
 	if s.nodeOps == nil {
 		writeError(w, http.StatusNotImplemented, "控制面没有接上下发通道")
-		return
+		return nil, "", "", false
 	}
-	version := r.URL.Query().Get("version")
-	// 同 sync:install 可能跑十几分钟,客户端断连不该把它半途杀掉。
-	core := model.Core(r.URL.Query().Get("core"))
+	version = r.URL.Query().Get("version")
+	core = model.Core(r.URL.Query().Get("core"))
 	if core == "" {
 		core = model.CoreXray
 	}
 	if !core.Valid() {
 		writeError(w, http.StatusBadRequest, "核心只能是 xray / sing-box")
-		return
+		return nil, "", "", false
 	}
 	// 先看入站端口有没有被别的程序占着:占着就停在这里说清楚,不装到一半。
 	if conflicts := s.inboundPortConflicts(r.Context(), *n); len(conflicts) > 0 {
 		msg, hint := portConflictMessage(*n, conflicts)
 		writeErrorHint(w, http.StatusConflict, msg, hint)
-		return
+		return nil, "", "", false
 	}
+	return n, core, version, true
+}
+
+// runInstall 把核心装上节点。返回同步接口会回的状态码与正文,安装成功时顺手清掉
+// 「有改动未应用」的标记;同步接口与后台任务接口都从这里拿结论。
+func (s *Server) runInstall(n *model.Node, core model.Core, version string) (int, any) {
 	var installed string
+	var err error
 	if installer, ok := s.nodeOps.(CoreInstaller); ok {
 		installed, err = installer.InstallNodeCore(context.Background(), *n, core, version)
 	} else if core == model.CoreXray {
 		installed, err = s.nodeOps.InstallNode(context.Background(), *n, version)
 	} else {
-		writeError(w, http.StatusNotImplemented, "控制面没有接上 sing-box 安装通道")
-		return
+		return http.StatusNotImplemented, map[string]string{"error": "控制面没有接上 sing-box 安装通道"}
 	}
 	if err != nil {
 		s.logger.Error("安装节点核心失败", "node", n.Name, "error", err)
 		// 版本非空说明核心确实已经推上去了,是后面的配置没让服务起来 ——
 		// 这两种失败该做的事不一样,不分开说清楚,使用者会去重装一遍。
 		if installed != "" {
-			writeError(w, http.StatusBadGateway, "节点上的核心已经换成 "+installed+",但服务没能起来: "+err.Error())
-			return
+			return http.StatusBadGateway, map[string]string{"error": "节点上的核心已经换成 " + installed + ",但服务没能起来: " + err.Error()}
 		}
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
+		return http.StatusBadGateway, map[string]string{"error": err.Error()}
 	}
 	s.logger.Info("已安装节点核心", "node", n.Name, "version", installed, "address", n.Address)
 	s.clearNodePending(n.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "core": core, "version": installed})
+	return http.StatusOK, map[string]any{"node": n.Name, "core": core, "version": installed}
 }
 
 // handleDrainNode 标记节点开始排水:订阅渲染不再把它的入口发给用户。
