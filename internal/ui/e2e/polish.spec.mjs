@@ -92,9 +92,12 @@ test("N3 分流页说明不重复卡片标题，用「匹配」，句末有「�
   await expect(page.locator("main")).not.toContainText("比对");
 });
 
+// 订阅名是 contenteditable 的编辑框,直接改写里面的文字就能标记改动。
+const retitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+
 test("N4 离开对话框文案带逗号", async ({ page }) => {
   await go(page, "sub");
-  await page.fill("#f-title", "改一下");
+  await retitle(page, "改一下");
   await page.locator('.side a.nav[href="#nodes"]').click();
   await expect(page.locator("#modal.open p").first()).toHaveText("离开「订阅」页，这些改动就会丢：");
 });
@@ -105,13 +108,15 @@ test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page
   expect(await page.locator("#modal.open .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
-  await expect(page.locator("#sec-addr")).toContainText("客户端多久自动更新一次，填 0 由客户端决定。");
   // 刷新间隔说明按两个短句断行,不在句中拆。
-  await expect(page.locator("#sec-addr .h", { hasText: "填 0 由客户端决定" }).locator(".nw")).toHaveText(["客户端多久自动更新一次，", "填 0 由客户端决定。"]);
-  // 预览里「Clash Meta 配置，带完整分流和策略组。」整段不拆行。
-  await expect(page.locator(".pv-f .nw")).toHaveCount(1);
-  await expect(page.locator(".pv-f .nw b")).toHaveCount(1);
-  expect(await page.locator(".pv-f .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  await expect(page.locator("#sec-look .h", { hasText: "填 0 由客户端决定" }).locator(".nw")).toHaveText(["客户端多久自动更新一次，", "填 0 由客户端决定。"]);
+  for (const nw of await page.locator("#sec-look .h .nw").all()) expect(await nw.evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  // 预览卡片里的用量和到期日各是一段不拆开的文字。
+  const pv = page.locator("#pv-app .pv-m .nw");
+  await expect(pv).toHaveCount(2);
+  await expect(pv.first()).toContainText("不限流量");
+  await expect(pv.last()).toContainText("永不过期");
+  expect(await pv.first().evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
 });
 
 test("N6 删除确认标题里旗帜按正常空格排，不吃弹性间距", async ({ page }) => {
@@ -142,7 +147,7 @@ test("N9 有改动时滚到底，保存条不压住最后一行底稿(Xray)", as
   await go(page, "sub");
   await page.click("[data-act=s5-adv]");
   await expect(page.locator(".zr-tpl")).toHaveCount(3);
-  await page.fill("#f-title", "改一下");
+  await retitle(page, "改一下");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
   await expect.poll(async () => { const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top })); return r.last - r.sb; }).toBeLessThanOrEqual(0);

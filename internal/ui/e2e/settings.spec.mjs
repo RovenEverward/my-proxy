@@ -68,13 +68,19 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   await page.click(".ch [data-act=s5-rules]");
   env.takeLog();
   await page.click("[data-act=rd-add]");
-  const added = page.locator("[data-rp]").last();
-  await added.fill("(?i)^myclient/");
+  // 新的一条插在「其他所有客户端」前面,标识框里已经是 (?i),只填后面的文字。
+  const added = page.locator('[data-rp="0"]');
+  await expect(added).toBeFocused();
+  await added.fill("^myclient/");
   await added.press("Tab");
-  await page.locator('[data-act=rd-mv][aria-label="上移"]').last().click();
-  await page.locator("[data-act=rd-rm]").last().click();
+  await expect(page.locator('[data-rp="0"]')).toHaveValue("(?i)^myclient/");
+  // 新的一条已经在最上面,「上移」不可点;先往下挪一位,再把它删掉。
+  await page.locator('[data-act=rd-mv][aria-label="下移"]').first().click();
+  await expect(page.locator('[data-rp="1"]')).toHaveValue("(?i)^myclient/");
+  await page.locator("[data-act=rd-rm]").nth(1).click();
+  await expect(page.locator('[data-rp="0"]')).not.toHaveValue("(?i)^myclient/");
   await page.click("[data-act=rd-done]");
-  await expect(page.locator("#sb")).toContainText("客户端识别规则");
+  await expect(page.locator("#sb")).toContainText("识别规则");
   expect(env.takeLog()).toEqual([]);
   await page.click("[data-act=s5-save]");
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");

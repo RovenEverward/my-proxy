@@ -266,7 +266,6 @@ const toRe = p => {
   try { return new RegExp(flags ? p.slice(flags[0].length) : p, flags ? [...new Set(flags[1])].join("") : ""); } catch { return null; }
 };
 // 浏览器只能辅助预览，Go regexp 由控制面最终检查。
-const reErr = p => p.trim() ? "" : "正则不能为空";
 const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.length; i++) { const r = toRe(rules[i].pattern); if (r && r.test(ua)) return i; } return rules.length; };
 const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -278,85 +277,133 @@ let ADV_OPEN = false;
 const subCloseModal = () => closeModal();
 const subLeave = target => { if (typeof target === "function") target(); else if (target) location.hash = target; else paint(); };
 
-const FIELDS = [["sub_url_prefix", "订阅地址"], ["profile_title", "订阅名"], ["update_interval", "刷新间隔"], ["support_link", "支持链接"]];
+const FIELDS = [["sub_url_prefix", "链接开头"], ["profile_title", "订阅名"], ["update_interval", "刷新间隔"], ["support_link", "帮助链接"]];
 function changes() {
   if (!SUB) return [];
   const out = FIELDS.filter(([k]) => String(SUB.draft[k] ?? "") !== String(SUB.orig[k] ?? "")).map(x => x[1]);
-  if (!sameRules(SUB.draft.rules, SUB.orig.rules)) out.push("客户端识别规则");
+  if (!sameRules(SUB.draft.rules, SUB.orig.rules)) out.push("识别规则");
   return out;
 }
 const ipBase = () => META.server || location.origin;
 const subBase = d => (d.sub_url_prefix || ipBase());
 
-/* ---- 第一段:地址与显示 ---- */
-function prefixWarn(d) {
-  return d.sub_url_prefix ? "" : H`<div class="callout stone s5-warn" id="pfx-warn">${ic("info")}<div><b>不填就会把服务器 IP 发给用户。</b>现在发出去的链接是 <code>${ipBase()}/sub/…</code>，谁拿到链接都能看到这台服务器的地址。</div></div>`;
-}
-function addrForm(d, W) {
-  const ro = W && !SUB.saving ? "" : raw("readonly");
-  return H`<div class="s5-form">
-    <div class="field"><label for="f-prefix">订阅地址</label>
-      <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="例如 https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
-      <span class="h">发给用户的链接以它开头，一般是你的域名，前面接反向代理。</span>
-      <span class="s5-field-err" id="pfx-err" role="alert">${SUB.fieldErrors?.sub_url_prefix || ""}</span><div id="pfx-slot">${prefixWarn(d)}</div></div>
-    <div class="field"><label for="f-title">订阅名</label>
-      <div class="s5-inrow"><input class="in" id="f-title" data-k="profile_title" value="${d.profile_title}" placeholder="{USERNAME}" autocomplete="off" ${ro}>
-      ${W ? H`<button type="button" class="btn sm" data-act="s5-ins">${ic("plus")}插入用户名</button>` : ""}</div>
-      <span class="h">客户端订阅列表里显示的名字。<code>{USERNAME}</code> 会换成每个人的用户名。</span></div>
-    <div class="two">
-      <div class="field"><label for="f-int">刷新间隔</label>
-        <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
-        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h"><span class="nw">客户端多久自动更新一次，</span><span class="nw">填 0 由客户端决定。</span></span></div>
-      <div class="field"><label for="f-help">支持链接</label>
-        <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
-        <span class="h">客户端里的帮助按钮会打开它。可以不填。</span></div>
-    </div></div>`;
-}
-function preview(d) {
-  const PV = SUB.preview;
-  const title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
-  const [cn, ua] = PV_CLIENTS[SUB.pv];
-  const R = d.rules && d.rules.length ? d.rules : SUB.builtin, i = hit(R, ua), f = i < R.length ? R[i].result : "links";
-  const iv = +d.update_interval || 0, noPfx = !d.sub_url_prefix;
-  const link = d.sub_url_prefix === SUB.orig.sub_url_prefix && PV.auto ? PV.auto : subBase(d).replace(/\/+$/, "") + "/sub/" + PV.token;
-  const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
-  const host = base.replace(/^https?:\/\//, ""), scheme = base.slice(0, base.length - host.length);
-  return H`<div class="pv-h"><span class="sub">${SUB.users.length ? H`<select class="in" id="pv-user" aria-label="预览用户">${SUB.users.map(u => H`<option value="${u.username}" ${u.username === PV.user ? raw("selected") : ""}>${u.username}</option>`)}</select>` : PV.user} 的客户端里会看到${SUB.users.length ? "" : H`<span class="tag lab">示例</span>`}</span><span class="sp"></span>
-      <div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div></div>
-    <div class="pv-app">
-      <div class="pv-prof"><span class="pv-ico">${ic("sub")}</span><div class="grow"><b class="pv-t">${title}</b>
-        <div class="pv-m"><span>${fmtBytes(PV.used)} / ${PV.limit ? fmtBytes(PV.limit) : "不限流量"}</span> · <span>${PV.expire ? `${PV.expire} 到期` : "永不过期"}</span></div></div>
-        ${d.support_link ? H`<span class="pv-help" title="${d.support_link}">${ic("help")}</span>` : ""}</div>
-      <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
-      <div class="pv-meta"><span>${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "由客户端决定多久更新"}</span>${d.support_link ? H`<span class="ell">${ic("help")}${d.support_link.replace(/^https?:\/\//, "")}</span>` : ""}</div>
-      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
-    </div>
-    ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>${tail}</code>
-      <button type="button" class="ib sm" data-act="copy" data-text="${link}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
-    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <span class="nw"><b>${(FMT[f] || FMT.links)[0]}</b>，${(FMT[f] || FMT.links)[1]}。</span></p>`;
-}
-function addrCard(d, W) {
-  return H`<section class="card s5-sec" id="sec-addr"><div class="ch">地址与显示<small>· 用户拿到的链接，和客户端里显示的样子</small></div>
-    <div class="s5-addr">${addrForm(d, W)}<div class="s5-pv" id="pv">${preview(d)}</div></div></section>`;
+/* ---- 客户端目录:按名字列 app,每个带一条典型标识(User-Agent),用当前规则算它拿到什么 ---- */
+const B5_APPS = [
+  ["Clash Verge", "clash-verge/v2.0.3"], ["Mihomo Party", "mihomo.party/v1.5.12 (clash.meta)"], ["FlClash", "FlClash/v0.8.80 clash.meta"],
+  ["Stash", "Stash/2.7.0 Clash/1.11.0"], ["Karing", "karing/1.1.2"],
+  ["sing-box", "SFI/1.11.4 (sing-box 1.11.4)"], ["SFA", "SFA/1.11.4 (sing-box 1.11.4; Android)"], ["Hiddify", "HiddifyNext/2.5.7 (sing-box)"],
+  ["Shadowrocket", "Shadowrocket/2070 CFNetwork/1494"], ["v2rayN", "v2rayN/7.4.2"], ["v2rayNG", "v2rayNG/1.9.30"],
+  ["Quantumult X", "Quantumult%20X/1.4.2"], ["Surge", "Surge iOS/3021"], ["Loon", "Loon/3.2.4"],
+];
+const B5_OTHER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15";
+const b5Rules = d => d.rules && d.rules.length ? d.rules : SUB.builtin;
+const b5Fmt = (R, ua) => { const i = hit(R, ua); return i < R.length ? R[i].result : "links"; };
+function b5Groups(R) {
+  const g = new Map();
+  for (const [n, ua] of B5_APPS) { const f = b5Fmt(R, ua); if (!g.has(f)) g.set(f, []); g.get(f).push(n); }
+  return [...g].sort((a, b) => FMT_ORDER.indexOf(a[0]) - FMT_ORDER.indexOf(b[0]));
 }
 
-/* ---- 第二段:客户端识别 ---- */
-function ruleList(R, O) {
-  return H`<div class="zebra">${R.map((r, i) => { const n = r.label, [fn, fd] = FMT[r.result] || [r.result, ""];
-    const chg = !O[i] || O[i].pattern !== r.pattern || O[i].result !== r.result;
-    return H`<button type="button" class="zr ${chg ? "chg" : ""}" data-act="s5-rules" data-i="${i}"><span class="zr-n">${i + 1}</span>
-      <span class="zr-c">${n ? n : H`<code>${r.pattern.replace(/^\(\?i\)/, "")}</code>`}</span>
-      <span class="zr-to">${ic("arrow")}</span><span class="zr-f"><b>${fn}</b><span class="sub">${fd}</span>${chg ? H`<span class="tag lab zr-chg">改过</span>` : ""}</span></button>`; })}
-    <div class="zr zr-last"><span class="zr-n">${ic("more")}</span><span class="zr-c">其他客户端</span><span class="zr-to">${ic("arrow")}</span>
-      <span class="zr-f"><b>节点链接</b><span class="sub">用浏览器打开会看到订阅页</span></span></div></div>`;
+/* ---- 规则的说法:「客户端标识里含 clash」 ---- */
+const b5Parse = p => { const ci = /^\(\?i\)/.test(p), body = ci ? p.slice(4) : p; return { ci, body, all: body === ".*", re: !/^[^\\^$()[\]{}*+?.]*$/.test(body.replace(/\\\./g, "")) }; };
+const b5Say = p => { const x = b5Parse(p); if (x.all) return "其他所有客户端";
+  const parts = x.re ? [x.body] : x.body.split("|").map(s => s.replace(/\\\./g, "."));
+  return `${x.re ? "客户端标识符合" : "客户端标识里含"} ${parts.join(" 或 ")}`; };
+
+/* ---- 页头:这页只管一件事 + 预览用户 ---- */
+function b5Picker() {
+  const PV = SUB.preview;
+  if (!SUB.users.length) return H`<div class="b5-pick" title="还没有用户，下面用示例数据"><span class="b5-pick-l">预览用户</span><b>${PV.user}</b><span class="tag lab">示例</span></div>`;
+  return H`<label class="b5-pick"><span class="b5-pick-l">预览用户</span><select class="in" id="pv-user">${SUB.users.map(u => H`<option value="${u.username}" ${u.username === PV.user ? raw("selected") : ""}>${u.username}</option>`)}</select></label>`;
 }
-function clientsCard(d, W) {
-  const R = d.rules && d.rules.length ? d.rules : SUB.builtin, custom = !sameRules(R, SUB.builtin);
-  return H`<section class="card s5-sec" id="sec-clients"><div class="ch">客户端识别<small>· 同一条链接，不同客户端各自拿到能用的格式</small><span class="sp"></span>
-      <span class="pill ${custom ? "on" : ""}">${custom ? `自定义 · ${R.length} 条` : "内置规则"}</span>
-      ${W ? H`<button type="button" class="btn sm" data-act="s5-rules">${ic("sliders")}自定义规则</button>` : ""}</div>
-    ${ruleList(R, SUB.orig.rules && SUB.orig.rules.length ? SUB.orig.rules : SUB.builtin)}
-    <p class="s5-note">从上往下认，先认出的先用。想加新客户端或改格式，点「自定义规则」。</p></section>`;
+
+/* ---- 第一段:发给用户的链接 ---- */
+function b5Link(d) {
+  const PV = SUB.preview, noPfx = !d.sub_url_prefix;
+  const link = d.sub_url_prefix === SUB.orig.sub_url_prefix && PV.auto ? PV.auto : subBase(d).replace(/\/+$/, "") + "/sub/" + PV.token;
+  const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
+  return H`<div class="lk-box"><code class="lk-url"><span class="lk-pre">${base}</span><span class="lk-tail">${PV.token ? tail : "/sub/…"}</span></code>
+      <button type="button" class="btn ton lk-copy" data-act="copy" data-text="${link}" ${PV.token && SUB.users.length ? "" : raw("disabled")}>${ic("copy")}复制链接</button></div>
+    <div class="lk-key"><span><i class="sw sw-pre"></i>${noPfx ? "服务器地址 · 没填链接开头时用它" : "链接开头 · 在下面填"}</span><span><i class="sw sw-tail"></i>${PV.user} 自己的部分 · 自动生成，每人不同</span></div>
+    ${SUB.users.length ? "" : H`<div class="b5-note b5-sample">${ic("info")}<div>还没有用户，这里先用示例 alice 演示。加了用户以后，这里就是他的真实链接，可以直接复制。</div></div>`}`;
+}
+function b5PfxNote(d) {
+  if (d.sub_url_prefix) return "";
+  const host = ipBase().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+  return H`<div class="b5-note" id="pfx-warn">${ic("info")}<div><b>没填，链接现在用服务器地址开头。</b>拿到链接的人都能看到这台服务器的 IP（${host}）。有域名就填上，链接会换成域名开头。</div></div>`;
+}
+function b5LinkCard(d, W) {
+  const ro = W && !SUB.saving ? "" : raw("readonly");
+  return H`<section class="card b5-sec" id="sec-link"><div class="ch">发给用户的链接<small>· 复制给 ${SUB.preview.user}，对方粘到客户端里就能用</small></div>
+    <div class="b5-body"><div id="lk">${b5Link(d)}</div>
+    <div class="field b5-pfx"><label for="f-prefix">链接开头</label>
+      <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="例如 https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
+      <span class="s5-field-err" id="pfx-err" role="alert">${SUB.fieldErrors?.sub_url_prefix || ""}</span>
+      <span class="h">填你的域名。后面的 /sub/… 每个人不同，自动生成。</span>
+      <div id="pfx-slot">${b5PfxNote(d)}</div></div></div></section>`;
+}
+
+/* ---- 第二段:在客户端里的样子 ---- */
+let B5_HL = "";
+const nb = n => H`<i class="nb" aria-hidden="true">${n}</i>`;
+function b5Card(d) {
+  const PV = SUB.preview, title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
+  const [cn, ua] = PV_CLIENTS[SUB.pv], f = b5Fmt(b5Rules(d), ua), iv = +d.update_interval || 0;
+  return H`<div class="pv-app b5-app" id="pv-app" data-hl="${B5_HL}">
+      <div class="pv-prof"><span class="pv-ico">${ic("sub")}</span>
+        <div class="grow"><span class="pa" data-p="1"><b class="pv-t">${title}</b>${nb(1)}</span>
+          <div class="pv-m"><span class="nw">${fmtBytes(PV.used)} / ${PV.limit ? fmtBytes(PV.limit) : "不限流量"}</span><span class="nw">${PV.expire ? `${PV.expire} 到期` : "永不过期"}</span></div></div>
+        <span class="pa pa-help ${d.support_link ? "" : "off"}" data-p="3">${nb(3)}<span class="pv-help" title="${d.support_link}">${ic("help")}</span></span></div>
+      <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
+      <div class="pv-meta"><span class="pa" data-p="2">${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "客户端自己决定多久更新"}${nb(2)}</span></div>
+      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
+    </div>
+    <p class="b5-cap">流量和到期日按每个人的套餐显示，这里不用改。<br>${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>。</p>`;
+}
+// 订阅名编辑框:「用户名」是一块整体的标签,存的时候换回 {USERNAME}。
+const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>');
+function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/\n/g, ""); }
+function b5TitleRes(d) {
+  const t = d.profile_title || "", other = SUB.users.find(u => u.username !== SUB.preview.user)?.username || "bob";
+  const has = t.includes("{USERNAME}"), me = t.replaceAll("{USERNAME}", SUB.preview.user), you = t.replaceAll("{USERNAME}", other);
+  if (!t.trim()) return H`<span class="h">不填就只显示用户名。</span>`;
+  return has ? H`<span class="b5-res">${SUB.preview.user} 看到「<b>${me}</b>」，${other} 看到「<b>${you}</b>」</span><span class="h">「用户名」会自动换成每个人自己的名字。</span>`
+    : H`<span class="b5-res">每个人都看到「<b>${me}</b>」</span><span class="h b5-sug">想让每人看到自己的名字，加上 <button type="button" class="tk tk-add" data-act="b5-tok">${ic("plus")}用户名</button></span>`;
+}
+function b5LookCard(d, W) {
+  const ro = W && !SUB.saving ? "" : raw("readonly");
+  return H`<section class="card b5-sec" id="sec-look"><div class="ch">在客户端里的样子<small>· ${SUB.preview.user} 把链接加进客户端后看到的</small></div>
+    <div class="b5-look">
+      <div class="b5-stage"><div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div>
+        <div id="pv">${b5Card(d)}</div></div>
+      <div class="b5-fields">
+        <div class="field b5-f" data-p="1"><label for="f-title">${nb(1)}订阅名</label>
+          <div class="in b5-tok" id="f-title" role="textbox" aria-label="订阅名" contenteditable="${W && !SUB.saving ? "true" : "false"}" spellcheck="false">${raw(b5TokHTML(d.profile_title))}</div>
+          <div class="b5-tr-res" id="title-res">${b5TitleRes(d)}</div></div>
+        <div class="field b5-f" data-p="2"><label for="f-int">${nb(2)}刷新间隔</label>
+          <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
+          <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h"><span class="nw">客户端多久自动更新一次，</span><span class="nw">填 0 由客户端决定。</span></span></div>
+        <div class="field b5-f" data-p="3"><label for="f-help">${nb(3)}帮助链接</label>
+          <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="例如 https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
+          <span class="h">帮助按钮打开的网页。不填就不显示这个按钮。</span></div>
+      </div></div></section>`;
+}
+
+/* ---- 第三段:不同客户端拿到什么 ---- */
+function b5Table(d) {
+  const R = b5Rules(d), O = SUB.orig.rules && SUB.orig.rules.length ? SUB.orig.rules : SUB.builtin;
+  const of = f => FMT[f] || FMT.links, other = b5Fmt(R, B5_OTHER_UA);
+  const row = (apps, f, oldF, cls = "") => H`<div class="b5-tr ${cls}"><span class="b5-apps">${apps}</span><span class="b5-fmt"><b>${of(f)[0]}</b><span class="sub">${of(f)[1]}</span>${oldF !== f ? H`<span class="tag lab">改过</span>` : ""}</span></div>`;
+  return H`<div class="b5-th"><span>客户端</span><span>拿到</span></div>
+    <div class="b5-tb">${b5Groups(R).map(([f, apps]) => row(apps.join("、"), f, apps.every(a => b5Fmt(O, B5_APPS.find(x => x[0] === a)[1]) === f) ? f : null))}
+    ${row(H`其他客户端<span class="sub">包括用浏览器打开</span>`, other, b5Fmt(O, B5_OTHER_UA), "b5-other")}</div>`;
+}
+function b5GetCard(d, W) {
+  const custom = !sameRules(b5Rules(d), SUB.builtin);
+  return H`<section class="card b5-sec" id="sec-clients"><div class="ch">不同客户端拿到什么<small>· 同一条链接，每种客户端拿到它能用的格式</small><span class="sp"></span>
+      ${custom ? H`<span class="sub b5-cust">已改过识别规则</span>` : ""}${W ? H`<button type="button" class="btn sm ton" data-act="s5-rules">${ic("sliders")}识别规则</button>` : ""}</div>
+    <div class="b5-tbl" id="b5-tbl">${b5Table(d)}</div>
+    <p class="s5-note">按这些客户端常见的标识推算，实际以控制面判断为准。</p></section>`;
 }
 
 /* ---- 第三段:高级 · 订阅底稿 ---- */
@@ -383,14 +430,18 @@ function saveBar() {
     <button type="button" class="btn" data-act="s5-discard" ${SUB.saving ? raw("disabled") : ""}>放弃</button>
     <button type="button" class="btn pri ${SUB.saving ? "busy" : ""}" data-act="s5-save" ${SUB.saving ? raw("disabled") : ""}>保存</button></div>`;
 }
+// 刷新不重绘整页,保留输入焦点:只换链接、预览卡片、订阅名结果和对照表。
 function refresh() {
-  if (route[0] !== "sub") return;
-  const pv = $("#pv"); if (pv) pv.innerHTML = val(preview(SUB.draft));
-  const ps = $("#pfx-slot"); if (ps) ps.innerHTML = val(prefixWarn(SUB.draft));
-  for (const el of document.querySelectorAll(".s5 [data-k]")) el.readOnly = SUB.saving || !can("PUT", "/api/settings");
-  wirePreview();
+  if (route[0] !== "sub" || !SUB) return;
+  const d = SUB.draft;
+  const set = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = val(h); };
+  set("lk", b5Link(d)); set("pfx-slot", b5PfxNote(d)); set("pv", b5Card(d)); set("title-res", b5TitleRes(d)); set("b5-tbl", b5Table(d));
+  for (const el of document.querySelectorAll(".b5 [data-k]")) el.readOnly = SUB.saving || !can("PUT", "/api/settings");
+  const t = $("#f-title"); if (t) t.contentEditable = String(!SUB.saving && can("PUT", "/api/settings"));
   if ($("#pfx-err")) $("#pfx-err").textContent = SUB.fieldErrors?.sub_url_prefix || "";
   if ($("#int-err")) $("#int-err").textContent = SUB.fieldErrors?.update_interval || "";
+  const sl = $("#sec-link .ch small"); if (sl) sl.textContent = `· 复制给 ${SUB.preview.user}，对方粘到客户端里就能用`;
+  const sk = $("#sec-look .ch small"); if (sk) sk.textContent = `· ${SUB.preview.user} 把链接加进客户端后看到的`;
   const sb = $("#sb"); if (sb) sb.innerHTML = val(saveBar());
 }
 
@@ -417,7 +468,13 @@ async function saveSub() {
     return true;
   } catch (e) {
     SUB.saving = false;
-    if (e.status === 400 && e.message.includes("订阅地址")) SUB.fieldErrors.sub_url_prefix = e.message;
+    // 按字段名认错(旧控制面不报字段名,退回按原话里的「订阅地址」认);页面上统一叫「链接开头」。
+    if (e.status === 400 && (e.field === "sub_url_prefix" || e.message.includes("订阅地址"))) {
+      SUB.fieldErrors.sub_url_prefix = e.message.replace("订阅地址", "链接开头");
+      SUB.err = "没保存上：链接开头的格式不对，改好再保存。"; refresh(); $("#f-prefix")?.focus();
+      return false;
+    }
+    if (e.status === 400 && e.field) SUB.fieldErrors[e.field] = e.message;
     SUB.err = `没保存上：${e.message.replace(/[。.]$/, "")}。改动还在，可以再点一次保存。`; refresh();
     return false;
   }
@@ -460,6 +517,8 @@ PAGES.sub = {
   title: "订阅",
   crumb: () => H`<b>订阅</b>`,
   async load(r) {
+    // 侧栏的节点、用户数字来自 STATUS;直接打开订阅页时也取一次。
+    STATUS = await api("/api/status").catch(() => STATUS);
     if (r[1] === "templates") ADV_OPEN = true;
     const [settings, builtin, users, pulls, nodes, inbounds, plans] = await Promise.all([
       api("/api/settings"), api("/api/settings/builtin-rules"), subUsers(),
@@ -473,25 +532,45 @@ PAGES.sub = {
     return { settings, builtin, users, nodes, inbounds, plans, preview, tpl };
   },
   render(d) {
-    const head = H`<div class="ph"><div><h1>订阅</h1><p>用户拿到的链接、客户端里的显示，和不同客户端拿到的格式</p></div></div>`;
-    if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
+    const head = sub => H`<div class="ph b5-ph"><div><h1>订阅</h1><p>你发给用户的是一条链接。这一页决定这条链接长什么样，对方打开后看到什么、拿到什么。</p></div><span class="sp"></span>${sub}</div>`;
+    if (!d) return H`${head("")}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
     if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0, leaveTarget: null };
     // 刷新不丢草稿，已经打开的底稿与用户数据仍取最新值。
     Object.assign(SUB, { builtin: d.builtin, users: d.users, preview: d.preview });
     const W = can("PUT", "/api/settings");
-    return H`${head}<div class="s5">${addrCard(SUB.draft, W)}${clientsCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
+    return H`${head(b5Picker())}<div class="s5 b5">${b5LinkCard(SUB.draft, W)}${b5LookCard(SUB.draft, W)}${b5GetCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
   },
   after(d, r) {
     if (!d) { subAnchorKey = ""; return; }
     if (!SUB) return;
     wirePreview();
     subAnchor(r);
-    for (const el of document.querySelectorAll("[data-k]")) el.addEventListener("input", () => {
+    for (const el of document.querySelectorAll(".b5 [data-k]")) el.addEventListener("input", () => {
       const k = el.dataset.k; let v = el.value;
       if (k === "update_interval") v = /^\d+$/.test(v.trim()) ? +v.trim() : v;
       SUB.draft[k] = v; SUB.err = ""; SUB.fieldErrors = {}; refresh();
     });
+    const t = $("#f-title");
+    if (t) {
+      t.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+      t.addEventListener("paste", e => { e.preventDefault(); document.execCommand("insertText", false, (e.clipboardData.getData("text/plain") || "").replace(/\s*\n\s*/g, " ")); });
+      t.addEventListener("input", () => {
+        let v = b5TokVal(t);
+        // 有人手打了 {USERNAME}:换成标签块,光标放到最后。
+        if (t.textContent.includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
+        SUB.draft.profile_title = v; SUB.err = ""; refresh();
+      });
+    }
+    // 编号对应:鼠标或焦点在哪一栏,卡片上对应那块就亮起来;反过来也一样。
+    const hl = n => { B5_HL = n; const a = $("#pv-app"); if (a) a.dataset.hl = n; for (const f of document.querySelectorAll(".b5-f")) f.classList.toggle("hl", f.dataset.p === n); };
+    for (const f of document.querySelectorAll(".b5-f")) {
+      f.addEventListener("mouseenter", () => hl(f.dataset.p)); f.addEventListener("mouseleave", () => { if (!f.contains(document.activeElement)) hl(""); });
+      f.addEventListener("focusin", () => hl(f.dataset.p)); f.addEventListener("focusout", () => hl(""));
+    }
+    $("#pv")?.addEventListener("mouseover", e => { const p = e.target.closest(".pa"); hl(p ? p.dataset.p : (document.activeElement?.closest(".b5-f")?.dataset.p || "")); });
+    $("#pv")?.addEventListener("mouseleave", () => hl(document.activeElement?.closest(".b5-f")?.dataset.p || ""));
+    $("#pv")?.addEventListener("click", e => { const p = e.target.closest(".pa"); if (p) document.querySelector(`.b5-f[data-p="${p.dataset.p}"] .in`)?.focus(); });
   },
   canLeave(nextKey) {
     if (!SUB || !changes().length || String(nextKey || "").split("/")[0] === "sub") return true;
@@ -500,27 +579,33 @@ PAGES.sub = {
   },
 };
 
-/* ---- 「自定义规则」抽屉 ---- */
+/* ---- 「识别规则」抽屉 ---- */
+const B5_TRY = [["Clash Verge", "clash-verge/v2.0.3"], ["Stash", "Stash/2.7.0 Clash/1.11.0"], ["Shadowrocket", "Shadowrocket/2070 CFNetwork/1494"], ["sing-box", "SFI/1.11.4 (sing-box 1.11.4)"]];
+// 每条规则读作「客户端标识里含 [clash]，拿到 [格式]」;正则和先后顺序都留在这里,页面上只给人看的说法。
 function rulesBody() {
-  const R = RD.rules, h = hit(R, RD.ua);
-  return H`<div class="field rd-test"><label for="rd-ua">${ic("flask")}试一个客户端</label>
-      <input class="in mono" id="rd-ua" value="${RD.ua}" placeholder="粘贴 User-Agent，比如 clash-verge/v2.0.3" autocomplete="off" spellcheck="false">
-      <span class="h" id="rd-hit">${RD.ua ? (h < R.length ? H`命中第 <b>${h + 1}</b> 条，拿到 <b>${FMT[R[h].result]?.[0] || R[h].result}</b>。` : H`一条都没命中，拿到 <b>节点链接</b>。`) : "看看它会命中哪一条。"}</span>${RD.ua ? H`<span class="sub" id="rd-ruling">实际以控制面判断为准</span>` : ""}</div>
-    <div class="rd-list">${R.map((r, i) => { const e = reErr(r.pattern);
-      return H`<div class="rd-row ${i === h ? "hit" : ""} ${RD.focus === i ? "focus" : ""}" data-i="${i}"><span class="zr-n">${i + 1}</span>
-        <div class="rd-main"><input class="in mono" data-rp="${i}" value="${r.pattern}" aria-label="第 ${i + 1} 条的 User-Agent 正则" spellcheck="false">
-          ${r.label ? H`<span class="h">${r.label}</span>` : ""}${e ? H`<span class="rd-err">${e}</span>` : !toRe(r.pattern) ? H`<span class="h">浏览器没法预览这条，保存时由控制面检查</span>` : ""}</div>
-        <span class="zr-to">${ic("arrow")}</span>
-        <select class="in" data-rf="${i}" aria-label="第 ${i + 1} 条拿到的格式">${FMT_ORDER.map(f => H`<option value="${f}" ${f === r.result ? raw("selected") : ""}>${(FMT[f] || FMT.links)[0]}</option>`)}</select>
-        <span class="rd-ops"><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button type="button" class="ib sm" data-act="rd-rm" data-i="${i}" aria-label="删除">${ic("trash")}</button></span></div>`; })}
-      <div class="rd-row rd-last"><span class="zr-n">${ic("more")}</span><div class="rd-main"><span>其他客户端</span></div><span class="zr-to">${ic("arrow")}</span><span class="rd-fixed">节点链接</span><span class="rd-ops"></span></div></div>
-    <button type="button" class="btn sm" data-act="rd-add">${ic("plus")}加一条</button>
-    <p class="s5-note">按 Go 正则写，开头加 <code>(?i)</code> 就不分大小写。具体的放前面，宽的放后面，免得盖住前面的。</p>`;
+  const R = RD.rules, h = hit(R, RD.ua), O = FMT_ORDER.map(f => [f, (FMT[f] || FMT.links)[0]]);
+  const res = !RD.ua ? H`<span class="h">粘一段客户端标识，看它会拿到什么。</span>`
+    : h < R.length ? H`<span class="b5-res">会拿到 <b>${FMT[R[h].result]?.[0] || R[h].result}</b>，对上的是「${b5Say(R[h].pattern)}」这条。</span>`
+      : H`<span class="b5-res">一条都没对上，会拿到 <b>节点链接</b>。</span>`;
+  return H`<div class="field rd-test"><label for="rd-ua">输入客户端标识试试</label>
+      <input class="in mono" id="rd-ua" value="${RD.ua}" placeholder="例如 clash-verge/v2.0.3" autocomplete="off" spellcheck="false">
+      <div class="b5-try"><span class="h">常见的：</span>${B5_TRY.map(([n, ua]) => H`<button type="button" class="btn sm ton ${RD.ua === ua ? "on" : ""}" data-act="b5-try" data-ua="${ua}">${n}</button>`)}</div>
+      <div id="rd-hit">${res}${RD.ua ? H`<span class="sub" id="rd-ruling">实际以控制面判断为准</span>` : ""}</div></div>
+    <p class="b5-dlead">从上往下比，用第一条对上的。</p>
+    <div class="rd-list b5-rl">${R.map((r, i) => { const x = b5Parse(r.pattern), e = x.all ? "" : x.body.trim() ? "" : "要填一段标识";
+      return H`<div class="rd-row b5-rr ${i === h ? "hit" : ""}" data-i="${i}">
+        <div class="b5-rr-w">${x.all ? H`<span class="b5-k b5-all">其他所有客户端</span>` : H`<span class="b5-k">${x.re ? "客户端标识符合" : "客户端标识里含"}</span>
+          <input class="in mono" data-rp="${i}" value="${x.body}" aria-label="客户端标识里含的文字" spellcheck="false">`}
+          <span class="tag lab b5-on ${i === h ? "" : "off"}" ${i === h ? "" : raw('aria-hidden="true"')}>对上了</span></div>
+        <div class="b5-rr-f"><span class="b5-k">拿到</span><select class="in" data-rf="${i}" aria-label="拿到的格式">${O.map(([f, n]) => H`<option value="${f}" ${f === r.result ? raw("selected") : ""}>${n}</option>`)}</select>
+          <span class="rd-ops"><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i - 1}" ${i ? "" : raw("disabled")} aria-label="上移">${ic("chevup")}</button><button type="button" class="ib sm" data-act="rd-mv" data-i="${i}" data-to="${i + 1}" ${i < R.length - 1 ? "" : raw("disabled")} aria-label="下移">${ic("down")}</button><button type="button" class="ib sm" data-act="rd-rm" data-i="${i}" aria-label="删除">${ic("trash")}</button></span></div>
+        ${e ? H`<span class="rd-err">${e}</span>` : r.label ? H`<span class="h b5-lbl">内置 · ${r.label}</span>` : x.all ? H`<span class="h b5-lbl">上面几条都没对上的，都按这条给</span>` : x.re ? H`<span class="h b5-lbl">这条按正则写的，保存时由控制面检查</span>` : x.body.includes("|") ? H`<span class="h b5-lbl">「|」表示「或」</span>` : ""}</div>`; })}
+      ${R.some(r => b5Parse(r.pattern).all) ? "" : H`<div class="rd-row b5-rr rd-last"><div class="b5-rr-w"><span class="b5-k b5-all">其他所有客户端</span></div><div class="b5-rr-f"><span class="b5-k">拿到</span><span class="rd-fixed">节点链接</span><span class="rd-ops"></span></div></div>`}</div>
+    <button type="button" class="btn sm ton" data-act="rd-add">${ic("plus")}加一条</button>`;
 }
 function rulesDrawer(focus) {
-  const R = SUB.draft.rules && SUB.draft.rules.length ? SUB.draft.rules : SUB.builtin;
-  RD = { rules: clone(R), ua: "", focus: focus ?? -1 };
-  openDrawer(H`<div class="dh"><div class="dt"><h2>自定义规则</h2><span class="sub">按 User-Agent 认客户端，从上往下比，先命中的先用</span></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  RD = { rules: clone(b5Rules(SUB.draft)), ua: "", focus: focus ?? -1 };
+  openDrawer(H`<div class="dh"><div class="dt"><h2>识别规则</h2><span class="sub">客户端拉订阅时会带上自己的标识（User-Agent），例如 clash-verge/v2.0.3。按它决定给哪种格式。</span></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
     <div class="db rd-db" id="rd-body">${rulesBody()}</div>
     <div class="df"><button type="button" class="btn ghost" data-act="rd-reset">${ic("undo")}恢复内置</button><span class="sp" style="flex:1"></span><span class="df-why" id="rd-why"></span><button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" data-act="rd-done" id="rd-done">完成</button></div>`, "wide");
   rdWire();
@@ -537,17 +622,18 @@ function rdChangePaint() {
     if (selector) $("#rd-body").querySelector(selector)?.focus();
   }, 0);
 }
+// 改标识文字时保留原来的 (?i) 前缀:不分大小写只能靠规则自己带着,界面不另设开关。
 function rdWire() {
-  const bad = RD.rules.some(r => reErr(r.pattern));
-  $("#rd-done").disabled = bad; $("#rd-why").innerHTML = bad ? val(H`${ic("warn")}先改好写错的正则`) : "";
+  const bad = RD.rules.some(r => { const x = b5Parse(r.pattern); return !x.all && !x.body.trim(); });
+  $("#rd-done").disabled = bad; $("#rd-why").innerHTML = bad ? val(H`${ic("warn")}有一条还没填标识`) : "";
   $("#rd-ua").addEventListener("input", e => { RD.ua = e.target.value; const p = e.target.selectionStart; rdPaint(); const n = $("#rd-ua"); n.focus(); n.setSelectionRange(p, p); });
-  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("change", () => { const r = RD.rules[+el.dataset.rp]; if (r.pattern !== el.value) delete r.label; r.pattern = el.value; rdChangePaint(); });
+  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("input", () => { const r = RD.rules[+el.dataset.rp], x = b5Parse(r.pattern), p = (x.ci ? "(?i)" : "") + el.value; if (p !== r.pattern) delete r.label; r.pattern = p; });
+  for (const el of document.querySelectorAll("[data-rp]")) el.addEventListener("change", () => rdChangePaint());
   for (const el of document.querySelectorAll("[data-rf]")) el.addEventListener("change", () => { RD.rules[+el.dataset.rf].result = el.value; rdChangePaint(); });
 }
 
 Object.assign(ACTS, {
-  "s5-ins": () => { if (SUB.saving || !can("PUT", "/api/settings")) return; const el = $("#f-title"), p = el.selectionStart ?? el.value.length; el.value = el.value.slice(0, p) + "{USERNAME}" + el.value.slice(el.selectionEnd ?? p); el.dispatchEvent(new Event("input")); el.focus(); },
-  "s5-pv": d => { SUB.pv = +d.i; refresh(); },
+  "s5-pv": d => { SUB.pv = +d.i; B5_HL = ""; refresh(); },
   "s5-adv": async () => {
     ADV_OPEN = !ADV_OPEN; paint();
     if (ADV_OPEN) {
@@ -571,9 +657,21 @@ Object.assign(ACTS, {
   "sub-leave-save": async () => { if (!SUB) { subCloseModal(); return; } const t = SUB.leaveTarget; subCloseModal(); SUB.leaveTarget = null; if (await saveSub()) subLeave(t); },
   "rd-mv": d => { const i = +d.i, to = +d.to; const [x] = RD.rules.splice(i, 1); RD.rules.splice(to, 0, x); rdPaint(); },
   "rd-rm": d => { RD.rules.splice(+d.i, 1); rdPaint(); },
-  "rd-add": () => { RD.rules.push({ pattern: "(?i)", result: "clash-meta" }); rdPaint(); const els = document.querySelectorAll("[data-rp]"); const el = els[els.length - 1]; el.focus(); el.setSelectionRange(4, 4); },
+  // 新的一条插在「其他所有客户端」前面,光标放进标识框里,接着就能打字。
+  "rd-add": () => { const i = RD.rules.findIndex(r => b5Parse(r.pattern).all), at = i < 0 ? RD.rules.length : i;
+    RD.rules.splice(at, 0, { pattern: "(?i)", result: "clash-meta" }); rdPaint(); document.querySelector(`[data-rp="${at}"]`)?.focus(); },
   "rd-reset": () => { RD.rules = clone(SUB.builtin); rdPaint(); },
-  "rd-done": () => { if (RD.rules.some(r => reErr(r.pattern))) return; SUB.draft.rules = clone(RD.rules.length ? RD.rules : SUB.builtin); SUB.err = ""; closeOverlays(); paint(); },
+  "rd-done": () => { if ($("#rd-done").disabled) return; SUB.draft.rules = clone(RD.rules.length ? RD.rules : SUB.builtin); SUB.err = ""; closeOverlays(); paint(); },
+  "b5-try": d => { RD.ua = d.ua; rdPaint(); },
+  // 「+ 用户名」:把「用户名」标签插到光标处;光标不在框里就放到最前面。
+  "b5-tok": () => {
+    const t = $("#f-title"); if (!t || t.contentEditable !== "true") return;
+    const chip = document.createElement("span"); chip.className = "tk"; chip.contentEditable = "false"; chip.dataset.tok = "USERNAME"; chip.textContent = "用户名";
+    const s = getSelection();
+    if (s.rangeCount && t.contains(s.anchorNode)) { const r = s.getRangeAt(0); r.deleteContents(); r.insertNode(chip); }
+    else t.prepend(chip, t.firstChild && t.firstChild.nodeType === 3 && !/^\s/.test(t.firstChild.textContent) ? " " : "");
+    t.dispatchEvent(new Event("input")); t.focus(); const r = document.createRange(); r.setStartAfter(chip); r.collapse(true); s.removeAllRanges(); s.addRange(r);
+  },
 });
 
 // 用户列表分页取全，预览下拉和默认人选使用同一份数据。
@@ -634,8 +732,8 @@ function subAnchor(r) {
   const key = r.join("/");
   if (subAnchorKey === key) return;
   subAnchorKey = key;
-  const id = r[1] === "clients" ? "sec-clients" : r[1] === "templates" ? "sec-adv" : "";
-  // 只有 #sub/clients、#sub/templates 才滚到对应段;普通 #sub 停在顶上,页标题「订阅」露着。
+  const id = { link: "sec-link", look: "sec-look", clients: "sec-clients", templates: "sec-adv" }[r[1]];
+  // 只有 #sub/link、#sub/look、#sub/clients、#sub/templates 才滚到对应段;普通 #sub 停在顶上,页标题「订阅」露着。
   if (!id) return;
   requestAnimationFrame(() => { if (route.join("/") === key) document.getElementById(id)?.scrollIntoView({ block: "start" }); });
 }

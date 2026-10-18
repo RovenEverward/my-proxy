@@ -32,7 +32,7 @@ for (const [from, to] of [
     await expect(page).toHaveURL(new RegExp("#" + to.replace("/", "\\/") + "$"));
     if (to.startsWith("sub")) {
       await expect(page.locator(".tabs")).toHaveCount(0);
-      await expect(page.locator(to.endsWith("clients") ? "#sec-clients" : to.endsWith("templates") ? "#sec-adv.open" : "#sec-addr")).toBeInViewport();
+      await expect(page.locator(to.endsWith("clients") ? "#sec-clients" : to.endsWith("templates") ? "#sec-adv.open" : "#sec-link")).toBeInViewport();
     } else await expect(page.locator(".tabs a.on")).toHaveCount(1);
   });
 }

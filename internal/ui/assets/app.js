@@ -23,7 +23,8 @@ const NODE_LABELS = {};
 const labelOfName = name => NODE_LABELS[name] || name;
 // shortVer:版本号只取开头的 vX.Y.Z(伪版本、dirty 尾巴都舍掉),匹配不到就原样显示。
 const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); return m ? (m[0][0] === "v" ? m[0] : "v" + m[0]) : (v ?? ""); };
-class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+// field:控制面拒绝时点名的字段(例如 sub_url_prefix);旧控制面不报,就是 undefined。
+class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; this.field = undefined; } }
 async function api(path, init = {}) {
   for (let attempt = 0; ; attempt++) {
     let res;
@@ -43,7 +44,7 @@ async function api(path, init = {}) {
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     // 控制面给界面的说法(ui_hint,不提命令)优先;没有才用 error 原话。
-    if (!res.ok) throw new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText);
+    if (!res.ok) throw Object.assign(new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText), { field: body && typeof body === "object" ? body.field : undefined });
     return body;
   }
 }
@@ -83,6 +84,8 @@ const ICONS = {
   split: '<path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4M18 3v6a4 4 0 0 1-4 4"/><path d="m3 6 3-3 3 3M15 6l3-3 3 3"/>',
   pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6H21"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
 };
 const ic = (n, cls = "") => raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
