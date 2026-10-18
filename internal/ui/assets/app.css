@@ -462,10 +462,11 @@ details.adv2>summary span{font-weight:400;color:var(--muted);font-size:12px;marg
 
 /* Windows 自绘标题栏(tb-right):系统三按钮在窗口右上角 52px 高的条里。顶栏挪到这条里、和按钮同一行垂直居中,
    右边让出按钮的宽;内容卡片从这条下面开始,右上角不再被按钮压住。 */
-/* 让出标题栏的是 .app 这一个盒子:它是 100% 高、顶在窗口最上面的那个,把它的高去掉标题栏那一条,
-   行高照 grid 自己算 —— main 的 height:100% 就是行高,标题栏以下的内容区正好放下,不溢出、也不在
-   main 里多出一截滚不动的空白。main 自己的 8px 外边距不改:改了它,顶栏和侧栏、卡片就对不上了。 */
-html.tb-right .app{height:calc(100% - var(--mygo-titlebar-height,52px))}
+/* 让出标题栏的是 main:它从标题栏那一条下面开始(margin-top 等于标题栏的高),高度再从 100% 里
+   去掉这一条和自己的 8px 下边距,正好放进标题栏以下的内容区,不溢出、也不多出一截滚不动的空白。
+   main 的左右、下边距不改:改了它,顶栏和侧栏、卡片就对不上了。main 整个挪到标题栏下面以后,
+   卡片头的吸顶位置就是 main 的顶(top:0),不用再让出顶栏。 */
+html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
 html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-titlebar-height,52px);padding:0 calc(var(--mygo-titlebar-inset-right,138px) + 12px) 0 20px;background:var(--base);border-radius:0;border:0;box-shadow:none;backdrop-filter:none;z-index:29;--app-region:drag}
 /* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
 html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
