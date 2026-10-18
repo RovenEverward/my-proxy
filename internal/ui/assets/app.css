@@ -463,7 +463,10 @@ details.adv2>summary span{font-weight:400;color:var(--muted);font-size:12px;marg
 /* Windows 自绘标题栏(tb-right):系统三按钮在窗口右上角 52px 高的条里。顶栏挪到这条里、和按钮同一行垂直居中,
    右边让出按钮的宽;内容卡片从这条下面开始,右上角不再被按钮压住。 */
 html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
-html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-titlebar-height,52px);padding:0 calc(var(--mygo-titlebar-inset-right,138px) + 12px) 0 20px;background:var(--base);border-radius:0;border:0;box-shadow:none;backdrop-filter:none;z-index:29;--app-region:drag}
+/* main 按 grid 行撑满时会被「内容 + 上下 margin」顶大,标题栏让出的那 52px 就白算:卡片头吸顶
+   会停在顶栏底边下面(不带类时 main 的高度是写死的,显式撑满反而不起作用),main 也只滚到
+   这段空白的底边就不动了。这里把行高夹在可用高度里,让 main 真正停在标题栏下面。 */
+html.tb-right .app{grid-template-rows:minmax(0,calc(100% - var(--mygo-titlebar-height,52px)))}
 /* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
 html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
 html.tb-right .modal{top:calc(50% + var(--mygo-titlebar-height,52px) / 2)}
@@ -823,7 +826,8 @@ table.ut tbody tr:hover{background:var(--hover)}
 .udp-pull{display:flex;gap:10px;align-items:flex-start;margin:2px -16px -14px;padding:11px 16px 13px;border-radius:0 0 12px 12px;background:var(--stone)}
 .udp-pull>svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--muted)}.udp-pull>div{display:grid;gap:1px;font-size:12.5px}.udp-pull b{font-weight:560}
 
-/* 悬停提示 */
+/* 悬停提示:users.js 把 data-tip 的文字放进挂在 body 上的 .ftip(固定定位,表格滚动区裁不掉)。
+   别的页 [aria-disabled=true][data-tip] 的 ::after 提示不变。 */
 .ftip{position:fixed;z-index:60;padding:6px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:12px;line-height:1.4;white-space:nowrap;pointer-events:none;box-shadow:var(--lift)}
 
 /* 1024 宽:「重置」列在 1180 以下隐藏,单元格边距收窄,搜索框可以缩,筛选文字不折行。 */

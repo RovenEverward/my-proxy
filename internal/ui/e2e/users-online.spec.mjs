@@ -123,6 +123,24 @@ test("「最近在线」在「用户」后面:在线写「在线」和「2 个 I
   await expect(page.locator(".tb .seg")).not.toContainText("在线");
 });
 
+// 悬停提示:data-tip 只是数据,真正浮出来的是挂在 body 上的 .ftip(固定定位),表格的滚动区裁不掉它。
+test("悬停「在线」格子和右侧在线人数:浮出 .ftip 显示绝对时间,鼠标移开就收起", async ({ page }) => {
+  await open(page);
+  const online = cell(page, "alice").locator(".pres-l.on");
+  await expect(online).toHaveText("在线");
+  await online.hover();
+  const tip = page.locator("body > .ftip");
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(/^最后一次有流量：\d{4} 年 \d+ 月 \d+ 日 \d{2}:\d{2}:\d{2}（UTC\+8）/);
+  await expect(tip).toContainText("最后一次有流量：");
+  expect(await tip.evaluate(e => [getComputedStyle(e).position, e.parentElement === document.body])).toEqual(["fixed", true]);
+  await page.mouse.move(1, 1);
+  await expect(page.locator(".ftip")).toHaveCount(0);
+  // 工具栏右边的在线人数也有提示。
+  await page.locator(".tb .pres-sum").hover();
+  await expect(page.locator("body > .ftip")).toHaveText(/^在线状态 \d+ (秒|分钟)前更新，每 30 秒一次$/);
+});
+
 test("排序:默认最新在前;点表头反过来;从未连接的不管正反都排最后", async ({ page }) => {
   await open(page);
   // 在线的排最前(IP 多的靠前),再按最后有流量的时间;两个没连过的在最后。

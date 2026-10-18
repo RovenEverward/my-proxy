@@ -300,8 +300,8 @@ function presenceBlock(u, d) {
   const p = u.presence || {}, a = d.activity || { segments: [], ips: [] }, pull = d.pull;
   const known = presKnown(d), stale = presStale(d), sn = known && p.last_active_at ? staleHint(d, p) : null;
   const upd = !known ? "" : sn
-    ? H`<span class="sub" data-tip="${absTime(sn.since)}">${ic("clock")}${bareNode(presNodeText(d, sn.node_id))} 的在线状态 ${agoShort(sn.since)}更新</span>`
-    : H`<span class="sub" data-tip="${absTime(presInfo(d).updated_at)}">${stale ? H`${ic("clock")}` : ""}在线状态 ${agoShort(presInfo(d).updated_at)}更新</span>`;
+    ? H`<span class="sub udp-upd" data-tip="${absTime(sn.since)}">${ic("clock")}${bareNode(presNodeText(d, sn.node_id))} 的在线状态 ${agoShort(sn.since)}更新</span>`
+    : H`<span class="sub udp-upd" data-tip="${absTime(presInfo(d).updated_at)}">${stale ? H`${ic("clock")}` : ""}在线状态 ${agoShort(presInfo(d).updated_at)}更新</span>`;
   let now;
   if (known && p.online && !stale) now = H`<div class="udp-now"><span class="pres-l on"><span class="pdot"></span>在线</span><span class="sub">${p.online_ips ? `${p.online_ips} 个 IP · ` : ""}${nodesText(d, p.online_nodes)}</span></div>`;
   else if (p.last_active_at) now = H`<div class="udp-now"><span class="pres-l">${relTime(p.last_active_at)}</span><span class="sub">最后一次有流量 · ${presNodeText(d, p.last_node_id)}${sn ? "（这台现在连不上，可能还在线）" : ""}</span></div>`;
@@ -498,5 +498,33 @@ Object.assign(ACTS, {
   "user-rm": d => confirmBox({ title: `删除 ${d.name}？`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
     run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
 });
+/* ---- 悬停提示:data-tip 的绝对时间浮在 body 上(固定定位),表格滚动区裁不掉;键盘聚焦也显示。 ---- */
+let TIP = null;
+const tipHide = () => { TIP?.remove(); TIP = null; };
+// 只管用户页里的 [data-tip](「最近在线」的格子、工具栏的在线人数、抽屉里的各段时间);
+// 别的页的 [aria-disabled=true][data-tip] 仍用 app.css 里的 ::after 提示,这里不碰。
+const tipOf = t => t?.closest?.(".td-pres, .pres-sum, .udp-list, .udp-upd") ? t : null;
+function tipShow(t) {
+  if (TIP && TIP.dataset.tip === t.dataset.tip) { tipPlace(t); return; }
+  tipHide();
+  TIP = document.createElement("div"); TIP.className = "ftip"; TIP.textContent = t.dataset.tip; TIP.dataset.tip = t.dataset.tip;
+  document.body.append(TIP);
+  tipPlace(t);
+}
+// 放在元素的左下方,靠右时往左收,靠底时放到元素上面。
+function tipPlace(t) {
+  if (!TIP) return;
+  const r = t.getBoundingClientRect();
+  TIP.style.left = Math.max(8, Math.min(r.left, innerWidth - TIP.offsetWidth - 8)) + "px";
+  TIP.style.top = (r.bottom + 6 + TIP.offsetHeight > innerHeight ? r.top - 6 - TIP.offsetHeight : r.bottom + 6) + "px";
+}
+document.addEventListener("mouseover", e => { const t = tipOf(e.target.closest?.("[data-tip]")); if (t) tipShow(t); else tipHide(); });
+document.addEventListener("mouseout", e => { if (e.target.closest?.("[data-tip]") && !e.relatedTarget?.closest?.("[data-tip]")) tipHide(); });
+document.addEventListener("focusin", e => { const t = tipOf(e.target.closest?.("[data-tip]")); if (t) tipShow(t); else tipHide(); });
+document.addEventListener("focusout", e => { if (e.target.closest?.("[data-tip]")) tipHide(); });
+// 滚动、换页、点别处时提示跟着收掉,不留在原处。
+// 没加 capture:冒泡到 document 的是 main、抽屉这些滚动区自己的滚动,换了页面就不再跟。
+document.addEventListener("scroll", e => { if (e.target?.closest?.(".td-pres, .pres-sum, .udp-list")) tipHide(); });
+document.addEventListener("click", e => { if (!e.target.closest?.("[data-tip]")) tipHide(); });
 document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });
 document.addEventListener("click", e => { const m = $("#user-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#user-menu button"))) m.hidden = true; });

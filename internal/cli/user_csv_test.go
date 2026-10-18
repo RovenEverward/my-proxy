@@ -999,8 +999,12 @@ func TestCSVExportLastActiveColumn(t *testing.T) {
 	if n := len(recs[0]); n != len(userCSVHeader) {
 		t.Fatalf("表头 %d 列, want %d: %v", n, len(userCSVHeader), recs[0])
 	}
-	if got := recs[0][len(recs[0])-1]; got != csvColumnLastActive || got != "最后在线（UTC+8）" {
-		t.Fatalf("最后一列 = %q, want 最后在线（UTC+8）", got)
+	// 最后一列的表头和常量是同一句话,常量本身也要是这句(界面和导出里都按它写)。
+	if got := recs[0][len(recs[0])-1]; got != csvColumnLastActive {
+		t.Fatalf("最后一列 = %q, want %q", got, csvColumnLastActive)
+	}
+	if csvColumnLastActive != "最后在线（UTC+8）" {
+		t.Fatalf("csvColumnLastActive = %q, want 最后在线（UTC+8）", csvColumnLastActive)
 	}
 	// 13:14:40 UTC = 21:14:40 UTC+8,与浏览器/操作机时区无关。
 	for _, rec := range recs[1:] {

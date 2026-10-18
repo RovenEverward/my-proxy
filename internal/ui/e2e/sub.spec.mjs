@@ -17,6 +17,8 @@ async function open(page, hash = "sub") {
 const save = page => page.locator("[data-act=s5-save]").click();
 // 订阅名是 contenteditable 的编辑框,{USERNAME} 在里面是一块「用户名」标签;直接改写里面的文字。
 const setTitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+// 读编辑框的值按页面保存时用的那套算(页面自己的 b5TokVal:{USERNAME} ↔ 「用户名」标签),不看 textContent。
+const titleValue = page => page.locator("#f-title").evaluate(el => b5TokVal(el));
 const linkOf = (page, expected) => expect(page.locator(".lk-url")).toHaveText(expected);
 test.beforeAll(async () => {
   env = await startEnv();
@@ -34,7 +36,7 @@ test("一页三段，高级默认折叠，展开才取底稿正文", async ({ pa
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".zr-tpl")).toHaveCount(0);
   expect(requests).toEqual([]);
-  await expect(page.locator("#sec-clients .b5-tr").nth(1)).toContainText("Clash Verge、Mihomo Party、FlClash、Stash");
+  await expect(page.locator("#sec-clients .b5-tr").filter({ hasText: "Clash Verge" })).toContainText("Clash Verge、Mihomo Party、FlClash、Stash");
   await page.click("[data-act=s5-adv]");
   await expect(page.locator(".zr-tpl")).toHaveCount(3);
   await expect(page.locator(".zr-tpl").first()).toContainText(/\d+ 行/);
@@ -48,12 +50,14 @@ test("一页三段，高级默认折叠，展开才取底稿正文", async ({ pa
 test("改订阅名即时预览，输入焦点保留，保存条列出一处改动", async ({ page }) => {
   await open(page);
   await page.locator("#f-title").click();
-  // 光标放到文字末尾,接着打;刷新只换预览,不重画编辑框。
+  // 光标放到文字末尾(「用户名」标签后面),接着打;刷新只换预览,不重画编辑框。
+  // 存进去的是「测试 {USERNAME}」,alice 看到的是「测试 alice」。
   await page.keyboard.press("Control+End");
   await page.keyboard.type("测试 ");
   await expect(page.locator("#f-title")).toBeFocused();
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await expect(page.locator("#sb")).toContainText("订阅名");
+  await expect.poll(() => titleValue(page)).toBe("测试 {USERNAME}");
   await expect(page.locator(".pv-t")).toHaveText("测试 alice");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
@@ -72,8 +76,10 @@ test("链接开头缺协议由控制面返回字段红字，刷新间隔仍校�
   await expect(page.locator("#pfx-err")).toContainText("http://");
   await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
   await expect(page.locator("#f-prefix")).toBeFocused();
-  const colors = await page.locator("#pfx-err").evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#f-prefix")).color]);
-  expect(colors[0]).not.toBe(colors[1]);
+  // 红字用的是 --bad(浅色 #dc2626,深色 #f2555a),和输入框里正常文字的颜色不同。
+  const [errColor, inputColor, bad] = await page.locator("#pfx-err").evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#f-prefix")).color, getComputedStyle(document.documentElement).getPropertyValue("--bad").trim()]);
+  expect(errColor).toBe("rgb(" + [1, 3, 5].map(i => parseInt(bad.slice(i, i + 2), 16)).join(", ") + ")");
+  expect(inputColor).not.toBe(errColor);
   await page.fill("#f-prefix", "https://sub.example.com");
   for (const value of ["-1", "1.5", "abc", ""]) {
     await page.fill("#f-int", value); await save(page);
@@ -102,7 +108,9 @@ test("服务端 400 的订阅地址原话显示在字段下，草稿保留并可
   await page.route("**/api/settings", r => r.request().method() === "PUT" ? r.fulfill({ status: 400, json: { error: message } }) : r.continue());
   await page.fill("#f-prefix", "https://sub.example.com"); await save(page);
   await expect(page.locator("#pfx-err")).toHaveText(message.replace("订阅地址", "链接开头"));
-  await expect(page.locator("#sb")).toContainText("改动还在，可以再点一次保存。");
+  // 按字段名认出来的错误:保存条说的是「链接开头」的格式不对(别的错误才说「改动还在，可以再点一次保存。」)。
+  await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
+  await expect(page.locator("#sb")).not.toContainText("改动还在，可以再点一次保存。");
   await expect(page.locator("#f-prefix")).toHaveValue("https://sub.example.com");
   await page.unroute("**/api/settings"); await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
@@ -231,7 +239,7 @@ test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) 
   await page.locator(".toast .toast-act").click();
   await expect(page.locator("#sb")).toContainText("有 2 处改动");
   await expect(page.locator("#sb .s5-bar-t .sub")).toHaveText(items);
-  await expect(page.locator("#f-title")).toHaveText(/^改过的名字\s*$/);
+  await expect.poll(() => titleValue(page)).toBe("改过的名字 {USERNAME}");
   await expect(page.locator("#f-title .tk")).toHaveText("用户名");
   await expect(page.locator("#f-int")).toHaveValue("48");
 });
@@ -257,7 +265,7 @@ test("有改动离开订阅页弹应用内对话框，可留下、不保存、�
   await expect(page.locator("#modal.open")).toHaveCount(0);
   await expect(page).toHaveURL(/#sub$/);
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
-  await expect(page.locator("#f-title")).toHaveText(/^别丢了\s*$/);
+  await expect.poll(() => titleValue(page)).toBe("别丢了 {USERNAME}");
 
   // 不保存:丢掉草稿到节点页;回到订阅页没有保存条。
   await page.click('.side a.nav[href="#nodes"]');
@@ -327,7 +335,7 @@ test("放弃后后台刷新，撤销只恢复原先改过的键", async ({ page 
   await page.evaluate(() => load(true));
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await page.locator(".toast .toast-act").click();
-  await expect(page.locator("#f-title")).toHaveText(/^撤销的标题$/);
+  await expect.poll(() => titleValue(page)).toBe("撤销的标题");
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await expect(page.locator("#f-int")).toHaveValue("72");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
@@ -382,7 +390,11 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
     await page.fill('[data-rp="0"]', pattern);
     await page.locator('[data-rp="0"]').press("Tab");
     await page.fill("#rd-ua", "CLASH");
-    if (pattern.includes("is")) await expect(page.locator("#rd-hit")).toContainText("命中第 1 条");
+    // 试框的说法是「会拿到 … 这条」,并对上的那行标 hit。
+    if (pattern.includes("is")) {
+      await expect(page.locator("#rd-hit")).toContainText("会拿到");
+      await expect(page.locator('.rd-row[data-i="0"]')).toHaveClass(/hit/);
+    }
     await expect(page.locator("#rd-done")).toBeEnabled();
   }
   await page.fill('[data-rp="0"]', "(?i:clash)");
@@ -426,10 +438,11 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
   await page.getByRole("button", { name: "留下", exact: true }).click();
   await expect(page.locator("#modal.open")).toHaveCount(0);
   expect(calls).toEqual([]);
-  await expect(page.locator("#f-title")).toHaveText(/^切换前草稿$/);
+  await expect.poll(() => titleValue(page)).toBe("切换前草稿");
   await choose(); await page.getByRole("button", { name: "不保存", exact: true }).click();
   await expect.poll(() => calls.length).toBe(1);
-  await expect(page.locator("#f-title")).toHaveText(/^用户名$/);
+  // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
+  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
   await setTitle(page, "切换前保存");
   await choose(); await page.getByRole("button", { name: "保存并离开", exact: true }).click();
   await expect.poll(() => calls.length).toBe(2);
@@ -496,7 +509,7 @@ test("切换控制面选不保存但切换失败：页面已画回保存的值",
   await page.click(".cp-pop [data-act=cp-switch]");
   await page.click('.pfitem[data-name="other"]');
   await page.getByRole("button", { name: "不保存", exact: true }).click();
-  await expect(page.locator("#f-title")).toHaveText(/^用户名$/);
+  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
   await expect(page.locator("#sb")).toBeEmpty();
 });
 

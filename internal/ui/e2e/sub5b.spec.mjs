@@ -28,15 +28,18 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
-// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是控制面地址,并有一条灰色说明。
+// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是页面看到的控制面地址
+// (控制面按这次请求的 Host 拼,页面经 mpx ui 的转发取到),并有一条灰色说明。
 test("链接卡片给出完整链接;没填链接开头时用控制面地址开头并说明", async ({ page }) => {
   await open(page);
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
   await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
-  expect(alice.auto.startsWith(env.cpURL + "/sub/")).toBe(true);
-  await expect(page.locator(".lk-pre")).toHaveText(env.cpURL);
-  await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(env.cpURL.length));
+  expect(alice.auto.startsWith(env.origin + "/sub/")).toBe(true);
+  // 只加的 base 字段:控制面拼这条链接时用的开头,就是这次请求的 Host。
+  expect(alice.base).toBe(env.origin);
+  await expect(page.locator(".lk-pre")).toHaveText(env.origin);
+  await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(env.origin.length));
   const note = page.locator("#pfx-warn");
   await expect(note).toHaveClass(/b5-note/);
   await expect(note).toContainText("没填，链接现在用服务器地址开头。");
@@ -119,8 +122,11 @@ test("链接开头填错时字段下出红字，说的是「链接开头」而�
   const err = page.locator("#pfx-err");
   await expect(err).toContainText("链接开头");
   await expect(err).not.toContainText("订阅地址");
-  const colors = await err.evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#pfx-err")).color]);
-  expect(colors[0]).not.toBe(colors[1]);
+  // 红字要比别的字显眼:用的是 --bad(浅色 #dc2626,深色 #f2555a),输入框里的正常文字不是这个颜色。
+  const [errColor, inputColor, bad] = await err.evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#f-prefix")).color, getComputedStyle(document.documentElement).getPropertyValue("--bad").trim()]);
+  const rgb = c => "rgb(" + [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)).join(", ") + ")";
+  expect(errColor).toBe(rgb(bad));
+  expect(inputColor).not.toBe(errColor);
   await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
   await expect(page.locator("#f-prefix")).toBeFocused();
   await expect(page.locator("#f-prefix")).toHaveValue("ftp://x");

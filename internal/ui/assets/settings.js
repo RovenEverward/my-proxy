@@ -320,7 +320,9 @@ function b5Picker() {
 /* ---- 第一段:发给用户的链接 ---- */
 function b5Link(d) {
   const PV = SUB.preview, noPfx = !d.sub_url_prefix;
-  const link = d.sub_url_prefix === SUB.orig.sub_url_prefix && PV.auto ? PV.auto : subBase(d).replace(/\/+$/, "") + "/sub/" + PV.token;
+  // 没改链接开头时逐字显示控制面给的 auto;改回原样(或从没改过)而控制面这次没给 auto,就按它当时用的开头。
+  const kept = d.sub_url_prefix === SUB.orig.sub_url_prefix;
+  const link = kept && PV.auto ? PV.auto : subBase(kept ? { sub_url_prefix: PV.appliedPrefix || "" } : d).replace(/\/+$/, "") + "/sub/" + PV.token;
   const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
   return H`<div class="lk-box"><code class="lk-url"><span class="lk-pre">${base}</span><span class="lk-tail">${PV.token ? tail : "/sub/…"}</span></code>
       <button type="button" class="btn ton lk-copy" data-act="copy" data-text="${link}" ${PV.token && SUB.users.length ? "" : raw("disabled")}>${ic("copy")}复制链接</button></div>
@@ -609,7 +611,17 @@ function rulesDrawer(focus) {
     <div class="db rd-db" id="rd-body">${rulesBody()}</div>
     <div class="df"><button type="button" class="btn ghost" data-act="rd-reset">${ic("undo")}恢复内置</button><span class="sp" style="flex:1"></span><span class="df-why" id="rd-why"></span><button type="button" class="btn" data-act="close">取消</button><button type="button" class="btn pri" data-act="rd-done" id="rd-done">完成</button></div>`, "wide");
   rdWire();
-  if (focus != null) requestAnimationFrame(() => document.querySelector(`.rd-row[data-i="${focus}"]`)?.scrollIntoView({ block: "center" }));
+  // 新加的一条(「加一条」传 -1)滚到中间,光标放进它的标识框,接着就能打字。打开抽屉的按钮
+  // 点完后还想把焦点收回自己身上,所以等焦点先落稳再看;已经在抽屉里(用户自己点了别处)就不抢。
+  if (focus === -1) setTimeout(() => {
+    const drawer = $("#drawer.open");
+    if (!RD || RD.focus !== focus || !drawer) return;
+    const row = document.querySelector(`.rd-row[data-i="${focus}"]`);
+    row?.scrollIntoView({ block: "center" });
+    // 已经在抽屉里别的控件上(用户自己点了)= 不抢;焦点还停在抽屉外面(刚点开)= 放进新的一条。
+    if (drawer.contains(document.activeElement)) return;
+    document.querySelector(`[data-rp="${focus}"]`)?.focus();
+  }, 0);
 }
 function rdPaint() { const y = $("#rd-body").scrollTop; $("#rd-body").innerHTML = val(rulesBody()); $("#rd-body").scrollTop = y; rdWire(); }
 // change 可能在 Tab 的失焦阶段触发，等焦点移动完再记录目标并重绘。
@@ -689,7 +701,9 @@ function subTemplates() {
 async function subPreview(u, data) {
   if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3 };
   const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0 };
-  try { const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || ""; const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); }
+  // links.base:控制面拼这条链接时用的开头。没填链接开头时它就是这次请求的 Host
+  // (本机开发是 127.0.0.1,经 mpx ui 转发时是页面地址);旧控制面不给,留空即按页面地址算。
+  try { const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || ""; const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); out.appliedPrefix = links.base || ""; }
   catch (e) { toast(e.message, true); }
   // 与订阅下发一样，套餐节点、套餐入站和额外授权取并集，排除排水与满员入站。
   // 授权数据不全时不猜测，省略无法确认的节点行。
@@ -720,7 +734,7 @@ function wirePreview() {
     const state = SUB, data = current.data, seq = ++subPreviewSeq;
     const user = state.users.find(u => u.username === e.target.value);
     // 先切名字和用量，取链接期间不展示上一个人的 token。
-    state.preview = { user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "" };
+    state.preview = { user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "", appliedPrefix: state.preview.appliedPrefix };
     data.preview = state.preview; refresh();
     const preview = await subPreview(user, data);
     if (seq !== subPreviewSeq || SUB !== state) return;

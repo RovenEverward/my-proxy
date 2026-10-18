@@ -126,8 +126,11 @@ test("N4 离开对话框文案带逗号", async ({ page }) => {
 
 test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page }) => {
   await openDelete(page);
-  await expect(page.locator("#modal.open .nw")).toHaveText("「暂停分配」");
-  expect(await page.locator("#modal.open .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  // 删除确认里有两块不拆开的文字:「别再发它」和「暂停分配」,只看后者。
+  const nw = page.locator("#modal.open .nw", { hasText: "暂停分配" });
+  await expect(page.locator("#modal.open .nw")).toHaveCount(2);
+  await expect(nw).toHaveText("「暂停分配」");
+  expect(await nw.evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
   // 刷新间隔说明按两个短句断行,不在句中拆。
@@ -184,10 +187,15 @@ test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {
 });
 
 test("N12 Windows 标题栏模式下内容已让出顶栏，分流卡片头吸顶贴 main 的顶", async ({ page }) => {
+  // 必须是一个能滚动的页:卡片全在首屏时 main 没有滚动,卡片头根本到不了吸顶位置。窗口矮一点。
+  await page.setViewportSize({ width: 1440, height: 560 });
   await go(page, "rules");
   // 浏览器里没有 mygo 注入的标题栏:CSP 不让 addStyleTag,这里直接加 tb-right 类、设窗口高度变量(同 winFrame)。
   await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
   await page.locator("main").evaluate(m => { m.scrollTop = 600; });
+  // 顶栏在 tb-right 下挪到标题栏里、不在 main 的滚动区里;卡片头贴 main 的顶,而且滚到底也贴得住(不是只露出了 8px 边距)。
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
+  await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
   await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
 });
 
