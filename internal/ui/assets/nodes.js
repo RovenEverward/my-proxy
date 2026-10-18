@@ -150,7 +150,8 @@ function plainSummary(lines, d) {
     const t = r ? r[1](line.match(r[0])) : "有一项检查没通过，原话见「详情」";
     if (t && !out.includes(t)) out.push(t);
   }
-  return out;
+  // 「被中断」已经说明没跑完,不再重复一条「没有跑完」。
+  return out.includes("完整测评被中断，没有跑完") ? out.filter(t => t !== "完整测评没有跑完") : out;
 }
 
 function nodeDetail(d) {

@@ -298,6 +298,7 @@ test("D1 体检结论翻成人话:没有内部叫法和英文原话，原话收�
     for (const w of t.replace(/「[^」]*」/g, "").match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) || []) expect(w, `「${t}」含英文原话`).toMatch(allowed);
   }
   expect(items).toContain("完整测评被中断，没有跑完");
+  expect(items).not.toContain("完整测评没有跑完");
   expect(items.some(t => /^通过「.+」访问 Netflix：没测出结果$/.test(t))).toBe(true);
   const raw = page.locator("details.sum-raw");
   await expect(raw.locator("ul")).toBeHidden();
