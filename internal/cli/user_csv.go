@@ -31,12 +31,22 @@ const (
 	csvColumnLastActive = "最后在线（UTC+8）"
 )
 
-// userCSVHeader 是导出的表头,也是导入时认识的全部列(顺序固定)。
-// 「最后在线（UTC+8）」是导出专有的只读列:导入时不认它,回到控制面的数据才算数。
+// userCSVHeader 是导出的表头(顺序固定)。
 var userCSVHeader = []string{
 	csvColumnUsername, csvColumnLimit, csvColumnExpire,
 	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
 	csvColumnLastActive,
+}
+
+// userCSVImportHeader 是导入认的表头,也是缺「用户名」时报错里给人看的一览。
+//
+// 「最后在线（UTC+8）」只导出、不导入:它是只读的,回到控制面的数据才算数。所以导入
+// 的表头比导出少这一列 —— 老版本导出的 8 列文件正好是这个表头,照常能导;带这一列的
+// 新文件也能导,这一列认不出,直接忽略。行宽按文件自己的表头算(见 importUsersCSV),
+// 不拿导出的表头常量去比:老文件比它少一列,那样每一行都会被判成列数不对。
+var userCSVImportHeader = []string{
+	csvColumnUsername, csvColumnLimit, csvColumnExpire,
+	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
 }
 
 var userExportCmd = &cobra.Command{
@@ -226,6 +236,9 @@ type importReport struct {
 //
 // 代价是失去"要么全成要么全不成"的原子性。这份数据的用途(批量建/改用户)不值得
 // 为它放弃逐行的好处,见 decisions.md 第 25 条。
+//
+// 行宽按文件自己的表头比对,而不是导出表头常量:老版本导出的文件没有「最后在线（UTC+8）」
+// 这一列,拿 9 列的常量去比,老文件的每一行都会被判成列数不对。
 func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 	var rep importReport
 	cr := csv.NewReader(r)
@@ -241,7 +254,6 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 	if err != nil {
 		return rep, err
 	}
-
 	// 有「套餐」列时把套餐名→id 映出来一次,逐行复用。空单元格表示不改编归属。
 	var planIDs map[string]int64
 	if _, ok := cols[csvColumnPlan]; ok {
@@ -254,6 +266,10 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 			planIDs[p.Name] = p.ID
 		}
 	}
+
+	// 行宽按这个文件自己的表头算:老版本导出的文件少一列「最后在线（UTC+8）」,
+	// 拿导出常量去比会把每一行都判成列数不对。
+	width := len(header)
 
 	readErrors := 0
 	for line := 2; ; line++ {
@@ -275,10 +291,10 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 			continue
 		}
 		readErrors = 0
-		if len(rec) != len(header) {
+		if len(rec) != width {
 			rep.Failed++
 			rep.Errors = append(rep.Errors, importError{Line: line,
-				Error: fmt.Sprintf("列数与表头不一致(表头 %d 列,这行 %d 列)", len(header), len(rec))})
+				Error: fmt.Sprintf("列数与表头不一致(表头 %d 列,这行 %d 列)", width, len(rec))})
 			continue
 		}
 		u, err := csvRowToUser(cols, rec)
@@ -312,8 +328,9 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 
 // userCSVColumns 把表头映射成"列名 -> 下标"。
 //
-// 不认识的列直接忽略:以后加列时,旧文件还能读。缺"用户名"这份文件就没法用了
-// (那一行要写谁都不知道),直接挡下。
+// 不认识的列直接忽略:以后加列时,旧文件还能读;导出专有的「最后在线（UTC+8）」
+// 也落在这一类里 —— 文件里有它也没关系,行宽按这个文件的表头算。缺"用户名"这份
+// 文件就没法用了(那一行要写谁都不知道),直接挡下。
 func userCSVColumns(header []string) (map[string]int, error) {
 	cols := make(map[string]int, len(header))
 	for i, name := range header {
@@ -321,7 +338,7 @@ func userCSVColumns(header []string) (map[string]int, error) {
 	}
 	if _, ok := cols[csvColumnUsername]; !ok {
 		return nil, fmt.Errorf("CSV 缺「%s」列;表头要包含:%s",
-			csvColumnUsername, strings.Join(userCSVHeader, ","))
+			csvColumnUsername, strings.Join(userCSVImportHeader, ","))
 	}
 	return cols, nil
 }
