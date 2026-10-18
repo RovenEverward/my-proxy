@@ -106,6 +106,18 @@ const fmtDur = s => { s = Math.floor(+s || 0); const d = Math.floor(s / 86400), 
 // fmtSecs:秒数写成中文单位,不到 0.01 秒不写成「0.00 秒」。
 const fmtSecs = v => { v = +v || 0; if (v < 0.01) return "不到 0.01 秒"; if (v < 60) return `${v.toFixed(v < 10 ? 2 : 1)} 秒`; return fmtDur(v); };
 const sinceText = iso => { if (!iso) return "—"; const d = new Date(iso), s = (Date.now() - d) / 1e3; if (s < 60) return "刚刚"; if (s < 3600) return `${Math.floor(s / 60)} 分钟前`; if (s < 86400) return hm(d); return ymd(d); };
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+// relTime 是相对时间的统一写法(用户页「最近在线」与订阅拉取共用):
+// 3 分钟前 / 今天 06:48 / 昨天 21:14 / 10 月 2 日 / 2025 年 12 月 3 日。
+function relTime(iso) {
+  const d = new Date(iso), now = new Date(), s = (now - d) / 1e3;
+  if (s < 60) return "刚刚";
+  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`;
+  if (sameDay(d, now)) return `今天 ${hm(d)}`;
+  if (sameDay(d, new Date(now - DAY))) return `昨天 ${hm(d)}`;
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+}
 
 const USER_ST = { active: ["ok", "正常"], disabled: ["", "已停用"], expired: ["warn", "已过期"], limited: ["warn", "已超限"] };
 const stBadge = (cls, text) => H`<span class="st"><span class="dot ${cls}"></span>${text}</span>`;

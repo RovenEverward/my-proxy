@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -608,7 +609,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 		t.Fatalf("userCSVColumns: %v", err)
 	}
 	// 只有用户名,其余全空。
-	rec := []string{"alice", "", "", "", "", "", "", ""}
+	rec := []string{"alice", "", "", "", "", "", "", "", ""}
 	u, err := csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -645,7 +646,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 	}
 
 	// 单元格两侧的空白会被有意去掉(导出->导入不等价于原样保留空白)。
-	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "", "  备注  "}
+	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "", "  备注  ", ""}
 	u, err = csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -675,9 +676,9 @@ func TestImportBadRowsColumnMismatch(t *testing.T) {
 	// 表头 8 列;第 3 行(数据第 2 行)只给了 4 列。
 	csvText := strings.Join([]string{
 		strings.Join(userCSVHeader, ","),
-		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
+		"alice,1GB,2027-01-01,启用,none,全部,,备注一,",
 		"bob,2GB,2027-02-01,启用",
-		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
+		"carol,3GB,2027-03-01,停用,none,全部,,备注三,",
 	}, "\n") + "\n"
 
 	rep, err := importUsersCSV(c, strings.NewReader(csvText))
@@ -974,5 +975,38 @@ func TestCSVImportWithoutPlanColumnKeepsPlan(t *testing.T) {
 	got, _ := f.get("alice")
 	if got.PlanID == nil || *got.PlanID != global {
 		t.Fatalf("旧格式导入碰了套餐归属: %+v", got.PlanID)
+	}
+}
+
+// TestCSVExportLastActiveColumn 断言「最后在线（UTC+8）」列:固定按 UTC+8 写、不看操作机
+// 时区;从没连过的人(没有 presence 或 last_active_at 为空)留空。
+func TestCSVExportLastActiveColumn(t *testing.T) {
+	seen := time.Date(2026, 10, 17, 13, 14, 40, 0, time.UTC)
+	users := []userRow{
+		{Username: "alice", Enabled: true, ResetStrategy: string(model.ResetNone), Presence: &userPresence{LastActiveAt: &seen}},
+		{Username: "hana", Enabled: true, ResetStrategy: string(model.ResetNone), Presence: &userPresence{}},
+		{Username: "old", Enabled: true, ResetStrategy: string(model.ResetNone)}, // 老控制面不给 presence
+	}
+
+	var buf bytes.Buffer
+	if err := writeUsersCSV(&buf, users); err != nil {
+		t.Fatalf("writeUsersCSV: %v", err)
+	}
+	recs, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("读回 CSV: %v", err)
+	}
+	if n := len(recs[0]); n != len(userCSVHeader) {
+		t.Fatalf("表头 %d 列, want %d: %v", n, len(userCSVHeader), recs[0])
+	}
+	if got := recs[0][len(recs[0])-1]; got != csvColumnLastActive || got != "最后在线（UTC+8）" {
+		t.Fatalf("最后一列 = %q, want 最后在线（UTC+8）", got)
+	}
+	// 13:14:40 UTC = 21:14:40 UTC+8,与浏览器/操作机时区无关。
+	for _, rec := range recs[1:] {
+		want := map[string]string{"alice": "2026-10-17 21:14:40", "hana": "", "old": ""}[rec[0]]
+		if got := rec[len(rec)-1]; got != want {
+			t.Fatalf("%s 的最后在线 = %q, want %q", rec[0], got, want)
+		}
 	}
 }

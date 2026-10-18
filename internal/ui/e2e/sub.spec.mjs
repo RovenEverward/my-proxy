@@ -300,9 +300,9 @@ test("规则抽屉 UA 试用提示与黑白焦点环", async ({ page }) => {
   await page.fill("#rd-ua", "clash-verge/v2.0.3");
   await expect(page.locator("#rd-ruling")).toHaveText("实际以控制面判断为准");
   await page.focus("#rd-ua");
-  // 抽屉里的试框是 2px 墨色描边,不用 box-shadow 光圈。
+  // 抽屉里的试框是 2px 墨色描边(浅色 #111),不用 box-shadow 光圈。
   const ring = await page.locator("#rd-ua").evaluate(e => { const s = getComputedStyle(e); return [s.outlineColor, s.boxShadow, s.outlineWidth]; });
-  expect(ring[0]).toBe("rgb(10, 10, 10)");
+  expect(ring[0]).toBe("rgb(17, 17, 17)");
   expect(ring[1]).toBe("none");
   expect(ring[2]).toBe("2px");
 });

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,20 +20,23 @@ import (
 // CSV 的列名。用中文:这份文件的读者是人(导出来改一行再导回去),列名与
 // user list 的表头共用同一套词,不另造一套英文名。
 const (
-	csvColumnUsername = "用户名"
-	csvColumnLimit    = "流量上限"
-	csvColumnExpire   = "到期时间"
-	csvColumnEnabled  = "可用性"
-	csvColumnStrategy = "重置策略"
-	csvColumnInbounds = "入站范围"
-	csvColumnPlan     = "套餐"
-	csvColumnNote     = "备注"
+	csvColumnUsername   = "用户名"
+	csvColumnLimit      = "流量上限"
+	csvColumnExpire     = "到期时间"
+	csvColumnEnabled    = "可用性"
+	csvColumnStrategy   = "重置策略"
+	csvColumnInbounds   = "入站范围"
+	csvColumnPlan       = "套餐"
+	csvColumnNote       = "备注"
+	csvColumnLastActive = "最后在线（UTC+8）"
 )
 
 // userCSVHeader 是导出的表头,也是导入时认识的全部列(顺序固定)。
+// 「最后在线（UTC+8）」是导出专有的只读列:导入时不认它,回到控制面的数据才算数。
 var userCSVHeader = []string{
 	csvColumnUsername, csvColumnLimit, csvColumnExpire,
 	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
+	csvColumnLastActive,
 }
 
 var userExportCmd = &cobra.Command{
@@ -44,7 +48,8 @@ var userExportCmd = &cobra.Command{
   mpx user export > users.csv && mpx user import -f users.csv
 
 导出的内容可以直接用 user import 导回来:两边对空值与"不限/不过期/全部"的
-写法是同一套。导出不看 -o,它本身就是一种输出格式。`,
+写法是同一套。最后一列"最后在线（UTC+8）"只读:按 UTC+8 写这个用户最后一次
+有流量的时间,从没连过的人留空;导入时这一列被忽略。导出不看 -o,它本身就是一种输出格式。`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := newClient()
@@ -107,6 +112,7 @@ func writeUsersCSV(w io.Writer, users []userRow) error {
 			joinIDs(u.InboundIDs),
 			u.PlanName,
 			u.Note,
+			lastActiveText(u.Presence),
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -114,6 +120,15 @@ func writeUsersCSV(w io.Writer, users []userRow) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// lastActiveText 写「最后在线（UTC+8）」列:固定按 UTC+8 写,和操作机时区无关 ——
+// 同一份导出在哪台机器上读到的时刻都一样。从没连过的人留空。
+func lastActiveText(p *userPresence) string {
+	if p == nil || p.LastActiveAt == nil {
+		return ""
+	}
+	return p.LastActiveAt.UTC().Add(8 * time.Hour).Format("2006-01-02 15:04:05")
 }
 
 // enabledText 写 CSV 的"可用性"列。
