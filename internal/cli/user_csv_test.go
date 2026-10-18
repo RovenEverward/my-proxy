@@ -676,9 +676,9 @@ func TestImportBadRowsColumnMismatch(t *testing.T) {
 	// 表头 8 列;第 3 行(数据第 2 行)只给了 4 列。
 	csvText := strings.Join([]string{
 		strings.Join(userCSVImportHeader, ","),
-		"alice,1GB,2027-01-01,启用,none,全部,,备注一,",
+		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
 		"bob,2GB,2027-02-01,启用",
-		"carol,3GB,2027-03-01,停用,none,全部,,备注三,",
+		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
 	}, "\n") + "\n"
 
 	rep, err := importUsersCSV(c, strings.NewReader(csvText))
