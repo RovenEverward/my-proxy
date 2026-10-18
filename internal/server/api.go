@@ -434,6 +434,11 @@ func (s *Server) handleNodeOnline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	online, err := s.nodeOps.OnlineIPs(r.Context(), *n)
+	if errors.Is(err, node.ErrOnlineStatsOff) {
+		// 读不到 ≠ 没人在线:配置没开在线统计时明说,前端据此提示应用配置。
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err != nil {
 		s.logger.Error("读节点在线名单失败", "node", n.Name, "error", err)
 		writeError(w, http.StatusBadGateway, err.Error())

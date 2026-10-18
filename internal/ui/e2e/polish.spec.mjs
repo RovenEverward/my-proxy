@@ -164,3 +164,153 @@ test("N11 订阅地址占位文字带「例如」，用浅灰", async ({ page })
   const hex = c[1].replace("#", ""); const rgb = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
   expect(c[0].match(/\d+/g).slice(0, 3).map(Number)).toEqual(rgb);
 });
+
+// 实际画中文用的字体(Chromium 报的 platform fonts):随程序带的 Noto Sans SC,是网页字体不是系统字体。
+async function usedFonts(page, selector) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("DOM.enable"); await cdp.send("CSS.enable");
+  const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+  const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+  await cdp.detach();
+  return fonts;
+}
+const cjkByNoto = fonts => fonts.some(f => /Noto Sans SC/.test(f.familyName) && f.isCustomFont) && !fonts.some(f => /YaHei|雅黑/i.test(f.familyName));
+
+test("M4 中文用随程序带的 Noto Sans SC(本地加载);页面、弹窗、抽屉、深色都一样", async ({ page }) => {
+  const external = [];
+  page.on("request", r => { if (!r.url().startsWith(env.origin) && /font|woff/i.test(r.url())) external.push(r.url()); });
+  await go(page, "nodes");
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(() => [...document.fonts].some(f => f.family.replace(/"/g, "") === "Noto Sans SC" && f.status === "loaded"))).toBe(true);
+  expect(cjkByNoto(await usedFonts(page, ".ph h1"))).toBe(true);
+  // 等宽栈里的中文也回退到 Noto Sans SC。
+  await page.evaluate(() => { const c = document.createElement("code"); c.id = "cjk-mono"; c.textContent = "订阅 sub"; document.querySelector(".ph").append(c); });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); // 等排版完再问用了哪个字体
+  expect(cjkByNoto(await usedFonts(page, "#cjk-mono"))).toBe(true);
+  await page.goto(env.origin + "/#nodes/1"); await settle(page);
+  await page.click("[data-act=node-rm]");
+  await expect(page.locator("#modal.open")).toBeVisible();
+  expect(cjkByNoto(await usedFonts(page, "#modal.open .mbody p"))).toBe(true);
+  await page.click("[data-act=modal-cancel]");
+  await page.goto(env.origin + "/#sub"); await settle(page);
+  await page.click("[data-act=s5-rules]");
+  await expect(page.locator("#drawer.open")).toBeVisible();
+  expect(cjkByNoto(await usedFonts(page, "#drawer.open .rd-test label"))).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { if (document.documentElement.dataset.theme !== "dark") document.querySelector("[data-act=theme]").click(); });
+  await expect(page.locator("html[data-theme=dark]")).toHaveCount(1);
+  expect(cjkByNoto(await usedFonts(page, ".ph h1"))).toBe(true);
+  expect(external).toEqual([]);
+});
+
+// Windows 桌面窗口:右上角 138×52 是最小化/最大化/关闭。浏览器里用 mygo 注入的同名 CSS 变量模拟。
+async function winFrame(page) {
+  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); st.setProperty("--mygo-titlebar-inset-right", "138px"); dispatchEvent(new Event("resize")); });
+  await expect(page.locator("html.tb-right")).toHaveCount(1);
+}
+async function clearOfCaption(page, sel) {
+  const box = page.locator(sel).first();
+  await expect(box).toBeVisible(); await page.waitForTimeout(350); // 等滑入/淡入动画结束
+  const r = await box.boundingBox(), vw = page.viewportSize().width;
+  const hitsCaption = r.y < 52 && r.x + r.width > vw - 138;
+  expect(hitsCaption, `${sel} 压到了窗口按钮:${JSON.stringify(r)}`).toBe(false);
+}
+
+test("W1 Windows 窗口里抽屉和弹窗都不压右上角的窗口按钮", async ({ page }) => {
+  await go(page, "nodes/1"); await winFrame(page);
+  for (const act of ["node-online", "conn-new"]) {
+    await page.click(`[data-act=${act}]`);
+    await clearOfCaption(page, "#drawer.open");
+    await page.keyboard.press("Escape"); await expect(page.locator("#drawer.open")).toHaveCount(0);
+  }
+  for (const act of ["node-rm", "node-install", "node-diagnose"]) {
+    await page.click(`[data-act=${act}]`);
+    await clearOfCaption(page, "#modal.open");
+    await page.click("[data-act=modal-cancel]"); await expect(page.locator("#modal.open")).toHaveCount(0);
+  }
+  await page.goto(env.origin + "/#sub"); await settle(page); await winFrame(page);
+  await page.click("[data-act=s5-rules]");
+  await clearOfCaption(page, "#drawer.open");
+  // 所有抽屉/弹窗容器共用 .drawer / .modal,规则对它们全部生效。
+  const tops = await page.evaluate(() => [...document.querySelectorAll(".drawer,.modal")].map(e => e.classList.contains("drawer") ? parseFloat(getComputedStyle(e).top) : -1));
+  for (const t of tops) if (t >= 0) expect(t).toBeGreaterThanOrEqual(52);
+});
+
+test("O1 在线名单读不到时说读不到，不说「没有在线用户」", async ({ page }) => {
+  await go(page, "nodes/1");
+  await page.click("[data-act=node-online]");
+  await expect(page.locator("#drawer.open")).toContainText("读不到在线名单");
+  await expect(page.locator("#drawer.open")).not.toContainText("没有在线用户");
+});
+
+test("O2 节点配置没开在线统计(409)时提示应用配置", async ({ page }) => {
+  await page.route("**/api/nodes/1/online", r => r.fulfill({ status: 409, json: { error: "这台节点的配置还没打开在线统计，读不到在线用户；把配置应用到节点一次就能读到" } }));
+  await go(page, "nodes/1");
+  await page.click("[data-act=node-online]");
+  await expect(page.locator("#drawer.open")).toContainText("还没打开在线统计");
+  await expect(page.locator("#drawer.open [data-act=node-sync]")).toBeVisible();
+});
+
+// 控制面写进体检报告的每种结论句式各一条(TestSummaryCorpusCoversCheckup 对照 internal/control/checkup.go)。
+const SUMMARY_CORPUS = [
+  "读取配置漂移基准失败: sql: no rows",
+  "融合怪 v0.2.12: canceled",
+  "融合怪测评未完成: official fusion report status: cancelled",
+  "节点地址在体检期间变化: 健康检查地址 203.0.113.10，网络检测地址 203.0.113.11",
+  "网络检测未完成: context deadline exceeded",
+  "测评未运行: context canceled",
+  "体检中断，已保存完成部分: context canceled",
+  "融合怪缺少可用测速结果；独立速度补测与融合怪报告分别保存",
+  "独立速度补测未运行: 融合怪原有时间预算已耗尽",
+  "独立速度补测未完成: dial tcp: i/o timeout",
+  "独立速度补测已完成；融合怪原始状态与错误保持不变",
+  "sing-box 配置漂移检查: unknown",
+  "节点代理服务未运行",
+  "节点实测配置哈希与最后下发的配置不一致",
+  "节点没有已下发配置哈希，无法判断配置漂移",
+  "节点配置哈希未读到，无法判断配置漂移",
+  "xray 服务未运行",
+  "sing-box 检查失败: exit status 1",
+  "入站 1 证书检查失败: x509: certificate has expired",
+  "入站 1 证书剩余 12 天",
+  "网络检测工具不可用: mtr",
+  "Cloudflare DNS failed: no such host",
+  "Cloudflare 路由 skipped: mtr missing",
+  "speedtest.example.com download 测速 failed: timeout",
+  "ipv6 IP 检测 skipped: no ipv6",
+  "读取入站失败: database is locked",
+  "节点没有配置入站，未进行入口探测",
+  "入站 1/入口 8 检测失败: dial tcp 203.0.113.10:443: connect: connection refused",
+  "入站 1/入口 8 netflix 本次实测 unknown: parser_error: netflix_title_evidence",
+  "报告超过 256 KiB，部分长文本、证书和入口详情已省略",
+];
+const RAW_TERMS = ["入站", "入口", "巡检", "下发", "排水", "核心", "比对", "融合怪", "哈希", "漂移", "Fusion", "fusion"];
+
+test("D1 体检结论翻成人话:没有内部叫法和英文原话，原话收在「详情」里", async ({ page }) => {
+  await page.route("**/api/nodes/1/diagnostics?from=node", r => r.fulfill({ json: { id: 1, node_id: 1, created_at: "2026-10-11T01:56:00Z", report: { summary: SUMMARY_CORPUS } } }));
+  await go(page, "nodes/1");
+  const items = await page.locator("ul.summary:not(.mono) li").allTextContents();
+  expect(items.length).toBeGreaterThan(15);
+  const allowed = /^(Netflix|YouTube|ChatGPT|Disney|xray|sing|box|ping|IPv4|IPv6|Cloudflare|speedtest|example|com)$/;
+  for (const t of items) {
+    for (const w of RAW_TERMS) expect(t, `「${t}」含内部叫法 ${w}`).not.toContain(w);
+    for (const w of t.replace(/「[^」]*」/g, "").match(/[A-Za-z_][A-Za-z0-9_]{2,}/g) || []) expect(w, `「${t}」含英文原话`).toMatch(allowed);
+  }
+  expect(items).toContain("完整测评被中断，没有跑完");
+  expect(items.some(t => /^通过「.+」访问 Netflix：没测出结果$/.test(t))).toBe(true);
+  const raw = page.locator("details.sum-raw");
+  await expect(raw.locator("ul")).toBeHidden();
+  await raw.locator("summary").click();
+  await expect(raw).toContainText("parser_error: netflix_title_evidence");
+});
+
+test("C1 安装和体检的确认文案:全角括号，没有内部叫法，不再说「期间别关这个页面」", async ({ page }) => {
+  await go(page, "nodes/1");
+  for (const act of ["node-install", "node-diagnose"]) {
+    await page.click(`[data-act=${act}]`);
+    const p = (await page.locator("#modal.open .mbody p").first().innerText());
+    expect(p).not.toMatch(/期间别关这个页面|Fusion|测速开|硬件测试关|SSH|[()]/);
+    await page.click("[data-act=modal-cancel]"); await expect(page.locator("#modal.open")).toHaveCount(0);
+  }
+});

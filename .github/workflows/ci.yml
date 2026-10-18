@@ -84,3 +84,33 @@ jobs:
           path: |
             app-*.png
             app-*.log
+
+  # 安装器不能弄坏用户 PATH:用和发版同样的 NSIS(默认 1024 字符缓冲)打出 setup.exe,
+  # 在 9000+ 字、带 %VAR% 和空条目的 REG_EXPAND_SZ PATH 上跑 setup.exe /S、卸载、
+  # install-cli.ps1 -From,每一步都要求 PATH 原文和类型逐字不变(只多 / 少我们那一项)。
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 编译 mpx.exe
+        shell: bash
+        run: CGO_ENABLED=0 go build -trimpath -o mpx.exe ./cmd/mpx
+
+      - name: 打 setup.exe
+        shell: pwsh
+        run: |
+          $mk = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+          if (-not $mk) { $mk = 'C:\Program Files (x86)\NSIS\makensis.exe' }
+          if (-not (Test-Path $mk)) { choco install nsis -y --no-progress | Out-Null }
+          & $mk -VERSION
+          & $mk -INPUTCHARSET UTF8 -DVERSION=0.0.0 "-DSRCEXE=$PWD\mpx.exe" "-DOUTFILE=$PWD\mpx-test-setup.exe" deploy\windows\mpx.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis 失败" }
+
+      - name: 长 PATH 不被改坏
+        shell: pwsh
+        run: .\deploy\windows\path-check.ps1 -Setup "$PWD\mpx-test-setup.exe" -Exe "$PWD\mpx.exe"

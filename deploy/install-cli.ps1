@@ -186,14 +186,43 @@ try {
 	Write-Host "装好了:$Dest"
 
 	# ---- 把安装目录加进用户 PATH --------------------------------------------
-	$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-	if (-not $userPath) { $userPath = '' }
-	$parts = $userPath -split ';' | Where-Object { $_ }
-	if ($parts -notcontains $Prefix) {
-		$joined = (@($parts) + $Prefix) -join ';'
-		[Environment]::SetEnvironmentVariable('Path', $joined, 'User')
-		Write-Host ''
-		Write-Host "已把 $Prefix 加进你的 PATH。重开一个终端,新的 PATH 才生效。"
+	# 直接读写 HKCU\Environment\Path:[Environment]::Get/SetEnvironmentVariable 会把
+	# %VAR% 展开、把 REG_EXPAND_SZ 写成 REG_SZ,还会丢掉空条目。这里按原文读(不展开)、
+	# 按原类型写回,只在末尾追加一项;写前备份到 %LOCALAPPDATA%\mpx\path-backup;
+	# 读不出来就不写,提示手动加。
+	$pathDone = $false
+	try {
+		$envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+		$names = @($envKey.GetValueNames())
+		if ($names -contains 'Path') {
+			$userPath = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+			$kind = $envKey.GetValueKind('Path')
+		} else {
+			$userPath = ''
+			$kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+		}
+		if ($kind -ne [Microsoft.Win32.RegistryValueKind]::String -and $kind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { throw "用户 PATH 的类型是 $kind" }
+		$norm = { param($p) $p.Trim().Trim('"').TrimEnd('\', '/') }
+		$want = & $norm $Prefix
+		$has = @($userPath -split ';' | Where-Object { $_ -and ((& $norm $_) -ieq $want) }).Count -gt 0
+		if (-not $has) {
+			$bdir = Join-Path $env:LOCALAPPDATA 'mpx\path-backup'
+			New-Item -ItemType Directory -Path $bdir -Force | Out-Null
+			[IO.File]::WriteAllText((Join-Path $bdir ('path-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')), $userPath)
+			$joined = if ($userPath -eq '') { $Prefix } elseif ($userPath.EndsWith(';')) { $userPath + $Prefix } else { $userPath + ';' + $Prefix }
+			$envKey.SetValue('Path', $joined, $kind)
+			$check = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+			if ($check -ne $joined) { $envKey.SetValue('Path', $userPath, $kind); throw '写完读回来的 PATH 不对,已恢复原值' }
+			# 广播 WM_SETTINGCHANGE:设一个临时用户变量再删掉,.NET 会替我们广播。
+			[Environment]::SetEnvironmentVariable('MPX_PATH_REFRESH', '1', 'User')
+			[Environment]::SetEnvironmentVariable('MPX_PATH_REFRESH', $null, 'User')
+			Write-Host ''
+			Write-Host "已把 $Prefix 加进你的 PATH(原值备份在 $bdir)。重开一个终端,新的 PATH 才生效。"
+		}
+		$envKey.Close()
+		$pathDone = $true
+	} catch {
+		Write-Warning "没能把 $Prefix 加进用户 PATH,你的 PATH 没有被改动:$($_.Exception.Message)。请手动把它加进用户环境变量 Path。"
 	}
 
 	Write-Host @'

@@ -53,6 +53,10 @@ type serverPolicy struct {
 type serverLevel struct {
 	StatsUserUplink   bool `json:"statsUserUplink"`
 	StatsUserDownlink bool `json:"statsUserDownlink"`
+	// StatsUserOnline 让 xray 记每个用户此刻的在线 IP(statsgetallonlineusers /
+	// statsonlineiplist 读的就是这张表)。不开的话这两个 API 永远返回空,
+	// 「在线用户」会错报成没人在线。
+	StatsUserOnline bool `json:"statsUserOnline"`
 }
 
 type serverPolicySystem struct {
@@ -269,7 +273,7 @@ func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User,
 		API:   serverAPI{Tag: "api", Services: []string{"HandlerService", "StatsService"}},
 		Stats: struct{}{},
 		Policy: serverPolicy{
-			Levels: map[string]serverLevel{"0": {StatsUserUplink: true, StatsUserDownlink: true}},
+			Levels: map[string]serverLevel{"0": {StatsUserUplink: true, StatsUserDownlink: true, StatsUserOnline: true}},
 			System: serverPolicySystem{StatsInboundUplink: true, StatsInboundDownlink: true},
 		},
 		// 第一个入站固定是 API:dokodemo-door 把请求转给 xray 自身,控制面经 SSH

@@ -518,7 +518,7 @@ func TestServerConfig_Skeleton(t *testing.T) {
 	}, "api")
 	scDigEqual(t, cfg, map[string]any{}, "stats")
 	scDigEqual(t, cfg, map[string]any{
-		"0": map[string]any{"statsUserUplink": true, "statsUserDownlink": true},
+		"0": map[string]any{"statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true},
 	}, "policy", "levels")
 	scDigEqual(t, cfg, map[string]any{
 		"statsInboundUplink": true, "statsInboundDownlink": true,
@@ -608,5 +608,16 @@ func TestServerConfig_UnsupportedInput(t *testing.T) {
 				t.Errorf("报错时不应返回配置: %s", raw)
 			}
 		})
+	}
+}
+
+// 节点配置要开在线统计,「在线用户」才读得到(否则 xray 的在线 API 永远是空)。
+func TestServerConfigEnablesUserOnlineStats(t *testing.T) {
+	cfg, err := ServerConfig(model.Node{Name: "la", Address: "203.0.113.10"}, nil, nil, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(cfg), `"statsUserOnline": true`) {
+		t.Fatalf("policy 没开 statsUserOnline:\n%s", cfg)
 	}
 }

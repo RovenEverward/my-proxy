@@ -102,6 +102,57 @@ function driftCell(n) {
   return n.status.observed_hash === n.deployed_hash ? stBadge("ok", "已是最新") : stBadge("warn", "有改动未应用");
 }
 
+// 体检结论是控制面写进报告的原话(存在库里,旧报告也照原样回来),里面有内部叫法和英文状态。
+// 这里逐条翻成人话;原话收进「详情」,排查时还看得到。新加的结论句式要在 polish.spec 的
+// SUMMARY_CORPUS 里补一条样例(TestSummaryCorpusCoversCheckup 会对照 checkup.go 检查)。
+const SUM_TARGET = { netflix: "Netflix", youtube: "YouTube", chatgpt: "ChatGPT", openai: "ChatGPT", disney: "Disney+", "disney+": "Disney+" };
+const SUM_STATUS = { unknown: "没测出结果", unavailable: "不能用", failed: "没通过", partial: "只通过了一部分", skipped: "跳过了", canceled: "被中断了", cancelled: "被中断了", timeout: "超时了" };
+const SUM_NET = new Map([["DNS", "域名解析"], ["ICMP", "ping"], ["HTTP", "网页请求"], ["路由", "路由追踪"]]);
+const sumStatus = st => SUM_STATUS[st] || "没通过";
+function plainSummary(lines, d) {
+  const conn = id => { const i = (d.inbounds || []).find(x => x.id === +id); return i ? `「${inbTitle(i, d.node)}」` : "一个连接方式"; };
+  const rules = [
+    [/^融合怪 \S+: (ok|success|done|completed|finished)$/i, () => ""],
+    [/^融合怪 \S+: (canceled|cancelled)$/i, () => "完整测评被中断，没有跑完"],
+    [/^融合怪 \S+: /, () => "完整测评没有跑完"],
+    [/^融合怪测评未完成/, () => "完整测评没有跑完"],
+    [/^融合怪缺少可用测速结果/, () => "完整测评没测出网速，另外补测了一次"],
+    [/^独立速度补测已完成/, () => "补测网速已完成"],
+    [/^独立速度补测未运行/, () => "时间用完了，没有补测网速"],
+    [/^独立速度补测未完成/, () => "补测网速没有完成"],
+    [/^入站 (\d+)\/入口 \d+ (\S+) 本次实测 (\S+):/, (m) => `通过${conn(m[1])}访问 ${SUM_TARGET[m[2].toLowerCase()] || m[2]}：${sumStatus(m[3])}`],
+    [/^入站 (\d+)\/入口 \d+ 检测失败/, (m) => `${conn(m[1])}的连通检测没通过`],
+    [/^入站 (\d+) 证书检查失败/, (m) => `${conn(m[1])}的证书检查没通过`],
+    [/^入站 (\d+) 证书剩余 (-?\d+) 天/, (m) => +m[2] > 0 ? `${conn(m[1])}的证书还剩 ${m[2]} 天` : `${conn(m[1])}的证书已过期`],
+    [/^节点代理服务未运行/, () => "节点上的代理程序没在运行"],
+    [/^节点实测配置哈希与最后下发的配置不一致/, () => "节点上的配置和控制面不一致"],
+    [/^节点没有已下发配置哈希/, () => "还没把配置应用到节点，没法判断配置是否一致"],
+    [/^(节点配置哈希未读到|读取配置漂移基准失败)/, () => "没读到节点上的配置，没法判断配置是否一致"],
+    [/^(xray|sing-box) 服务未运行/, (m) => `${m[1]} 没在运行`],
+    [/^(xray|sing-box) 检查失败/, (m) => `${m[1]} 检查没通过`],
+    [/^sing-box 配置漂移检查/, () => "sing-box 的配置没法确认是否一致"],
+    [/^节点地址在体检期间变化/, () => "体检期间节点地址变了，结果可能不准"],
+    [/^网络检测未完成/, () => "网络检测没有跑完"],
+    [/^测评未运行/, () => "这次没有跑测评"],
+    [/^体检中断/, () => "体检中途被打断，已保存做完的部分"],
+    [/^网络检测工具不可用: (.+)$/, (m) => `节点上缺少检测工具「${m[1]}」`],
+    [/^(\S+) (\S+) 测速 (\S+):/, (m) => `测网速（${m[1]}）${sumStatus(m[3])}`],
+    [/^(IPv4|IPv6|ipv4|ipv6) IP 检测 (\S+):/, (m) => `${m[1].toUpperCase().replace("IPV", "IPv")} 地址检测${sumStatus(m[2])}`],
+    [/^(.+) (DNS|ICMP|HTTP|路由) (\S+):/, (m) => `访问 ${m[1]} 的${SUM_NET.get(m[2])}${sumStatus(m[3])}`],
+    [/^读取入站失败/, () => "读不到这台节点的连接方式"],
+    [/^节点没有配置入站/, () => "节点还没有连接方式，没做连通检测"],
+    [/^报告超过 256 KiB/, () => "报告太长，部分细节没有保存"],
+  ];
+  const out = [];
+  for (const line of lines) {
+    if (!line) continue;
+    const r = rules.find(([re]) => re.test(line));
+    const t = r ? r[1](line.match(r[0])) : "有一项检查没通过，原话见「详情」";
+    if (t && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
 function nodeDetail(d) {
   if (!d) return H`<div class="ph"><div><h1><span class="sk" style="width:160px"></span></h1><p><span class="sk" style="width:220px"></span></p></div></div><div class="grid g3"><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div></div>`;
   const n = d.node, s = n.status, id = n.id, W = can("POST", "/api/nodes/x");
@@ -141,7 +192,7 @@ function nodeDetail(d) {
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${summary.map(x => H`<li>${x}</li>`)}</ul>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
+      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
     ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
@@ -312,7 +363,7 @@ Object.assign(ACTS, {
     confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
-  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包(有缓存)，经 SSH 送到节点，应用当前配置并启动。慢链路上要几分钟，期间别关这个页面。", ok: "安装",
+  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟；关掉这个页面安装也会继续，回到节点页刷新就能看到结果。", ok: "安装",
     extra: H`<div class="two"><div class="field"><label for="i-core">代理程序</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box(hysteria2 / tuic)</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
@@ -324,10 +375,16 @@ Object.assign(ACTS, {
       await load(true, true);
     } }),
   // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上执行健康、出口能力和 Fusion 完整体检(测速开、硬件测试关)。最长要十几分钟，期间别关这个页面。", ok: "开始体检",
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟，做完前关掉这个页面会中断体检。", ok: "开始体检",
     run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
   "node-online": (d, b) => busy(b, async () => {
-    const r = await api(nodePath(d.id) + "/online");
+    let r;
+    // 读不到就明说读不到,不能落成「没有在线用户」。409 = 节点配置没开在线统计,应用一次配置就好。
+    try { r = await api(nodePath(d.id) + "/online"); } catch (e) {
+      if (!e.status || e.status < 400) throw e;
+      const fix = e.status === 409 && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm mt" data-act="node-sync" data-id="${d.id}" data-label="${d.label || ""}" data-name="${d.name || ""}">把配置应用到节点</button>` : "";
+      return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>${e.message}</p>${fix}</div>`);
+    }
     infoDrawer(`${d.label || r.node} 在线`, H`现场读出的结果`, r.online.length
       ? H`<div class="tw"><table><thead><tr><th>用户</th><th class="num">IP 数</th><th>IP</th></tr></thead><tbody>${r.online.map(e => H`<tr><td><b class="bold">${e.user}</b></td><td class="num">${e.count}</td><td class="mono sub">${(e.ips || []).join(", ")}</td></tr>`)}</tbody></table></div>`
       : emptyBox("users", "没有在线用户", "此刻没有用户连在这台节点上。", ""));
