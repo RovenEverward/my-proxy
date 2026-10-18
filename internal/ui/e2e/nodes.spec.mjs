@@ -173,7 +173,7 @@ function fakeJobs(page, opts) {
   });
   page.route(`**/api/nodes/${FIXED_ID}/jobs*`, route => {
     const u = new URL(route.request().url()), run = st.phase === "running";
-    const jobs = opts.active ?? (run ? [J(opts.kind || "diagnose", { id: 91 })] : []);
+    const jobs = opts.active ?? (run ? [J("running", { id: 91, kind: opts.kind || "diagnose" })] : []);
     return route.fulfill({ json: { jobs: u.searchParams.get("active") ? jobs : (opts.recent || []) } });
   });
   // 起任务:POST /api/nodes/{id}/(diagnostics|install)/jobs。路径段和用例里的 kind 对不上
@@ -182,7 +182,8 @@ function fakeJobs(page, opts) {
   const seg = { diagnose: "diagnostics", install: "install" }[opts.kind || "diagnose"];
   page.route(`**/api/nodes/${FIXED_ID}/${seg}/jobs*`, route => {
     st.posts++; st.phase = "running";
-    return route.fulfill({ status: opts.reused ? 200 : 202, json: opts.reused ? { reused: true, job: J(opts.kind || "diagnose") } : { job: J(opts.kind || "diagnose") } });
+    const job = J("running", { id: 91, kind: opts.kind || "diagnose" });
+    return route.fulfill({ status: opts.reused ? 200 : 202, json: opts.reused ? { reused: true, job } : { job } });
   });
   // GET /api/jobs/{id}:轮询只管做完没有;用例把 phase 改成 done 之后,这边就按结束报(opts.end)。
   page.route("**/api/jobs/91", route => route.fulfill({ json: J(st.phase === "running" ? "running" : (opts.end || "done"), { id: 91, kind: opts.kind || "diagnose", node_id: FIXED_ID }) }));
@@ -265,7 +266,11 @@ test("体检:上次没做完(控制面重启)时给灰字提示,再点就行", a
   const recent = J("interrupted", { finished_at: new Date(Date.now() - 60_000).toISOString(), error: "控制面重启了，这次没做完" });
   fakeJobs(page, { kind: "diagnose", active: [], recent: [recent] });
   // 进节点的第一次读先记下「还没有在跑的」,紧接着的那次读才问最近一次做完没有。
+  // 第二次读要在同一个页面里再读一遍:去列表再回详情,节点 id 没变,jobAsked 记着,
+  // 第二次读就会去问 /jobs?limit=1(goto 同一个地址不会重新加载页面,也不发 hashchange)。
   await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await page.goto(env.origin + "/#nodes");
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
@@ -299,13 +304,14 @@ test("体检/安装:确认文案说可以关掉页面,做完会显示结果", as
   await page.click("[data-act=modal-cancel]");
 });
 
-// 安装、体检:页面发 .../jobs,请求体和参数与 CLI 的同步接口逐字相同(只多 /jobs 这一段);
-// 失败(400/409,带 ui_hint)和同步接口一样留在确认框里,显示控制面的原话。
+// 安装、体检:页面发 .../jobs,请求体和参数与 CLI 的同步接口逐字相同(只多 /jobs 这一段)。
+// 走后台上任务时控制面回 202(任务已经起了),节点连不上是任务自己在后面失败的,所以确认框
+// 照常关掉、先提示「已开始在 …」,失败的原话随后由盯任务的那一步用「没做成：」的提示报出来。
 for (const [title, args, act, fill] of [
   ["安装(指定 sing-box 与版本)", ["node", "install", "--core", "sing-box", "--version", "1.12.0"], "node-install", async page => { await page.selectOption("#i-core", "sing-box"); await page.fill("#i-ver", "1.12.0"); await expect(page.locator("#modal")).not.toContainText("mpx "); }],
   ["体检(默认参数)", ["node", "diagnose"], "node-diagnose", null],
 ]) {
-  test(`${title}:与 CLI 的同步请求一致,失败时显示控制面原话`, async ({ page }) => {
+  test(`${title}:与 CLI 的同步请求一致,失败由任务提示报出控制面原话`, async ({ page }) => {
     await login(page, env);
     const opt = { ids: ["1", "2"] };
     env.takeLog();
@@ -317,17 +323,26 @@ for (const [title, args, act, fill] of [
     await page.click(`[data-act=${act}]`);
     if (fill) await fill(page);
     await page.click("#okb");
-    const err = page.locator("#modal-err");
-    await expect(err).not.toBeEmpty({ timeout: 60_000 });
+    // 202:任务起了,确认框立刻关掉,先提示已开始;被受理的那件任务从回答里拿 id。
+    await expect(page.locator("#modal.open")).toHaveCount(0);
+    await expect(page.locator(".toast")).toContainText("已开始在");
     const res = env.lastResponse();
+    expect(res.status).toBe(202);
+    const jobID = JSON.parse(res.body)?.job?.id;
+    expect(jobID).toBeGreaterThan(0);
     const mine = take([], opt);
     expect(mine.length).toBe(1);
     expect(mine[0].path).toContain("/jobs");
     expect(mine.map(r => ({ ...r, path: syncOf(r.path) }))).toEqual(fromCLI);
-    // 原话:页面显示的就是控制面这次响应里的 error;控制面给了界面说法就用界面说法。
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = JSON.parse(res.body);
-    await expect(err).toHaveText(body.ui_hint || body.error);
+    // 任务在连不上的节点上失败:盯任务的那一步用「没做成：」加控制面的原话提示出来,提示就是
+    // 控制面这次任务收尾时的 error;控制面给了界面说法就用界面说法。
+    const failed = page.locator(".toast").filter({ hasText: "没做成：" });
+    await expect(failed).toBeVisible({ timeout: 60_000 });
+    // 控制面把同步接口的错误存进任务,没有错误说明的任务(比如只是超时)提示里只有「没做成」。
+    const done = await cpFetch(env.cpURL + "/api/jobs/" + jobID, { headers: { Authorization: "Bearer " + env.token } }).then(r => r.json());
+    expect(done.status).toBe("failed");
+    expect(done.error).not.toBe("");
+    await expect(failed).toContainText(done.ui_hint || done.error);
   });
 }
 

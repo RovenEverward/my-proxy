@@ -191,7 +191,8 @@ test("N12 Windows 标题栏模式下内容已让出顶栏，分流卡片头吸�
   await page.setViewportSize({ width: 1440, height: 560 });
   await go(page, "rules");
   // 浏览器里没有 mygo 注入的标题栏:CSP 不让 addStyleTag,这里直接加 tb-right 类、设窗口高度变量(同 winFrame)。
-  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
+  // 两个变量都要设:页面每次 resize 都按 --mygo-titlebar-inset-right 重新加/摘 tb-right,只加类会被摘掉。
+  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); st.setProperty("--mygo-titlebar-inset-right", "138px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
   await page.locator("main").evaluate(m => { m.scrollTop = 600; });
   // 顶栏在 tb-right 下挪到标题栏里、不在 main 的滚动区里;卡片头贴 main 的顶,而且滚到底也贴得住(不是只露出了 8px 边距)。
   await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
