@@ -201,6 +201,11 @@ func (t *Task) Tick(ctx context.Context) {
 			t.recordFailure(n, started)
 			failed[n.ID] = true
 			skip[n.ID] = !mixed[n.ID]
+			continue
+		}
+		// 采样时间只记在真采到的那一刻:失败或跳过的那几轮不该刷新它。
+		if err := t.store.MarkNodeSampled(n.ID, started); err != nil {
+			t.logger.Warn("记录采样时间失败", "node", n.Name, "error", err)
 		}
 	}
 
@@ -229,6 +234,14 @@ func (t *Task) Tick(ctx context.Context) {
 	// 一次、天生比周期慢 —— 把它算进去,心跳会在每个第 10 轮跳一次、报出一个
 	// 并不存在的"落后",而真正需要警惕的(采样+收敛本身变慢)反而被掩盖。
 	t.finishTick(started)
+	// 在线名单不算进「一轮多久」:和巡检一样排在 finishTick 之后。
+	for _, n := range nodes {
+		if skip[n.ID] || failed[n.ID] {
+			t.control.ForgetOnline(n.ID)
+			continue
+		}
+		t.control.refreshOnline(ctx, n, t.now())
+	}
 	t.notifyUsers(ctx, t.now())
 	t.checkUpdates(ctx)
 	t.sweepNodeStatus(ctx, nodes, t.now())

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -38,6 +39,12 @@ const (
 	// 实测约 40 秒,慢链路按 100KB/s 算约 11 分钟。它和 CLI 侧的
 	// installTimeout(15 分钟)对齐:HTTP 请求还在等的时候,不该先在节点这一层断掉。
 	installBudget = 15 * time.Minute
+	// onlineBudget 是后台刷新一台节点在线名单的上限:一次 SSH 里发两条命令,
+	// 按每个在线用户分块取 IP 的那条随人数变长,15 秒是个宽松的上限。
+	onlineBudget = 15 * time.Second
+	// onlineRefreshEvery 是同一台节点两次刷新在线名单的最短间隔:名单变化很快,
+	// 但没必要每轮(30 秒)都去问 —— 一分钟一次已经够看。
+	onlineRefreshEvery = 60 * time.Second
 )
 
 // Control 持有跨节点动作需要的依赖。
@@ -51,6 +58,10 @@ type Control struct {
 	// Internal overrides keep deadline-exhaustion regression tests fast.
 	sampleTimeout    time.Duration
 	reconcileTimeout time.Duration
+
+	// onlineMu 保护下面的在线名单快照。它只放内存:名单过期得太快,不落库。
+	onlineMu sync.Mutex
+	online   map[int64]model.OnlineSnapshot
 }
 
 // New 接起这一层。
@@ -133,6 +144,72 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 		return nil, fmt.Errorf("sing-box 不提供单用户在线 IP API; 含 QUIC 的节点无法返回完整在线名单")
 	}
 	return node.OnlineIPs(ctx, c.runner, n)
+}
+
+// refreshOnline 刷新一台节点的在线名单快照,给后台循环和接口读。
+//
+// 同一台节点一分钟内只问一次:node.OnlineIPs 已经把该节点所有人的 IP 查询合进
+// 一次 SSH 会话,再多问只会给节点添负担 —— 这与节点上有几个人无关,一台节点
+// 每分钟最多一次。
+//
+// 读不到就删掉这台节点的快照,而不是留着旧名单:旧名单看着新鲜,却可能在说一个
+// 已经下线的人还连着 —— 没有比有一份过期的名单更坏。两种情况不记日志:
+// 配置没开在线统计(node.ErrOnlineStatsOff)和含 sing-box 的节点(天生读不全),
+// 它们每轮都会失败,记下来只是噪音。
+func (c *Control) refreshOnline(ctx context.Context, n model.Node, now time.Time) {
+	c.onlineMu.Lock()
+	prev, ok := c.online[n.ID]
+	c.onlineMu.Unlock()
+	if ok && now.Sub(prev.At) < onlineRefreshEvery {
+		return
+	}
+
+	octx, cancel := context.WithTimeout(ctx, onlineBudget)
+	defer cancel()
+	users, err := c.OnlineIPs(octx, n)
+	if err != nil {
+		c.ForgetOnline(n.ID)
+		if !errors.Is(err, node.ErrOnlineStatsOff) && !strings.Contains(err.Error(), "sing-box") {
+			c.logger.Debug("刷新在线名单失败", "node", n.Name, "error", err)
+		}
+		return
+	}
+
+	if users == nil {
+		users = map[string][]string{}
+	}
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	if c.online == nil {
+		c.online = map[int64]model.OnlineSnapshot{}
+	}
+	c.online[n.ID] = model.OnlineSnapshot{NodeID: n.ID, At: now, Users: users}
+}
+
+// OnlineSnapshots 返回所有节点在线名单的深拷贝。
+//
+// 返回拷贝是因为调用方(接口、测试)可能会改它:共享同一份 map 的话,一次改写就
+// 会悄悄改掉后台看到的状态,还会和 refreshOnline 抢同一张 map。
+func (c *Control) OnlineSnapshots() map[int64]model.OnlineSnapshot {
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	out := make(map[int64]model.OnlineSnapshot, len(c.online))
+	for id, snap := range c.online {
+		users := make(map[string][]string, len(snap.Users))
+		for name, ips := range snap.Users {
+			users[name] = append([]string(nil), ips...)
+		}
+		snap.Users = users
+		out[id] = snap
+	}
+	return out
+}
+
+// ForgetOnline 删掉一台节点的在线名单快照:节点被跳过、采样失败或已删除时用。
+func (c *Control) ForgetOnline(nodeID int64) {
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	delete(c.online, nodeID)
 }
 
 // SampleTraffic 采一次该节点上的用户流量,算出相对上次采样的增量并累加进数据库。
