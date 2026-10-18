@@ -126,6 +126,59 @@ func TestRefreshOnlineStoresSnapshotThenRateLimits(t *testing.T) {
 	}
 }
 
+// 读失败也算一次尝试:一分钟内不该因为删掉了快照就再去问,过了点才再问。
+//
+// 配置没开在线统计的节点每问必败,只按快照限流的话它会被每轮(30 秒)问一遍。
+func TestRefreshOnlineRateLimitsFailedAttempts(t *testing.T) {
+	r := &fakeRunner{replies: []reply{
+		{keyword: "statsquery", out: trafficReply()},
+	}}
+	c, st := newTestControl(t, r)
+	n := addNode(t, st, "hk", "203.0.113.10")
+	addInbound(t, st, n.ID, "vless-ws", 8443)
+
+	now := time.Now()
+
+	// 第一次尝试:发一条采样命令,读失败,不留快照。
+	before := len(r.callList())
+	c.refreshOnline(context.Background(), n, now)
+	if got := len(r.callList()) - before; got != 1 {
+		t.Fatalf("%v 这一次尝试该发一条采样命令,实际 %d 条:%v", time.Duration(0), got, r.callList())
+	}
+	if _, ok := c.OnlineSnapshots()[n.ID]; ok {
+		t.Fatal("读失败不该留下快照")
+	}
+
+	// 失败的那次也算尝试:30 秒后仍在 60 秒限流内,不该再问。
+	before = len(r.callList())
+	c.refreshOnline(context.Background(), n, now.Add(30*time.Second))
+	if got := len(r.callList()) - before; got != 0 {
+		t.Fatalf("30s 离上次尝试还没满 60 秒,不该再问节点,实际 %d 条:%v", got, r.callList())
+	}
+	if _, ok := c.OnlineSnapshots()[n.ID]; ok {
+		t.Fatal("读失败不该留下快照")
+	}
+
+	// 过了 60 秒再问:这次拿到名单,快照照常落下。
+	aliceChunk := `{"name":"user>>>alice>>>online","ips":{"198.51.100.7":1760000000}}`
+	r.replies = onlineReplies(`{"users":["user>>>alice>>>online"]}`, aliceChunk)
+	c.refreshOnline(context.Background(), n, now.Add(61*time.Second))
+	if _, ok := c.OnlineSnapshots()[n.ID]; !ok {
+		t.Fatal("过了 60 秒该再问一次并留下快照")
+	}
+	if got := len(r.callList()); got != 3 {
+		t.Fatalf("总共该问 2 次、成功的那次再加一条取 IP 的命令,共 3 条(+30s 那次不该问),实际 %v", r.callList())
+	}
+
+	// ForgetOnline 不重置限流:刚问过就遗忘,一分钟内仍旧不再问。
+	beforeForget := len(r.callList())
+	c.ForgetOnline(n.ID)
+	c.refreshOnline(context.Background(), n, now.Add(80*time.Second))
+	if got := len(r.callList()); got != beforeForget {
+		t.Fatalf("ForgetOnline 之后再一分钟内不该问,实际 %v", r.callList())
+	}
+}
+
 // 读失败要删掉旧快照,不能让一份过期的名单一直挂着。
 func TestRefreshOnlineForgetsOnError(t *testing.T) {
 	aliceChunk := `{"name":"user>>>alice>>>online","ips":{"198.51.100.7":1760000000}}`

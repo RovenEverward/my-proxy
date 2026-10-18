@@ -245,6 +245,7 @@ func (s *Server) routes() {
 	api.HandleFunc("POST /api/users/{username}/reset-traffic", s.handleResetUserTraffic)
 	api.HandleFunc("POST /api/users/{username}/revoke-sub", s.handleRevokeSub)
 	api.HandleFunc("GET /api/users/{username}/links", s.handleUserLinks)
+	api.HandleFunc("GET /api/users/{username}/activity", s.handleUserActivity)
 
 	api.HandleFunc("GET /api/settings", s.handleGetSettings)
 	api.HandleFunc("PUT /api/settings", s.handleSaveSettings)

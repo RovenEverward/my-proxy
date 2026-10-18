@@ -738,11 +738,15 @@ const (
 //
 // 总数必须有:客户端靠"offset+本页条数 < total"才能说"还有 N 个",只看本页满没满
 // 在整除时会猜错。它是筛选之后的总数,不是本页条数。
+//
+// 每一条比单独读一个用户多一个 presence(见 presence.go);抬头也带一份整体情况。
+// 算不出来时抬头缺席,每条的用户字段照旧 —— 读不到在线情况不该让整个列表失败。
 type userPage struct {
-	Users  []userView `json:"users"`
-	Total  int        `json:"total"`
-	Limit  int        `json:"limit"`
-	Offset int        `json:"offset"`
+	Users    []userListItem   `json:"users"`
+	Total    int              `json:"total"`
+	Limit    int              `json:"limit"`
+	Offset   int              `json:"offset"`
+	Presence *presenceSummary `json:"presence,omitempty"`
 }
 
 // handleListUsers 列出用户,支持筛选与分页。
@@ -818,9 +822,34 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "用户")
 		return
 	}
-	page.Users = userViews(users)
+	var summary *presenceSummary
+	var presence map[string]*userPresence
+	if sum, byUser, err := s.presence(time.Now()); err != nil {
+		s.logger.Warn("读取用户在线情况失败,本次列表不带在线信息", "error", err)
+	} else {
+		summary = &sum
+		presence = byUser
+	}
+	page.Users = userListItems(users, presence)
+	page.Presence = summary
 	page.Total = total
 	writeJSON(w, http.StatusOK, page)
+}
+
+// userListItems 把一页用户拼成列表条目,给每条挂上它的在线情况。
+//
+// 没有活跃记录、也不在线的用户拿到零值,只是 online_nodes 是 [] 而不是 null:
+// 前端会直接遍历它,null 在那边是一处要单独特判的坑。
+func userListItems(users []model.User, presence map[string]*userPresence) []userListItem {
+	out := make([]userListItem, 0, len(users))
+	for _, u := range users {
+		item := userListItem{userView: toUserView(u), Presence: userPresence{OnlineNodes: []int64{}}}
+		if p := presence[u.Username]; p != nil {
+			item.Presence = *p
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 // statusChoices 拼出状态取值的提示。取值列表来自 model,不在这里另抄一份 ——

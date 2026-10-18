@@ -59,9 +59,14 @@ type Control struct {
 	sampleTimeout    time.Duration
 	reconcileTimeout time.Duration
 
-	// onlineMu 保护下面的在线名单快照。它只放内存:名单过期得太快,不落库。
+	// onlineMu 保护下面的在线名单快照与上次尝试时间。它只放内存:名单过期得太快,
+	// 不落库。
 	onlineMu sync.Mutex
 	online   map[int64]model.OnlineSnapshot
+	// onlineTried 记每台节点上次去问在线名单的时刻,不管问没问到。限流按它算,
+	// 而不是按快照的时间:读失败的节点没有快照,只按快照限流的话它会被每轮(30 秒)
+	// 问一遍 —— 配置没开在线统计的节点正是这种每问必败的情况。
+	onlineTried map[int64]time.Time
 }
 
 // New 接起这一层。
@@ -150,7 +155,7 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 //
 // 同一台节点一分钟内只问一次:node.OnlineIPs 已经把该节点所有人的 IP 查询合进
 // 一次 SSH 会话,再多问只会给节点添负担 —— 这与节点上有几个人无关,一台节点
-// 每分钟最多一次。
+// 每分钟最多一次。限流按上次「尝试」算,问失败了也照样算(见 onlineTried)。
 //
 // 读不到就删掉这台节点的快照,而不是留着旧名单:旧名单看着新鲜,却可能在说一个
 // 已经下线的人还连着 —— 没有比有一份过期的名单更坏。两种情况不记日志:
@@ -158,11 +163,17 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 // 它们每轮都会失败,记下来只是噪音。
 func (c *Control) refreshOnline(ctx context.Context, n model.Node, now time.Time) {
 	c.onlineMu.Lock()
-	prev, ok := c.online[n.ID]
-	c.onlineMu.Unlock()
-	if ok && now.Sub(prev.At) < onlineRefreshEvery {
+	tried, ok := c.onlineTried[n.ID]
+	if ok && now.Sub(tried) < onlineRefreshEvery {
+		c.onlineMu.Unlock()
 		return
 	}
+	// 先记下这次尝试,再出门问:失败的尝试也算数,否则失败一次就是每轮都问。
+	if c.onlineTried == nil {
+		c.onlineTried = map[int64]time.Time{}
+	}
+	c.onlineTried[n.ID] = now
+	c.onlineMu.Unlock()
 
 	octx, cancel := context.WithTimeout(ctx, onlineBudget)
 	defer cancel()
@@ -206,6 +217,9 @@ func (c *Control) OnlineSnapshots() map[int64]model.OnlineSnapshot {
 }
 
 // ForgetOnline 删掉一台节点的在线名单快照:节点被跳过、采样失败或已删除时用。
+//
+// 它只删快照,不删上次尝试时间:那次尝试是真的发生过,而且遗忘之后不该立刻
+// 再问一遍 —— 限流跟着尝试走,不跟着快照走(见 onlineTried)。
 func (c *Control) ForgetOnline(nodeID int64) {
 	c.onlineMu.Lock()
 	defer c.onlineMu.Unlock()
