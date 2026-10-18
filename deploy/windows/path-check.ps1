@@ -31,16 +31,27 @@ try {
   $env:MPX_PREFIX = $cli
   # Windows PowerShell 5.1 是用户机器上的默认:两种用法都在 5.1 下跑。
   #   1) -File 直接跑(靠 BOM 认出 UTF-8);
-  #   2) 模拟 README 的 irm | iex:按 UTF-8 解码原始字节(保留 BOM 字符)再执行。
+  #   2) README 的 irm | iex:从本机 HTTP 取脚本再执行(-From 只能这样传,所以用 scriptblock 代替 iex)。
   & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\..\install-cli.ps1" -From $Exe
   if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1(5.1 -File)退出码 $LASTEXITCODE" }
   Expect 'install-cli.ps1(5.1 -File)之后' "$long;$cli"
   $key.SetValue('Path', $long, [Microsoft.Win32.RegistryValueKind]::ExpandString)
-  $wrap = Join-Path $env:TEMP 'mpx-iex-sim.ps1'
-  Set-Content -Path $wrap -Encoding ASCII -Value '$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($args[0])); & ([scriptblock]::Create($t)) -From $args[1]; exit $LASTEXITCODE'
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrap "$PSScriptRoot\..\install-cli.ps1" $Exe
-  if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1(5.1 iex)退出码 $LASTEXITCODE" }
-  Expect 'install-cli.ps1(5.1 iex)之后' "$long;$cli"
+  # 真的走 irm:本机起一个 HTTP 服务按 text/plain; charset=utf-8 发脚本(和 raw.githubusercontent.com 一样)。
+  $port = Get-Random -Minimum 20000 -Maximum 40000
+  $srv = Start-Job -ArgumentList "$PSScriptRoot\..\install-cli.ps1", $port -ScriptBlock {
+    param($file, $port)
+    $l = [Net.HttpListener]::new(); $l.Prefixes.Add("http://127.0.0.1:$port/"); $l.Start()
+    $ctx = $l.GetContext(); $b = [IO.File]::ReadAllBytes($file)
+    $ctx.Response.ContentType = 'text/plain; charset=utf-8'; $ctx.Response.OutputStream.Write($b, 0, $b.Length); $ctx.Response.Close(); $l.Stop()
+  }
+  Start-Sleep -Seconds 2
+  $wrap = Join-Path $env:TEMP 'mpx-irm-iex.ps1'
+  Set-Content -Path $wrap -Encoding ASCII -Value '$t = Invoke-RestMethod -UseBasicParsing $args[0]; & ([scriptblock]::Create($t)) -From $args[1]; exit $LASTEXITCODE'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrap "http://127.0.0.1:$port/install-cli.ps1" $Exe
+  $rc = $LASTEXITCODE
+  Receive-Job $srv -Wait -AutoRemoveJob | Out-Null
+  if ($rc -ne 0) { throw "install-cli.ps1(5.1 irm)退出码 $rc" }
+  Expect 'install-cli.ps1(5.1 irm)之后' "$long;$cli"
 } finally {
   if ($orig -ne $null) { $key.SetValue('Path', $orig, $origKind) } else { $key.DeleteValue('Path', $false) }
 }
