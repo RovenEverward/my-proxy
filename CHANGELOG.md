@@ -6,7 +6,7 @@
 
 ### 要点
 - **修复会清空用户 PATH 的问题（请务必看一眼）。** v0.7.4 到 v0.9.11 的 Windows 命令行安装包（`mpx_*_windows_amd64_setup.exe`、`mpx-cli_*_windows_amd64_setup.exe`）在用户 PATH 较长（约 1000 个字符以上）时，安装会把用户 PATH 换成只剩 `C:\Program Files\mpx`，或把它截短；用那几版装上的卸载程序同样会清空或截短 PATH。桌面版安装包（`MPX-*-setup.exe`）不改 PATH，不受影响。原因是安装包里改 PATH 的那段受打包工具 1024 字符的长度限制，读不全就当成空的写回去了。
-  - **现在：** 安装包把 PATH 交给 `mpx.exe` 处理，没有长度限制；只在末尾加上（卸载时只删掉）安装目录，别的条目、`%USERPROFILE%` 这类写法和值的类型都原样保留；改之前先把原值备份到 `%LOCALAPPDATA%\mpx\path-backup\` 和注册表 `HKCU\Software\mpx\PathBackup`；读不出来或任何一步出错就不改，提示你手动加。`install-cli.ps1` 也改成按原文读写 PATH，不再把 `%变量%` 展开、把类型改掉；它装完试跑新二进制那一步在 Windows 上一直会失败（临时文件不是 .exe 结尾），也一并修好。
+  - **现在：** 安装包把 PATH 交给 `mpx.exe` 处理，没有长度限制；只在末尾加上（卸载时只删掉）安装目录，别的条目、`%USERPROFILE%` 这类写法和值的类型都原样保留；改之前先把原值备份到 `%LOCALAPPDATA%\mpx\path-backup\` 和注册表 `HKCU\Software\mpx\PathBackup`；读不出来或任何一步出错就不改，提示你手动加。`install-cli.ps1` 也改成按原文读写 PATH，不再把 `%变量%` 展开、把类型改掉；另外修好它自己的三个问题：在 Windows PowerShell 5.1 里直接运行会因为编码读错而报语法错误（现在带 BOM 保存）；按 README 用 `irm … | iex` 运行时一开头就会出错退出；装完试跑新二进制那一步一直会失败（临时文件不是 .exe 结尾）。
   - **怎么找回：** 安装前就开着、一直没关的命令行窗口里，`echo %PATH%`（PowerShell 里 `$env:Path`）还是旧值，里面「系统 PATH」之后的部分就是原来的用户 PATH，在「编辑账户的环境变量」里贴回 Path 即可；开了系统还原的话，也可以还原到安装前的还原点。常见的条目有 `%USERPROFILE%\AppData\Local\Microsoft\WindowsApps`，以及 Python、Node.js、Git 等工具各自的目录，重装这些工具一般也会把自己加回去。
   - **卸载请用新版：** 旧版装上的卸载程序还带着这个问题。要卸载的话，先用 v0.9.12 的安装包覆盖安装一次（会换上新的卸载程序），再卸载。
 - 打开「订阅」停在页面顶上，页标题露着；只有旧地址 `#sub/clients`、`#sub/templates` 才滚到对应段，段标题不会压在顶栏下面。

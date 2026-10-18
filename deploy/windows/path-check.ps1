@@ -29,11 +29,18 @@ try {
 
   $cli = 'C:\mpx-cli-test'
   $env:MPX_PREFIX = $cli
-  # 用 pwsh:install-cli.ps1 是无 BOM 的 UTF-8(README 里的用法是 irm | iex,按 UTF-8 解码),
-  # Windows PowerShell 5.1 用 -File 直接跑会按 ANSI 读错中文。
-  & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\..\install-cli.ps1" -From $Exe
-  if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1 退出码 $LASTEXITCODE" }
-  Expect 'install-cli.ps1 之后' "$long;$cli"
+  # Windows PowerShell 5.1 是用户机器上的默认:两种用法都在 5.1 下跑。
+  #   1) -File 直接跑(靠 BOM 认出 UTF-8);
+  #   2) 模拟 README 的 irm | iex:按 UTF-8 解码原始字节(保留 BOM 字符)再执行。
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\..\install-cli.ps1" -From $Exe
+  if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1(5.1 -File)退出码 $LASTEXITCODE" }
+  Expect 'install-cli.ps1(5.1 -File)之后' "$long;$cli"
+  $key.SetValue('Path', $long, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+  $wrap = Join-Path $env:TEMP 'mpx-iex-sim.ps1'
+  Set-Content -Path $wrap -Encoding ASCII -Value '$t = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($args[0])); & ([scriptblock]::Create($t)) -From $args[1]; exit $LASTEXITCODE'
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $wrap "$PSScriptRoot\..\install-cli.ps1" $Exe
+  if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1(5.1 iex)退出码 $LASTEXITCODE" }
+  Expect 'install-cli.ps1(5.1 iex)之后' "$long;$cli"
 } finally {
   if ($orig -ne $null) { $key.SetValue('Path', $orig, $origKind) } else { $key.DeleteValue('Path', $false) }
 }

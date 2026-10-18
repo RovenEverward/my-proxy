@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   在操作机(Windows)上装一个 mpx 命令行。
 
@@ -75,7 +75,9 @@ $Archive = "mpx_windows_$Arch.zip"
 
 # 在仓库里吗?往上找 go.mod。
 $RepoRoot = ''
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# irm | iex 时没有脚本文件,MyCommand.Path 为空,Split-Path 会直接报错退出。
+$SelfPath = $MyInvocation.MyCommand.Path
+$dir = if ($SelfPath) { Split-Path -Parent $SelfPath } else { '' }
 while ($dir) {
 	if ((Test-Path (Join-Path $dir 'go.mod')) -and (Test-Path (Join-Path $dir 'cmd\mpx\main.go'))) {
 		$RepoRoot = $dir
@@ -98,7 +100,7 @@ try {
 		$Src = (Resolve-Path $From).Path
 		Write-Host "==> 用手边的二进制 $Src"
 	} else {
-		foreach ($candidate in @('.\mpx.exe', (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'mpx.exe'))) {
+		foreach ($candidate in @('.\mpx.exe') + $(if ($SelfPath) { @(Join-Path (Split-Path -Parent $SelfPath) 'mpx.exe') } else { @() })) {
 			if (Test-Path $candidate) { $Src = (Resolve-Path $candidate).Path; break }
 		}
 		if ($Src) { Write-Host "==> 用手边的二进制 $Src" }
