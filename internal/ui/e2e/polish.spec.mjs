@@ -30,6 +30,12 @@ test("M1 普通 #sub 不自动滚动，页标题露着;#sub/clients 滚到段且
   await page.waitForTimeout(300);
   expect(await page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
   await expect(page.locator(".ph h1")).toHaveText("订阅");
+  // 应用内从别的页(已经往下滚过)点侧栏进「订阅」,也停在顶上。
+  await page.goto(env.origin + "/#rules"); await settle(page);
+  await page.locator("main").evaluate(m => { m.scrollTop = 600; });
+  await page.locator('.side a.nav[href="#sub"]').click(); await settle(page);
+  await expect(page.locator("#f-title")).toBeVisible();
+  await expect.poll(() => page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
   await page.goto(env.origin + "/#sub/clients"); await settle(page);
   await expect.poll(() => page.locator("main").evaluate(m => m.scrollTop)).toBeGreaterThan(0);
   const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, sec: document.querySelector("#sec-clients").getBoundingClientRect().top }));
@@ -54,6 +60,8 @@ test("M3 输入框聚焦光圈是中性色，不是蓝色(删除确认里的输�
   await page.focus("#typed");
   await page.waitForTimeout(500); // 光圈有过渡动画,等它停下再读
   const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
+  // 光圈得真的在(box-shadow 不是 none),再看它的颜色。
+  expect(sh.split("|")[0]).not.toBe("none");
   const cs = colorsIn(sh);
   expect(cs.length).toBeGreaterThan(0);
   for (const c of cs) expect(neutral(c), c).toBe(true);
@@ -94,10 +102,11 @@ test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
   await expect(page.locator("#sec-addr")).toContainText("客户端多久自动更新一次，填 0 由客户端决定。");
-  const hint = page.locator("#sec-addr .h", { hasText: "填 0 由客户端决定" });
-  expect(await hint.evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("balance");
-  // 预览里格式说明(如「带完整分流和策略组」)整段不拆行。
+  // 刷新间隔说明按两个短句断行,不在句中拆。
+  await expect(page.locator("#sec-addr .h", { hasText: "填 0 由客户端决定" }).locator(".nw")).toHaveText(["客户端多久自动更新一次，", "填 0 由客户端决定。"]);
+  // 预览里「Clash Meta 配置，带完整分流和策略组。」整段不拆行。
   await expect(page.locator(".pv-f .nw")).toHaveCount(1);
+  await expect(page.locator(".pv-f .nw b")).toHaveCount(1);
   expect(await page.locator(".pv-f .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
 });
 

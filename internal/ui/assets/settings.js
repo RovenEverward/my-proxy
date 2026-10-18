@@ -306,7 +306,7 @@ function addrForm(d, W) {
     <div class="two">
       <div class="field"><label for="f-int">刷新间隔</label>
         <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
-        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h">客户端多久自动更新一次，填 0 由客户端决定。</span></div>
+        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h"><span class="nw">客户端多久自动更新一次，</span><span class="nw">填 0 由客户端决定。</span></span></div>
       <div class="field"><label for="f-help">支持链接</label>
         <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
         <span class="h">客户端里的帮助按钮会打开它。可以不填。</span></div>
@@ -333,7 +333,7 @@ function preview(d) {
     </div>
     ${PV.token ? H`<div class="pv-link"><span class="sub">订阅链接</span><code class="ell">${scheme}<b class="${noPfx ? "pv-ip" : ""}">${host}</b>${tail}</code>
       <button type="button" class="ib sm" data-act="copy" data-text="${link}" aria-label="复制链接">${ic("copy")}</button></div>` : ""}
-    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>，<span class="nw">${(FMT[f] || FMT.links)[1]}</span>。</p>`;
+    <p class="pv-f">${noPfx ? H`链接里露出的是服务器 IP。` : ""}${cn} 会拿到 <span class="nw"><b>${(FMT[f] || FMT.links)[0]}</b>，${(FMT[f] || FMT.links)[1]}。</span></p>`;
 }
 function addrCard(d, W) {
   return H`<section class="card s5-sec" id="sec-addr"><div class="ch">地址与显示<small>· 用户拿到的链接，和客户端里显示的样子</small></div>

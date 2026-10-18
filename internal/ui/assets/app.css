@@ -653,8 +653,6 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .in::placeholder{color:var(--faint);opacity:1}
 /* 中文段落避免末行只剩一两个字(不支持的引擎忽略);不拆开的词包 .nw。 */
 p,.sub,.h{text-wrap-style:pretty}
-/* 字段下的短说明两行时排得一样长,不剩「决定。」这种尾巴。 */
-.field .h{text-wrap-style:balance}
 .nw{white-space:nowrap}
 /* 弹窗标题:图标和文字之间才有间距,文字里的旗帜按正常空格排。 */
 .modal h2 .mt-t{display:inline;min-width:0}
