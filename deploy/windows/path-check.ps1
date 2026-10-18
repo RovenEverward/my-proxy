@@ -29,7 +29,9 @@ try {
 
   $cli = 'C:\mpx-cli-test'
   $env:MPX_PREFIX = $cli
-  & powershell -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\..\install-cli.ps1" -From $Exe
+  # 用 pwsh:install-cli.ps1 是无 BOM 的 UTF-8(README 里的用法是 irm | iex,按 UTF-8 解码),
+  # Windows PowerShell 5.1 用 -File 直接跑会按 ANSI 读错中文。
+  & pwsh -NoProfile -ExecutionPolicy Bypass -File "$PSScriptRoot\..\install-cli.ps1" -From $Exe
   if ($LASTEXITCODE -ne 0) { throw "install-cli.ps1 退出码 $LASTEXITCODE" }
   Expect 'install-cli.ps1 之后' "$long;$cli"
 } finally {
