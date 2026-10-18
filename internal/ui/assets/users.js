@@ -172,7 +172,8 @@ function presKey(d, u) {
 const presCompare = d => (a, b) =>
   (!!b.presence?.last_active_at - !!a.presence?.last_active_at) || US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
 // 某台节点连不上时的灰条:不是用户做错了什么,只是数据旧了,所以用灰色不用红色。
-const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span>${presNodeText(d, sn.node_id)} 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";
+// 节点名是一整块(.nm):名字里的旗帜会被换成一张图,不包一块的话整句会被拆成好几截。
+const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span><span class="nm">${presNodeText(d, sn.node_id)}</span> 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";
 // 在线人数放在工具栏右边,不进状态筛选:筛选是账号状态(互斥),在线是另一回事;默认
 // 排序已经把在线的人排在最上面。读不到在线状态时直说「读不到」,不写「0 人在线」。
 function presSum(d) {
@@ -248,11 +249,7 @@ PAGES.users = {
     if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
     if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
-    if (d && r[1] && d.user) {
-      // 抽屉里的在线情况跟着最近连接一起取到(activity 里带着 presence);旧控制面不给,就照原样。
-      const u = d.activity && d.activity.presence ? { ...d.user, presence: d.activity.presence } : d.user;
-      userDrawer(u, d.links, d);
-    }
+    if (d && r[1] && d.user) userDrawer(drawerUser(d), d.links, d);
   },
 };
 let USERS_TOTAL = null;
@@ -354,10 +351,13 @@ function userDrawer(u, links, d) {
   const img = $("#send .qrs");
   img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
 }
+// drawerUser:抽屉里画的那个人 = 用户本身 + 最近连接接口带回的在线情况(和列表页打开抽屉时同一份)。
+// 列表条目里的 presence 来自另一次请求,可能比 activity 旧;activity 里有就用它的,旧控制面不给就照原样。
+const drawerUser = d => d.activity && d.activity.presence ? { ...d.user, presence: d.activity.presence } : d.user;
 async function refreshDrawer(name) {
   await load(true, true);
   const d = current.data;
-  if (route[0] === "users" && route[1] === name && d?.user) userDrawer(d.user, d.links, d);
+  if (route[0] === "users" && route[1] === name && d?.user) userDrawer(drawerUser(d), d.links, d);
 }
 
 /* ---- 编辑器 ---- */

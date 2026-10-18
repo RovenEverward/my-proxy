@@ -270,7 +270,7 @@ const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.lengt
 const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
 const clone = v => JSON.parse(JSON.stringify(v));
 
-let SUB = null;          // { orig, draft, err, saving, pv, leaveTarget }
+let SUB = null;          // { orig, draft, err, saving, pv, leaveTarget, preview }
 let RD = null;           // 规则抽屉里的草稿 { rules, ua }
 let ADV_OPEN = false;
 // 应用内对话框自己收:不碰抽屉,和 modal-cancel 行为一致。
@@ -285,7 +285,13 @@ function changes() {
   return out;
 }
 const ipBase = () => META.server || location.origin;
-const subBase = d => (d.sub_url_prefix || ipBase());
+// 没填链接开头时的开头由控制面定:它按请求的 Host 拼,经 mpx ui 转发过来的就是控制面的地址,
+// 不一定是页面地址。所以用控制面这次给的链接自带的开头(PV.appliedPrefix),没有才退回页面地址。
+const subBase = d => {
+  if (d.sub_url_prefix) return d.sub_url_prefix;
+  const ap = SUB && SUB.preview && SUB.preview.appliedPrefix;
+  return ap || ipBase();
+};
 
 /* ---- 客户端目录:按名字列 app,每个带一条典型标识(User-Agent),用当前规则算它拿到什么 ---- */
 const B5_APPS = [
@@ -320,9 +326,10 @@ function b5Picker() {
 /* ---- 第一段:发给用户的链接 ---- */
 function b5Link(d) {
   const PV = SUB.preview, noPfx = !d.sub_url_prefix;
-  // 没改链接开头时逐字显示控制面给的 auto;改回原样(或从没改过)而控制面这次没给 auto,就按它当时用的开头。
+  // 没改链接开头时逐字显示控制面给的 auto;改回原样(或从没改过)而控制面这次没给 auto,就按它当时用的开头
+  // 重新拼。开头改过就按草稿拼;没填「服务器地址」时用控制面这次用的那个(subBase 里的 appliedPrefix)。
   const kept = d.sub_url_prefix === SUB.orig.sub_url_prefix;
-  const link = kept && PV.auto ? PV.auto : subBase(kept ? { sub_url_prefix: PV.appliedPrefix || "" } : d).replace(/\/+$/, "") + "/sub/" + PV.token;
+  const link = kept && PV.auto ? PV.auto : subBase(kept && PV.getAuto ? { sub_url_prefix: PV.appliedPrefix || "" } : d).replace(/\/+$/, "") + "/sub/" + PV.token;
   const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
   return H`<div class="lk-box"><code class="lk-url"><span class="lk-pre">${base}</span><span class="lk-tail">${PV.token ? tail : "/sub/…"}</span></code>
       <button type="button" class="btn ton lk-copy" data-act="copy" data-text="${link}" ${PV.token && SUB.users.length ? "" : raw("disabled")}>${ic("copy")}复制链接</button></div>
@@ -331,7 +338,8 @@ function b5Link(d) {
 }
 function b5PfxNote(d) {
   if (d.sub_url_prefix) return "";
-  const host = ipBase().replace(/^https?:\/\//, "").replace(/:\d+$/, "");
+  // 提示里说的是链接开头里的那台机器:控制面按它自己的 Host 拼,经 mpx ui 转发过来时它不是页面地址。
+  const host = subBase(d).replace(/^https?:\/\//, "").replace(/:\d+$/, "");
   return H`<div class="b5-note" id="pfx-warn">${ic("info")}<div><b>没填，链接现在用服务器地址开头。</b>拿到链接的人都能看到这台服务器的 IP（${host}）。有域名就填上，链接会换成域名开头。</div></div>`;
 }
 function b5LinkCard(d, W) {
@@ -463,8 +471,8 @@ async function saveSub() {
     await modifySettings(s => { for (const k of ks) s[k] = k === "update_interval" ? +d[k] : d[k]; if (rules) s.rules = sameRules(d.rules, SUB.builtin) ? null : clone(d.rules); });
     // 不清空 SUB:重载回来前页面上的按钮仍要能用;草稿记成已保存,重载时换成控制面的最新值。
     SUB.saving = false; SUB.err = ""; SUB.fieldErrors = {}; SUB.orig = clone(SUB.draft);
-    // 地址改了:控制面给的旧链接作废,预览改用令牌按新地址拼。
-    if (ks.includes("sub_url_prefix") && SUB.preview) SUB.preview.auto = "";
+    // 地址改了:控制面给的旧链接和它当时的开头都作废,预览改用令牌按新地址拼。
+    if (ks.includes("sub_url_prefix") && SUB.preview) Object.assign(SUB.preview, { auto: "", appliedPrefix: "" });
     refresh();
     toast(`已保存 ${n} 处改动`); await load(true, true);
     return true;
@@ -476,7 +484,9 @@ async function saveSub() {
       SUB.err = "没保存上：链接开头的格式不对，改好再保存。"; refresh(); $("#f-prefix")?.focus();
       return false;
     }
-    if (e.status === 400 && e.field) SUB.fieldErrors[e.field] = e.message;
+    if (e.status === 400 && e.field) { SUB.fieldErrors[e.field] = e.message; refresh(); }
+    // 不写进挡着的草稿:清掉这个字段下的红字就得重画整页,输入框里的字和光标会丢;留着它,
+    // 草稿再改过时(见 PAGES.sub.after)红字自己消失。
     SUB.err = `没保存上：${e.message.replace(/[。.]$/, "")}。改动还在，可以再点一次保存。`; refresh();
     return false;
   }
@@ -551,7 +561,7 @@ PAGES.sub = {
     for (const el of document.querySelectorAll(".b5 [data-k]")) el.addEventListener("input", () => {
       const k = el.dataset.k; let v = el.value;
       if (k === "update_interval") v = /^\d+$/.test(v.trim()) ? +v.trim() : v;
-      SUB.draft[k] = v; SUB.err = ""; SUB.fieldErrors = {}; refresh();
+      SUB.draft[k] = v; SUB.err = ""; delete SUB.fieldErrors[k]; refresh();
     });
     const t = $("#f-title");
     if (t) {
@@ -561,7 +571,7 @@ PAGES.sub = {
         let v = b5TokVal(t);
         // 有人手打了 {USERNAME}:换成标签块,光标放到最后。
         if (t.textContent.includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
-        SUB.draft.profile_title = v; SUB.err = ""; refresh();
+        SUB.draft.profile_title = v; SUB.err = ""; delete SUB.fieldErrors.profile_title; refresh();
       });
     }
     // 编号对应:鼠标或焦点在哪一栏,卡片上对应那块就亮起来;反过来也一样。
@@ -699,12 +709,16 @@ function subTemplates() {
   return Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
 }
 async function subPreview(u, data) {
-  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3 };
-  const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0 };
-  // links.base:控制面拼这条链接时用的开头。没填链接开头时它就是这次请求的 Host
-  // (本机开发是 127.0.0.1,经 mpx ui 转发时是页面地址);旧控制面不给,留空即按页面地址算。
-  try { const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || ""; const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); out.appliedPrefix = links.base || ""; }
-  catch (e) { toast(e.message, true); }
+  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3, applied: null, nodes: data.nodes, inbounds: data.inbounds, plans: data.plans, users: data.users };
+  const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0, auto: "", appliedPrefix: "", getAuto: false };
+  // 链接开头按控制面这次拼链接用的那个认:从 auto 本身切出来,任何版本的控制面都给得出(只加的 base 字段同值)。
+  // 没填链接开头时它是控制面这次请求的 Host(经 mpx ui 转发过来就是控制面的地址),不一定等于页面地址。
+  try {
+    const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || "";
+    const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); out.appliedPrefix = i < 0 ? "" : out.auto.slice(0, i);
+    out.getAuto = true;
+  } catch (e) { toast(e.message, true); }
+  out.nodes = data.nodes; out.inbounds = data.inbounds; out.plans = data.plans; out.users = data.users;
   // 与订阅下发一样，套餐节点、套餐入站和额外授权取并集，排除排水与满员入站。
   // 授权数据不全时不猜测，省略无法确认的节点行。
   if (u.status !== "active") return out;
@@ -733,8 +747,8 @@ function wirePreview() {
   $("#pv-user")?.addEventListener("change", async e => {
     const state = SUB, data = current.data, seq = ++subPreviewSeq;
     const user = state.users.find(u => u.username === e.target.value);
-    // 先切名字和用量，取链接期间不展示上一个人的 token。
-    state.preview = { user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "", appliedPrefix: state.preview.appliedPrefix };
+    // 先切名字和用量，取链接期间不展示上一个人的 token;开头也是上一个人的,一起清掉,等新的回来。
+    state.preview = { ...state.preview, user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "", appliedPrefix: "", getAuto: false };
     data.preview = state.preview; refresh();
     const preview = await subPreview(user, data);
     if (seq !== subPreviewSeq || SUB !== state) return;

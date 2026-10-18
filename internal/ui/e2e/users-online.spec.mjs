@@ -58,16 +58,21 @@ const ACT = {
 };
 const LIVE = { updated_at: at(24e3), online: 3, active_24h: 4, stale_nodes: [] };
 
+// 用户列表接口:GET /api/users,带不带查询串(?limit=…)都是它;/api/users/<名字>、
+// /api/users/<名字>/links、/api/users/<名字>/activity 是另外的接口,不在这里套 MOCK。
+const USERS_PAGE = u => new URL(u).pathname === "/api/users";
 // mockAPI:列表里按用户名套上上面的 presence、状态和备注(用户本身来自真控制面);
 // activity 按 opts.activity 回(Error 表示 500)。节点与拉取记录原样走控制面。
 async function mockAPI(page, opts) {
   await page.route(/\/api\/users(\?.*)?$/, async r => {
     const res = await r.fetch();
+    // 别的接口(/user、/links、/activity)原样回。
+    if (!USERS_PAGE(r.request().url())) return r.fulfill({ response: res });
     const j = await res.json();
-    if (!/\/api\/users$/.test(new URL(r.request().url()).pathname)) return r.fulfill({ response: res });
     const users = j.users.map(u => { const m = MOCK.find(x => x.username === u.username); return m ? { ...u, ...m } : u; });
     const out = { ...j, users };
-    if (opts.presence) out.presence = opts.presence;
+    // 在线情况读不到:整个字段缺席,不是 null。
+    if (opts.presence) out.presence = opts.presence; else delete out.presence;
     return r.fulfill({ response: res, json: out });
   });
   await page.route(/\/api\/users\/[^/]+\/activity$/, r => {
