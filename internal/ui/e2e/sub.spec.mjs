@@ -102,7 +102,7 @@ test("前缀尾斜杠原样发送，由服务端规范化后读回", async ({ pa
 });
 
 test("服务端 400 的订阅地址原话显示在字段下，草稿保留并可重试", async ({ page }) => {
-  const message = "订阅地址要以 http:// 或 https:// 开头，比如 https://sub.example.com";
+  const message = "链接开头要以 http:// 或 https:// 开头，例如 https://sub.example.com";
   await open(page);
   // 旧控制面不报字段名:页面按原话里的「订阅地址」认,显示成「链接开头」。
   await page.route("**/api/settings", r => r.request().method() === "PUT" ? r.fulfill({ status: 400, json: { error: message } }) : r.continue());

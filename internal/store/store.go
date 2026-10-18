@@ -175,9 +175,9 @@ var schema = []string{
 	// 样",而这里只是"刚才问它,它这么回答"。检查失败也是一次回答(Reachable=0,
 	// error 里写着原因),所以它同样占用这一行。
 	//
-	// 刻意不放 deployed_hash:那是"我们最后一次推上去的是什么",属于节点自己的
-	// 属性,在 nodes 表上。放到这里的话,每次检查写状态都会把基准覆盖成观察值,
-	// 漂移就永远看不出来了。
+	// 刻意不放 deployed_hash / deployed_template_hash:那是"我们最后一次推上去
+	// 的是什么",属于节点自己的属性,在 nodes 表上。放到这里的话,每次检查写
+	// 状态都会把基准覆盖成观察值,漂移就永远看不出来了。
 	//
 	// node_id 是主键也是外键:一台节点一行,节点删掉时它的状态跟着走(不然删了
 	// 再加一台同 id 的会把旧状态捡回来)。certificates 存 JSON 文本,与 inbounds
@@ -403,6 +403,10 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE nodes ADD COLUMN draining INTEGER NOT NULL DEFAULT 0`},
 	{"nodes", "outbound_ip",
 		`ALTER TABLE nodes ADD COLUMN outbound_ip TEXT NOT NULL DEFAULT ''`},
+	// 模板哈希:下发时那份配置「不带用户」的 sha256。deployed_hash 含着用户名单,
+	// 比不出模板改没改;空串表示还没在这一版上下发过,所以不参与漂移判定。
+	{"nodes", "deployed_template_hash",
+		`ALTER TABLE nodes ADD COLUMN deployed_template_hash TEXT NOT NULL DEFAULT ''`},
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。

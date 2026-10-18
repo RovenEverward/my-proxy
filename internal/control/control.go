@@ -124,7 +124,32 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err := c.store.SetNodeDeployed(n.ID, hashOf(cfg), now); err != nil {
 		return errors.Join(quicErr, fmt.Errorf("记录节点 %s 的下发哈希失败: %w", n.Name, err))
 	}
+	// 顺带记下模板哈希,下次读节点时就能看出新版本有没有改配置的写法。这一步
+	// 失败不影响下发本身:配置已经在节点上跑着了,只是这一台暂时报不出模板漂移。
+	if th, err := TemplateHash(n, inbounds); err != nil {
+		c.logger.Warn("算节点模板哈希失败,这次不记模板漂移基准", "node", n.Name, "error", err)
+	} else if err := c.store.SetNodeTemplateHash(n.ID, th); err != nil {
+		c.logger.Warn("记录节点模板哈希失败", "node", n.Name, "error", err)
+	}
 	return quicErr
+}
+
+// TemplateHash 是「配置模板」的 sha256:同一份节点与入站、不带任何用户渲染出的
+// 配置的哈希,定在 time.Unix(0, 0)。
+//
+// 为什么不拿整份下发内容当基准:那份里含着用户名单,用户天天在增删,哈希也就天天
+// 在变;新版本改了配置的写法(policy、入站字段之类)时,两边反而都是文件哈希、
+// 照样相等,界面就说「已是最新」。用户名单由收敛动态维护,与模板无关;去掉它之后
+// 剩下的部分只随模板和节点结构变,这才比得出「新版本要应用一次」。
+//
+// 用户列表传 nil:ServerConfig 对空名单照常渲染(clients / peers 写空数组,
+// shadowsocks 的服务端 psk 由入站 tag 派生,不依赖用户),所以不需要探针用户。
+func TemplateHash(n model.Node, inbounds []model.Inbound) (string, error) {
+	cfg, err := render.ServerConfig(n, inbounds, nil, time.Unix(0, 0).UTC())
+	if err != nil {
+		return "", err
+	}
+	return hashOf(cfg), nil
 }
 
 // hashOf 是配置内容的 sha256,十六进制小写 —— 与节点上 sha256sum 的输出同格式,

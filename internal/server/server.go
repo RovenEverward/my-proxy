@@ -300,6 +300,12 @@ func writeErrorHint(w http.ResponseWriter, code int, msg, uiHint string) {
 	writeJSON(w, code, map[string]string{"error": msg, "ui_hint": uiHint})
 }
 
+// writeErrorField 在 writeError 的回答里多带一个 field:出错的是哪个字段(JSON
+// 里的名字),界面据此把红字放到那一栏下面。error 本身照旧,旧读者不受影响。
+func writeErrorField(w http.ResponseWriter, code int, msg, field string) {
+	writeJSON(w, code, map[string]string{"error": msg, "field": field})
+}
+
 // writeStoreError 把存储层的错误翻成合适的状态码。
 // 找不到是 404,其余是 500 并把真实原因记进日志、只给调用方一句概括。
 func (s *Server) writeStoreError(w http.ResponseWriter, err error, what string) {

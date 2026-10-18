@@ -68,6 +68,7 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	views := make([]model.NodeView, 0, len(nodes))
 	for _, n := range nodes {
 		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID], Display: model.NodeDisplay(meta[n.ID])}
+		s.markTemplateDrift(&v)
 		if st, ok := statuses[n.ID]; ok {
 			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
 			copied := st
@@ -76,6 +77,29 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 		views = append(views, v)
 	}
 	return views, nil
+}
+
+// markTemplateDrift 现算一台节点的模板漂移:按现在这版控制面的写法渲染出的模板
+// 哈希,和这台节点下发时记下的不一致,就置上 TemplateDrift。
+// 模板漂移:新版本改了节点配置的写法,应用一次才生效(和「有改动未应用」是两回事)。
+//
+// 没在这一版上下发过(存着的模板哈希是空串)不算飘移,否则每台节点升级控制面后
+// 都会先亮一次;读入站或渲染失败只记日志、留 false,不该让列出节点整个失败。
+func (s *Server) markTemplateDrift(v *model.NodeView) {
+	if v.DeployedTemplateHash == "" {
+		return
+	}
+	inbounds, err := s.store.ListInbounds(v.ID)
+	if err != nil {
+		s.logger.Warn("算节点模板漂移失败:读不到它的入站", "node", v.Name, "error", err)
+		return
+	}
+	hash, err := control.TemplateHash(v.Node, inbounds)
+	if err != nil {
+		s.logger.Warn("算节点模板漂移失败:渲染不出配置模板", "node", v.Name, "error", err)
+		return
+	}
+	v.TemplateDrift = hash != v.DeployedTemplateHash
 }
 
 // freshNodeStatus 现场查一次并落库。
@@ -180,6 +204,7 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	if m, err := s.store.GetLocationMetadata("nodes", n.ID); err == nil {
 		view.Display = model.NodeDisplay(m)
 	}
+	s.markTemplateDrift(&view)
 	view.Capabilities, err = s.capabilityResults(*n, time.Now())
 	if err != nil {
 		s.writeStoreError(w, err, "节点能力")
@@ -1140,7 +1165,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		if p != "" {
 			u, err := url.Parse(p)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-				writeError(w, http.StatusBadRequest, "订阅地址要以 http:// 或 https:// 开头，比如 https://sub.example.com")
+				writeErrorField(w, http.StatusBadRequest, "链接开头要以 http:// 或 https:// 开头，例如 https://sub.example.com", "sub_url_prefix")
 				return
 			}
 			p = strings.TrimRight(p, "/")
@@ -1149,11 +1174,11 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, rule := range v.Rules {
 		if !rule.Result.Valid() {
-			writeError(w, http.StatusBadRequest, "规则结果不合法: "+string(rule.Result))
+			writeErrorField(w, http.StatusBadRequest, "规则结果不合法: "+string(rule.Result), "rules")
 			return
 		}
 		if _, err := compilePattern(rule.Pattern); err != nil {
-			writeError(w, http.StatusBadRequest, "规则正则不合法: "+rule.Pattern)
+			writeErrorField(w, http.StatusBadRequest, "规则正则不合法: "+rule.Pattern, "rules")
 			return
 		}
 	}
@@ -1162,12 +1187,12 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	for format, body := range v.Templates {
 		f := model.ClientFormat(format)
 		if !templateFormats[f] {
-			writeError(w, http.StatusBadRequest, "不支持自定义模板的格式: "+format)
+			writeErrorField(w, http.StatusBadRequest, "不支持自定义模板的格式: "+format, "templates")
 			return
 		}
 		if body != "" {
 			if err := validateTemplate(f, []byte(body)); err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
+				writeErrorField(w, http.StatusBadRequest, err.Error(), "templates")
 				return
 			}
 		}
@@ -1175,15 +1200,15 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// 通知阈值允许 0(表示关掉),负数没有意义 —— 放进去只会让判断永远为假,
 	// 使用者却以为开着。
 	if v.NotifyDaysLeft < 0 {
-		writeError(w, http.StatusBadRequest, "到期提醒天数不能是负数")
+		writeErrorField(w, http.StatusBadRequest, "到期提醒天数不能是负数", "notify_days_left")
 		return
 	}
 	if v.NotifyUsagePercent < 0 || v.NotifyUsagePercent > 100 {
-		writeError(w, http.StatusBadRequest, "用量提醒百分比要在 0 到 100 之间")
+		writeErrorField(w, http.StatusBadRequest, "用量提醒百分比要在 0 到 100 之间", "notify_usage_percent")
 		return
 	}
 	if err := validateWebhookURL(v.WebhookURL); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorField(w, http.StatusBadRequest, err.Error(), "webhook_url")
 		return
 	}
 	if err := s.store.SaveSettings(&v); err != nil {

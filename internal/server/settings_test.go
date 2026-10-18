@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -83,8 +82,16 @@ func TestSaveSettingsRejectsBadNewSubURLPrefix(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Fatalf("没有 scheme 的地址应 400,实际 %d %s", code, body)
 	}
-	if !strings.Contains(string(body), "http:// 或 https://") {
-		t.Fatalf("错误信息应含「http:// 或 https://」: %s", body)
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("解析 400 回答: %v\n%s", err, body)
+	}
+	if got["field"] != "sub_url_prefix" {
+		t.Fatalf("400 回答应带 field=sub_url_prefix: %s", body)
+	}
+	want := "链接开头要以 http:// 或 https:// 开头，例如 https://sub.example.com"
+	if got["error"] != want {
+		t.Fatalf("错误原话变了: got %q want %q", got["error"], want)
 	}
 	stored, err := e.st.GetSettings()
 	if err != nil {
@@ -110,6 +117,56 @@ func TestSaveSettingsAllowsEmptySubURLPrefix(t *testing.T) {
 	}
 	if stored.SubURLPrefix != "" {
 		t.Fatalf("空串没存成空: %q", stored.SubURLPrefix)
+	}
+}
+
+// 设置 400 都带 field:界面据此把红字放到那一栏下面;error 原话不变(只增)。
+func TestSaveSettingsErrorsCarryField(t *testing.T) {
+	e := newEnv(t)
+
+	cases := []struct {
+		name  string
+		set   model.Settings
+		field string
+		msg   string
+	}{
+		{"规则结果不合法", model.Settings{Rules: []model.SubscriptionRule{
+			{Pattern: "Karing", Result: model.ClientFormat("nope")},
+		}}, "rules", "规则结果不合法: nope"},
+		{"模板格式不支持", model.Settings{Templates: map[string]string{"nope": "x"}}, "templates", "不支持自定义模板的格式: nope"},
+		{"到期提醒天数为负", model.Settings{NotifyDaysLeft: -1}, "notify_days_left", "到期提醒天数不能是负数"},
+		{"用量百分比超 100", model.Settings{NotifyUsagePercent: 101}, "notify_usage_percent", "用量提醒百分比要在 0 到 100 之间"},
+		{"webhook 不是 http(s)", model.Settings{WebhookURL: "ftp://example.com/hook"}, "webhook_url", "webhook 地址要以 http:// 或 https:// 开头: ftp://example.com/hook"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.set.Rules == nil {
+				// 整体替换语义:不写 rules 就是清空,这里只想让别的字段出错。
+				var st model.Settings
+				code, data := e.api("GET", "/api/settings", nil)
+				if code != http.StatusOK {
+					t.Fatalf("取设置: got %d %s", code, data)
+				}
+				if err := json.Unmarshal(data, &st); err != nil {
+					t.Fatalf("解析设置: %v", err)
+				}
+				c.set.Rules = st.Rules
+			}
+			code, data := e.api("PUT", "/api/settings", c.set)
+			if code != http.StatusBadRequest {
+				t.Fatalf("应 400,实际 %d %s", code, data)
+			}
+			var got map[string]any
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatalf("解析 400 回答: %v\n%s", err, data)
+			}
+			if got["field"] != c.field {
+				t.Fatalf("field: got %v want %q (%s)", got["field"], c.field, data)
+			}
+			if got["error"] != c.msg {
+				t.Fatalf("error: got %v want %q", got["error"], c.msg)
+			}
+		})
 	}
 }
 
