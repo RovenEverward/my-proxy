@@ -23,7 +23,13 @@ const REPORT = { checks: [
 test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", async ({ page }) => {
   await login(page, env);
   const hits = [];
-  await page.route("**/api/doctor", r => { hits.push(r.request().method()); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(REPORT) }); });
+  // 第一次请求先扣住:等它的时候页面要说明这是同步的一次现场查、关掉就不查了。
+  let release, held = false;
+  await page.route("**/api/doctor", async r => {
+    hits.push(r.request().method());
+    if (!held) { held = true; await new Promise(ok => { release = ok; }); }
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(REPORT) });
+  });
   await page.goto(env.origin + "/#doctor");
   await expect(page.locator("h1")).toHaveText("体检");
   await expect(page.locator(".ph p")).not.toContainText("mpx ");
@@ -34,6 +40,8 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(page.locator("table tbody tr")).toHaveCount(0);
 
   await page.click("[data-act=doc-run]");
+  await expect(page.locator(".callout")).toHaveText("正在体检：会逐台连上节点现场查一次，可能要几十秒。只读不改，关掉这个页面就不查了，回来再点一次就行。");
+  release();
   await expect(page.locator("table tbody tr")).toHaveCount(3);
   expect(hits).toEqual(["GET"]);
   // 每行的名称、结论、说明(带 hint)都在,且顺序与报告一致。
@@ -56,6 +64,25 @@ test("进页面不自动跑,点了才查;三行与汇总都按报告渲染", asy
   await expect(page.locator("[data-sum=fail]")).toHaveText("1");
   await expect(page.locator("[data-sum=fail]")).toHaveClass(/c-bad/);
   for (const k of ["ok", "warn"]) await expect(page.locator(`[data-sum=${k}]`)).not.toHaveClass(/c-(ok|warn|bad)/);
+});
+
+// 体检页一直是同步的一次请求,不摆进度条、也不去问后台任务:等结果时只说「正在体检」。
+test("体检页是同步的一次现场查:不摆进度条,也不发后台任务", async ({ page }) => {
+  await login(page, env);
+  const jobs = [];
+  page.on("request", r => { if (/\/jobs(\?|$)/.test(new URL(r.url()).pathname)) jobs.push(r.url()); });
+  let release, held = false;
+  await page.route("**/api/doctor", async r => {
+    if (!held) { held = true; await new Promise(ok => { release = ok; }); }
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ checks: [{ name: "数据库", status: "ok", detail: "能读能写" }] }) });
+  });
+  await page.goto(env.origin + "/#doctor");
+  await page.click("[data-act=doc-run]");
+  await expect(page.locator("main [role=progressbar], main progress")).toHaveCount(0);
+  await expect(page.locator(".callout")).toContainText("正在体检");
+  release();
+  await expect(page.locator("table tbody tr")).toHaveCount(1);
+  expect(jobs).toEqual([]);
 });
 
 test("报告里没有失败项时,汇总的失败是 0 且不上红", async ({ page }) => {

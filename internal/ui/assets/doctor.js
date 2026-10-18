@@ -50,7 +50,7 @@ function doctorApplyDetail(detail) {
 function doctorPage() {
   const head = H`<div class="ph"><div><h1>体检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>
     ${DOC_RUNNING ? H`<button class="btn pri busy" disabled>开始体检</button>` : H`<button class="btn pri" data-act="doc-run">${ic("check")}开始体检</button>`}</div>`;
-  if (DOC_RUNNING) return H`${head}<div class="card pad16"><div class="callout stone">${ic("refresh")}<div>正在体检：会逐台连上节点现场查一次，可能要几十秒。期间别关这个页面。</div></div></div>`;
+  if (DOC_RUNNING) return H`${head}<div class="card pad16"><div class="callout stone">${ic("refresh")}<div>正在体检：会逐台连上节点现场查一次，可能要几十秒。只读不改，关掉这个页面就不查了，回来再点一次就行。</div></div></div>`;
   if (DOC_ERR) return H`${head}<div class="card pad16"><div class="callout bad" role="alert">${ic("warn", "ico-bad")}<div><b>体检没有跑成</b><div class="mono mt2" data-doc-err>${DOC_ERR}</div></div></div>
     <p class="sub mt">控制面原话在上面。处理完再点一次「开始体检」。</p></div>`;
   if (!DOC) return H`${head}<div class="card pad16">

@@ -1,5 +1,5 @@
 // 总览「开始使用」清单:4 步的完成与否都从数据推出来;「先用 IP」和「不再显示」记在这台电脑上;
-// 4 步都完成后收成一行。标题下的一句和「近 24 小时在用」按设计稿。
+// 4 步都完成后收成一行。标题下的一句和「近 24 小时在用」这一格按设计稿。
 import { test, expect } from "@playwright/test";
 import { startEnv, login, cpFetch } from "./env.mjs";
 
@@ -65,8 +65,10 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   await expect(row).toContainText("开始使用 · 4 步都完成了");
   await expect(start).toHaveCount(0);
   await expect(page.locator(".ph p")).toHaveText("1 个用户 · 1 个节点");
-  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("1人");
-  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("客户端拉取过订阅");
+  // 控制面给了 presence 就按「近 24 小时在用」讲;没有(老控制面)才退回到拉订阅的人数。
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("0人");
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("按节点流量算");
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时拉过订阅" })).toHaveCount(0);
   await row.locator("[data-act=cl-open]").click();
   await expect(start).toBeVisible();
   await expect(ck.nth(3)).toContainText("sing-box 已经导入");
@@ -79,4 +81,32 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   await expect(page.locator(".card.stat").first()).toBeVisible();
   await expect(page.locator("#start-done")).toHaveCount(0);
   await expect(page.locator("#start")).toHaveCount(0);
+});
+
+// 总览那一格:有 presence 就说「近 24 小时在用」(按节点流量算);没有(老控制面)就退回到
+// 「近 24 小时拉过订阅」,人数还是拉过订阅的;两样都没有才换成连接方式。
+test("总览:近 24 小时在用按 presence 算,老控制面退回拉过订阅", async ({ page }) => {
+  await login(page, env);
+  // 这一格读的是 GET /api/users?limit=1 顶层那个 presence;没有就整个删掉,当作老控制面。
+  let presence = { active_24h: 3 };
+  await page.route("**/api/users?*", async route => {
+    const u = new URL(route.request().url());
+    if (u.searchParams.get("limit") !== "1") return route.continue();
+    const res = await route.fetch(), body = await res.json();
+    const out = { ...body };
+    if (presence) out.presence = presence; else delete out.presence;
+    await route.fulfill({ response: res, json: out });
+  });
+  await page.goto(env.origin + "/#overview");
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("3人");
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("按节点流量算");
+  // 这一格只占一格:不再同时摆「拉过订阅」或「连接方式」。
+  await expect(page.locator(".card.stat").filter({ hasText: /近 24 小时|连接方式/ })).toHaveCount(1);
+  // 老控制面没有 presence:同一个位置换成「近 24 小时拉过订阅」。
+  presence = null;
+  await page.reload();
+  const pull = page.locator(".card.stat", { hasText: "近 24 小时拉过订阅" });
+  await expect(pull).toContainText("1人");
+  await expect(pull).toContainText("客户端拉取过订阅");
+  await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toHaveCount(0);
 });

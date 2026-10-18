@@ -348,12 +348,15 @@ test("D1 体检结论翻成人话:没有内部叫法和英文原话，原话收�
   await expect(raw).toContainText("parser_error: netflix_title_evidence");
 });
 
-test("C1 安装和体检的确认文案:全角括号，没有内部叫法，不再说「期间别关这个页面」", async ({ page }) => {
+test("C1 安装和体检的确认文案:全角括号，没有内部叫法，说清楚可以关掉页面", async ({ page }) => {
   await go(page, "nodes/1");
   for (const act of ["node-install", "node-diagnose"]) {
     await page.click(`[data-act=${act}]`);
     const p = (await page.locator("#modal.open .mbody p").first().innerText());
     expect(p).not.toMatch(/期间别关这个页面|Fusion|测速开|硬件测试关|SSH|[()]/);
+    // 这两件事都在控制面后台跑:关掉页面不会让它停下,做完会显示在节点上。
+    expect(p).toContain("可以关掉这个页面，做完会在节点上显示结果。");
+    expect(p).not.toContain("会中断");
     await page.click("[data-act=modal-cancel]"); await expect(page.locator("#modal.open")).toHaveCount(0);
   }
 });

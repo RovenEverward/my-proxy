@@ -13,10 +13,6 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/ui"
 )
 
-// htmlString 是已经拼好的 HTML 片段(二维码 SVG)。页面模板用 text/template,
-// 它把 string 原样写出,所以这里只需要一个有名字的类型,不必再挂过滤器。
-type htmlString = template.HTML
-
 // 订阅页是给浏览器看的那一屏,和客户端的订阅共用同一个地址:只有当这次请求
 // 本来就要拿到默认的 links、而且对方报明自己是浏览器(Accept 带 text/html)
 // 时,这一屏才顶上来(见 decisions 26)。客户端和点名要格式的请求永远拿不到它。
@@ -43,14 +39,10 @@ type subPageData struct {
 	FontBase string
 	Links    []subPageLink
 	// QRSVG 是 Links 第一条地址的二维码,在服务端画成内联 SVG,页面不依赖外部脚本。
-	QRSVG  htmlString
+	QRSVG  template.HTML
 	QRName string
 }
 
-// 页面模板不用 HTML 版(它按上下文自动转义 HTML 模板):模板里的 URL 写在 JS
-// 字符串和 <code> 里,自动转义会把地址中的 & 改写成 &amp;,复制出去就不再是
-// 原来那条地址。用户输入只有用户名,在模板里用 html 过滤器显式转义;二维码
-// SVG 以 htmlString 原样写出。
 var subPageTmpl = template.Must(template.New("subpage").Parse(subPageHTML))
 
 // serveSubPage 渲染浏览器看的订阅页。用户不可用时照常给页面,只是徽章上写明
@@ -287,7 +279,7 @@ const subPageHTML = `<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{.Username | html}} 的订阅</title>
+<title>{{.Username}} 的订阅</title>
 <style>
 @font-face { font-family: "Mona Sans VF"; src: url({{.FontBase}}MonaSansVF.woff2) format("woff2"); font-weight: 200 900; font-display: swap; }
 @font-face { font-family: "Noto Sans SC"; src: url({{.FontBase}}NotoSansSC-subset.woff2) format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF; }
@@ -376,7 +368,7 @@ button.warn:hover { background: var(--bad); color: #fff; }
 {{end}}
 <section class="card">
 <p class="eyebrow">MPX 订阅</p>
-<div class="head"><h1>{{.Username | html}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
+<div class="head"><h1>{{.Username}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
 <div class="stats">
 <div class="stat"><span class="k">流量</span><span class="v">{{.Usage}}</span>{{if .BarShow}}<span class="bar" title="{{.Percent}}%"><i style="width:{{.Percent}}%"></i></span>{{end}}</div>
 <div class="stat"><span class="k">到期</span><span class="v">{{.ExpireText}}</span></div>

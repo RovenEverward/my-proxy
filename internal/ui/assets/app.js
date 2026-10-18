@@ -520,12 +520,13 @@ let CP_OK = null;
 PAGES.overview = {
   title: "总览",
   async load() {
-    const [status, nodes, settings, users, pulls] = await Promise.all([
+    const [status, nodes, settings, users, pulls, presence] = await Promise.all([
       api("/api/status"), api("/api/nodes"), api("/api/settings"), api("/api/users?limit=1000"),
       api("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
+      api("/api/users?limit=1").catch(() => null),  // 近 24 小时在用的总数;老控制面没有 presence
     ]);
     STATUS = status;
-    return { status, nodes, settings, users, pulls };
+    return { status, nodes, settings, users, pulls, presence: presence?.presence || null };
   },
   render(d) {
     const L = !d;
@@ -554,7 +555,8 @@ PAGES.overview = {
     <div class="grid g4">
       ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
       ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
-      ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
+      ${d.presence ? stat("近 24 小时在用", H`${d.presence.active_24h ?? 0}<small>人</small>`, "按节点流量算")
+        : pulls ? stat("近 24 小时拉过订阅", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
       ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
     </div>
     <div class="grid g2 mt">

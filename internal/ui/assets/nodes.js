@@ -1,6 +1,7 @@
 // 节点页:列表、详情,以及 add / edit / rm / sync / install / drain / undrain / diagnose。
 // 每个写操作发出的请求与对应的 mpx node 命令一致;节点状态、在线、配置预览、体检报告
 // 只读。下发、安装、体检真去 SSH,失败时把控制面的原话(含 501 没接下发通道)报出来。
+// 安装与体检走后台任务(POST .../jobs):回来就关确认框,详情里一直显示到做完为止。
 "use strict";
 
 const nodePath = id => "/api/nodes/" + id;
@@ -46,21 +47,123 @@ PAGES.nodes = {
   async load(r) {
     if (r[1]) {
       const id = +r[1];
+      if (jobNode !== id) { jobNode = id; jobAsk = {}; jobAsked = new Set(); jobsAfterReady = false; jobPollStop(); }
       // 体检报告没有就是 404,不算页面错误。
       const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
       // 连接方式由 conn.js 组件取数与渲染。
       const [node, conn, report] = await Promise.all([api(nodePath(id)), CONN.load([id]), diag]);
-      return { node, inbounds: conn.inbounds, conn, report };
+      const jobs = await loadNodeJobs(id);
+      return { node, inbounds: conn.inbounds, conn, report, jobs };
     }
     const nodes = await api("/api/nodes");
     NODES_TOTAL = nodes.length;
+    for (const n of nodes) NODE_LABEL_BY_ID[n.id] = n;
     return { nodes };
   },
   render(d, r) { return r[1] ? nodeDetail(d) : nodeList(d); },
-  // 详情画好后(innerHTML 已换),如果刚从体检页带过来 AUTO_APPLY,就替用户打开
-  // 「应用到节点」的确认弹窗。d 为空是骨架那一次,不能在这里消费掉标志。
-  after(d, r) { if (d && r[1]) autoApplyPending(+r[1]); },
+  // after:详情画好后(innerHTML 已换),有正在跑的体检/安装就接着盯它、放回刚做完的结论;
+  // 刚从体检页带过来 AUTO_APPLY 时替用户打开「应用到节点」的确认弹窗。d 为空是骨架那一次,都不做。
+  after(d, r) { if (d && r[1]) jobsAfter(d); autoApplyPending(+r[1]); },
 };
+// NODE_LABEL_BY_ID:节点 id → 显示名。列表页一拉到节点就顺手记下(见 PAGES.nodes.load),
+// 提示里那句「已开始在 🇯🇵 东京 A 上安装 xray」和轮询时的提示都用得着它。
+let NODE_LABEL_BY_ID = {};
+// JOB_TEXT 把体检、安装两种任务的界面说法放在一处:只是叫法的差别,请求与数据共用一套。
+const JOB_TEXT = {
+  diagnose: { started: label => `已开始在 ${label} 上体检`, reused: "这台节点已经在体检了，接着等它做完就行", done: "体检完成", running: t => `正在体检（开始于 ${t}）。可以离开这个页面，做完会自动显示。`, last: "上次体检没做完：控制面重启了。再点一次「体检」就行。" },
+  install: { started: (label, core) => `已开始在 ${label} 上安装 ${core}`, reused: "这台节点已经在安装了，接着等它做完就行", done: (label, core, v) => `已在 ${label} 上装好并启动 ${core} ${v || ""}`.trim(), running: (t, core) => `正在安装 ${core}（开始于 ${t}）…`, last: "上次安装没做完：控制面重启了。再点一次「安装」就行。" },
+};
+// jobLabel:这台节点在界面上怎么叫(显示名)。
+const jobLabel = id => nodeLabel(NODE_LABEL_BY_ID[id]) || "这台节点";
+// loadNodeJobs:这个节点最近的体检、安装任务。GET /jobs 是老控制面没有的接口(404):
+// 当作没有,页面和以前一样。其它错误同样只是这次没有,不能挡住详情本身。
+async function loadNodeJobs(id) {
+  const active = await api(nodePath(id) + "/jobs?active=1&limit=5").catch(() => null);
+  if (!Array.isArray(active?.jobs)) return null;
+  // 「上次没做完」:不仅这次还没起过任务,而且要连着两次读都没有正在跑(中间那次是起任务
+  // 时的重读)。这样「开始体检」的那次重读不会把自己刚起的任务当成上次没做完。
+  let last = null;
+  if (!active.jobs.length && !jobAsk[id] && jobAsked.has(id)) {
+    const recent = await api(nodePath(id) + "/jobs?limit=1").catch(() => null), j = recent?.jobs?.[0];
+    if (j && j.status === "interrupted" && Date.now() - new Date(j.finished_at || j.started_at) < DAY) last = j;
+  }
+  jobAsk[id] = !!active.jobs.length;
+  jobAsked.add(id);
+  // 任务结果里的 core/version 只在 install 的 result 里;「正在安装 xray」也读它。
+  return { active: active.jobs.map(j => j.kind === "install" ? { ...j, core: j.core || j.result?.core || "" } : j), last };
+}
+// jobAsk:节点 id → 上一次读到过正在跑的任务;jobAsked:这次进节点以来已经读过没有。
+// 普通刷新(每 30 秒、写完再读)不再反复问「最近一次做完没有」;重新进一次节点才重新问。
+// jobNode 是现在打开的是哪台节点,换了就从头算。jobsAfterReady 用来跳过进节点后的第一次画。
+let jobAsk = {}, jobAsked = new Set(), jobNode = null, jobsAfterReady = false;
+const jobSeen = () => new Map((current.data?.jobs?.active || []).map(j => [j.id, j]));
+
+// 详情里「正在…」和「上次没做完」两块的位置:任务一变就在原地换掉,不整页重画
+// (整页重画会把焦点、滚动位置都抖一下)。占位块排在详情页正文的最前面,跟着标题走。
+const JOB_SLOTS = ["callout", "notice"];
+function jobsAfter(d) {
+  const id = +route[1];
+  if (!d?.node || d.node.id !== id) return;
+  const jobs = d.jobs || null, run = (jobs?.active || []).find(j => j.status === "running") || null;
+  // 刚做完的那一个:第一次读到 d 时先记下来(不提示:那是进来之前的事),
+  // 之后从「正在跑」变成别的状态的就是刚做完的,要提示并刷新详情。
+  const seen = jobSeen();
+  if (!jobsAfterReady) jobsAfterReady = true;
+  else if (seen.size) {
+    const gone = [...seen.values()].find(j => !(jobs?.active || []).some(x => x.id === j.id && x.status === "running"));
+    if (gone) jobSettle(gone);
+  }
+  fillJobSlots(d);
+  if (run && !jobTimer) jobPollStart(id);
+  if (!run) jobPollStop();
+}
+function fillJobSlots(d) {
+  const jobs = d?.jobs, n = d?.node;
+  if (!jobs || !n) return;
+  const run = (jobs.active || []).find(j => j.status === "running") || null, last = jobs.last || null;
+  const showRun = !!run, showLast = !run && !!last;
+  for (const k of JOB_SLOTS) {
+    const old = $("#job-" + k);
+    if (!old || old.dataset.on === (k === "callout" ? String(showRun) : String(showLast))) continue;
+    const el = document.createElement("div");
+    el.id = "job-" + k; el.dataset.on = k === "callout" ? String(showRun) : String(showLast);
+    el.innerHTML = val(jobCallout(k, d));
+    old.replaceWith(el);
+  }
+}
+// jobCallout:正在跑的是墨色提示,上次没做完的是灰色提示。
+function jobCallout(kind, d) {
+  const jobs = d.jobs, j = kind === "callout" ? (jobs.active || []).find(x => x.status === "running") : jobs.last, t = JOB_TEXT[j.kind];
+  if (!j || !t) return "";
+  if (kind === "callout") return H`<div class="callout stone mb" role="status">${ic(j.kind === "diagnose" ? "pulse" : "dl")}<div><b>${t.running(hm(new Date(j.started_at)), j.core)}</b></div></div>`;
+  return H`<div class="callout mb mt">${ic("clock")}<div>${t.last}</div></div>`;
+}
+// 盯一个正在跑的任务:每 3 秒问一次 GET /api/jobs/{id};换页、换节点就停。同一时间只有一个计时器。
+let jobTimer = 0, jobPollFor = null;
+function jobPollStop() { clearTimeout(jobTimer); jobTimer = 0; jobPollFor = null; }
+function jobStillHere(id) { return jobPollFor === id && route[0] === "nodes" && +route[1] === id && !!$("#job-callout"); }
+function jobPollStart(id) {
+  jobPollStop(); jobPollFor = id;
+  jobPollTick(id);
+}
+async function jobPollTick(id) {
+  jobTimer = 0;
+  if (!jobStillHere(id)) return;
+  await load(true);
+  if (!jobStillHere(id)) return;
+  jobTimer = setTimeout(() => jobPollTick(id), 3000);
+}
+// jobSettle:任务刚结束。做完给一句提示;没做完、被打断就把原话(界面说法优先)显示在详情里;
+// 然后现场查一次状态、重读详情 —— 体检报告、安装后的版本都跟着出来。
+async function jobSettle(done) {
+  const id = done.node_id, t = JOB_TEXT[done.kind];
+  if (done.status === "done") toast(t.done(jobLabel(id), done.result?.core || done.core || "", done.result?.version || done.version || ""));
+  else if (done.status !== "interrupted") toast((done.ui_hint || done.error) ? `${done.kind === "diagnose" ? "体检" : "安装"}没做成：${done.ui_hint || done.error}` : `${done.kind === "diagnose" ? "体检" : "安装"}没做成`, true);
+  jobPollStop();
+  await api(nodePath(id) + "?fresh=1").catch(() => null);
+  if (route[0] === "nodes" && +route[1] === id) await load(true, true);
+}
+
 let NODES_TOTAL = null;
 
 // autoApplyPending:体检页的「应用到<节点>」跳到详情后,在这里打开确认弹窗。只认一次:
@@ -99,6 +202,8 @@ function nodeList(d) {
 function driftCell(n) {
   if (!n.deployed_hash) return H`<span class="sub">还没应用过</span>`;
   if (!n.status?.observed_hash) return H`<span class="sub">未知</span>`;
+  // 新版本改了配置的写法,和详情页一样算「需要应用」。
+  if (n.template_drift) return stBadge("warn", "需要应用");
   return n.status.observed_hash === n.deployed_hash ? stBadge("ok", "已是最新") : stBadge("warn", "有改动未应用");
 }
 
@@ -165,7 +270,13 @@ function nodeDetail(d) {
   // (只有 sing-box 的节点不看 xray 的下发记录)。其余情况(比如改了出口 IP、只有 sing-box 漂移)
   // 控制面不记待应用,仍可以从「⋯」里手动应用,不会被藏起来。
   const sbOnly = (s?.cores || []).length > 0 && !(s.cores || []).some(c => c.core === "xray");
-  const needApply = INB_PENDING.has(id) || (!!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash) || (!n.deployed_hash && !sbOnly);
+  // 新版本改了节点配置的写法:控制面只能指出这台节点的配置要对一次才生效,不算漂移。
+  const drift = !!n.template_drift;
+  const hashDrift = !!s?.observed_hash && !!n.deployed_hash && s.observed_hash !== n.deployed_hash;
+  const neverApplied = !n.deployed_hash && !sbOnly;
+  const needApply = INB_PENDING.has(id) || hashDrift || neverApplied || drift;
+  // 只有「模板换了写法」这一条要找应用时,按它说,不混进「配置被改过」「还没应用过」。
+  const applyWhy = INB_PENDING.has(id) || hashDrift || neverApplied ? "" : drift ? "新版本改了节点配置的写法，应用一次才生效" : "";
   // 连不上时主按钮改成「刷新状态」—— 它是只读的 GET ?fresh=1,有读权限就能点;要应用也
   // 推不动,按 needApply 的位置换成灰按钮/灰菜单项(aria-disabled,仍可聚焦,读屏读得到原因)。
   // 只有主按钮真的换成「刷新状态」时,「⋯」里才去掉刷新项。
@@ -173,15 +284,24 @@ function nodeDetail(d) {
   // 刷新是 GET,不受写权限限制;主按钮真的换成「刷新状态」时,菜单里才不重复放一份。
   const refreshPrimary = down;
   const tip = "节点连不上，连上后再应用";
+  // 正在跑的体检/安装:对应的按钮换成灰的(aria-disabled 仍可聚焦,读屏读得到原因),避免再起一个。
+  const run = (d.jobs?.active || []).find(j => j.status === "running") || null;
+  const runWhy = run ? (run.kind === "diagnose" ? "这台节点正在体检，等它做完再点" : "这台节点正在安装，等它做完再点") : "";
+  const busyAttrs = (kind, whyID) => run && run.kind === kind ? ` aria-disabled="true" aria-describedby="${whyID}" data-tip="${runWhy}"` : "";
+  const busyWhy = (kind, whyID) => run && run.kind === kind ? H`<span id="${whyID}" class="vh">${runWhy}</span>` : "";
+  // 写到页眉按钮上的那几项:详情里的操作也带着它们。
+  const seed = `data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"`;
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
     ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" data-tip="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
-    ${refreshPrimary ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">应用到节点</button>` : ""}
+    ${refreshPrimary ? H`<button class="btn pri" data-act="node-check" data-id="${id}">刷新状态</button>` : W && needApply ? H`<button class="btn pri" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${applyWhy ? raw(` aria-describedby="sync-drift-why"`) : ""}>应用到节点</button>${applyWhy ? H`<span id="sync-drift-why" class="vh">${applyWhy}</span>` : ""}` : ""}
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="node-menu">${ic("more")}</button><div class="menu" role="menu" id="node-menu" hidden>
       ${refreshPrimary ? "" : H`<button type="button" data-act="node-check" data-id="${id}">${ic("refresh")}刷新状态</button>`}
       ${W && !needApply ? (down ? H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why-m" data-tip="${tip}">${ic("upload")}应用到节点</button><span id="sync-why-m" class="vh">${tip}</span>` : H`<button type="button" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">${ic("upload")}应用到节点</button>`) : ""}
       ${W ? H`<button type="button" data-act="node-drain" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" data-on="${n.draining ? "1" : ""}">${ic("pause")}${n.draining ? "恢复分配" : "暂停分配"}</button>` : ""}
       ${can("PUT", "/api/nodes/x") ? H`<button type="button" data-act="node-edit" data-id="${id}">${ic("pen")}编辑</button>` : ""}
     </div></span></div>
+  <div id="job-callout" data-on="${run ? "true" : "false"}">${d.jobs ? jobCallout("callout", d) : ""}</div>
+  <div id="job-notice" data-on="${!run && d.jobs?.last ? "true" : "false"}">${d.jobs ? jobCallout("notice", d) : ""}</div>
   ${s?.error ? H`<div class="callout bad mb" role="alert">${ic("warn", "ico-bad")}<div><b>上次检查${s.reachable ? "有问题" : "连不上"}</b><div class="mono mt2">${s.error}</div></div></div>` : ""}
   ${n.draining ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>已暂停分配</b> · 新订阅不再发这台节点;已连上的用户会在下次刷新订阅时换到别的节点。</div></div>` : ""}
   <div class="grid g3">
@@ -193,8 +313,8 @@ function nodeDetail(d) {
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
     <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
-      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">开始体检</button>` : ""}</div>
-    ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}">安装</button></div>` : ""}
+      ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" ${raw(seed)}${raw(busyAttrs("diagnose", "diag-why"))}>开始体检</button>${busyWhy("diagnose", "diag-why")}` : ""}</div>
+    ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" ${raw(seed)}${raw(busyAttrs("install", "inst-why"))}>安装</button>${busyWhy("install", "inst-why")}</div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
     <div class="row"><div><b class="bold">配置预览</b><div class="sub">「应用到节点」会推的 config.json，不碰节点</div></div><span class="sp"></span><button class="btn sm" data-act="node-config" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>
   </div>
@@ -348,6 +468,25 @@ async function busy(btn, fn) {
   btn.disabled = true; btn.classList.add("busy");
   try { await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.classList.remove("busy"); }
 }
+// jobStarted:后台任务接下了(202 新的、200 这台已经在跑)。确认框立刻关掉:接下来要等几分钟
+// 到十几分钟,不该把人留在弹窗里。提示一句已经在跑,再用刚从任务带回的那一份重画详情
+// (「正在…」的提示和变灰的按钮都由它决定)。job 随确认框进来,名字也就带得动。
+function jobStarted(d, kind, res, core) {
+  const id = +d.id, label = d.label || d.name, j = res?.job;
+  NODE_LABEL_BY_ID[id] = NODE_LABEL_BY_ID[id] || { id, name: d.name, display: d.label };
+  toast(res?.reused ? JOB_TEXT[kind].reused : JOB_TEXT[kind].started(label, core));
+  // 刚起过一次:这次进节点以来的「上次没做完」不再问,免得被自己刚起的任务盖住。
+  jobAsked.add(id); jobAsk[id] = true;
+  closeModal();
+  // 先把这次接下的任务摆进当前详情(data 还是同一份,只是任务换了),重画一遍让人马上看见;
+  // 新数据随后由 load 取回。没带回任务时不出手,交给这次 load 的结果。
+  const run = j ? [j, ...(current.data?.jobs?.active || []).filter(x => x.id !== j.id)] : (current.data?.jobs?.active || []);
+  if (j && route[0] === "nodes" && +route[1] === id) {
+    current = { ...current, data: { ...(current.data || {}), jobs: { active: run, last: null } }, loading: false, at: new Date() };
+    paint();
+  }
+  load(true, true);
+}
 
 Object.assign(ACTS, {
   "node-menu": () => { const m = $("#node-menu"); if (m) m.hidden = !m.hidden; },
@@ -365,21 +504,24 @@ Object.assign(ACTS, {
     confirmBox({ title: `暂停给 ${d.label || d.name} 分配？`, text: "新订阅不再包含这台节点;已连上的用户不会立刻断线，会在下次刷新订阅时换到别的节点。随时可以恢复分配。", ok: "暂停分配",
       run: async () => { await write("POST", nodePath(d.id) + "/drain", undefined, `${d.label || d.name} 已暂停分配`); await load(true, true); } });
   },
-  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟；关掉这个页面安装也会继续，回到节点页刷新就能看到结果。", ok: "安装",
+  // 安装 = mpx node install <id> --core <core> [--version <v>],走后台上任务的接口:回来就
+  // 关掉确认框,进度和结果在节点详情里看(做完会刷新详情)。
+  "node-install": d => confirmBox({ title: `在 ${d.label || d.name} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟。可以关掉这个页面，做完会在节点上显示结果。", ok: "安装",
     extra: H`<div class="two"><div class="field"><label for="i-core">代理程序</label><select class="in" id="i-core"><option value="xray">xray</option><option value="sing-box">sing-box（hysteria2 / tuic）</option></select></div>
       <div class="field"><label for="i-ver">版本</label><input class="in mono" id="i-ver" placeholder="留空用最新版" autocomplete="off"></div></div>`,
     run: async () => {
       const core = $("#i-core").value, v = $("#i-ver").value.trim();
-      let path = nodePath(d.id) + "/install?core=" + encodeURIComponent(core);
+      let path = nodePath(d.id) + "/install/jobs?core=" + encodeURIComponent(core);
       if (v) path += "&version=" + encodeURIComponent(v);
       const res = await write("POST", path);
-      await api(nodePath(d.id) + "?fresh=1").catch(() => null); // 应用完马上现场查一次:不然卡片要等下一轮检查才变回「已是最新」
-      toast(`已在 ${d.label || d.name} 上装好并启动 ${core} ${res?.version || ""}`);
-      await load(true, true);
+      jobStarted(d, "install", res, core);
     } }),
-  // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。
-  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟，做完前关掉这个页面会中断体检。", ok: "开始体检",
-    run: async () => { await write("POST", nodePath(d.id) + "/diagnostics", { engine: "fusion", position: "node", node_id: String(d.id), speed: true }, "体检完成"); await load(true, true); } }),
+  // 体检 = mpx node diagnose <id> 的默认参数:Fusion、测速开、硬件测试关。同样走后台上任务。
+  "node-diagnose": d => confirmBox({ title: `体检 ${d.label || d.name}？`, text: "在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟。可以关掉这个页面，做完会在节点上显示结果。", ok: "开始体检",
+    run: async () => {
+      const res = await write("POST", nodePath(d.id) + "/diagnostics/jobs", { engine: "fusion", position: "node", node_id: String(d.id), speed: true });
+      jobStarted(d, "diagnose", res);
+    } }),
   "node-online": (d, b) => busy(b, async () => {
     let r;
     // 读不到就明说读不到,不能落成「没有在线用户」。409 = 节点配置没开在线统计,应用一次配置就好。
