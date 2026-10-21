@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/]
-verified: 2026-10-21 @ b9eebb7
+verified: 2026-10-21 @ 3b623f5
 ---
 # 安装与升级
 
@@ -22,7 +22,7 @@ verified: 2026-10-21 @ b9eebb7
 4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，任何一台失败就回滚这台、整批停下。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。跳不跳过按**现场**版本判：缓存（上一轮巡检）说已是目标版本时仍会 SSH 问一次，问不到才退回缓存 —— 否则两次巡检之间被手工换过核心的节点会被一直 skip。
 5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。页面只放一个「更新」按钮，按 控制面 → 节点核心 → 本机 的顺序把三层升完（decisions 第 39 条，v0.8.0 起三层齐）；本机一层在桌面构建里是桌面程序本身（取 `mpx_desktop_*` 归档），升完原进程 exec 新二进制重启，`mpx.prev` 留上一版。
 6. **本机升级留痕**：命令行与页面发起的本机 CLI 升级写同一份 `update.json`，`mpx update show` 才看得到上一次的结果。页面那条路不认识 cli 包，靠 [internal/ui](../../internal/ui/) 的 `Options.CLIUpdated` 回调把结果交回 cli 侧落盘；命令行的 trigger 记 `manual`，页面记 `ui`。
-7. **本机开发版**：在工作区运行 `bash scripts/dev-install.sh`，把开发版装到 PATH 已包含的 `~/.local/bin/mpx-dev`；此后用 `mpx-dev-update` 重编同一工作区，不拉代码或切分支。`mpx-dev version` 显示 `dev-提交号-clean/dirty`。它与正式版共用控制面配置；桌面状态按 `mpx-dev` 独立，UI 默认随机端口，并忽略发布版的重启交接。开发版禁止本机发布件更新、回退与页面一键更新，改用重编命令，避免覆盖开发二进制或正式版更新记录。
+7. **本机开发版**：在工作区运行 `bash scripts/dev-install.sh`，把启动器装到 PATH 已包含的 `~/.local/bin/mpx-dev`，二进制放在 `~/.local/share/mpx-dev/`。启动器按 HEAD、已跟踪改动和未忽略的未跟踪文件内容计算指纹，变化才编译；`mpx-dev-update` 强制重编，不拉代码或切分支。编译失败时普通启动明确提示后使用上次成功版本，强制重编则返回失败；没有可用旧版就停止。重新运行 `mpx-dev app` 会关闭旧源码版本的开发窗口，相同版本提示使用现有窗口。`mpx-dev version` 显示 `dev-提交号-clean/dirty`。它与正式版共用控制面配置；桌面状态按 `mpx-dev` 独立，UI 默认随机端口，并忽略发布版的重启交接。开发版禁止本机发布件更新、回退与页面一键更新，改用重编命令，避免覆盖开发二进制或正式版更新记录。
 
 ## 坑
 
