@@ -15,6 +15,62 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const val = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(val).join("") : esc(v);
 function H(strings, ...vals) { let s = strings[0]; vals.forEach((v, i) => { s += val(v) + strings[i + 1]; }); return raw(s); }
 
+let readEpoch = 0;
+let readSnapshot = { page: null, values: new Map() };
+let refreshTimer = 0, refreshQueued = false;
+const copyRead = value => value == null ? value : structuredClone(value);
+const resourceOf = path => new URL(path, location.origin).pathname.split('/')[2];
+const isReadRequest = (path, init) => !init.method || init.method === "GET" || /\/proxy-groups\/preview$|\/rules\/test$|\/settings\/test-webhook$|^\/local\/(profiles|setup\/check|relabel\/plan)$/.test(path);
+function invalidateReads(path) {
+  readEpoch++;
+  const resource = path && resourceOf(path);
+  const dependencies = { users: ["users", "plans", "status", "sub-pulls"], plans: ["plans", "users"],
+    nodes: ["nodes", "inbounds", "hosts", "proxy-groups", "plans"],
+    inbounds: ["inbounds", "hosts", "nodes", "plans", "users", "proxy-groups"],
+    hosts: ["hosts", "inbounds", "nodes", "plans", "users", "proxy-groups"],
+    settings: ["settings", "users"], rules: ["rules"], "proxy-groups": ["proxy-groups", "routing"], devices: ["devices"], "device-password": ["devices"] };
+  const affected = resource && dependencies[resource] ? new Set(dependencies[resource]) : null;
+  for (const [key, entry] of readSnapshot.values) {
+    let invalid = !affected || affected.has(resourceOf(entry.path));
+    if (resource === "settings") {
+      const target = new URL(path, location.origin).pathname;
+      const cached = new URL(entry.path, location.origin).pathname;
+      invalid = target.startsWith("/api/settings/templates/")
+        ? cached === "/api/settings" || cached === target
+        : cached.startsWith("/api/settings") || /^\/api\/users\/[^/]+\/links$/.test(cached);
+    }
+    if (resource === "proxy-groups" && /\/proxy-groups\/preview$/.test(entry.path)) invalid = false;
+    if (invalid) readSnapshot.values.delete(key);
+  }
+}
+// 异步交互共用进行中反馈；同一元素尚未完成时不重复执行。
+let progressCount = 0;
+function showProgress() {
+  progressCount++;
+  let status = $("#ui-progress");
+  if (!status) { status = document.createElement("div"); status.id = "ui-progress"; status.className = "ui-progress"; status.setAttribute("role", "status"); status.textContent = "正在处理…"; document.body.append(status); }
+  let done = false;
+  return () => { if (done) return; done = true; if (--progressCount === 0) $("#ui-progress")?.remove(); };
+}
+const pendingInteractions = new WeakMap();
+function withFeedback(element, operation) {
+  if (element && pendingInteractions.has(element)) return pendingInteractions.get(element);
+  let result;
+  try { result = operation(); } catch (e) { return Promise.reject(e); }
+  if (!result?.then || !element) return Promise.resolve(result);
+  const stopProgress = showProgress();
+  const previous = element.getAttribute("aria-busy");
+  const wasDisabled = element instanceof HTMLSelectElement ? element.disabled : null;
+  if (wasDisabled !== null) element.disabled = true;
+  element.setAttribute("aria-busy", "true"); element.classList.add("ui-pending");
+  const pending = Promise.resolve(result).finally(() => {
+    if (previous === null) element.removeAttribute("aria-busy"); else element.setAttribute("aria-busy", previous);
+    if (wasDisabled !== null) element.disabled = wasDisabled;
+    element.classList.remove("ui-pending"); pendingInteractions.delete(element); stopProgress();
+  });
+  pendingInteractions.set(element, pending);
+  return pending;
+}
 let writeGen = 0; // 写请求的代数,见 pageData
 // 界面里指代节点一律用显示名(🇺🇸 洛杉矶 A);内部名(la-1)只在节点详情与编辑里作次要信息。
 // NODE_LABELS:内部名 → 显示名,每次拉到节点列表时记下,给只带内部名的数据(更新弹窗、退避)用。
@@ -26,13 +82,16 @@ const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); retu
 // field:控制面拒绝时点名的字段(例如 sub_url_prefix);旧控制面不报,就是 undefined。
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; this.field = undefined; } }
 async function api(path, init = {}) {
+  const mutation = !isReadRequest(path, init);
+  if (mutation) invalidateReads(path);
   for (let attempt = 0; ; attempt++) {
     let res;
     try {
       res = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...(init.headers || {}) } });
     } catch (e) { throw new APIError(0, "连不上本地服务：MPX 可能已经退出，请重新打开"); }
     // 写请求回来之后,之前发出的读都可能是旧的:换一代,load 不再复用它们(见 pageData)。
-    if ((init.method || "GET") !== "GET") writeGen++;
+    if (mutation) { writeGen++; invalidateReads(path); }
+    if (mutation && res.ok) refreshQueued = true;
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
     // 只重试限流闸门的 429(带 Retry-After);体检自己的频率限制也回 429,但不带这个头,
     // 那是「这台刚测过」,重试只会再被拒一次。
@@ -536,11 +595,11 @@ let STATUS = null;
 let CP_OK = null;
 PAGES.overview = {
   title: "总览",
-  async load() {
+  async load(r, read = api) {
     const [status, nodes, settings, users, pulls, presence] = await Promise.all([
-      api("/api/status"), api("/api/nodes"), api("/api/settings"), api("/api/users?limit=1000"),
-      api("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
-      api("/api/users?limit=1").catch(() => null),  // 近 24 小时在用的总数;老控制面没有 presence
+      read("/api/status"), read("/api/nodes"), read("/api/settings"), read("/api/users?limit=1000"),
+      read("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
+      read("/api/users?limit=1").catch(() => null),  // 近 24 小时在用的总数;老控制面没有 presence
     ]);
     STATUS = status;
     return { status, nodes, settings, users, pulls, presence: presence?.presence || null };
@@ -707,12 +766,17 @@ async function write(method, path, body, okText) {
   if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
   const res = await api(path, init);
   if (okText) toast(okText);
-  afterWrite();
+  afterWrite(path);
   return res;
 }
-// 任何写成功后都重新拉当前页。放到宏任务里,等调用方关掉抽屉/改完地址再读 location.hash;
+// 写成功后合并一次局部读取，未受影响的资源复用快照。放到宏任务里，等调用方关掉抽屉/改完地址再读 location.hash；
 // 否则地址没变(例如在 #users 删掉用户后又设 location.hash="users")时不会有 hashchange,列表就停在旧数据。
-function afterWrite() { setTimeout(() => load(true, true), 0); }
+function afterWrite(path) {
+  if (!path) invalidateReads();
+  refreshQueued = !!path;
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => load(true, true), 0);
+}
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单。
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
@@ -783,9 +847,21 @@ let loadSeq = 0;
 // 把这一页的几个 GET 全发一遍,白白多耗一倍限流桶,连着点两下就会被控制面 429。
 // 同一页、同一代(期间没有写请求回来)还在路上的读直接复用,不再重发。
 let inflight = null;
-function pageData(p, key) {
-  if (inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
-  const promise = p.load(route);
+function pageData(p, key, local, fresh) {
+  key = JSON.stringify([key, p.readKey?.() || ""]);
+  if (!fresh && inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
+  if (readSnapshot.page !== p) readSnapshot = { page: p, values: new Map() };
+  const snapshot = new Map(readSnapshot.values);
+  const collected = new Map(), requests = new Map();
+  const read = (path, init = {}) => {
+    const signature = JSON.stringify([path, init.method || "GET", init.body || "", !!init.asText]);
+    if (local && snapshot.has(signature)) return Promise.resolve(copyRead(snapshot.get(signature).value));
+    if (requests.has(signature)) return requests.get(signature).then(copyRead);
+    const request = api(path, init).then(value => { collected.set(signature, { path, value: copyRead(value) }); return value; });
+    requests.set(signature, request);
+    return request.then(copyRead);
+  };
+  const promise = Promise.resolve(p.load(route.slice(), read)).then(data => ({ data, collected, local }));
   const mine = inflight = { key, gen: writeGen, promise };
   promise.then(() => {}, () => {}).then(() => { if (inflight === mine) inflight = null; });
   return promise;
@@ -818,7 +894,12 @@ function paint() {
   }
   p.after?.(current.data, route);
 }
-async function load(soft, force) {
+async function load(soft, force, local) {
+  const fresh = local === null;
+  local = local === true || (!fresh && refreshQueued);
+  refreshQueued = false; clearTimeout(refreshTimer);
+  const epoch = readEpoch;
+
   let key = (location.hash.slice(1) || "overview");
   const moved = migrateKey(key);
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
@@ -830,16 +911,25 @@ async function load(soft, force) {
   if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
   const p = PAGES[route[0]];
   const seq = ++loadSeq;
+  const stopProgress = (!soft || force || local || fresh) ? showProgress() : () => {};
   // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
   document.documentElement.dataset.loading = "1";
+  document.querySelector("main")?.setAttribute("aria-busy", "true");
   if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
   try {
-    const data = await pageData(p, key);
-    if (seq !== loadSeq) return;
+    const packet = await pageData(p, key, local, fresh);
+    if (seq !== loadSeq || epoch !== readEpoch) {
+      if (seq === loadSeq) { delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
+      stopProgress();
+      if (seq === loadSeq && epoch !== readEpoch && !current.data) { inflight = null; return load(true, true, null); }
+      return;
+    }
+    const data = packet.data;
+    if (!packet.local) readSnapshot = { page: p, values: packet.collected };
     current = { page: p, data, error: null, loading: false, at: new Date() };
     CP_OK = true;
   } catch (e) {
-    if (seq !== loadSeq) return;
+    if (seq !== loadSeq) { stopProgress(); return; }
     // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
     window.AUTO_APPLY = null;
     current = { ...current, error: e, loading: false };
@@ -848,8 +938,9 @@ async function load(soft, force) {
     if (current.data) toast("刷新失败：" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
-  if (seq === loadSeq) delete document.documentElement.dataset.loading;
+  if (seq === loadSeq) { delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
   if (!current.error) refreshUpdatePill();
+  stopProgress();
 }
 
 // reportTheme 把页面当前主题交给桌面窗口(标题栏、窗口底色一起换)。浏览器里
@@ -867,7 +958,7 @@ function savedTheme() {
 }
 
 const ACTS = {
-  reload: () => load(true),
+  reload: () => load(true, false, null),
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => closeModal(),
@@ -908,7 +999,7 @@ document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
   // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
   if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
-  if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a, e); return; }
+  if (a && ACTS[a.dataset.act]) { e.preventDefault(); withFeedback(a, () => ACTS[a.dataset.act](a.dataset, a, e)).catch(error => toast(error.message, true)); return; }
   const tr = e.target.closest("tr[data-href]");
   if (tr && tr.dataset.href) location.hash = tr.dataset.href;
 });

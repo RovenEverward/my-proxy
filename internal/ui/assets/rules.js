@@ -12,19 +12,20 @@ const groupPath = id => "/api/proxy-groups/" + id;
 const groupID = t => /^group:(\d+)$/.test(t || "") ? +t.slice(6) : 0;
 
 PAGES.rules = {
+  readKey: () => RP.scope,
   title: "分流", closeTo: "rules",
   crumb: () => H`<b>分流规则</b>`,
-  async load(r) {
+  async load(r, read = api) {
     if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1];
     const [routing, rules, groups, catalog, users] = await Promise.all([
-      api("/api/routing"), api(rulesPath(RP.scope)), api("/api/proxy-groups"), api("/api/rule-catalog"), api("/api/users?limit=1000"),
+      read("/api/routing"), read(rulesPath(RP.scope)), read("/api/proxy-groups"), read("/api/rule-catalog"), read("/api/users?limit=1000"),
     ]);
-    let members = {};
+    let members = {}, previews = {};
     if (RP.tab === "groups" && groups.length) {
-      const pv = await Promise.all(groups.map(g => api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify(g), headers: { "Content-Type": "application/json" } }).catch(() => null)));
-      groups.forEach((g, i) => { members[g.id] = pv[i] ? pv[i].filter(e => e.admitted).map(e => e.name) : null; });
+      const pv = await Promise.all(groups.map(g => read("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify(g), headers: { "Content-Type": "application/json" } }).catch(() => null)));
+      groups.forEach((g, i) => { previews[g.id] = pv[i]; members[g.id] = pv[i] ? pv[i].filter(e => e.admitted).map(e => e.name) : null; });
     }
-    return { routing, rules, groups, catalog, members, users: (users.users || []).map(u => u.username) };
+    return { routing, rules, groups, catalog, members, previews, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
     const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。改完，客户端更新一次订阅就生效。</p></div></div>`;
@@ -39,10 +40,17 @@ PAGES.rules = {
   },
   after(d) {
     if (!d) return;
-    $("#rp-scope")?.addEventListener("change", e => { RP.scope = e.target.value; RP.edit = null; RP.testRes = null; load(true, true); if (RP.test) rpRunTest(); });
+    $("#rp-scope")?.addEventListener("change", e => withFeedback(e.target, async () => {
+      const previous = RP.scope; RP.scope = e.target.value; RP.edit = null; RP.testRes = null;
+      const loading = load(true, true, true), seq = loadSeq;
+      await loading;
+      if (seq !== loadSeq) return;
+      if (current.error) { RP.scope = previous; paint(); }
+      else if (RP.test) rpRunTest();
+    }));
     const t = $("#rp-test");
     t?.addEventListener("input", () => { RP.test = t.value; clearTimeout(RP.tt); RP.tt = setTimeout(rpRunTest, 350); });
-    $("#rp-final")?.addEventListener("change", e => rpSetFinal(e.target.value));
+    $("#rp-final")?.addEventListener("change", e => withFeedback(e.target, () => rpSetFinal(e.target.value)));
     $("#re-type")?.addEventListener("change", e => { RP.edit.type = e.target.value; RP.edit.value = e.target.value === "set" ? (d.catalog[0]?.key || "") : e.target.value === "geoip" ? "CN" : ""; RP.edit.target = $("#re-to").value; paint(); });
     if (rpCanWrite()) document.querySelectorAll(".rp-list .rp-row[draggable]").forEach(el => {
       el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", el.dataset.i); el.classList.add("drag"); });
@@ -177,8 +185,12 @@ async function groupEditor(id) {
   const d = RP.d, g0 = d.groups.find(g => g.id === +id), W = can(g0 ? "PUT" : "POST", "/api/proxy-groups/x");
   const g = g0 ? JSON.parse(JSON.stringify(g0)) : { name: "", icon: "", mode: "auto", regions: [], protocols: [], capabilities: [], tags: [] };
   for (const k of ["regions", "protocols", "capabilities", "tags"]) g[k] ||= [];
-  let all = [];
-  try { all = await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ name: "preview", mode: "auto" }), headers: { "Content-Type": "application/json" } }); } catch {}
+  openDrawer(H`<div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db" role="status">正在读取可选节点…</div>`);
+  const opening = $("#drawer").firstElementChild;
+  let all;
+  try { all = g0 && d.previews?.[g0.id] || await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
+  catch (e) { if (opening.isConnected) $("#drawer .db").textContent = e.message; return; }
+  if (!opening.isConnected || (!$("#drawer.open") && !DRAWER_RAF)) return;
   const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有节点带这一项</span>`; };
   const regions = all.map(e => e.region).filter(Boolean), protos = all.map(e => e.protocol).filter(Boolean);
   openDrawer(H`<form id="gp-form" novalidate><div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">
@@ -199,12 +211,14 @@ async function groupEditor(id) {
     g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
   };
   let seq = 0;
-  const sync = async () => {
+  const sync = async initial => {
     read(); const my = ++seq;
+    $("#gp-pv").setAttribute("aria-busy", "true");
     let pv;
-    try { pv = await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
-    catch (e) { if (my === seq) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
-    if (my !== seq) return;
+    try { pv = Array.isArray(initial) ? initial : await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
+    catch (e) { if (my === seq && f.isConnected) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
+    if (my !== seq || !f.isConnected || (!$("#drawer.open") && !DRAWER_RAF)) return;
+    $("#gp-pv").removeAttribute("aria-busy");
     const n = pv.filter(x => x.admitted).length;
     $("#gp-cnt").textContent = `· ${n} / ${pv.length} 个节点`;
     $("#gp-pv").innerHTML = val(pv.length ? pv.map(x => H`<div class="row pp-pvr ${x.admitted ? "" : "miss"}"><span class="pp-mk ${x.admitted ? "ok" : ""}">${ic(x.admitted ? "check" : "x")}</span><span class="grow">${x.name}</span><span class="sub">${x.admitted ? (x.capabilities || []).map(c => RULE_CAPS[c] || c).join(" · ") : (x.reasons || []).join("、")}</span></div>`)
@@ -214,7 +228,7 @@ async function groupEditor(id) {
   // 「标签」条件界面上已经去掉;旧数据里的 tags 原样保留(API 兼容),只在这里给一个清掉的按钮。
   if ($("#gp-cleartags")) $("#gp-cleartags").addEventListener("click", () => { g.tags = []; $("#gp-oldtags").remove(); sync(); });
   $("#gp-mode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; g.mode = b.dataset.m; f.querySelectorAll("#gp-mode button").forEach(x => x.classList.toggle("on", x === b)); read(); });
-  sync();
+  sync(all);
   f.addEventListener("submit", async e => {
     e.preventDefault(); read();
     const btn = $("#gp-save");
@@ -253,11 +267,19 @@ async function rpMove(from, to) {
   try { await rpPut(list, version, `已移到第 ${to + 1} 条`); } catch (e) { toast(e.message, true); }
 }
 async function rpSetFinal(v) {
-  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部改走 ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { toast(e.message, true); }
+  const select = $("#rp-final"), previous = RP.scope ? RP.d.rules.user_final : RP.d.rules.final;
+  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部改走 ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { if (select?.isConnected) select.value = previous || ""; toast(e.message, true); }
 }
 
 Object.assign(ACTS, {
-  "rp-tab": d => { RP.tab = d.k; RP.edit = null; location.hash = "rules/" + d.k; },
+  "rp-tab": async d => {
+    const previous = RP.tab;
+    RP.tab = d.k; RP.edit = null;
+    history.replaceState(null, "", "#rules/" + d.k); paint();
+    const loading = load(true, true, true), seq = loadSeq;
+    await loading;
+    if (seq === loadSeq && current.error) { RP.tab = previous; history.replaceState(null, "", "#rules/" + previous); paint(); }
+  },
   "rp-try": d => { RP.test = d.d; const t = $("#rp-test"); if (t) t.value = d.d; rpRunTest(); },
   "rp-toggle": async (d, el) => { const { rules } = rpScopeList(), r = rules[+d.i]; el.disabled = true;
     try { await write("PATCH", "/api/rules/" + r.id, { enabled: !r.enabled }, r.enabled ? "已停用，客户端更新订阅后生效" : "已启用"); } catch (e) { toast(e.message, true); el.checked = r.enabled; el.disabled = false; } },

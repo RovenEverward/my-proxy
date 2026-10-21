@@ -56,7 +56,7 @@ async function readModify(name, change) {
   const u = asModelUser(await api(userPath(name)));
   change(u);
   const res = await api(userPath(name), { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } });
-  afterWrite();
+  afterWrite(userPath(name));
   return res;
 }
 
@@ -184,36 +184,36 @@ function presSum(d) {
 }
 
 PAGES.users = {
+  readKey: () => JSON.stringify([US.status, US.search, US.offset, US.plan]),
   title: "用户", closeTo: "users",
   count: () => USERS_TOTAL ?? STATUS?.counts?.users ?? "",
   crumb: r => r[1] ? H`<a href="#users">用户</a><i>/</i><b>${r[1]}</b>` : H`<b>用户</b>`,
-  async load(r) {
+  async load(r, read = api) {
     const q = new URLSearchParams({ limit: PAGE_SIZE, offset: US.offset });
     if (US.status) q.set("status", US.status);
     if (US.search) q.set("search", US.search);
     if (US.plan) q.set("plan", US.plan);
     // 各状态的人数:一次取回(≤1000 人)按控制面给的 status 数,不再为每个标签各打一次
     // 请求 —— /api 按 IP 限流,一页五六个请求很容易撞上。人更多时不显示数字。
-    const counts = api("/api/users?limit=1000").then(p => {
+    const counts = read("/api/users?limit=1000").then(p => {
       const c = { "": p.total };
       if (p.total <= p.users.length) for (const [s] of STATUS_TABS.slice(1)) c[s] = p.users.filter(u => u.status === s).length;
       return c;
     });
-    const plans = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.plans) : api("/api/plans");
-    const inbounds = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.inbounds) : api("/api/inbounds");
+    const plans = read("/api/plans");
+    const inbounds = read("/api/inbounds");
     // 「最近在线」这一列要节点的显示名(在线节点、最后所在节点);「导入过订阅，还没连上」
     // 要看订阅拉取记录。两个都读不到时只是少显示一点,不影响列表。
-    const nodes = api("/api/nodes").catch(() => []);
-    const pulls = api("/api/sub-pulls").catch(() => null);
+    const nodes = read("/api/nodes").catch(() => []);
+    const pulls = read("/api/sub-pulls").catch(() => null);
     // 详情里的「最近连接」是另一个接口:读不到只让这一块说读不到,抽屉其余部分照常。
-    const activity = r[1] ? api(userPath(r[1]) + "/activity").then(a => ({ a }), e => ({ error: e.message })) : null;
+    const activity = r[1] ? read(userPath(r[1]) + "/activity").then(a => ({ a }), e => ({ error: e.message })) : null;
     // 详情还要:订阅前缀(没设时提示链接里是 IP)。
-    const detail = r[1] ? Promise.all([api(userPath(r[1])), api(userPath(r[1]) + "/links"), api("/api/settings").catch(() => null)]) : null;
-    const [page, cs, pl, ib, nd, pu, d, act] = await Promise.all([api("/api/users?" + q), counts, plans, inbounds, nodes, pulls, detail, activity]);
+    const detail = r[1] ? Promise.all([read(userPath(r[1])), read(userPath(r[1]) + "/links"), read("/api/settings").catch(() => null)]) : null;
+    const [page, cs, pl, ib, nd, pu, d, act] = await Promise.all([read("/api/users?" + q), counts, plans, inbounds, nodes, pulls, detail, activity]);
     USERS_TOTAL = cs[""];
     PLAN_CACHE.plans = pl || [];
     PLAN_CACHE.inbounds = ib || [];
-    PLAN_CACHE.loaded = true;
     return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, nodes: nd || [], pulls: pu || [],
       user: d && d[0], links: d && d[1], settings: d && d[2],
       pull: pu && r[1] ? pu.find(p => p.username === r[1]) || null : null, pullsKnown: !!pu,
@@ -246,9 +246,9 @@ PAGES.users = {
   },
   after(d, r) {
     const s = $("#user-search");
-    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
+    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true, false, true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
-    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
+    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; withFeedback(pf, () => load(true, true, true)); });
     if (d && r[1] && d.user) userDrawer(drawerUser(d), d.links, d);
   },
 };
@@ -475,10 +475,16 @@ async function userEditor(name) {
 
 /* ---- 动作 ---- */
 Object.assign(ACTS, {
-  "user-filter": d => { US.status = d.status; US.offset = 0; load(true); },
+  "user-filter": async (d, el) => {
+    const previous = { status: US.status, offset: US.offset };
+    US.status = d.status; US.offset = 0; paint();
+    const loading = load(true, true, true), seq = loadSeq;
+    await loading;
+    if (seq === loadSeq && current.error) { Object.assign(US, previous); paint(); }
+  },
   // 表头点了就换个方向:默认最新在前,再点一次反过来。从未连接的始终在最后。
   "pres-sort": () => { US.dir = -US.dir; paint(); },
-  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); load(true); },
+  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); return load(true, true, true); },
   "user-new": () => userEditor(null),
   "user-edit": d => userEditor(d.name),
   "user-export": () => confirmBox({ title: "导出 CSV", text: "导出用户清单暂不支持在窗口里操作。", ok: "知道了", run: async () => {} }),

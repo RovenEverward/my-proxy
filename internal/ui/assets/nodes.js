@@ -44,18 +44,18 @@ PAGES.nodes = {
   title: "节点",
   count: () => NODES_TOTAL ?? STATUS?.counts?.nodes ?? "",
   crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${nodeLabel(d?.node) || "节点"}</b>` : H`<b>节点</b>`,
-  async load(r) {
+  async load(r, read = api) {
     if (r[1]) {
       const id = +r[1];
       if (jobNode !== id) { jobNode = id; jobAsk = {}; jobAsked = new Set(); jobsAfterReady = false; jobRunning = new Map(); jobPollStop(); }
       // 体检报告没有就是 404,不算页面错误。
-      const diag = api(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
+      const diag = read(nodePath(id) + "/diagnostics?from=node").catch(e => e.status === 404 ? null : { error: e.message });
       // 连接方式由 conn.js 组件取数与渲染。
-      const [node, conn, report] = await Promise.all([api(nodePath(id)), CONN.load([id]), diag]);
-      const jobs = await loadNodeJobs(id);
+      const [node, conn, report] = await Promise.all([read(nodePath(id)), CONN.load([id], read), diag]);
+      const jobs = await loadNodeJobs(id, read);
       return { node, inbounds: conn.inbounds, conn, report, jobs };
     }
-    const nodes = await api("/api/nodes");
+    const nodes = await read("/api/nodes");
     NODES_TOTAL = nodes.length;
     for (const n of nodes) NODE_LABEL_BY_ID[n.id] = n;
     return { nodes };
@@ -80,14 +80,14 @@ const JOB_TEXT = {
 const jobLabel = id => nodeLabel(NODE_LABEL_BY_ID[id]) || "这台节点";
 // loadNodeJobs:这个节点最近的体检、安装任务。GET /jobs 是老控制面没有的接口(404):
 // 当作没有,页面和以前一样。其它错误同样只是这次没有,不能挡住详情本身。
-async function loadNodeJobs(id) {
-  const active = await api(nodePath(id) + "/jobs?active=1&limit=5").catch(() => null);
+async function loadNodeJobs(id, read = api) {
+  const active = await read(nodePath(id) + "/jobs?active=1&limit=5").catch(() => null);
   if (!Array.isArray(active?.jobs)) return null;
   // 「上次没做完」:不仅这次还没起过任务,而且要连着两次读都没有正在跑(中间那次是起任务
   // 时的重读)。这样「开始体检」的那次重读不会把自己刚起的任务当成上次没做完。
   let last = null;
   if (!active.jobs.length && !jobAsk[id] && jobAsked.has(id)) {
-    const recent = await api(nodePath(id) + "/jobs?limit=1").catch(() => null), j = recent?.jobs?.[0];
+    const recent = await read(nodePath(id) + "/jobs?limit=1").catch(() => null), j = recent?.jobs?.[0];
     if (j && j.status === "interrupted" && Date.now() - new Date(j.finished_at || j.started_at) < DAY) last = j;
   }
   jobAsk[id] = !!active.jobs.length;

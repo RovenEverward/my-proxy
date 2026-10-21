@@ -209,20 +209,19 @@ async function applyAfterWrite(n, done) {
     toast(`${done}，但应用到 ${plainNodeName(n)} 失败：${e.message}`, true);
   }
 }
-async function connLoad(nodeIds) {
-  const all = await api("/api/inbounds");
+async function connLoad(nodeIds, read = api) {
+  const [all, rawNodes] = await Promise.all([read("/api/inbounds"), read("/api/nodes")]);
   const want = Array.isArray(nodeIds) && nodeIds.length ? new Set(nodeIds.map(Number)) : null;
   const inbounds = want ? all.filter(i => want.has(i.node_id)) : all;
-  const rawNodes = await api("/api/nodes");
   const picked = want ? rawNodes.filter(n => want.has(n.id)) : rawNodes;
   // 入口按入站各取一次:控制面没有「全部入口」的接口。
   // 节点的 region / city 只在 metadata 里(节点 JSON 只给拼好的显示名),名称与
   // 节点所在地的对照要用它们;读不到就当没有地区,不提醒。
   // 有未应用改动的节点(老控制面没有这个接口,当作没有)。
   const [hosts, metas, pend] = await Promise.all([
-    Promise.all(inbounds.map(i => api(inbPath(i.id) + "/hosts"))),
-    Promise.all(picked.map(n => api(`/api/nodes/${n.id}/metadata`).catch(() => null))),
-    api("/api/nodes/pending").catch(() => []),
+    Promise.all(inbounds.map(i => read(inbPath(i.id) + "/hosts"))),
+    Promise.all(picked.map(n => read(`/api/nodes/${n.id}/metadata`).catch(() => null))),
+    read("/api/nodes/pending").catch(() => []),
   ]);
   INB_PENDING = new Set((pend || []).map(p => p.node_id));
   const nodes = picked.map((n, k) => ({ ...n, region: metas[k]?.region || "", city: metas[k]?.city || "" }));

@@ -224,6 +224,7 @@ export function httpsJSON(port, method, p, body, headers = {}) {
 // 登录:用一次性链接换 cookie。
 // 链接里的 key 只能换一次会话;之后的用例复用第一次拿到的 cookie。
 export async function login(page, env) {
+  if (process.env.MPX_INTERACTION_AUDIT) await (await import("./interaction-audit.mjs")).auditInteractions(page);
   if (env.cookies) {
     await page.context().addCookies(env.cookies);
     await page.goto(env.origin + "/");

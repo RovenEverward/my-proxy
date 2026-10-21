@@ -34,11 +34,11 @@ function settingsForm(s, W, keys, inner) {
 PAGES.system = {
   title: "系统",
   crumb: r => H`<a href="#system">系统</a><i>/</i><b>${(SYS_TABS.find(t => t[0] === tabKey(SYS_TABS, r)) || SYS_TABS[0])[1]}</b>`,
-  async load(r) {
+  async load(r, read = api) {
     const t = tabKey(SYS_TABS, r);
     if (t === "update") return {};
-    const settings = await api("/api/settings");
-    if (t === "devices") return { settings, devices: await api("/api/devices") };
+    const settings = await read("/api/settings");
+    if (t === "devices") return { settings, devices: await read("/api/devices") };
     return { settings };
   },
   render(d, r) {
@@ -530,19 +530,19 @@ function subLeaveModal(target) {
 PAGES.sub = {
   title: "订阅",
   crumb: () => H`<b>订阅</b>`,
-  async load(r) {
+  async load(r, read = api) {
     // 侧栏的节点、用户数字来自 STATUS;直接打开订阅页时也取一次。
-    STATUS = await api("/api/status").catch(() => STATUS);
+    STATUS = await read("/api/status").catch(() => STATUS);
     if (r[1] === "templates") ADV_OPEN = true;
     const [settings, builtin, users, pulls, nodes, inbounds, plans] = await Promise.all([
-      api("/api/settings"), api("/api/settings/builtin-rules"), subUsers(),
-      api("/api/sub-pulls").catch(() => []), api("/api/nodes").catch(() => []),
-      api("/api/inbounds").catch(() => []), api("/api/plans").catch(() => []),
+      read("/api/settings"), read("/api/settings/builtin-rules"), subUsers(read),
+      read("/api/sub-pulls").catch(() => []), read("/api/nodes").catch(() => []),
+      read("/api/inbounds").catch(() => []), read("/api/plans").catch(() => []),
     ]);
     const recent = [...(pulls || [])].sort((a, b) => new Date(b.last_pulled_at) - new Date(a.last_pulled_at)).find(p => users.some(u => u.username === p.username));
     const user = users.find(u => u.username === SUB?.preview.user) || users.find(u => u.username === recent?.username) || users[0];
-    const preview = await subPreview(user, { users, nodes, inbounds, plans });
-    const tpl = ADV_OPEN ? await subTemplates() : {};
+    const preview = await subPreview(user, { users, nodes, inbounds, plans }, read);
+    const tpl = ADV_OPEN ? await subTemplates(read) : {};
     return { settings, builtin, users, nodes, inbounds, plans, preview, tpl };
   },
   render(d) {
@@ -712,24 +712,24 @@ Object.assign(ACTS, {
 });
 
 // 用户列表分页取全，预览下拉和默认人选使用同一份数据。
-async function subUsers() {
+async function subUsers(read = api) {
   const users = [];
   for (let offset = 0; ; offset = users.length) {
-    const page = await api(`/api/users?limit=1000&offset=${offset}`);
+    const page = await read(`/api/users?limit=1000&offset=${offset}`);
     users.push(...page.users);
     if (!page.users.length || users.length >= page.total) return users;
   }
 }
-function subTemplates() {
-  return Promise.all(TPL_FORMATS.map(async f => [f, await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
+function subTemplates(read = api) {
+  return Promise.all(TPL_FORMATS.map(async f => [f, await read("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
 }
-async function subPreview(u, data) {
+async function subPreview(u, data, read = api) {
   if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3, applied: null, nodes: data.nodes, inbounds: data.inbounds, plans: data.plans, users: data.users };
   const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0, auto: "", appliedPrefix: "", getAuto: false };
   // 链接开头按控制面这次拼链接用的那个认:从 auto 本身切出来,任何版本的控制面都给得出(只加的 base 字段同值)。
   // 没填链接开头时它是控制面这次请求的 Host(经 mpx ui 转发过来就是控制面的地址),不一定等于页面地址。
   try {
-    const links = await api(userPath(u.username) + "/links"); out.auto = links.auto || "";
+    const links = await read(userPath(u.username) + "/links"); out.auto = links.auto || "";
     const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); out.appliedPrefix = i < 0 ? "" : out.auto.slice(0, i);
     out.getAuto = true;
   } catch (e) { toast(e.message, true); }
