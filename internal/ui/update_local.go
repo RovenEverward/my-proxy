@@ -259,6 +259,9 @@ func (s *Server) updateCLI(w http.ResponseWriter, r *http.Request) {
 // 问不到最新版)不算一次升级尝试,不记。
 func (s *Server) applyCLIUpdate(ctx context.Context, version string) (from, to string, changed bool, exe string, code int, err error) {
 	current := updateLocalVersion()
+	if err := selfupdate.CheckLocalUpdate(current); err != nil {
+		return current, "", false, "", http.StatusConflict, err
+	}
 	target := strings.TrimSpace(version)
 	explicit := target != ""
 	src := updateSource()

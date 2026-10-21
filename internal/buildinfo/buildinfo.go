@@ -54,6 +54,9 @@ func Known() bool { return Version() != "" }
 // 从源码直接编出来的是普通 CLI 构建。
 func Desktop() bool { return strings.TrimSpace(desktop) == "1" }
 
+// IsDevelopment 识别本机开发构建；前缀由 scripts/dev-install.sh 注入。
+func IsDevelopment(v string) bool { return strings.HasPrefix(strings.TrimSpace(v), "dev-") }
+
 var (
 	once          sync.Once
 	fromBuildInfo string

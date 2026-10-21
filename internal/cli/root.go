@@ -91,6 +91,7 @@ func init() {
 // args 是进程参数(不含程序名),main 已先用 DesktopArgs 摊派过;不传时 cobra
 // 照旧自己读 os.Args[1:],测试与其他调用方两种用法都能走。
 func Execute(args ...string) int {
+	configureDevelopment()
 	wireCompletion(rootCmd)
 	if len(args) > 0 {
 		rootCmd.SetArgs(args)
