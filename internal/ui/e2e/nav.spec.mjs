@@ -189,3 +189,41 @@ for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? "
   await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
   expect(await page.evaluate(() => document.querySelector("main").scrollTop)).toBeGreaterThan(0);
 });
+
+for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲隐藏、悬停与滚动显示，宽度不变 · ${theme}`, async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
+  await page.mouse.move(1, 1);
+  const main = page.locator("main");
+  const measure = () => main.evaluate(m => {
+    const thumb = getComputedStyle(m, "::-webkit-scrollbar-thumb");
+    return { width: m.clientWidth, content: m.querySelector("#page").getBoundingClientRect().width,
+      bar: getComputedStyle(m, "::-webkit-scrollbar").width, color: thumb.backgroundColor,
+      track: getComputedStyle(m, "::-webkit-scrollbar-track").backgroundColor };
+  });
+  const idle = await measure();
+  expect(idle.bar).toBe("8px");
+  expect(idle.color).toBe("rgba(0, 0, 0, 0)");
+  expect(idle.track).toBe("rgba(0, 0, 0, 0)");
+  await main.hover({ position: { x: 80, y: 100 } });
+  const hover = await measure();
+  expect(hover.color).not.toBe(idle.color);
+  expect([hover.width, hover.content]).toEqual([idle.width, idle.content]);
+  await page.mouse.move(1, 1);
+  await main.evaluate(m => { m.scrollTop = m.scrollHeight; });
+  await expect(main).toHaveClass(/scrolling/);
+  const scrolling = await measure();
+  expect(scrolling.color).not.toBe(idle.color);
+  expect([scrolling.width, scrolling.content]).toEqual([idle.width, idle.content]);
+  expect(await main.evaluate(m => Math.abs(m.scrollHeight - m.clientHeight - m.scrollTop))).toBeLessThanOrEqual(1);
+  await expect(main).not.toHaveClass(/scrolling/);
+  expect((await measure()).color).toBe(idle.color);
+  expect([(await measure()).width, (await measure()).content]).toEqual([idle.width, idle.content]);
+  // 离开后旧 main 不得重新排出隐藏计时器。
+  await page.goto(env.origin + "/#nodes");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  expect(await page.evaluate(() => mainScrollTimer)).toBe(0);
+});

@@ -769,6 +769,13 @@ function pageData(p, key) {
   promise.then(() => {}, () => {}).then(() => { if (inflight === mine) inflight = null; });
   return promise;
 }
+// 内容区滚动时短暂显示滑块，重画或离开页面时清掉计时器。
+let mainScrollTimer = 0;
+function clearMainScroll() {
+  clearTimeout(mainScrollTimer); mainScrollTimer = 0;
+  $("main")?.classList.remove("scrolling");
+}
+addEventListener("pagehide", clearMainScroll);
 function paint() {
   const p = PAGES[route[0]] || PAGES.overview;
   const crumb = p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`;
@@ -777,8 +784,17 @@ function paint() {
   else body = p.render(current.loading && !current.data ? null : current.data, route);
   // 滚动的是内容区 main,不是整页。
   const y = $("main")?.scrollTop || 0;
+  clearMainScroll();
   $("#root").innerHTML = val(shell(p, body, crumb));
-  const m = $("main"); if (m) m.scrollTop = y;
+  const m = $("main");
+  if (m) {
+    m.scrollTop = y;
+    m.addEventListener("scroll", () => {
+      if (!m.isConnected) return;
+      clearMainScroll(); m.classList.add("scrolling");
+      mainScrollTimer = setTimeout(clearMainScroll, 700);
+    }, { passive: true });
+  }
   p.after?.(current.data, route);
 }
 async function load(soft, force) {
