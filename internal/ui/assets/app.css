@@ -884,3 +884,5 @@ table.ut tbody tr:hover{background:var(--hover)}
 /* 所有异步入口共用反馈，不改变控件尺寸和页面布局。 */
 .ui-pending{opacity:.6;cursor:progress}
 .ui-progress{position:fixed;right:18px;bottom:18px;z-index:60;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);color:var(--ink2);box-shadow:var(--shadow);font-size:12px;pointer-events:none}
+/* Windows 窄屏使用底部抽屉，收起后不能被标题栏偏移留在视口内。 */
+@media (max-width:860px){html.tb-right .drawer{top:auto}}

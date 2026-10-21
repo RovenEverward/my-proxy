@@ -257,3 +257,18 @@ test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", asyn
   await expect(main).not.toHaveClass(/scrolling/);
   expect(await measure()).toEqual(idle);
 });
+
+test("Windows 窄屏收起的抽屉完全位于视口之外", async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 900 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
+    document.addEventListener("DOMContentLoaded", () => {
+      document.documentElement.style.setProperty("--mygo-titlebar-inset-right", "138px");
+      document.documentElement.style.setProperty("--mygo-titlebar-height", "52px");
+    });
+  });
+  await login(page, env);
+  await expect(page.locator("html")).toHaveClass(/tb-right/);
+  await expect.poll(() => page.locator("#drawer").evaluate(e => e.getBoundingClientRect().top >= innerHeight)).toBe(true);
+});
