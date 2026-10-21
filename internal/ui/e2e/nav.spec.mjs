@@ -162,6 +162,10 @@ for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? "
   if (tb) await page.addInitScript(() => {
     document.addEventListener("DOMContentLoaded", () => { const r = document.documentElement.style; r.setProperty("--mygo-titlebar-inset-right", "138px"); r.setProperty("--mygo-titlebar-height", "52px"); });
   });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
+  });
   await page.setViewportSize({ width: 1100, height: 420 });
   await login(page, env);
   await page.goto(env.origin + "/#overview");
@@ -190,7 +194,11 @@ for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? "
   expect(await page.evaluate(() => document.querySelector("main").scrollTop)).toBeGreaterThan(0);
 });
 
-for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲隐藏、悬停与滚动显示，宽度不变 · ${theme}`, async ({ page }) => {
+for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲和悬停内容时隐藏，滚动时显示，宽度不变 · ${theme}`, async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
+  });
   await page.setViewportSize({ width: 1100, height: 420 });
   await login(page, env);
   await page.goto(env.origin + "/#overview");
@@ -210,7 +218,7 @@ for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲隐�
   expect(idle.track).toBe("rgba(0, 0, 0, 0)");
   await main.hover({ position: { x: 80, y: 100 } });
   const hover = await measure();
-  expect(hover.color).not.toBe(idle.color);
+  expect(hover.color).toBe(idle.color);
   expect([hover.width, hover.content]).toEqual([idle.width, idle.content]);
   await page.mouse.move(1, 1);
   await main.evaluate(m => { m.scrollTop = m.scrollHeight; });
@@ -226,4 +234,26 @@ for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲隐�
   await page.goto(env.origin + "/#nodes");
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   expect(await page.evaluate(() => mainScrollTimer)).toBe(0);
+});
+
+test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "macOS" } });
+  });
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveClass(/os-mac/);
+  const main = page.locator("main");
+  const measure = () => main.evaluate(m => [m.clientWidth, m.querySelector("#page").getBoundingClientRect().width]);
+  expect(await main.evaluate(m => getComputedStyle(m, "::-webkit-scrollbar").width)).not.toBe("8px");
+  const idle = await measure();
+  await main.evaluate(m => { m.scrollTop = m.scrollHeight; });
+  expect(await main.evaluate(m => m.scrollTop)).toBeGreaterThan(0);
+  expect(await main.evaluate(m => Math.abs(m.scrollHeight - m.clientHeight - m.scrollTop))).toBeLessThanOrEqual(1);
+  expect(await measure()).toEqual(idle);
+  await expect(main).not.toHaveClass(/scrolling/);
+  expect(await measure()).toEqual(idle);
 });

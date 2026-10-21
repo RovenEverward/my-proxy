@@ -10,6 +10,7 @@ test.afterAll(async () => { await env?.stop(); });
 for (const scheme of ["light", "dark"]) {
   test(`侧栏品牌 lockup(${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
+    await page.addInitScript(t => localStorage.setItem("mpx-theme", t), scheme);
     await login(page, env);
     await expect(page).toHaveTitle("MPX");
     const shown = page.locator(`.brand img.lk-${scheme === "light" ? "l" : "d"}`);
@@ -22,3 +23,13 @@ for (const scheme of ["light", "dark"]) {
     if (process.env.SHOT_DIR) await page.locator("aside.side").screenshot({ path: `${process.env.SHOT_DIR}/sidebar-${scheme}.png` });
   });
 }
+
+for (const saved of [null, "dark"]) test(`系统深色时默认浅色，已存选择保留 · ${saved || "首次"}`, async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  if (saved) await page.addInitScript(t => localStorage.setItem("mpx-theme", t), saved);
+  const themes = [];
+  await page.route("**/local/app/theme", r => { themes.push(r.request().postDataJSON().theme); return r.fulfill({ json: {} }); });
+  await login(page, env);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", saved || "light");
+  await expect.poll(() => themes.at(-1)).toBe(saved || "light");
+});

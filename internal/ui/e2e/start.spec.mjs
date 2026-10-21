@@ -61,10 +61,10 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
   const r = await cpFetch(links.auto.replace(/^https?:\/\/[^/]+/, env.cpURL), { headers: { "User-Agent": "sing-box 1.12.0" } });
   expect(r.status).toBe(200);
   await page.reload();
-  const row = page.locator("#start-done");
+  const row = page.locator(".ph #start-done");
   await expect(row).toContainText("开始使用 · 4 步都完成了");
   await expect(start).toHaveCount(0);
-  await expect(page.locator(".ph p")).toHaveText("1 个用户 · 1 个节点");
+  await expect(page.locator(".ph p")).toHaveCount(0);
   // 控制面给了 presence 就按「近 24 小时在用」讲;没有(老控制面)才退回到拉订阅的人数。
   await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("0人");
   await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("按节点流量算");

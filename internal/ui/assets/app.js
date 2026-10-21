@@ -500,19 +500,36 @@ function startSteps(d) {
       go: u ? H`<a class="btn sm pri" href="${userLink(u.username)}">${ic("qr")}发给 ${u.username}</a>` : "" },
   ];
 }
-function startBlock(S, done, allDone) {
-  if (allDone && clGet("hide")) return "";
+const OV_MAX = 6;
+const ovNodeRank = x => !x.status ? 3 : !x.status.reachable ? 0 : (x.status.certificates || []).some(c => c.not_after && c.days_left <= 14) ? 1 : !x.status.active ? 2 : x.draining ? 4 : 5;
+// 统计格副行只列不为 0 的类别,第一项(正常 / 运行)总是列出。
+// 总览里运行时长只到最大的单位(3 天 / 5 小时 / 12 分钟),精确值在悬停提示里。
+const ovDur = v => { v = Math.floor(+v || 0); const d = Math.floor(v / 86400), h = Math.floor(v / 3600); return d ? `${d} 天` : h ? `${h} 小时` : `${Math.floor(v / 60)} 分钟`; };
+const ovParts = parts => parts.filter(([n], i) => i === 0 || n > 0).map(([n, t]) => `${n} ${t}`).join(" · ");
+// 用量:条 + 百分比,完整数字放在悬停提示里。
+function ovUse(u) {
+  if (!u.data_limit) return H`<span class="ov-use sub">${fmtBytes(u.used_traffic)} · 不限</span>`;
+  const p = pct(u), cls = p >= 100 ? "bad" : p >= 80 ? "warn" : "";
+  return H`<span class="ov-use" title="${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}"><span class="bar"><i class="${cls}" style="width:${p.toFixed(1)}%"></i></span><span class="sub">${Math.round(p)}%</span></span>`;
+}
+function startList(S, done, allDone) {
   const cur = S.findIndex(x => !x.done);
   const item = (x, i) => H`<li class="ck ${x.done ? "done" : i === cur ? "cur" : ""}"><span class="ck-i">${x.done ? ic("check") : String(i + 1)}</span>
     <div class="ck-t"><b>${x.t}</b><span class="sub">${x.done ? x.dDone : x.dTodo}</span></div>
     <div class="ck-a">${!x.done && i === cur ? H`${x.skip ? H`<button class="btn sm" data-act="cl-skip">先用 IP</button>` : ""}${x.go}` : ""}</div></li>`;
   const optional = H`<li class="ck opt"><span class="ck-i">${ic("plus")}</span><div class="ck-t"><b>可选：让它更好用</b><span class="sub">随时都能做，不影响上面的进度</span></div>
     <div class="ck-a">${PAGES.nodes ? H`<a class="btn sm" href="#nodes">${ic("nodes")}再加一个节点</a>` : ""}${PAGES.rules ? H`<a class="btn sm" href="#rules">${ic("split")}调整分流</a>` : ""}${PAGES.system ? H`<a class="btn sm" href="#system">${ic("bell")}打开到期提醒</a>` : ""}</div></li>`;
-  const list = H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去，大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
+  return H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去，大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
     <div class="cl-bar">${S.map(x => H`<i class="${x.done ? "on" : ""}"></i>`)}</div>
     <ol class="cks">${S.map(item)}${optional}</ol></section>`;
-  if (!allDone) return H`<div class="mb">${list}</div>`;
-  return H`<div class="cl-done" id="start-done">${ic("check")}<span><b>开始使用</b> · 4 步都完成了</span><span class="sp" style="flex:1"></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>${CL_OPEN ? H`<div class="mb">${list}</div>` : ""}`;
+}
+function startBlock(S, done, allDone) {
+  if (!allDone) return H`<div class="mb">${startList(S, done, allDone)}</div>`;
+  return CL_OPEN && !clGet("hide") ? H`<div class="mb">${startList(S, done, allDone)}</div>` : "";
+}
+function ovDoneChip() {
+  if (clGet("hide")) return "";
+  return H`<div class="ov-done" id="start-done">${ic("check")}<span><b>开始使用</b> · 4 步都完成了</span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib sm" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>`;
 }
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
@@ -529,51 +546,55 @@ PAGES.overview = {
     return { status, nodes, settings, users, pulls, presence: presence?.presence || null };
   },
   render(d) {
-    const L = !d;
-    const stat = (label, v, sub, dot, tip) => H`<div class="card stat" ${tip ? raw(`title="${esc(val(tip))}"`) : ""}><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s">${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
-    if (L) return H`<div class="ph"><div><h1>总览</h1><p><span class="sk" style="width:260px"></span></p></div></div>
-      <div class="grid g4">${stat()}${stat()}${stat()}${stat()}</div>
-      <div class="grid g2 mt"><div class="card"><div class="ch">需要处理的用户</div><table><tbody>${skRows(4, 3)}</tbody></table></div><div class="card"><div class="ch">节点</div><table><tbody>${skRows(4, 2)}</tbody></table></div></div>`;
-    const { status: s, nodes, settings, users, pulls } = d, U = users.users;
-    const S = startSteps(d), done = S.filter(x => x.done).length, allDone = done === S.length;
-    const pulled24 = (pulls || []).filter(p => Date.now() - new Date(p.last_pulled_at) < 864e5).length;
-    const n = k => U.filter(u => u.status === k).length;
-    const usagePct = settings.notify_usage_percent || 80;
-    const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
-    const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
-    const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
-    const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
-    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
-    const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
-    const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
-    const partial = users.total > U.length;
-    // 标题下一句按稿子:还没走完「开始使用」时是欢迎语,走完了是人数和节点数。
-    return H`<div class="ph"><div><h1>总览</h1><p>${allDone ? `${users.total} 个用户 · ${nodes.length} 个节点` : "欢迎用 MPX。跟着下面几步，把第一条订阅发出去。"}</p></div></div>
-    ${startBlock(S, done, allDone)}
-    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
-      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
-    <div class="grid g4">
-      ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
-      ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
-      ${d.presence ? stat("近 24 小时在用", H`${d.presence.active_24h ?? 0}<small>人</small>`, "按节点流量算")
-        : pulls ? stat("近 24 小时拉过订阅", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
-    </div>
-    <div class="grid g2 mt">
-      <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
-      ${attention.length ? H`<div class="tw"><table><tbody>${attention.slice(0, 6).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold">${u.username}</b></div></td>
-        <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td class="hide-m">${usageBar(u)}</td>
-        <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table></div>`
-        : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
-        : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
-      <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
-      ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${nodeLabel(x)}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
-        : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
-    </div>
-    <div class="card mt"><div class="ch">通知</div>
-      <dl class="kv"><dt>Webhook</dt><dd class="mono">${settings.webhook_url || H`<span class="sub">未配置，不发通知</span>`}</dd>
-      <dt>到期提醒</dt><dd>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</dd>
-      <dt>用量提醒</dt><dd>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</dd></dl></div>`;
+  const L = !d;
+  const stat = (label, v, sub, dot, tip) => H`<div class="card stat" ${tip ? raw(`title="${esc(val(tip))}"`) : ""}><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s" ${!L && typeof sub === "string" ? raw(`title="${esc(sub)}"`) : ""}>${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
+  if (L) return H`<div class="ov"><div class="ph"><h1>总览</h1></div>
+    <div class="grid g4">${stat()}${stat()}${stat()}${stat()}</div>
+    <div class="grid g2 ov-main"><div class="card"><div class="ch">需要处理的用户</div><table><tbody>${skRows(4, 3)}</tbody></table></div><div class="card"><div class="ch">节点</div><table><tbody>${skRows(4, 2)}</tbody></table></div></div></div>`;
+  const { status: s, nodes, settings, users, pulls } = d, U = users.users;
+  const S = startSteps(d), done = S.filter(x => x.done).length, allDone = done === S.length;
+  const pulled24 = (pulls || []).filter(p => Date.now() - new Date(p.last_pulled_at) < 864e5).length;
+  const n = k => U.filter(u => u.status === k).length;
+  const usagePct = settings.notify_usage_percent || 80;
+  const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
+  const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
+  const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
+  const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
+  const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
+  const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
+  const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
+  const partial = users.total > U.length;
+  const shown = nodes.map((x, i) => [x, i]).sort((a, b) => ovNodeRank(a[0]) - ovNodeRank(b[0]) || a[1] - b[1]).slice(0, OV_MAX).map(a => a[0]);
+  const hook = settings.webhook_url;
+  const backoffTitle = s.backoffs.map(b => `${labelOfName(b.node_name)}：连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。`).join(" ");
+  return H`<div class="ov"><div class="ph"><div><h1>总览</h1>${allDone ? "" : H`<p>欢迎用 MPX。跟着下面几步，把第一条订阅发出去。</p>`}</div><span class="sp"></span>${allDone ? ovDoneChip() : ""}</div>
+  ${startBlock(S, done, allDone)}
+  ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
+    : s.backoffs.length ? H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
+  <div class="grid g4">
+    ${stat("用户", users.total, H`${ovParts([[n("active"), "正常"], [n("limited"), "超限"], [n("expired"), "过期"], [n("disabled"), "停用"]])}${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
+    ${stat("节点", s.counts.nodes, ovParts([[run, "运行"], [drain, "暂停分配"], [down, "连不上"]]))}
+    ${d.presence ? stat("近 24 小时在用", H`${d.presence.active_24h ?? 0}<small>人</small>`, "按节点流量算")
+      : pulls ? stat("近 24 小时拉过订阅", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
+    ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${ovDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${ovDur(s.uptime_seconds)}`, "ink", H`${tick} · 已运行 ${fmtDur(s.uptime_seconds)}`)}
+  </div>
+  <div class="grid g2 ov-main">
+    <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
+    ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold ell">${u.username}</b></div></td>
+      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${ovUse(u)}</td>
+      <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table>`
+      : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
+      : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
+    <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
+    ${nodes.length ? shown.map(x => { const c = certWarn(x); return H`<a class="row ov-n" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold ell">${nodeLabel(x)}</b><span class="sub mono ov-addr">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
+      : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
+  </div>
+  <div class="ov-note" id="ov-notify"><span class="ov-note-h">${ic("bell")}通知</span>
+    <span class="ov-kv"><span class="sub">Webhook</span>${hook ? H`<span class="mono ell" title="${hook}">${hook}</span>` : H`<span class="sub">未配置，不发通知</span>`}</span>
+    <span class="ov-kv"><span class="sub">到期提醒</span>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</span>
+    <span class="ov-kv"><span class="sub">用量提醒</span>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</span>
+    <span class="sp"></span>${PAGES.system ? H`<a class="btn ghost sm" href="#system">设置 ${ic("arrow")}</a>` : ""}</div></div>`;
+
   },
 };
 
@@ -839,10 +860,10 @@ async function reportTheme(theme) {
     await fetch("/local/app/theme", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme }) });
   } catch {}
 }
-// 页面加载时报一次:存过 light/dark 就报那个,没存过表示跟随系统。
+// 页面加载时报一次：存过 light/dark 就报那个，没存过使用浅色。
 function savedTheme() {
   try { const t = localStorage.getItem("mpx-theme"); if (t === "light" || t === "dark") return t; } catch {}
-  return "system";
+  return "light";
 }
 
 const ACTS = {

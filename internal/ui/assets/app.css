@@ -487,18 +487,18 @@ html.tb-right .rp-card>.ch{top:0} /* main 已经在标题栏下面,吸顶不用�
 /* 下拉的箭头:别处用 background 简写换底色时也要留着它。 */
 select.in{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 9px center!important;background-size:14px!important}
 
-/* 细滚动条:Windows(WebView2)和 Linux 的 WebKit 上默认是粗的系统浅色条。墨色半透明,深浅主题都跟着 --ink 走。 */
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
-::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 22%,transparent);border:3px solid transparent;border-radius:8px;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
-::-webkit-scrollbar-button{display:none;width:0;height:0}
-/* 内容区始终保留同样宽度，显隐只换颜色，避免 Mac 常驻灰轨道和内容横跳。 */
+/* Mac 的滚动条交给系统，其他平台保持透明轨道。 */
+html:not(.os-mac) ::-webkit-scrollbar{width:10px;height:10px}
+html:not(.os-mac) ::-webkit-scrollbar-track,html:not(.os-mac) ::-webkit-scrollbar-corner{background:transparent}
+html:not(.os-mac) ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 22%,transparent);border:3px solid transparent;border-radius:8px;background-clip:padding-box}
+html:not(.os-mac) ::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
+html:not(.os-mac) ::-webkit-scrollbar-button{display:none;width:0;height:0}
+/* 内容区固定 8px，只在滚动中或悬停滑块时显色，不挤动内容。 */
 main{--main-scroll-thumb:transparent}
-main:hover,main.scrolling{--main-scroll-thumb:color-mix(in srgb,var(--ink) 24%,transparent)}
-main::-webkit-scrollbar{width:8px;height:8px}
-main::-webkit-scrollbar-thumb{background-color:var(--main-scroll-thumb);border-width:2px}
-main::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
+main.scrolling{--main-scroll-thumb:color-mix(in srgb,var(--ink) 24%,transparent)}
+html:not(.os-mac) main::-webkit-scrollbar{width:8px;height:8px}
+html:not(.os-mac) main::-webkit-scrollbar-thumb{background-color:var(--main-scroll-thumb);border-width:2px}
+html:not(.os-mac) main::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
 .dot.ink{background:var(--ink);box-shadow:none}
 
 /* ---- v0.9.8 发给他 / 用户详情 / 添加用户 / 开始使用(按 mpx-ux-proto) ---- */
@@ -865,3 +865,53 @@ table.ut tbody tr:hover{background:var(--hover)}
 .r-zebra>.zr:nth-child(odd){background:var(--panel)}.r-zebra>.zr:nth-child(even){background:none}
 .r-adv.open .r-sum .sub{display:none}
 .r-zebra{margin:0;padding:0}
+
+/* 总览：统计与最多六行主区在最小桌面窗口内排开。 */
+/* 页面底部:总览没有保存条,不留 80 的底边 */
+.page:has(>.ov){padding-top:24px;padding-bottom:24px}
+.ov>.ph{align-items:center;margin-bottom:16px;min-height:36px}
+.ov>.ph h1{font-size:22px;line-height:36px}
+/* 开始使用(已完成):页头右侧一句,不占一行、不加底色 */
+.ov-done{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.ov-done>svg{width:14px;height:14px;color:var(--ink)}.ov-done b{color:var(--ink2);font-weight:560}
+.ov-done .btn{margin-left:4px}
+/* 统计格:紧一点,副行一行,超出省略 */
+.ov .g4{gap:12px}
+.ov .stat{padding:14px 16px}
+.ov .stat .v{margin-top:6px;font-size:26px}
+.ov .stat .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .stat .v .lead{font-size:20px}
+/* 主区:两张卡等高;空态不再撑出 64 的上下留白 */
+.ov-main{margin-top:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px}
+.ov-main>.card{padding-bottom:6px}
+.ov-main .empty{padding:28px 20px}
+.ov-main .ch{padding:12px 16px}
+.ov-t td{padding:8px 12px}
+.ov-t td:first-child{padding-left:16px;max-width:140px}
+.ov-t .u{min-width:0}.ov-t .u b{min-width:0}
+.ov-use{display:inline-flex;align-items:center;gap:8px}.ov-use .bar{width:56px}.ov-use .sub{min-width:30px;font-size:12px}
+.ov-n{padding:9px 10px;gap:10px}
+.ov-n b{min-width:0;flex:0 1 auto}
+.ov-n .tag{flex:none;white-space:nowrap}
+.ov-addr{flex:none}
+@media (max-width:1180px){.ov-addr{display:none}}
+/* 通知:页底一行,和统计格同一种面 */
+.ov-note{display:flex;align-items:center;gap:20px;min-height:44px;margin-top:12px;padding:0 8px 0 16px;border-radius:var(--r-card);background:var(--panel);font-size:12.5px;min-width:0}
+.ov-note-h{display:inline-flex;align-items:center;gap:7px;font-weight:600;flex:none}.ov-note-h svg{width:14px;height:14px;color:var(--muted)}
+.ov-kv{display:inline-flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}
+.ov-kv:first-of-type{flex:0 1 auto;min-width:0}.ov-kv .mono{max-width:220px}
+.ov-note .sp{flex:1}
+@media (max-width:1180px){.ov-note{gap:18px}.ov-kv{gap:6px}.ov-kv .mono{max-width:140px}}
+@media (max-width:860px){.ov-note{flex-wrap:wrap;padding:10px 12px;gap:6px 14px}.ov-done span{display:none}}
+
+/* 窄窗(主区不到 ~700 宽):统计标签不折行;用量只留百分比,表格不横向溢出 */
+.ov .stat .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .stat .l .dot{flex:none}
+.ov-t{width:100%}
+@media (max-width:960px){.ov-use .bar{display:none}.ov-t td{padding:8px 8px}.ov-t td:first-child{padding-left:16px}.ov-t td:last-child{padding-right:16px}}
+
+/* 多节点退避仍占一行，完整节点与时间留在悬停提示。 */
+.ov>.callout>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:860px){.ov-main{grid-template-columns:minmax(0,1fr)}}
+/* 窄屏固定底部导航仍需留白，不能沿用桌面的 24px。 */
+@media (max-width:860px){.page:has(>.ov){padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}}
