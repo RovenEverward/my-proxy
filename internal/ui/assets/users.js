@@ -97,6 +97,9 @@ function userPlanDetail(u) {
 const PAGE_SIZE = 50;
 // dir 是「最近在线」这一列的排序方向:-1 最新在前(默认),1 反过来;从未连接的两边都在最后。
 const US = { status: "", search: "", plan: "", offset: 0, dir: -1 };
+// 「已过期」筛选下的多选:只记用户名;换筛选、换页、删完都清空,不跨筛选带着勾。
+const PICK = new Set();
+const pickable = () => US.status === "expired" && can("DELETE", "/api/users/x");
 const STATUS_TABS = [["", "全部"], ["active", "正常"], ["limited", "已超限"], ["expired", "已过期"], ["disabled", "已停用"]];
 
 // 用户页顶部的「用户 | 套餐」页签:套餐是用户的属性,不再单独占侧栏一级(#users/plans)。
@@ -183,6 +186,65 @@ function presSum(d) {
   return H`<span class="pres-sum" data-tip="${"在线状态 " + agoShort(at) + "更新，每 30 秒一次"}"><span class="pdot"></span>${presInfo(d).online} 人在线</span>`;
 }
 
+// 「已过期」筛选下的批量栏:没勾时是一句说明 + 「选中过期超过 30 天的」;勾了显示人数和「批量删除」。
+// 删除是唯一的红色;按钮本身是浅底红字,真正的实心红按钮只在确认框里。
+function bulkBar(list) {
+  const old = list.filter(u => expiredFor(u) > EXPIRED_KEEP_DAYS).map(u => u.username), n = PICK.size;
+  const pickOld = old.some(x => !PICK.has(x)) ? H`<button type="button" class="lnk" data-act="pick-old">选中过期超过 ${EXPIRED_KEEP_DAYS} 天的 ${old.length} 个</button>` : "";
+  return H`<div class="bulk${n ? " on" : ""}" role="region" aria-label="批量操作">${n
+    ? H`<b>已选 ${n} 个</b>${pickOld}<span class="sp"></span><button type="button" class="btn sm ghost" data-act="pick-clear">取消选择</button><button type="button" class="btn sm dg-t" data-act="user-rm-many">${ic("trash")}批量删除</button>`
+    : H`<span class="sub">勾选要清理的用户，可以一次删掉。</span>${pickOld}`}</div>`;
+}
+
+// 续期框:沿用确认框(confirmBox 的 extra),选项和 mpx user renew 一致 —— 按天顺延(--days)或定死一个日期(--expire)。
+// 顺延从「原到期日与今天中较晚的那个」起算(renewTarget),已过期的就是从今天算。超限的人只续期还是连不上,给一个「同时清零本期用量」。
+const RENEW_DAYS = [30, 90, 365];
+// 框里的「现在的到期日」「本期已用」取页面上已有的那份(抽屉 / 用户列表 / 总览),不为开框多打一次 GET ——
+// 点「续期」之后发出的请求仍是 readModify 的 GET + PUT,和 mpx user renew 逐条一致(users.spec 对照的就是这个)。
+async function renewBox(name) {
+  const D = current.data || {}, same = x => x && x.username === name;
+  const u = (same(D.user) && D.user) || D.page?.users?.find(same) || D.users?.users?.find(same);
+  if (!u) throw new Error("用户资料已变化，请刷新后再续期");
+  const over = u.data_limit && u.used_traffic >= u.data_limit;
+  const left = u.expire_at ? daysLeft(u.expire_at) : null;
+  const now = u.expire_at ? H`现在的到期日是 <b class="c-ink">${ymd(new Date(u.expire_at))}</b>（${left < 0 ? `已过 ${-left} 天` : left === 0 ? "今天到期" : `还剩 ${left} 天`}）。` : H`他现在永不过期。`;
+  const from = left === null || left < 0 ? "从今天起算。" : "从原到期日往后顺延。";
+  let pick = RENEW_DAYS[0], savedTarget = null;
+  const target = () => pick === "date" ? null : renewTarget(u.expire_at, pick);
+  const extra = H`<div class="rn">
+    <div class="seg rn-seg" role="radiogroup" aria-label="续多久">${RENEW_DAYS.map(n => H`<button type="button" role="radio" class="${n === pick ? "on" : ""}" aria-checked="${n === pick ? "true" : "false"}" data-rn="${n}">${n} 天</button>`)}<button type="button" role="radio" aria-checked="false" data-rn="date">指定日期</button></div>
+    <div class="rn-to" id="rn-to"><span class="sub">新的到期日</span><b>${ymd(new Date(target()))}</b></div>
+    <div class="field rn-date" id="rn-date" hidden><label for="rn-in">到期日</label><input class="in mono" id="rn-in" value="${ymd(new Date(target()))}" placeholder="YYYY-MM-DD" autocomplete="off"><span class="h">当天 23:59:59 到期，按这台电脑的时区。</span></div>
+    ${over ? H`<label class="chk rn-reset"><input type="checkbox" id="rn-reset"><span>同时清零本期用量<span class="sub">本期已用 ${fmtBytes(u.used_traffic)}，上限 ${fmtBytes(u.data_limit)}。不清零的话，续期后他仍然是「已超限」，连不上。</span></span></label>` : ""}</div>`;
+  confirmBox({ title: `给 ${name} 续期`, text: H`${now}${from}`, ok: "续期", extra, lock: true,
+    run: async () => {
+      let t = savedTarget;
+      const reset = !!$("#rn-reset")?.checked;
+      if (!t) {
+        const date = pick === "date" ? parseExpire($("#rn-in").value) : null;
+        if (date && daysLeft(date) < 1) throw new Error("新的到期日要晚于今天");
+        await readModify(name, m => { t = date || renewTarget(m.expire_at, pick); m.expire_at = t; });
+        savedTarget = t;
+        for (const b of document.querySelectorAll(".rn-seg button")) b.setAttribute("aria-disabled", "true");
+        $("#rn-in").readOnly = true;
+      }
+      if (reset) {
+        try { await api(userPath(name) + "/reset-traffic", { method: "POST" }); }
+        catch (e) { $("#okb").textContent = "重试清零"; throw new Error(`续期已保存，清零没成功：${e.message}。重试只会清零，不会再次续期。`); }
+      }
+      toast(`已把用户 ${name} 的到期日设为 ${ymd(new Date(t))}${reset ? "，本期用量已清零" : ""}`);
+      if (route[0] === "users" && route[1] === name) await refreshDrawer(name); else load(true, true);
+    } });
+  const seg = $(".rn-seg");
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("[data-rn]"); if (!b || savedTarget) return;
+    pick = b.dataset.rn === "date" ? "date" : +b.dataset.rn;
+    for (const x of seg.children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b ? "true" : "false"); }
+    $("#rn-date").hidden = pick !== "date"; $("#rn-to").hidden = pick === "date";
+    if (pick === "date") { const i = $("#rn-in"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } else $("#rn-to b").textContent = ymd(new Date(target()));
+  });
+}
+
 PAGES.users = {
   readKey: () => JSON.stringify([US.status, US.search, US.offset, US.plan]),
   title: "用户", closeTo: "users",
@@ -220,8 +282,14 @@ PAGES.users = {
       activity: act && act.a || null, activityError: act && act.error || "" };
   },
   render(d) {
+    if (d) {
+      const valid = new Set(d.page.users.filter(u => u.status === "expired").map(u => u.username));
+      for (const n of PICK) if (!pickable() || !valid.has(n)) PICK.delete(n);
+    }
     // 「最近在线」是唯一能排序的列:表头深色并带箭头,aria-sort 说明当前方向。
-    const head = H`<tr><th>用户</th><th class="th-sort" aria-sort="${US.dir < 0 ? "descending" : "ascending"}"><button type="button" data-act="pres-sort" title="按最近在线排序">最近在线${ic(US.dir < 0 ? "down" : "chevup", "srt")}</button></th><th>状态</th><th>套餐</th><th>本期剩余</th><th class="hide-m">到期</th><th class="hide-m hide-n">重置</th></tr>`;
+    const P0 = pickable(), pageNames = d ? d.page.users.map(u => u.username) : [], allOn = P0 && pageNames.length && pageNames.every(n => PICK.has(n));
+    const pickTh = P0 ? H`<th class="td-pick"><input type="checkbox" data-pick="*" aria-label="全选这一页" ${allOn ? raw("checked") : ""} ${!allOn && pageNames.some(n => PICK.has(n)) ? raw("data-ind=1") : ""}></th>` : "";
+    const head = H`<tr>${pickTh}<th>用户</th><th class="th-sort" aria-sort="${US.dir < 0 ? "descending" : "ascending"}"><button type="button" data-act="pres-sort" title="按最近在线排序">最近在线${ic(US.dir < 0 ? "down" : "chevup", "srt")}</button></th><th>状态</th><th>套餐</th><th>本期剩余</th><th class="hide-m">到期</th><th class="hide-m hide-n">重置</th></tr>`;
     let inner;
     if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 7)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
@@ -230,8 +298,8 @@ PAGES.users = {
     else {
       const P = d.page, end = P.offset + P.users.length;
       const rows = P.users.slice().sort(presCompare(d));
-      inner = H`${staleNote(d, (presInfo(d)?.stale_nodes || [])[0])}<div class="tw"><table class="ut"><thead>${head}</thead><tbody>${rows.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0"><td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
-        <td class="td-pres">${presenceCell(u, d)}</td><td>${userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m hide-n sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
+      inner = H`${staleNote(d, (presInfo(d)?.stale_nodes || [])[0])}${P0 ? bulkBar(P.users) : ""}<div class="tw"><table class="ut"><thead>${head}</thead><tbody>${rows.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0" class="${u.status === "expired" ? "is-exp" : ""}${PICK.has(u.username) ? " picked" : ""}">${P0 ? H`<td class="td-pick"><input type="checkbox" data-pick="${u.username}" aria-label="选中 ${u.username}" ${PICK.has(u.username) ? raw("checked") : ""}></td>` : ""}<td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
+        <td class="td-pres">${presenceCell(u, d)}</td><td>${u.status === "expired" ? stBadge("warn", `已过期 ${expiredFor(u)} 天`) : userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m hide-n sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
         <div class="pager">显示 ${P.offset + 1}–${end}，共 ${P.total} 个<span class="sp"></span><button class="btn sm" data-act="user-page" data-dir="-1" ${P.offset ? "" : raw("disabled")}>上一页</button><button class="btn sm" data-act="user-page" data-dir="1" ${end < P.total ? "" : raw("disabled")}>下一页</button></div>`;
     }
     const c = d ? d.counts : {};
@@ -246,10 +314,11 @@ PAGES.users = {
   },
   after(d, r) {
     const s = $("#user-search");
-    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true, false, true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
+    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; PICK.clear(); load(true, false, true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
-    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; withFeedback(pf, () => load(true, true, true)); });
+    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; PICK.clear(); withFeedback(pf, () => load(true, true, true)); });
     if (d && r[1] && d.user) userDrawer(drawerUser(d), d.links, d);
+    document.querySelectorAll(".td-pick [data-ind]").forEach(x => { x.indeterminate = true; });
   },
 };
 let USERS_TOTAL = null;
@@ -334,7 +403,7 @@ function userDrawer(u, links, d) {
   openDrawer(H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
     ${W ? H`<button class="ib" title="编辑" aria-label="编辑" data-act="user-edit" data-name="${name}">${ic("pen")}</button>
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="user-menu">${ic("more")}</button><div class="menu" role="menu" id="user-menu" hidden>
-      <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期 30 天</button>
+      <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期</button>
       <button type="button" data-act="user-reset" data-name="${name}">${ic("undo")}清零本期用量</button>
       <button type="button" data-act="user-toggle" data-name="${name}" data-on="${u.enabled ? "1" : ""}">${ic("pause")}${u.enabled ? "停用" : "启用"}</button>
       <div class="msep"></div>
@@ -478,25 +547,18 @@ async function userEditor(name) {
 Object.assign(ACTS, {
   "user-filter": async (d, el) => {
     const previous = { status: US.status, offset: US.offset };
-    US.status = d.status; US.offset = 0; paint();
+    US.status = d.status; US.offset = 0; PICK.clear(); paint();
     const loading = load(true, true, true), seq = loadSeq;
     await loading;
     if (seq === loadSeq && current.error) { Object.assign(US, previous); paint(); }
   },
   // 表头点了就换个方向:默认最新在前,再点一次反过来。从未连接的始终在最后。
   "pres-sort": () => { US.dir = -US.dir; paint(); },
-  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); return load(true, true, true); },
+  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); PICK.clear(); return load(true, true, true); },
   "user-new": () => userEditor(null),
   "user-edit": d => userEditor(d.name),
   "user-export": () => confirmBox({ title: "导出 CSV", text: "导出用户清单暂不支持在窗口里操作。", ok: "知道了", run: async () => {} }),
-  "user-renew": async d => {
-    try {
-      let target;
-      await readModify(d.name, m => { target = renewTarget(m.expire_at, 30); m.expire_at = target; });
-      toast(`已把用户 ${d.name} 的到期日设为 ${ymd(new Date(target))}`);
-      await refreshDrawer(d.name);
-    } catch (e) { toast(e.message, true); }
-  },
+  "user-renew": d => renewBox(d.name),
   "user-toggle": d => {
     const off = !!d.on, verb = off ? "停用" : "启用";
     const run = async () => { await readModify(d.name, m => { m.enabled = !off; }); toast(`已${verb}用户 ${d.name}`); await refreshDrawer(d.name); };
@@ -511,7 +573,32 @@ Object.assign(ACTS, {
   // ⋯ 菜单:点按钮开合;点菜单里的项或别处就收起。
   "user-menu": () => { const m = $("#user-menu"); if (m) m.hidden = !m.hidden; },
   "user-rm": d => confirmBox({ title: `删除 ${d.name}？`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
-    run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
+    run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); PICK.delete(d.name); if (d.back === "overview") return; closeOverlays(); location.hash = "users"; } }),
+  // 多选:勾一个 / 勾整页。只改 PICK 再重画,不重新读接口。
+  "pick-old": () => { for (const u of current.data?.page?.users || []) if (expiredFor(u) > EXPIRED_KEEP_DAYS) PICK.add(u.username); paint(); },
+  "pick-clear": () => { PICK.clear(); paint(); },
+  // 批量删除:逐个 DELETE(与 mpx user rm a b c 一样,一个失败不中止其余)。全成功才关框;
+  // 有失败的,框留着列出失败的名字,成功的已经从勾选里去掉,再点一次只重试失败的。
+  "user-rm-many": () => {
+    // 名单按过期天数从多到少,最多列 8 个;放在说明里(确认输入框上面),先看清删谁再输入。
+    const rows = current.data?.page?.users || [], days = x => expiredFor(rows.find(y => y.username === x) || {});
+    const names = rows.filter(u => u.status === "expired" && PICK.has(u.username)).map(u => u.username).sort((a, b) => days(b) - days(a)), n = names.length;
+    if (!pickable() || !n) return;
+    const pending = new Set(names);
+    const list = H`<span class="rm-list">${names.slice(0, 8).map(x => H`<span class="tag">${x}<span class="sub">已过 ${days(x)} 天</span></span>`)}${n > 8 ? H`<span class="sub">等 ${n} 个</span>` : ""}</span>`;
+    confirmBox({ title: `删除 ${n} 个已过期用户？`, text: H`不可恢复：他们的协议凭证与订阅 token 一起删掉，订阅地址立刻 404。只想让人连不上，过期本身已经做到了。${list}`, ok: `删除 ${n} 个用户`, danger: true, typed: `删除 ${n} 个用户`, lock: true,
+      run: async () => {
+        const failed = [], okb = $("#okb"), attempt = [...pending], done = n - attempt.length;
+        for (const [i, x] of attempt.entries()) {
+          okb.textContent = `正在删除 ${done + i + 1} / ${n}`;
+          try { await api(userPath(x), { method: "DELETE" }); pending.delete(x); PICK.delete(x); } catch (e) { failed.push(`${x}（${e.message}）`); }
+        }
+        afterWrite("/api/users");
+        if (failed.length) { okb.textContent = `重试 ${failed.length} 个`; throw new Error(`删掉了 ${n - failed.length} 个，${failed.length} 个没删掉：${failed.join("、")}`); }
+        toast(`已删除 ${n} 个用户`);
+      } });
+  },
+
 });
 /* ---- 悬停提示:data-tip 的绝对时间浮在 body 上(固定定位),表格滚动区裁不掉;键盘聚焦也显示。 ---- */
 let TIP = null;
@@ -541,5 +628,13 @@ document.addEventListener("focusout", e => { if (e.target.closest?.("[data-tip]"
 // 没加 capture:冒泡到 document 的是 main、抽屉这些滚动区自己的滚动,换了页面就不再跟。
 document.addEventListener("scroll", e => { if (e.target?.closest?.(".td-pres, .pres-sum, .udp-list")) tipHide(); });
 document.addEventListener("click", e => { if (!e.target.closest?.("[data-tip]")) tipHide(); });
-document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });
+document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr && !e.target.closest(".td-pick,.ov-act,[data-act]")) location.hash = tr.dataset.href; } });
 document.addEventListener("click", e => { const m = $("#user-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#user-menu button"))) m.hidden = true; });
+
+// 勾选框:在 .td-pick 里点不打开详情(app.js 的行点击跳过 .td-pick)。整页勾选按当前页的用户名。
+document.addEventListener("change", e => {
+  const c = e.target.closest?.("input[data-pick]"); if (!c) return;
+  const names = c.dataset.pick === "*" ? (current.data?.page?.users || []).map(u => u.username) : [c.dataset.pick];
+  for (const n of names) c.checked ? PICK.add(n) : PICK.delete(n);
+  paint();
+});

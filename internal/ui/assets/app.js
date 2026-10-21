@@ -212,6 +212,11 @@ function nodeSt(n) {
 }
 // 快到期:剩 7 天以内(与原型确认的阈值一致)。快用完:按控制面的通知阈值。
 const EXPIRE_SOON_DAYS = 7;
+// 已过期多少天(没过期或不过期是 0)。过期超过 EXPIRED_KEEP_DAYS 天的不再列进总览的「需要处理的用户」,
+// 只留在「用户」页的「已过期」筛选里集中清理 —— 放了一个月还没续的,多半不会再续了。
+const EXPIRED_KEEP_DAYS = 30;
+const expiredFor = u => u.status === "expired" && u.expire_at ? Math.max(0, -daysLeft(u.expire_at)) : 0;
+const expiredStale = u => u.status === "expired" && expiredFor(u) > EXPIRED_KEEP_DAYS;
 
 /* ---------- 共享的块 ---------- */
 const skRows = (n, c) => raw(Array.from({ length: n }, () => `<tr>${Array.from({ length: c }, (_, i) => `<td><span class="sk" style="width:${[70, 50, 90, 40, 60][i % 5]}%"></span></td>`).join("")}</tr>`).join(""));
@@ -294,7 +299,7 @@ async function refreshUpdatePill(force) {
 let modalCleanup = null;
 // 换一个弹窗内容前先收掉上一个弹窗留下的焦点陷阱等(离页确认会设)。
 function modalTake() { const c = modalCleanup; modalCleanup = null; c?.(); }
-function closeModal() { const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
+function closeModal() { if ($("#modal").dataset.locked) return; const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -599,6 +604,24 @@ function ovDoneChip() {
   if (clGet("hide")) return "";
   return H`<div class="ov-done" id="start-done">${ic("check")}<span><b>开始使用</b><span class="ov-done-rest"> · 4 步都完成了</span></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib sm" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>`;
 }
+// 「需要处理的用户」的一行。已过期的整行置灰(不画用量条,即使也超限了 —— 先续期,流量是续期之后的事),
+// 右侧给最常用的「续期」;删除收进行尾的「⋯」,红字,点了还要再确认一次。
+function ovUserRow(u, { soon, usageWarn, W, RM }) {
+  const href = PAGES.users ? "#users/" + encodeURIComponent(u.username) : "";
+  const name = H`<td><div class="u">${avatar(u.username)}<b class="bold ell" title="${u.username}">${u.username}</b></div></td>`;
+  // 状态格直接写「已过期 N 天」,右边两格合成一格放操作 —— 卡片窄(900 宽窗口里约 330px)时也放得下。
+  if (u.status === "expired") return H`<tr class="is-exp" data-href="${href}">${name}<td>${stBadge("warn", `已过期 ${expiredFor(u)} 天`)}</td><td></td>
+      <td class="ov-act" colspan="2">${W ? H`<button type="button" class="btn sm" data-act="user-renew" data-name="${u.username}">续期</button>` : ""}${W || RM ? rowMenu(u.username, [
+        [href ? H`<button type="button" data-act="go" data-href="${href}">${ic("user")}查看详情</button>` : ""],
+        [RM ? H`<div class="msep"></div><button type="button" class="dg" data-act="user-rm" data-name="${u.username}" data-back="overview">${ic("trash")}删除用户</button>` : ""]]) : ""}</td></tr>`;
+  return H`<tr data-href="${href}">${name}
+      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${usageWarn(u) ? ovUse(u) : ""}</td>
+      <td class="num sub">${u.expire_at ? `剩 ${daysLeft(u.expire_at)} 天` : "—"}</td><td class="ov-act"></td></tr>`;
+}
+// 行尾「⋯」菜单:同一时刻只开一个;点菜单项或别处就收起(见文件末尾的 click 监听)。
+const rowMenu = (name, items) => H`<span class="mw"><button type="button" class="ib sm" title="更多" aria-label="${name} 的更多操作" aria-haspopup="menu" aria-expanded="false" data-act="row-menu">${ic("more")}</button><div class="menu" role="menu" hidden>${items.map(i => i[0])}</div></span>`;
+// 过期超过 30 天的不在卡片里,这里说一句它们去哪了,点了直接到「用户」页的「已过期」筛选。
+const ovStaleNote = n => H`<div class="ov-stale sub">另有 ${n} 个用户过期超过 ${EXPIRED_KEEP_DAYS} 天，不再列在这里。${PAGES.users ? H`<button type="button" class="lnk" data-act="go-expired">到「已过期」里清理</button>` : ""}</div>`;
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
@@ -627,7 +650,10 @@ PAGES.overview = {
   const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
   const usageWarn = u => u.status !== "expired" && u.data_limit && pct(u) >= usagePct;
   const near = u => u.status === "active" && usageWarn(u);
-  const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
+  // 过期的按「最近过期」在前;过期超过 30 天的不列(见 EXPIRED_KEEP_DAYS),卡片底部给一句去处。
+  const expired = U.filter(u => u.status === "expired"), stale = expired.filter(expiredStale);
+  const attention = [...U.filter(u => u.status === "limited"), ...expired.filter(u => !expiredStale(u)).sort((a, b) => expiredFor(a) - expiredFor(b)), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
+  const W = can("PUT", "/api/users/x"), RM = can("DELETE", "/api/users/x");
   const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
   const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
   const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
@@ -649,9 +675,8 @@ PAGES.overview = {
   </div>
   <div class="grid g2 ov-main">
     <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
-    ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold ell">${u.username}</b></div></td>
-      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${usageWarn(u) ? ovUse(u) : ""}</td>
-      <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table>`
+    ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => ovUserRow(u, { soon, usageWarn, W, RM }))}</tbody></table>${stale.length ? ovStaleNote(stale.length) : ""}`
+      : stale.length ? H`${emptyBox("check", "没有要处理的用户", `没有超限、${EXPIRED_KEEP_DAYS} 天内过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}${ovStaleNote(stale.length)}`
       : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
       : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
     <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
@@ -748,6 +773,7 @@ addEventListener("resize", closeSelMenu); document.addEventListener("scroll", e 
 let DRAWER_RAF = 0;
 function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
 function closeOverlays() {
+  if ($("#modal").dataset.locked) return;
   cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
   $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open");
   updPollStop();
@@ -790,7 +816,7 @@ function afterWrite(path) {
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单。
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
-function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
+function confirmBox({ title, text, ok, danger, typed, run, extra, alt, lock = false }) {
   const m = $("#modal");
   modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}<span class="mt-t">${title}</span></h2><p>${text}</p>
   ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
@@ -798,11 +824,24 @@ function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const okb = $("#okb"), altb = $("#altb"), t = $("#typed");
-  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
+  let busy = false;
+  if (t) { t.addEventListener("input", () => { okb.disabled = busy || t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
   const go = (b, fn) => b && b.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    const controls = lock ? [...m.querySelectorAll("button,input,select")].map(e => [e, e.disabled]) : [];
+    if (lock) { m.dataset.locked = "true"; m.setAttribute("aria-busy", "true"); for (const [e] of controls) e.disabled = true; }
     okb.disabled = true; if (altb) altb.disabled = true; b.classList.add("busy");
-    try { await fn(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
-    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); }
+    try { await fn(); if (m.contains(okb)) { m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); } }
+    catch (e) { if (m.contains(okb)) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); } }
+    finally {
+      busy = false;
+      if (m.contains(okb)) {
+        delete m.dataset.locked; m.removeAttribute("aria-busy");
+        for (const [e, disabled] of controls) e.disabled = disabled || e.getAttribute("aria-disabled") === "true";
+        if (t) okb.disabled = t.value !== typed;
+      }
+    }
   });
   go(okb, run); go(altb, alt && alt.run);
 }
@@ -1004,17 +1043,30 @@ const ACTS = {
   "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
   "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败，请手动选中复制", true); } },
+  // 行尾「⋯」:开这个之前先收起别的。靠近窗口底部时往上开,不被裁掉。
+  "row-menu": (d, el) => {
+    const m = el.nextElementSibling, open = m.hidden;
+    closeRowMenus();
+    if (!open) return;
+    m.hidden = false; el.setAttribute("aria-expanded", "true");
+    m.classList.toggle("up", el.getBoundingClientRect().bottom + m.offsetHeight + 12 > innerHeight);
+  },
+  go: d => { closeRowMenus(); location.hash = d.href; },
+  "go-expired": () => { if (typeof US !== "undefined") { US.status = "expired"; US.offset = 0; US.search = ""; US.plan = ""; PICK.clear(); } location.hash = "users"; },
 };
+function closeRowMenus() { for (const m of document.querySelectorAll(".mw .menu:not(#user-menu)")) { m.hidden = true; m.previousElementSibling?.setAttribute("aria-expanded", "false"); } }
+document.addEventListener("click", e => { if (!e.target.closest?.(".mw") || e.target.closest?.(".mw .menu button")) closeRowMenus(); });
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
   // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
   if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
   if (a && ACTS[a.dataset.act]) { e.preventDefault(); withFeedback(a, () => ACTS[a.dataset.act](a.dataset, a, e)).catch(error => toast(error.message, true)); return; }
   const tr = e.target.closest("tr[data-href]");
-  if (tr && tr.dataset.href) location.hash = tr.dataset.href;
+  // 勾选格(.td-pick)和行尾操作格(.ov-act)里点空白处也不打开详情。
+  if (tr && tr.dataset.href && !e.target.closest(".td-pick, .ov-act")) location.hash = tr.dataset.href;
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeOverlays();
+  if (e.key === "Escape") { closeRowMenus(); closeOverlays(); }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".profile[data-act=cp-toggle]")) { e.preventDefault(); ACTS["cp-toggle"](); }
 });
 // 一键更新轮询随页面可见性走:藏起来停拍,回到可见立刻补一次。

@@ -130,6 +130,7 @@ test("续期 30 天:与 mpx user renew --days 30 一致", async ({ page }) => {
   const fromCLI = normalize(env.takeLog(), names);
   await openUser(page, "ui-renew");
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-renew]");
+  await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("2027-06-09");
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
 });

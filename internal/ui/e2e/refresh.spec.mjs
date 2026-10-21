@@ -63,6 +63,7 @@ test("续期用户:列表里的剩余天数立刻更新", async ({ page }) => {
   const before = await userRow(page, "r-renew").textContent();
   await userRow(page, "r-renew").click();
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-renew]");
+  await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("到期日");
   await page.keyboard.press("Escape");
   await expect(userRow(page, "r-renew")).not.toHaveText(before, NOW);

@@ -886,3 +886,42 @@ table.ut tbody tr:hover{background:var(--hover)}
 .ui-progress{position:fixed;right:18px;bottom:18px;z-index:60;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);color:var(--ink2);box-shadow:var(--shadow);font-size:12px;pointer-events:none}
 /* Windows 窄屏使用底部抽屉，收起后不能被标题栏偏移留在视口内。 */
 @media (max-width:860px){html.tb-right .drawer{top:auto}}
+
+/* ---- 已过期用户:整行置灰(总览「需要处理的用户」和「用户」列表一致) ----
+   不新增色值:文字用 --muted,头像字母、状态圈和用量条填充用 --faint。红色只留给删除。 */
+tr.is-exp td,tr.is-exp .u b,tr.is-exp .sub,tr.is-exp .c-bad,tr.is-exp .c-warn,tr.is-exp .use span.c-bad,tr.is-exp .tag{color:var(--muted)}
+tr.is-exp .av{color:var(--faint)}
+tr.is-exp .dot.warn{box-shadow:inset 0 0 0 1.5px var(--faint)}
+tr.is-exp .bar i{background:var(--faint)}
+tr.is-exp .btn,tr.is-exp .menu button:not(.dg){color:var(--ink)}
+/* 总览行尾操作格:「续期」(浅底按钮) + 「⋯」菜单 */
+td.ov-act{width:1%;white-space:nowrap;text-align:right;padding-left:0}tr.is-exp td.ov-act{padding-left:8px}
+.ov-act .btn{height:26px;padding:0 10px;font-size:12.5px}
+.ov-act .mw{display:inline-block;vertical-align:middle;margin-left:4px}
+.ov-act .menu{top:30px;text-align:left}.menu.up{top:auto;bottom:30px}
+.ov-t .av{flex:none}
+.ov-stale{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:8px 16px;font-size:12px}.ov-stale .lnk{font-size:12px}
+/* 有了操作格,卡片窄时(1180 以下两栏并排,卡片约 330–420px)收紧内边距、名字列吃掉剩余宽度并省略;
+   名字比用量条要紧,条在 1180 以下就收起(原来是 960),只留「剩 N%」。 */
+@media (max-width:1180px){
+ .ov-t td{padding:8px 6px;white-space:nowrap}.ov-t td:first-child{width:100%;max-width:0;padding-left:14px}.ov-t td:last-child{padding-right:10px}
+ .ov-act .btn{padding:0 8px}.ov-act .mw{margin-left:2px}tr.is-exp td.ov-act{padding-left:4px}.ov-use .bar{display:none}}
+@media (max-width:960px){.ov-t td{padding:8px 4px}.ov-t td:first-child{padding-left:14px}.ov-t .u{gap:8px}}
+/* 「已过期」筛选下的多选与批量栏(深色主题下原生勾选框也走深色) */
+[data-theme=dark] .td-pick input,[data-theme=dark] .rn-reset input{color-scheme:dark}
+.td-pick{width:34px;padding-right:0!important}.td-pick input{width:15px;height:15px;margin:0;accent-color:var(--ink);vertical-align:middle;cursor:pointer}
+table.ut tbody tr.picked{background:color-mix(in srgb,var(--ink) 5%,transparent)}table.ut tbody tr.picked .tag{background:var(--canvas)}
+.bulk{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;min-height:44px;margin:0 12px 6px;padding:6px 8px 6px 14px;border-radius:10px;background:var(--canvas);font-size:12.5px}
+.bulk b{font-weight:560}.bulk .lnk{font-size:12.5px}.bulk .sp{flex:1}
+.btn.dg-t{background:var(--bad-bg);color:var(--bad)}.btn.dg-t:hover{background:color-mix(in srgb,var(--bad) 14%,var(--bad-bg))}.btn.dg-t svg{width:14px;height:14px}
+@media (max-width:860px){.bulk{margin:0 10px 6px}}
+/* 续期框 */
+.rn{display:grid;gap:12px;margin-bottom:6px}.rn-seg{justify-self:start}.rn .field{margin-bottom:0}
+.rn-to{display:flex;align-items:baseline;gap:12px;padding:10px 12px;border-radius:10px;background:var(--panel)}.rn-to[hidden]{display:none}.rn-to b{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.chk.rn-reset{align-items:flex-start;line-height:1.5;color:var(--ink);font-weight:540}.rn-reset input{margin:3px 0 0;accent-color:var(--ink)}.rn-reset .sub{display:block;margin-top:2px;font-weight:400}
+/* 批量删除确认框里的名单 */
+.rm-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.rm-list .tag{font-family:var(--sans);font-size:12px;height:22px}.rm-list .tag .sub{font-size:11.5px;margin-left:6px}
+/* 批删的错误名单可能很长，正文滚动，确认和重试按钮始终留在窗口内。 */
+.modal.open:has(.rm-list){max-height:calc(100dvh - var(--mygo-titlebar-height,0px) - 24px);display:flex;flex-direction:column}
+.modal:has(.rm-list) .mbody{min-height:0;overflow-y:auto;overflow-wrap:anywhere}
+.modal:has(.rm-list) .mf{flex-shrink:0}
