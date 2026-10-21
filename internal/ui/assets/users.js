@@ -238,7 +238,9 @@ async function renewBox(name) {
   const seg = $(".rn-seg");
   seg.addEventListener("click", e => {
     const b = e.target.closest("[data-rn]"); if (!b || savedTarget) return;
-    pick = b.dataset.rn === "date" ? "date" : +b.dataset.rn;
+    const next = b.dataset.rn === "date" ? "date" : +b.dataset.rn;
+    if (next === "date" && pick !== "date") $("#rn-in").value = ymd(new Date(target()));
+    pick = next;
     for (const x of seg.children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b ? "true" : "false"); }
     $("#rn-date").hidden = pick !== "date"; $("#rn-to").hidden = pick === "date";
     if (pick === "date") { const i = $("#rn-in"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } else $("#rn-to b").textContent = ymd(new Date(target()));

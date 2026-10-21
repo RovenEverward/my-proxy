@@ -82,6 +82,8 @@ test("续期选项与 CLI 一致，开框不请求，指定日期校验", async 
     await page.click(`[data-rn="${n}"]`);
     await expect(page.locator(`[data-rn="${n}"]`)).toHaveAttribute("aria-checked", "true");
     await expect(page.locator("#rn-to b")).toHaveText(dateAt(n).slice(0, 10));
+    await page.click('[data-rn=date]');
+    await expect(page.locator("#rn-in")).toHaveValue(dateAt(n).slice(0, 10));
   }
   await page.click('[data-rn=date]'); await page.fill("#rn-in", "2020-01-01"); await page.click("#okb");
   await expect(page.locator("#modal-err")).toHaveText("新的到期日要晚于今天");
@@ -127,6 +129,7 @@ test("行菜单单开、外点和 Esc 收起，总览删除后不离页", async 
   expect(await row(page, "thirty").locator(".menu").evaluate(e => e.getBoundingClientRect().bottom <= innerHeight)).toBe(true);
   await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1440, height: 900 });
   await row(page, "recent").locator('[data-act=row-menu]').click(); await row(page, "recent").locator('[data-act=user-rm]').click();
+  await expect(page.locator("#typed")).toHaveClass(/mono/);
   await expect(page.locator("#okb")).toBeDisabled(); await page.fill("#typed", "recent"); await page.click("#okb");
   await expect(row(page, "recent")).toHaveCount(0); await expect(page).toHaveURL(/#overview$/);
 });
@@ -162,6 +165,9 @@ test("批删确认、逐条请求、执行锁定与失败项重试", async ({ pa
   const twins = ["cli-old", "cli-thirty", "cli-recent", "old", "thirty", "recent"];
   const cliDeletes = normalize(env.takeLog(), twins);
   await page.click('[data-act=user-rm-many]');
+  await expect(page.locator("#typed")).not.toHaveClass(/mono/);
+  const fonts = await page.locator("#typed").evaluate(e => [getComputedStyle(e).fontFamily, getComputedStyle(document.body).fontFamily]);
+  expect(fonts[0]).toBe(fonts[1]);
   await expect(page.locator("#okb")).toBeDisabled(); await page.fill("#typed", "删除 3 个用户");
   let fail = true;
   await page.route("**/api/users/thirty", async r => {

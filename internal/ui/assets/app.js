@@ -616,7 +616,7 @@ function ovUserRow(u, { soon, usageWarn, W, RM }) {
         [RM ? H`<div class="msep"></div><button type="button" class="dg" data-act="user-rm" data-name="${u.username}" data-back="overview">${ic("trash")}删除用户</button>` : ""]]) : ""}</td></tr>`;
   return H`<tr data-href="${href}">${name}
       <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${usageWarn(u) ? ovUse(u) : ""}</td>
-      <td class="num sub">${u.expire_at ? `剩 ${daysLeft(u.expire_at)} 天` : "—"}</td><td class="ov-act"></td></tr>`;
+      <td class="num sub">${u.expire_at ? `剩 ${daysLeft(u.expire_at)} 天` : ""}</td><td class="ov-act"></td></tr>`;
 }
 // 行尾「⋯」菜单:同一时刻只开一个;点菜单项或别处就收起(见文件末尾的 click 监听)。
 const rowMenu = (name, items) => H`<span class="mw"><button type="button" class="ib sm" title="更多" aria-label="${name} 的更多操作" aria-haspopup="menu" aria-expanded="false" data-act="row-menu">${ic("more")}</button><div class="menu" role="menu" hidden>${items.map(i => i[0])}</div></span>`;
@@ -819,7 +819,7 @@ function afterWrite(path) {
 function confirmBox({ title, text, ok, danger, typed, run, extra, alt, lock = false }) {
   const m = $("#modal");
   modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}<span class="mt-t">${title}</span></h2><p>${text}</p>
-  ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
+  ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in ${/[\u3400-\u9fff]/.test(typed) ? "" : "mono"}" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
