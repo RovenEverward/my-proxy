@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -110,4 +111,15 @@ const (
 )
 
 func newSubLimiter() *ipRateLimiter { return newIPRateLimiter(subRate, subBurst, bucketIdle) }
-func newAPILimiter() *ipRateLimiter { return newIPRateLimiter(apiRate, apiBurst, bucketIdle) }
+
+// newAPILimiter 的桶默认每秒 10、突发 60。浏览器测试可以让它宽一些:一个进程、一个 IP、
+// 几十条用例连着跑,突发 60 一会就见底,429 会拖慢整套。只认正数,读不到或写错都按默认走。
+func newAPILimiter() *ipRateLimiter {
+	burst := apiBurst
+	if v := os.Getenv("MPX_API_BURST"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
+			burst = n
+		}
+	}
+	return newIPRateLimiter(apiRate, burst, bucketIdle)
+}

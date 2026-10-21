@@ -54,7 +54,12 @@ test("a. 接入成功:指纹一致,进主界面,配置写入 https 地址与指�
   await expect(page.locator(".setup")).toHaveCount(0);
 
   // 控制面:https 地址 + 指纹(token 在,值不断言)。
-  const cfg = JSON.parse(readFileSync(path.join(u.dir, "mpx", "config.json"), "utf8"));
+  // 配置写在 os.UserConfigDir 下,各平台不一样:macOS 是 ~/Library/Application Support
+  // (不认 XDG_CONFIG_HOME),Linux 认 XDG_CONFIG_HOME,Windows 认 APPDATA。
+  const cfgDir = process.platform === "darwin" ? path.join(u.dir, "Library", "Application Support", "mpx")
+    : process.platform === "win32" ? path.join(process.env.APPDATA || path.join(u.dir, "AppData", "Roaming"), "mpx")
+      : path.join(u.dir, "mpx");
+  const cfg = JSON.parse(readFileSync(path.join(cfgDir, "config.json"), "utf8"));
   const p = cfg.profiles[cfg.current || "default"];
   expect(p.server).toBe(`https://127.0.0.1:${env.cpPort}`);
   expect(p.fingerprint).toBe(env.fp);

@@ -169,12 +169,8 @@ function presKey(d, u) {
 }
 // 默认按最近在线倒序,点表头后反过来;从未连接的不管正序倒序都排最后,所以先按「有没有
 // 最后在线时间」分成两段,再按 dir 排同段里的先后,最后按用户名兜底(时间一样时顺序才是稳的)。
-// 在线的固定在最前(IP 多的靠前):在不在线是「现在」的先后,不跟着方向翻转;同段里再按方向排。
-// 只翻转时间会让正序时最久没连的排到在线的人前面(两小时前不算最新,但排第一也说不通)。
 const presCompare = d => (a, b) =>
-  ((!!b.presence?.online) - (!!a.presence?.online)) ||
-  (!!b.presence?.last_active_at - !!a.presence?.last_active_at) ||
-  US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
+  (!!b.presence?.last_active_at - !!a.presence?.last_active_at) || US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
 // 某台节点连不上时的灰条:不是用户做错了什么,只是数据旧了,所以用灰色不用红色。
 // 整句是一个 .pres-note 的直接子元素 span,里面不再套块:节点名里的旗帜换成图后仍在这一句里。
 const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span>${presNodeText(d, sn.node_id)} 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";

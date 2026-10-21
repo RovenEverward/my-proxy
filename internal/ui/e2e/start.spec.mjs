@@ -86,8 +86,8 @@ test("开始使用:一步步推进,跳过与隐藏记在本机,走完收成一�
 // 总览那一格:有 presence 就说「近 24 小时在用」(按节点流量算);没有(老控制面)就退回到
 // 「近 24 小时拉过订阅」,人数还是拉过订阅的;两样都没有才换成连接方式。
 test("总览:近 24 小时在用按 presence 算,老控制面退回拉过订阅", async ({ page }) => {
-  await login(page, env);
   // 这一格读的是 GET /api/users?limit=1 顶层那个 presence;没有就整个删掉,当作老控制面。
+  // 桩要在第一次打开页面之前就挂上:登录后直接落在总览,那一次就把数取走了。
   let presence = { active_24h: 3 };
   await page.route("**/api/users?*", async route => {
     const u = new URL(route.request().url());
@@ -97,6 +97,7 @@ test("总览:近 24 小时在用按 presence 算,老控制面退回拉过订阅"
     if (presence) out.presence = presence; else delete out.presence;
     await route.fulfill({ response: res, json: out });
   });
+  await login(page, env);
   await page.goto(env.origin + "/#overview");
   await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("3人");
   await expect(page.locator(".card.stat", { hasText: "近 24 小时在用" })).toContainText("按节点流量算");

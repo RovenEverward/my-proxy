@@ -67,18 +67,21 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   await page.goto(env.origin + "/#settings/rules");
   await page.click(".ch [data-act=s5-rules]");
   env.takeLog();
+  // 内置规则占 data-rp 0..9;新的一条排在最后(「其他所有客户端」之前),编号接着往下数。
+  const n = await page.locator("[data-rp]").count();
   await page.click("[data-act=rd-add]");
-  // 新的一条插在「其他所有客户端」前面,标识框里已经是 (?i),只填后面的文字。
-  const added = page.locator('[data-rp="0"]');
+  // 新的一条的标识框里已经是 (?i),只填后面的文字。
+  const added = page.locator(`[data-rp="${n}"]`);
   await expect(added).toBeFocused();
   await added.fill("^myclient/");
   await added.press("Tab");
-  await expect(page.locator('[data-rp="0"]')).toHaveValue("(?i)^myclient/");
-  // 新的一条已经在最上面,「上移」不可点;先往下挪一位,再把它删掉。
-  await page.locator('[data-act=rd-mv][aria-label="下移"]').first().click();
-  await expect(page.locator('[data-rp="1"]')).toHaveValue("(?i)^myclient/");
-  await page.locator("[data-act=rd-rm]").nth(1).click();
-  await expect(page.locator('[data-rp="0"]')).not.toHaveValue("(?i)^myclient/");
+  // 框里显示的是标识正文;(?i) 是内置的大小写开关,不跟着显示。
+  await expect(page.locator(`[data-rp="${n}"]`)).toHaveValue("^myclient/");
+  // 新的一条在最下面,「下移」不可点;往上挪一位,把被挤到下面的那条删掉,草稿里留下一处改动。
+  await page.locator(`[data-act=rd-mv][data-i="${n}"][aria-label="上移"]`).click();
+  await expect(page.locator(`[data-rp="${n - 1}"]`)).toHaveValue("^myclient/");
+  await page.locator(`[data-act=rd-rm][data-i="${n}"]`).click();
+  await expect(page.locator(`[data-rp="${n - 1}"]`)).toHaveValue("^myclient/");
   await page.click("[data-act=rd-done]");
   await expect(page.locator("#sb")).toContainText("识别规则");
   expect(env.takeLog()).toEqual([]);

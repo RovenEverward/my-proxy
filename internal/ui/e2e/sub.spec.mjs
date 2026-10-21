@@ -50,9 +50,10 @@ test("一页三段，高级默认折叠，展开才取底稿正文", async ({ pa
 test("改订阅名即时预览，输入焦点保留，保存条列出一处改动", async ({ page }) => {
   await open(page);
   await page.locator("#f-title").click();
-  // 光标放到文字末尾(「用户名」标签后面),接着打;刷新只换预览,不重画编辑框。
+  // 光标放到编辑框开头,接着打的字插在「用户名」标签前面;刷新只换预览,不重画编辑框。
   // 存进去的是「测试 {USERNAME}」,alice 看到的是「测试 alice」。
-  await page.keyboard.press("Control+End");
+  // macOS 上 Control+Home 不生效,用 Meta+ArrowLeft(到行首);其它平台用 Control+Home。
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Control+Home");
   await page.keyboard.type("测试 ");
   await expect(page.locator("#f-title")).toBeFocused();
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
@@ -419,7 +420,7 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
   // Go 命名组在 JS 中无法编译，仍可完成并由控制面保存。
   await page.fill('[data-rp="0"]', "(?P<client>clash)");
   await page.locator('[data-rp="0"]').press("Tab");
-  await expect(page.locator('.rd-row[data-i="0"] .h')).toHaveText("浏览器没法预览这条，保存时由控制面检查");
+  await expect(page.locator('.rd-row[data-i="0"] .h')).toHaveText("这条按正则写的，保存时由控制面检查");
   await page.fill("#rd-ua", "clash");
   await expect(page.locator('.rd-row[data-i="0"]')).not.toHaveClass(/hit/);
   await expect(page.locator("#rd-done")).toBeEnabled();
@@ -440,9 +441,13 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
     { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
   ] }));
   await page.route("**/local/profiles/use", r => { calls.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/devices", r => r.fulfill({ json: [{ name: "e2e-本机", current: true }] }));
   await open(page);
   const choose = async () => {
     if (await page.locator(".profile[data-act=cp-toggle]").getAttribute("aria-expanded") !== "true") await page.click(".profile[data-act=cp-toggle]");
+    // 展开面板时顺手查一次本机设备名,回来后面板要重画一遍、多一行人再排一次。等这行出来
+    // 面板就不再变形了,否则点击可能落到重画后的另一块上(按钮被换掉,点一直落不下去)。
+    await expect(page.locator(".cp-pop")).toContainText("e2e-本机");
     await page.click(".cp-pop [data-act=cp-switch]");
     await page.click('.pfitem[data-name="other"]');
     await expect(page.locator("#modal.open h2")).toContainText("还没保存");
@@ -457,6 +462,9 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
   await expect.poll(() => calls.length).toBe(1);
   // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
   await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
+  // 切换成功会整页刷新。等新页面把数据取完再往下点:刷新途中还会重画一次侧栏,
+  // 正好撞上时那个按钮会被换掉,点击就卡在那儿了。
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await setTitle(page, "切换前保存");
   await choose(); await page.getByRole("button", { name: "保存并离开", exact: true }).click();
   await expect.poll(() => calls.length).toBe(2);

@@ -371,12 +371,8 @@ function b5Card(d) {
     <p class="b5-cap">流量和到期日按每个人的套餐显示，这里不用改。<br>${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>。</p>`;
 }
 // 订阅名编辑框:「用户名」是一块整体的标签,存的时候换回 {USERNAME}。
-// 标签后面总留一个空的文字节点(零宽空格):标签本身不可编辑,光标落在它后面需要有个能放光标
-// 的地方;没有的话 Control+End 之后接着打的字会跑到标签前面(保存出来的订阅名是「{USERNAME}测试 」
-// 而不是「测试 {USERNAME}」)。读值时把这个占位字符去掉。
-const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>') + "&#8203;";
-// 读值时去掉占位用的零宽空格(b5TokHTML 在标签后面留的那个,不算进订阅名)。
-function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/[\n\u200b]/g, ""); }
+const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>');
+function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/\n/g, ""); }
 function b5TitleRes(d) {
   const t = d.profile_title || "", other = SUB.users.find(u => u.username !== SUB.preview.user)?.username || "bob";
   const has = t.includes("{USERNAME}"), me = t.replaceAll("{USERNAME}", SUB.preview.user), you = t.replaceAll("{USERNAME}", other);
@@ -579,7 +575,7 @@ PAGES.sub = {
       t.addEventListener("input", () => {
         let v = b5TokVal(t);
         // 有人手打了 {USERNAME}:换成标签块,光标放到最后。
-        if (t.textContent.replace(/[\n\u200b]/g, "").includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
+        if (t.textContent.includes("{USERNAME}")) { t.innerHTML = b5TokHTML(v); const s = getSelection(); s.selectAllChildren(t); s.collapseToEnd(); }
         SUB.draft.profile_title = v; SUB.err = ""; delete SUB.fieldErrors.profile_title; refresh();
       });
     }

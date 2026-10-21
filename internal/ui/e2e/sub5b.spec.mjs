@@ -28,22 +28,22 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
-// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是控制面的地址
-// (控制面按这次请求的 Host 拼;请求经 mpx ui 转发过来,Host 是控制面的地址,不是页面地址),并有一条灰色说明。
+// 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是这次请求的地址
+// (控制面按请求的 Host 拼;经 mpx ui 转发时 Host 是 mpx ui 的地址,端口与控制面不同),并有一条灰色说明。
 test("链接卡片给出完整链接;没填链接开头时用控制面地址开头并说明", async ({ page }) => {
   await open(page);
-  // 页面请求的那条(经 mpx ui)核对链接卡片;开头本身拿控制面的地址核对。
+  // 页面请求的那条(经 mpx ui)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
   const cpAlice = await (await cp("/api/users/alice/links")).json();
   await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
-  // 经 mpx ui 和直接问控制面拿到的是同一条:转发时 Host 换成控制面的地址(internal/ui/ui.go 的
-  // r.Out.Host = 控制面),控制面按请求的 Host 拼,两边看到的一样。
-  expect(alice.auto).toBe(cpAlice.auto);
-  // 只加的 base 字段就是这条链接的开头,和提问的那一边的地址一致。
-  expect(alice.base).toBe(env.origin);
-  expect(cpAlice.base).toBe(env.cpURL);
+  // 经 mpx ui 转发和直接问控制面拿到的主机不同(端口不同):控制面按请求的 Host 拼,转发过来的
+  // 那一头不是控制面自己的地址。开头各是各的,每人自己的那一段(令牌)一样。
+  const tokenOf = auto => auto.slice(auto.lastIndexOf("/sub/") + 5);
   expect(alice.auto.startsWith(alice.base + "/sub/")).toBe(true);
+  expect(tokenOf(alice.auto)).toBe(tokenOf(cpAlice.auto));
+  // 只加的 base 字段就是这条链接的开头;直连控制面时它就是控制面的地址,经 mpx ui 时不是页面地址。
+  expect(cpAlice.base).toBe(env.cpURL);
   // 页面把开头按控制面这次用的那个画出来,经 mpx ui 时它不一定等于页面地址。
   const pre = alice.auto.slice(0, alice.auto.lastIndexOf("/sub/"));
   await expect(page.locator(".lk-pre")).toHaveText(pre);
@@ -115,13 +115,11 @@ test("识别规则抽屉的试框说「会拿到」，没有「不分大小写�
   await page.click("[data-act=s5-rules]");
   await expect(page.locator("#drawer.open .dt h2")).toHaveText("识别规则");
   await page.fill("#rd-ua", "clash-verge/v2.0.3");
-  await expect(page.locator("#rd-hit")).toContainText("会拿到");
-  await expect(page.locator("#rd-hit")).toContainText("Clash Meta 配置");
   // 对上的不一定是第 0 条(内置的前几条都可能先接住这个标识):标准的是唯一一行 hit,
-  // 它的标识框就是试框说的那条规则,拿到的格式也和试框一致。
+  // 它的格式框就是试框说的那个格式。界面会把正则说成人话(「|」说成「或」),不比对正则原文。
   const row = page.locator(".rd-row.hit");
   await expect(row).toHaveCount(1);
-  await expect(page.locator("#rd-hit .b5-res")).toContainText(`对上的是「客户端标识里含 ${await row.locator("[data-rp]").inputValue()}」这条`);
+  await expect(page.locator("#rd-hit .b5-res")).toContainText("会拿到 Clash Meta 配置");
   await expect(row.locator("[data-rf]")).toHaveValue("clash-meta");
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.locator("#drawer.open")).not.toContainText("不分大小写");

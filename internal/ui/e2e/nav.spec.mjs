@@ -137,6 +137,9 @@ test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", a
   await page.setViewportSize({ width: 1280, height: 800 });
   await login(page, env);
   await expect(page.locator("html.tb-right")).toHaveCount(1);
+  // 量尺寸前先等壳子画出来:登录后到数据回来之间会整页重画,那一刻取 boundingBox 是 null。
+  await expect(page.locator(".top")).toBeVisible();
+  await expect(page.locator(".card").first()).toBeVisible();
   const vw = 1280;
   const top = await page.locator(".top").boundingBox();
   expect(top.y).toBe(0);

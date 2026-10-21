@@ -36,8 +36,10 @@ const MOCK = [
   { username: "evan", note: "", status: "active", used_traffic: 12 << 30, data_limit: 100 << 30, presence: P(false, at(6 * MIN), 1) },
   { username: "fang", note: "", status: "expired", used_traffic: 33 << 30, data_limit: 100 << 30, presence: P(false, at(150 * MIN), 2) },
   { username: "gus", note: "暂时不用", status: "disabled", used_traffic: 0, data_limit: 50 << 30, presence: P(false, at(10 * 24 * 60 * MIN), 3) },
-  { username: "hana", note: "新加的", status: "active", used_traffic: 0, data_limit: 50 << 30, presence: P(false, null, null) },
-  { username: "ivy", note: "", status: "active", used_traffic: 0, data_limit: 50 << 30, presence: P(false, null, null) },
+  // 两个没连过的按创建时间排(ivy 后加)。真控制面建用户的时间只到秒,十条用户常落在同一秒里,
+  // 顺序就退化成按用户名;这里把时间写死,断言才不随建用户用了多久而变。
+  { username: "hana", note: "新加的", status: "active", used_traffic: 0, data_limit: 50 << 30, presence: P(false, null, null), created_at: "2026-01-02T00:00:00Z" },
+  { username: "ivy", note: "", status: "active", used_traffic: 0, data_limit: 50 << 30, presence: P(false, null, null), created_at: "2026-01-03T00:00:00Z" },
   { username: "jun", note: "", status: "limited", used_traffic: 50 << 30, data_limit: 50 << 30, presence: P(false, at(6 * 24 * 60 * MIN), 1) },
 ];
 // 订阅拉取:alice 用 Clash Verge 拉过,bob 没有,hana 导入过却从没用过。
@@ -148,24 +150,24 @@ test("悬停「在线」格子和右侧在线人数:浮出 .ftip 显示绝对时
 
 test("排序:默认最新在前;点表头反过来;从未连接的不管正反都排最后", async ({ page }) => {
   await open(page);
-  // 在线的排最前(IP 多的靠前),再按最后有流量的时间;两个没连过的在最后。
-  expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "hana", "ivy"]);
+  // 在线的排最前(IP 多的靠前),再按最后有流量的时间;两个没连过的在最后,顺序按创建时间(ivy 后加)。
+  expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "ivy", "hana"]);
   await page.click("[data-act=pres-sort]");
   await expect(page.locator("th.th-sort")).toHaveAttribute("aria-sort", "ascending");
-  // 反过来以后时间近的在后、最久没连的在前,但在线的仍在最前:现在在线的人排在不在线的前面,
-  // 不按「多久前有流量」排。
+  // 反过来以后时间近的在后、最久没连的在前(gus 10 天前比 jun 6 天前更早),没连过的仍在最后。
   const asc = await order(page);
-  expect(asc).toEqual(["chen", "alice", "bob", "gus", "jun", "fang", "evan", "dora", "hana", "ivy"]);
+  expect(asc).toEqual(["gus", "jun", "fang", "evan", "dora", "chen", "alice", "bob", "hana", "ivy"]);
   await page.click("[data-act=pres-sort]");
   await expect(page.locator("th.th-sort")).toHaveAttribute("aria-sort", "descending");
-  expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "hana", "ivy"]);
+  expect(await order(page)).toEqual(["bob", "alice", "chen", "dora", "evan", "fang", "jun", "gus", "ivy", "hana"]);
 });
 
 test("节点连不上:灰条写从几点起连不上,「看节点」去节点页;那台上的人写「连不上，可能还在线」", async ({ page }) => {
   await open(page, { presence: { ...LIVE, stale_nodes: [{ node_id: 2, since: at(3 * MIN) }] } });
   const note = page.locator(".pres-note");
   // 灰条里还有时钟图标和旗帜,整句是它第一个直接的 span 子元素。
-  await expect(note.locator(":scope > span").first()).toHaveText(/^东京 B 从 \d{2}:\d{2} 起连不上，这台上的在线状态停在 \d+ (秒|分钟)前。$/);
+  // 句首有旗帜图,文本前带一个空格。
+  await expect(note.locator(":scope > span").first()).toHaveText(/^\s*东京 B 从 \d{2}:\d{2} 起连不上，这台上的在线状态停在 \d+ (秒|分钟)前。$/);
   await expect(note.locator("a")).toHaveAttribute("href", "#nodes/2");
   // 灰色,不是红色。
   const [r, g, b] = await note.evaluate(e => getComputedStyle(e).backgroundColor.match(/\d+/g).slice(0, 3).map(Number));

@@ -147,7 +147,7 @@ function jobCallout(kind, d) {
   const t = JOB_TEXT[j.kind];
   if (!t) return "";
   if (kind === "callout") return H`<div class="callout stone mb" role="status">${ic(j.kind === "diagnose" ? "pulse" : "dl")}<div><b>${t.running(hm(new Date(j.started_at)), j.core)}</b></div></div>`;
-  return H`<div class="callout mb mt">${ic("clock")}<div>${t.last}</div></div>`;
+  return H`<div class="callout stone mb mt">${ic("clock")}<div>${t.last}</div></div>`;
 }
 // 盯一个正在跑的任务:每 3 秒重读一次详情(里面带着这台节点的任务),换页、换节点就停。
 // jobPollFor 是正在盯的节点,jobPollActive 表示这一轮还没走完(计时器在等,或正在重读):
@@ -155,6 +155,9 @@ function jobCallout(kind, d) {
 // 下一轮只在这次重读走完之后才排。
 let jobTimer = 0, jobPollFor = null, jobPollActive = false;
 function jobPollStop() { clearTimeout(jobTimer); jobTimer = 0; jobPollFor = null; jobPollActive = false; }
+// jobPollHalt:这一轮因为离开页面、换了节点而结束。jobPollActive 也要一起放掉,否则回到同一台
+// 节点时 jobPollStart 以为还在盯,轮询再也不起来,任务做完了也没有提示。
+function jobPollHalt(id) { if (jobPollFor === id) jobPollStop(); }
 function jobStillHere(id) { return jobPollActive && jobPollFor === id && route[0] === "nodes" && +route[1] === id && !!$("#job-callout"); }
 function jobPollStart(id) {
   if (jobPollActive && jobPollFor === id) return;
@@ -163,10 +166,10 @@ function jobPollStart(id) {
 }
 async function jobPollTick(id) {
   jobTimer = 0;
-  if (!jobStillHere(id)) return;
+  if (!jobStillHere(id)) { jobPollHalt(id); return; }
   await load(true);
   // 停了就不再排下一轮:这一轮的重读可能把停止时留下的旧计时器又写了回来。
-  if (!jobStillHere(id)) { jobTimer = 0; return; }
+  if (!jobStillHere(id)) { jobPollHalt(id); return; }
   jobTimer = setTimeout(() => jobPollTick(id), 3000);
 }
 // jobSettle:任务刚结束。做完给一句提示;没做完、被打断就把原话(界面说法优先)显示在详情里;

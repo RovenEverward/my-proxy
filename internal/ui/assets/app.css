@@ -814,8 +814,6 @@ table.ut tbody tr:hover{background:var(--hover)}
 /* 有节点连不上时的说明:灰,不是红(不是用户做错了什么,只是数据旧了) */
 .pres-note{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:9px 12px;border-radius:8px;background:var(--stone);color:var(--ink2);font-size:12.5px}
 .pres-note svg{width:15px;height:15px;color:var(--muted);flex:none}.pres-note .lnk{margin-left:auto;color:var(--ink);font-weight:540;white-space:nowrap}
-/* 句子里的节点名:旗帜换成图以后要它自己成块,别让整句被拆开(见 users.js staleNote)。 */
-.nm{white-space:nowrap}
 
 /* 抽屉 */
 .ud-pres{padding:14px 16px;border-radius:12px;background:var(--panel);display:grid;gap:10px}

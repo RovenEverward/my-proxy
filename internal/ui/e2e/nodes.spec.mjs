@@ -70,12 +70,14 @@ test("编辑节点:与 mpx node edit 一致", async ({ page }) => {
   await login(page, env);
   const names = ["cli-n", "ui-n"], opt = { ids: ["1", "2"] };
   env.takeLog();
-  await env.cli("node", "edit", "1", "--address", "127.0.0.9", "--ssh-user", "deploy");
+  // 地址用 127.0.0.1:这台机器上连 127.0.0.9 会一直挂到超时,后面的用例要等应用、刷新,
+  // 都跟着慢两分钟。这里比对的是请求,地址换个值不影响结论。
+  await env.cli("node", "edit", "1", "--address", "127.0.0.1", "--ssh-user", "deploy");
   const fromCLI = take(names, opt);
   await openNode(page, 2);
   await page.click("[data-act=node-menu]");
   await page.click("[data-act=node-edit]");
-  await page.fill("#n-address", "127.0.0.9");
+  await page.fill("#n-address", "127.0.0.1");
   await page.fill("#n-ssh-user", "deploy");
   await expect(page.locator("#node-form")).not.toContainText("mpx ");
   await page.click("#n-save");
@@ -160,20 +162,32 @@ test("排水要确认、取消不发请求;排水与取消排水和 CLI 一致",
 // 后台任务的同步形式:界面发的是 .../jobs,和 CLI 的同步接口只差这一段路径(请求体、参数都一样)。
 const syncOf = p => p.replace(/\/(diagnostics|install)\/jobs(\?|$)/, "/$1$2");
 
+// softJSON:页面关掉、换页时还在路上的请求会被取消,取回来的响应也跟着作废。这条请求已经
+// 没人要了,不当成失败(否则轮询收尾那一下正好撞上,会被记成红)。
+const softJSON = async route => {
+  try { const res = await route.fetch(); return { res, body: await res.json() }; }
+  catch (e) { if (/disposed|Test ended/i.test(String(e))) return null; throw e; }
+};
+
 // 用后台上任务的用例:节点 FIXED_ID(fixed-n)的详情、任务列表、任务本身全由 route 回答,不发到真控制面。
 // 节点名字固定成 fixed-n,确认框和提示里的名字就有得比。返回两本账:起了几次任务、现场查过几次。
 function fakeJobs(page, opts) {
-  const st = { posts: 0, fresh: 0, phase: "running" };
-  page.route(`**/api/nodes/${FIXED_ID}`, async route => {
+  // started:POST 过之后才有在跑的任务。进页面时就报一条在跑的,按钮会按设计整成禁用,用例点不动。
+  const st = { posts: 0, fresh: 0, phase: "running", started: false };
+  page.route(new RegExp(`/api/nodes/${FIXED_ID}(\\?|$)`), async route => {
     const u = new URL(route.request().url());
     if (u.searchParams.get("fresh")) st.fresh++;
-    const res = await route.fetch(), n = await res.json();
+    const got = await softJSON(route);
+    if (!got) return;
+    const n = got.body;
     n.id = FIXED_ID; n.name = "fixed-n"; n.display = "";
-    await route.fulfill({ response: res, json: n });
+    await route.fulfill({ response: got.res, json: n });
   });
+  // 起任务时控制面会把安装的内核记进任务(os/core),详情里的「正在安装 xray」读的就是它。
+  const runningJob = () => J("running", { id: 91, kind: opts.kind || "diagnose", ...(opts.kind === "install" ? { core: "xray" } : {}) });
   page.route(`**/api/nodes/${FIXED_ID}/jobs*`, route => {
-    const u = new URL(route.request().url()), run = st.phase === "running";
-    const jobs = opts.active ?? (run ? [J("running", { id: 91, kind: opts.kind || "diagnose" })] : []);
+    const u = new URL(route.request().url()), run = st.started && st.phase === "running";
+    const jobs = opts.active ?? (run ? [runningJob()] : []);
     return route.fulfill({ json: { jobs: u.searchParams.get("active") ? jobs : (opts.recent || []) } });
   });
   // 起任务:POST /api/nodes/{id}/(diagnostics|install)/jobs。路径段和用例里的 kind 对不上
@@ -181,8 +195,8 @@ function fakeJobs(page, opts) {
   // 匹配到路径末尾,所以这条要放在上面那条 .../jobs* 之后,否则写请求也被当成列表读掉。
   const seg = { diagnose: "diagnostics", install: "install" }[opts.kind || "diagnose"];
   page.route(`**/api/nodes/${FIXED_ID}/${seg}/jobs*`, route => {
-    st.posts++; st.phase = "running";
-    const job = J("running", { id: 91, kind: opts.kind || "diagnose" });
+    st.posts++; st.started = true; st.phase = "running";
+    const job = runningJob();
     return route.fulfill({ status: opts.reused ? 200 : 202, json: opts.reused ? { reused: true, job } : { job } });
   });
   // GET /api/jobs/{id}:轮询只管做完没有;用例把 phase 改成 done 之后,这边就按结束报(opts.end)。
@@ -212,6 +226,7 @@ test("体检:开始后立刻关掉确认框并提示已开始,详情里马上显
 });
 
 test("体检:离开这个页面再回来,还在跑;完成后提示体检完成并重读详情", async ({ page }) => {
+  test.setTimeout(60_000); // 轮询等 20 秒才收尾
   await login(page, env);
   const st = fakeJobs(page, { kind: "diagnose" });
   await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
@@ -251,7 +266,8 @@ test("安装:开始后提示已开始在 fixed-n 上安装,详情里显示正在
 
 test("体检:这台已经在体检了,再点提示接着等它做完", async ({ page }) => {
   await login(page, env);
-  fakeJobs(page, { kind: "diagnose", reused: true, active: [] });
+  // 被受理的是一条已经在跑的任务(200 reused),所以起完之后它照样在「正在跑」里。
+  fakeJobs(page, { kind: "diagnose", reused: true });
   await page.goto(env.origin + `/#nodes/${FIXED_ID}`);
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await page.click("[data-act=node-diagnose]");
@@ -312,6 +328,7 @@ for (const [title, args, act, fill] of [
   ["体检(默认参数)", ["node", "diagnose"], "node-diagnose", null],
 ]) {
   test(`${title}:与 CLI 的同步请求一致,失败由任务提示报出控制面原话`, async ({ page }) => {
+    test.setTimeout(60_000); // 节点连不上,任务在后面自己失败,提示要等
     await login(page, env);
     const opt = { ids: ["1", "2"] };
     env.takeLog();
@@ -322,10 +339,18 @@ for (const [title, args, act, fill] of [
     await openNode(page, 2);
     await page.click(`[data-act=${act}]`);
     if (fill) await fill(page);
+    // 节点直接拒连,任务失败得很快:3 秒一次的轮询可能抢在断言之前把「已开始在」换成
+    // 「没做成」。把出现过的提示按顺序记下来,两条都核对,也能核对先后。
+    await page.evaluate(() => {
+      window.__toasts = [];
+      new MutationObserver(() => {
+        const t = document.querySelector(".toast");
+        if (t && window.__toasts[window.__toasts.length - 1] !== t.textContent) window.__toasts.push(t.textContent);
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     await page.click("#okb");
-    // 202:任务起了,确认框立刻关掉,先提示已开始;被受理的那件任务从回答里拿 id。
+    // 202:任务起了,确认框立刻关掉。
     await expect(page.locator("#modal.open")).toHaveCount(0);
-    await expect(page.locator(".toast")).toContainText("已开始在");
     const res = env.lastResponse();
     expect(res.status).toBe(202);
     const jobID = JSON.parse(res.body)?.job?.id;
@@ -343,11 +368,17 @@ for (const [title, args, act, fill] of [
     expect(done.status).toBe("failed");
     expect(done.error).not.toBe("");
     await expect(failed).toContainText(done.ui_hint || done.error);
+    // 先「已开始在…」再「没做成…」:被受理时立刻给回执,失败随后由盯任务的那一步报。
+    const toasts = await page.evaluate(() => window.__toasts);
+    const started = toasts.findIndex(t => t.includes("已开始在"));
+    expect(started).toBeGreaterThanOrEqual(0);
+    expect(toasts.findIndex(t => t.includes("没做成："))).toBeGreaterThan(started);
   });
 }
 
 // 安装做完:任务结果里带 node / core / version,提示用起任务时记下的显示名拼。
 test("安装:做完提示已装好并启动,带上版本", async ({ page }) => {
+  test.setTimeout(60_000); // 轮询等 20 秒才收尾
   await login(page, env);
   const st = fakeJobs(page, { kind: "install" });
   await page.unroute("**/api/jobs/91");
@@ -730,19 +761,22 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
 
 // 只有读权限(GET /api)时,连不上的节点仍要能「刷新状态」——那是 GET ?fresh=1,不是写操作。
 test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
+  test.setTimeout(60_000); // 现场刷新要等 SSH 那边超时
   // 权限来自 /ui/meta,必须在页面第一次加载前就把写权限摘掉。
   await page.route("**/ui/meta", async route => {
-    const response = await route.fetch();
-    const m = await response.json();
+    const got = await softJSON(route);
+    if (!got) return;
+    const m = got.body;
     m.allow = (m.allow || []).filter(a => a.startsWith("GET "));
-    await route.fulfill({ response, json: m });
+    await route.fulfill({ response: got.res, json: m });
   });
   await page.route("**/api/nodes/2", async route => {
-    const response = await route.fetch();
-    const n = await response.json();
+    const got = await softJSON(route);
+    if (!got) return;
+    const n = got.body;
     n.deployed_hash = "deployed";
     n.status = { ...n.status, observed_hash: "deployed", reachable: false, error: "dial tcp: i/o timeout" };
-    await route.fulfill({ response, json: n });
+    await route.fulfill({ response: got.res, json: n });
   });
   await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
   // 这套环境里的控制面还没有后台任务那组接口(404):页面把它当作没有,照旧显示详情。
@@ -767,14 +801,18 @@ test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
 test("模板漂移:详情提示「应用一次才生效」,列表标「需要应用」", async ({ page }) => {
   await login(page, env);
   await page.route("**/api/nodes/2", async route => {
-    const res = await route.fetch(), n = await res.json();
+    const got = await softJSON(route);
+    if (!got) return;
+    const n = got.body;
     n.deployed_hash = "deployed"; n.template_drift = true;
     n.status = { ...n.status, observed_hash: "deployed", reachable: true, error: "" };
-    await route.fulfill({ response: res, json: n });
+    await route.fulfill({ response: got.res, json: n });
   });
   await page.route("**/api/nodes", async route => {
-    const res = await route.fetch(), j = await res.json();
-    await route.fulfill({ response: res, json: (j || []).map(n => n.id === 2 ? { ...n, deployed_hash: "deployed", template_drift: true, status: { ...(n.status || {}), observed_hash: "deployed" } } : n) });
+    const got = await softJSON(route);
+    if (!got) return;
+    const j = got.body;
+    await route.fulfill({ response: got.res, json: (j || []).map(n => n.id === 2 ? { ...n, deployed_hash: "deployed", template_drift: true, status: { ...(n.status || {}), observed_hash: "deployed" } } : n) });
   });
   await page.route("**/api/nodes/pending", route => route.fulfill({ json: [] }));
   await openNode(page, 2);
@@ -786,6 +824,8 @@ test("模板漂移:详情提示「应用一次才生效」,列表标「需要应
   await expect(page.locator("#" + whyID)).toHaveText("新版本改了节点配置的写法，应用一次才生效");
   await page.goto(env.origin + "/#nodes");
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  const row = page.locator("tbody tr").filter({ hasText: "ui-n" });
+  // 按行上的节点 id 找,不按名字:列表显示的是显示名,内部名可能已经不是 ui-n;
+  // 「ui-n」还会命中后面用例建的 ui-new。
+  const row = page.locator('tbody tr[data-href="#nodes/2"]');
   await expect(row).toContainText("需要应用");
 });
