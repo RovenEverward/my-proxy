@@ -199,5 +199,22 @@ test.describe("订阅页定稿", () => {
     await refreshTip.hover();
     await expect(page.locator("#pv-app")).toHaveAttribute("data-hl", "2");
     if (out) await page.screenshot({ path: `${out}/sub-hover-dark.png`, fullPage: true });
+    // 自定义底稿只改测试控制面的正文空白，结束时恢复内置。
+    const builtin = await (await cp("/api/settings/templates/sing-box")).text();
+    try {
+      expect((await cp("/api/settings/templates/sing-box", { method: "PUT", headers: { "Content-Type": "text/plain" }, body: builtin + "\n" })).ok).toBe(true);
+      await page.goto(env.origin + "/#sub/templates");
+      const pill = page.locator('.zr-tpl[data-f="sing-box"] .pill.on');
+      await expect(pill).toHaveText("自定义");
+      const colors = await pill.evaluate(e => {
+        const probe = document.createElement("span"); probe.style.color = "var(--ink)"; e.append(probe);
+        const pair = [getComputedStyle(e, "::before").backgroundColor, getComputedStyle(probe).color]; probe.remove(); return pair;
+      });
+      expect(colors[0]).toBe(colors[1]);
+      await page.mouse.move(1, 1);
+      if (process.env.MPX_SUB_CUSTOM_SHOT) await page.screenshot({ path: process.env.MPX_SUB_CUSTOM_SHOT, fullPage: true });
+    } finally {
+      expect((await cp("/api/settings/templates/sing-box", { method: "DELETE" })).ok).toBe(true);
+    }
   });
 });
