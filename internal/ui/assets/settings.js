@@ -252,8 +252,6 @@ Object.assign(ACTS, {
     run: async () => { await write("DELETE", "/api/settings/templates/" + d.f, undefined, `已恢复 ${d.f} 为内置订阅底稿`); closeOverlays(); await load(true, true); } }),
 });
 
-const PV_CLIENTS = [["Clash Verge", "clash-verge/v2.0.3"], ["Shadowrocket", "Shadowrocket/2070 CFNetwork"], ["sing-box", "SFI/1.11.4"]];
-
 // 格式的说法:名字按对象叫,后半句说用户会拿到什么。
 const FMT = {
   "clash-meta": ["Clash Meta 配置", "带完整分流和策略组"], clash: ["Clash 配置", "精简版，只有节点和基本规则"],
@@ -270,7 +268,7 @@ const hit = (rules, ua) => { if (!ua) return -1; for (let i = 0; i < rules.lengt
 const sameRules = (a, b) => JSON.stringify((a || []).map(({ pattern, result }) => ({ pattern, result }))) === JSON.stringify((b || []).map(({ pattern, result }) => ({ pattern, result })));
 const clone = v => JSON.parse(JSON.stringify(v));
 
-let SUB = null;          // { orig, draft, err, saving, pv, leaveTarget, preview }
+let SUB = null;          // { orig, draft, err, saving, leaveTarget, preview }
 let RD = null;           // 规则抽屉里的草稿 { rules, ua }
 let ADV_OPEN = false;
 // 应用内对话框自己收:不碰抽屉,和 modal-cancel 行为一致。
@@ -351,47 +349,27 @@ function b5LinkCard(d, W) {
       <div id="pfx-slot">${b5PfxNote(d)}</div></div></section>`;
 }
 
-/* ---- 第二段:在客户端里的样子 ---- */
-let B5_HL = "";
-function b5Card(d) {
-  const PV = SUB.preview, title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
-  const [, ua] = PV_CLIENTS[SUB.pv], f = b5Fmt(b5Rules(d), ua), iv = +d.update_interval || 0;
-  return H`<div class="pv-app b5-app r-app" id="pv-app" data-hl="${B5_HL}">
-      <div class="pv-prof"><span class="pv-ico">${ic("sub")}</span>
-        <div class="grow"><span class="pa" data-p="1"><b class="pv-t">${title}</b></span>
-          <div class="pv-m"><span class="nw">${fmtBytes(PV.used)} / ${PV.limit ? fmtBytes(PV.limit) : "不限流量"}</span><span class="nw">${PV.expire ? `${PV.expire} 到期` : "永不过期"}</span></div></div>
-        <span class="pa pa-help ${d.support_link ? "" : "off"}" data-p="3"><span class="pv-help" title="${d.support_link}">${ic("help")}</span></span></div>
-      <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
-      <div class="pv-meta"><span class="pa" data-p="2">${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "客户端自己决定多久更新"}</span></div>
-      ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
-    </div>`;
-}
+/* ---- 第二段:订阅信息(写进订阅、客户端里看得到的三项) ---- */
 // 订阅名编辑框:「用户名」是一块整体的标签,存的时候换回 {USERNAME}。
 const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>');
 function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/\n/g, ""); }
-function b5TitleRes(d) {
-  const t = d.profile_title || "", other = SUB.users.find(u => u.username !== SUB.preview.user)?.username || "bob";
-  const has = t.includes("{USERNAME}"), you = t.replaceAll("{USERNAME}", other);
-  if (!t.trim()) return H`<span class="h">不填就只显示用户名。</span>`;
-  return has ? H`<span class="h">${other} 看到「${you}」</span>`
-    : H`<span class="h b5-sug">每个人看到的都一样。<button type="button" class="tk tk-add" data-act="b5-tok">${ic("plus")}用户名</button></span>`;
+// 订阅名里还没有「用户名」时,框下给一个「+ 用户名」把它插回去;有了就不出现。只读时也不出现。
+function b5TitleTok(d, W = can("PUT", "/api/settings")) {
+  return W && !String(d.profile_title || "").includes("{USERNAME}") ? H`<button type="button" class="tk tk-add" data-act="b5-tok">${ic("plus")}用户名</button>` : "";
 }
-function b5LookCard(d, W) {
+function b5InfoCard(d, W) {
   const ro = W && !SUB.saving ? "" : raw("readonly");
-  return H`<section class="r-sec b5-sec" id="sec-look">${secHead("客户端显示")}
-    <div class="r-look">
-      <div class="r-stage"><div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div>
-        <div id="pv">${b5Card(d)}</div></div>
-      <div class="r-fields">
-        <div class="field b5-f" data-p="1"><label for="f-title">订阅名</label>
-          <div class="in b5-tok" id="f-title" role="textbox" aria-label="订阅名" contenteditable="${W && !SUB.saving ? "true" : "false"}" spellcheck="false">${raw(b5TokHTML(d.profile_title))}</div>
-          <div class="b5-tr-res" id="title-res">${b5TitleRes(d)}</div></div>
-        <div class="field b5-f" data-p="2"><label for="f-int">刷新间隔${tipI("客户端每隔多久自动更新一次。填 0 由客户端决定。")}</label>
-          <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
-          <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span></div>
-        <div class="field b5-f" data-p="3"><label for="f-help">帮助链接${tipI("客户端里帮助按钮打开的网页。不填就不显示这个按钮。")}</label>
-          <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="例如 https://help.example.com" autocomplete="off" spellcheck="false" ${ro}></div>
-      </div></div></section>`;
+  return H`<section class="r-sec b5-sec" id="sec-info">${secHead("订阅信息")}
+    <div class="r-info">
+      <div class="field"><label for="f-title">订阅名${tipI("在客户端的订阅列表里显示的名字。「用户名」会换成每个人自己的用户名，不填就只显示用户名。")}</label>
+        <div class="in b5-tok" id="f-title" role="textbox" aria-label="订阅名" contenteditable="${W && !SUB.saving ? "true" : "false"}" spellcheck="false">${raw(b5TokHTML(d.profile_title))}</div>
+        <div class="r-tok" id="title-tok">${b5TitleTok(d, W)}</div></div>
+      <div class="field"><label for="f-int">刷新间隔${tipI("客户端多久自动更新一次订阅，单位小时。填 0 由客户端决定。")}</label>
+        <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
+        <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span></div>
+      <div class="field"><label for="f-help">帮助链接</label>
+        <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="例如 https://help.example.com" autocomplete="off" spellcheck="false" ${ro}></div>
+    </div></section>`;
 }
 
 /* ---- 第三段:不同客户端拿到什么 ---- */
@@ -433,18 +411,12 @@ function saveBar() {
     <button type="button" class="btn" data-act="s5-discard" ${SUB.saving ? raw("disabled") : ""}>放弃</button>
     <button type="button" class="btn pri ${SUB.saving ? "busy" : ""}" data-act="s5-save" ${SUB.saving ? raw("disabled") : ""}>保存</button></div>`;
 }
-// 切客户端只更新选中状态和预览，不重画其它字段或请求控制面。
-function refreshPreview() {
-  for (const button of document.querySelectorAll('[data-act="s5-pv"]')) button.classList.toggle("on", +button.dataset.i === SUB.pv);
-  const pv = $("#pv"); if (pv) pv.innerHTML = val(b5Card(SUB.draft));
-}
-// 刷新不重绘整页,保留输入焦点:只换链接、预览卡片、订阅名结果和对照表。
+// 刷新不重绘整页,保留输入焦点:只换链接、链接开头说明、「+ 用户名」和对照表。
 function refresh() {
   if (route[0] !== "sub" || !SUB) return;
   const d = SUB.draft;
   const set = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = val(h); };
-  set("lk", b5Link(d)); set("pfx-slot", b5PfxNote(d)); set("title-res", b5TitleRes(d)); set("b5-tbl", b5Table(d));
-  refreshPreview();
+  set("lk", b5Link(d)); set("pfx-slot", b5PfxNote(d)); set("title-tok", b5TitleTok(d)); set("b5-tbl", b5Table(d));
   for (const el of document.querySelectorAll(".b5 [data-k]")) el.readOnly = SUB.saving || !can("PUT", "/api/settings");
   const t = $("#f-title"); if (t) t.contentEditable = String(!SUB.saving && can("PUT", "/api/settings"));
   if ($("#pfx-err")) $("#pfx-err").textContent = SUB.fieldErrors?.sub_url_prefix || "";
@@ -534,26 +506,25 @@ PAGES.sub = {
     // 侧栏的节点、用户数字来自 STATUS;直接打开订阅页时也取一次。
     STATUS = await read("/api/status").catch(() => STATUS);
     if (r[1] === "templates") ADV_OPEN = true;
-    const [settings, builtin, users, pulls, nodes, inbounds, plans] = await Promise.all([
+    const [settings, builtin, users, pulls] = await Promise.all([
       read("/api/settings"), read("/api/settings/builtin-rules"), subUsers(read),
-      read("/api/sub-pulls").catch(() => []), read("/api/nodes").catch(() => []),
-      read("/api/inbounds").catch(() => []), read("/api/plans").catch(() => []),
+      read("/api/sub-pulls").catch(() => []),
     ]);
     const recent = [...(pulls || [])].sort((a, b) => new Date(b.last_pulled_at) - new Date(a.last_pulled_at)).find(p => users.some(u => u.username === p.username));
     const user = users.find(u => u.username === SUB?.preview.user) || users.find(u => u.username === recent?.username) || users[0];
-    const preview = await subPreview(user, { users, nodes, inbounds, plans }, read);
+    const preview = await subPreview(user, read);
     const tpl = ADV_OPEN ? await subTemplates(read) : {};
-    return { settings, builtin, users, nodes, inbounds, plans, preview, tpl };
+    return { settings, builtin, users, preview, tpl };
   },
   render(d) {
     const head = sub => H`<div class="ph r-ph"><h1>订阅</h1><span class="sp"></span>${sub}</div>`;
     if (!d) return H`${head("")}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
-    if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0, leaveTarget: null };
+    if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, leaveTarget: null };
     // 刷新不丢草稿，已经打开的底稿与用户数据仍取最新值。
     Object.assign(SUB, { builtin: d.builtin, users: d.users, preview: d.preview });
     const W = can("PUT", "/api/settings");
-    return H`${head(b5Picker())}<div class="b5 r-page">${b5LinkCard(SUB.draft, W)}${b5LookCard(SUB.draft, W)}${b5GetCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
+    return H`${head(b5Picker())}<div class="b5 r-page">${b5LinkCard(SUB.draft, W)}${b5InfoCard(SUB.draft, W)}${b5GetCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
   },
   after(d, r) {
     if (!d) { subAnchorKey = ""; return; }
@@ -576,15 +547,6 @@ PAGES.sub = {
         SUB.draft.profile_title = v; SUB.err = ""; delete SUB.fieldErrors.profile_title; refresh();
       });
     }
-    // 字段与预览对应:鼠标或焦点在哪一栏,卡片上对应那块就亮起来;反过来也一样。
-    const hl = n => { B5_HL = n; const a = $("#pv-app"); if (a) a.dataset.hl = n; for (const f of document.querySelectorAll(".b5-f")) f.classList.toggle("hl", f.dataset.p === n); };
-    for (const f of document.querySelectorAll(".b5-f")) {
-      f.addEventListener("mouseenter", () => hl(f.dataset.p)); f.addEventListener("mouseleave", () => { if (!f.contains(document.activeElement)) hl(""); });
-      f.addEventListener("focusin", () => hl(f.dataset.p)); f.addEventListener("focusout", () => hl(""));
-    }
-    $("#pv")?.addEventListener("mouseover", e => { const p = e.target.closest(".pa"); hl(p ? p.dataset.p : (document.activeElement?.closest(".b5-f")?.dataset.p || "")); });
-    $("#pv")?.addEventListener("mouseleave", () => hl(document.activeElement?.closest(".b5-f")?.dataset.p || ""));
-    $("#pv")?.addEventListener("click", e => { const p = e.target.closest(".pa"); if (p) document.querySelector(`.b5-f[data-p="${p.dataset.p}"] .in`)?.focus(); });
     const f = $(".r-pfx");
     if (f) {
       const on = v => $("#lk")?.classList.toggle("hl", v);
@@ -670,7 +632,6 @@ function rdWire() {
 }
 
 Object.assign(ACTS, {
-  "s5-pv": d => { SUB.pv = +d.i; B5_HL = ""; refreshPreview(); },
   "s5-adv": async () => {
     ADV_OPEN = !ADV_OPEN; paint();
     if (ADV_OPEN) {
@@ -723,9 +684,10 @@ async function subUsers(read = api) {
 function subTemplates(read = api) {
   return Promise.all(TPL_FORMATS.map(async f => [f, await read("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } })])).then(Object.fromEntries);
 }
-async function subPreview(u, data, read = api) {
-  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", used: 38.2 * 2 ** 30, limit: 200 * 2 ** 30, expire: "2026-12-31", node: "🇯🇵 东京 A", proto: "VLESS · Reality", more: 3, applied: null, nodes: data.nodes, inbounds: data.inbounds, plans: data.plans, users: data.users };
-  const out = { user: u.username, token: "", used: u.used_traffic || 0, limit: u.data_limit || 0, expire: u.expire_at ? ymd(new Date(u.expire_at)) : "", node: "", proto: "", more: 0, auto: "", appliedPrefix: "", getAuto: false };
+// 预览用户只决定「订阅链接」里显示谁的链接:取这个人的链接,切出令牌和控制面这次用的开头。
+async function subPreview(u, read = api) {
+  if (!u) return { user: "alice", token: "Wm5tR0aE3uLx9Nb2", auto: "", appliedPrefix: "", getAuto: false };
+  const out = { user: u.username, token: "", auto: "", appliedPrefix: "", getAuto: false };
   // 链接开头按控制面这次拼链接用的那个认:从 auto 本身切出来,任何版本的控制面都给得出(只加的 base 字段同值)。
   // 没填链接开头时它是控制面这次请求的 Host(经 mpx ui 转发过来就是控制面的地址),不一定等于页面地址。
   try {
@@ -733,39 +695,17 @@ async function subPreview(u, data, read = api) {
     const i = out.auto.lastIndexOf("/sub/"); out.token = i < 0 ? "" : out.auto.slice(i + 5); out.appliedPrefix = i < 0 ? "" : out.auto.slice(0, i);
     out.getAuto = true;
   } catch (e) { toast(e.message, true); }
-  out.nodes = data.nodes; out.inbounds = data.inbounds; out.plans = data.plans; out.users = data.users;
-  // 与订阅下发一样，套餐节点、套餐入站和额外授权取并集，排除排水与满员入站。
-  // 授权数据不全时不猜测，省略无法确认的节点行。
-  if (u.status !== "active") return out;
-  const available = data.nodes.filter(n => !n.draining).flatMap(n => {
-    const i = data.inbounds.find(i => {
-      if (i.node_id !== n.id || subAllows(u, i, data.plans) !== true) return false;
-      if (!i.max_users) return true;
-      const active = data.users.filter(v => v.status === "active"), auth = active.map(v => subAllows(v, i, data.plans));
-      return !auth.includes(null) && auth.filter(Boolean).length < i.max_users;
-    });
-    return i ? [{ n, i }] : [];
-  });
-  if (available.length) {
-    const { n, i } = available[0]; out.node = nodeLabel(n); out.proto = `${i.protocol.toUpperCase()}${i.security && i.security !== "none" ? " · " + ({ reality: "Reality", tls: "TLS" }[i.security] || i.security) : ""}`; out.more = available.length - 1;
-  }
   return out;
-}
-function subAllows(u, i, plans) {
-  if ((u.inbound_ids || []).includes(i.id)) return true;
-  if (!u.plan_id) return !(u.inbound_ids || []).length;
-  const p = plans.find(p => p.id === u.plan_id);
-  return p ? !!(p.all_nodes || (p.node_ids || []).includes(i.node_id) || (p.inbound_ids || []).includes(i.id)) : null;
 }
 let subPreviewSeq = 0;
 function wirePreview() {
   $("#pv-user")?.addEventListener("change", async e => {
     const state = SUB, data = current.data, seq = ++subPreviewSeq;
     const user = state.users.find(u => u.username === e.target.value);
-    // 先切名字和用量，取链接期间不展示上一个人的 token;开头也是上一个人的,一起清掉,等新的回来。
-    state.preview = { ...state.preview, user: user.username, token: "", used: user.used_traffic || 0, limit: user.data_limit || 0, expire: user.expire_at ? ymd(new Date(user.expire_at)) : "", appliedPrefix: "", getAuto: false };
+    // 先切名字，取链接期间不展示上一个人的 token;开头也是上一个人的,一起清掉,等新的回来。
+    state.preview = { ...state.preview, user: user.username, token: "", auto: "", appliedPrefix: "", getAuto: false };
     data.preview = state.preview; refresh();
-    const preview = await subPreview(user, data);
+    const preview = await subPreview(user);
     if (seq !== subPreviewSeq || SUB !== state) return;
     state.preview = preview; data.preview = preview; refresh();
   });
@@ -775,8 +715,8 @@ function subAnchor(r) {
   const key = r.join("/");
   if (subAnchorKey === key) return;
   subAnchorKey = key;
-  const id = { link: "sec-link", look: "sec-look", clients: "sec-clients", templates: "sec-adv" }[r[1]];
-  // 只有 #sub/link、#sub/look、#sub/clients、#sub/templates 才滚到对应段;普通 #sub 停在顶上,页标题「订阅」露着。
+  const id = { link: "sec-link", info: "sec-info", look: "sec-info", clients: "sec-clients", templates: "sec-adv" }[r[1]];
+  // 只有 #sub/link、#sub/info(旧的 #sub/look 也认)、#sub/clients、#sub/templates 才滚到对应段;普通 #sub 停在顶上,页标题「订阅」露着。
   if (!id) return;
   requestAnimationFrame(() => { if (route.join("/") === key) document.getElementById(id)?.scrollIntoView({ block: "start" }); });
 }

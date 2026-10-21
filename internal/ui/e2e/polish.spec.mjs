@@ -134,18 +134,12 @@ test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
   // 订阅页把刷新说明收进可键盘访问的提示，不再占一行。
-  const tip = page.locator('.b5-f[data-p="2"] .r-tip');
-  await expect(tip).toHaveAttribute("aria-label", "客户端每隔多久自动更新一次。填 0 由客户端决定。");
+  const tip = page.locator('label[for="f-int"] .r-tip');
+  await expect(tip).toHaveAttribute("aria-label", "客户端多久自动更新一次订阅，单位小时。填 0 由客户端决定。");
   await page.keyboard.press("Tab");
   await tip.focus();
   await expect(tip).toBeFocused();
   expect(await tip.evaluate(e => getComputedStyle(e, "::after").content)).toContain("填 0 由客户端决定。");
-  // 预览卡片里的用量和到期日各是一段不拆开的文字。
-  const pv = page.locator("#pv-app .pv-m .nw");
-  await expect(pv).toHaveCount(2);
-  await expect(pv.first()).toContainText("不限流量");
-  await expect(pv.last()).toContainText("永不过期");
-  expect(await pv.first().evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
 });
 
 test("N6 删除确认标题里旗帜按正常空格排，不吃弹性间距", async ({ page }) => {

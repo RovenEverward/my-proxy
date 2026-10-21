@@ -587,21 +587,6 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .s5-pv{align-self:start;display:grid;gap:12px;padding:14px;border-radius:12px;background:var(--canvas)}
 .pv-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.pv-h .sp{flex:1}
 .pv-h .seg button{height:24px;font-size:12px}
-.pv-app{display:grid;gap:10px;padding:14px;border-radius:10px;background:var(--panel)}
-.pv-prof{display:flex;align-items:center;gap:10px}
-.pv-ico{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--ink);color:var(--canvas);flex:none}.pv-ico svg{width:17px;height:17px}
-.pv-t{display:block;font-size:14.5px;font-weight:620;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pv-m{font-size:12px;color:var(--muted);margin-top:1px}
-.pv-help{display:grid;place-items:center;width:28px;height:28px;border-radius:7px;background:var(--stone);color:var(--ink2)}.pv-help svg{width:15px;height:15px}
-.pv-bar{width:auto;height:4px}
-.pv-meta{display:flex;gap:14px;font-size:12px;color:var(--muted);min-width:0}.pv-meta span{display:inline-flex;align-items:center;gap:5px;min-width:0}.pv-meta svg{width:13px;height:13px;flex:none}
-.pv-node{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;background:var(--canvas);font-size:13px}.pv-node .sp{flex:1}.pv-node b{font-weight:560}
-.pv-empty{color:var(--muted)}
-.pv-link{display:flex;align-items:center;gap:8px;padding:8px 6px 8px 10px;border-radius:8px;background:var(--stone);min-width:0}
-.pv-link>.sub{flex:none}.pv-link code{flex:1;min-width:0;color:var(--muted)}.pv-link code b{font-weight:500;color:var(--ink)}
-.pv-link code b.pv-ip{font-weight:680}
-.pv-link .ib{width:26px;height:26px}
-.pv-f{margin:0;font-size:12px;color:var(--muted)}.pv-f b{color:var(--ink);font-weight:560}
 
 /* 斑马列表:不画行线,单双行换底色 */
 .zebra{display:grid;margin:0 10px}
@@ -659,7 +644,6 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 }
 .s5 .pill.on::before,.r-adv .pill.on::before{background:var(--ink)}
 .zr-chg{margin-left:auto;flex:none}.zr.chg .zr-n{color:var(--ink);font-weight:700}
-.pv-m span{white-space:nowrap}
 
 .s5-field-err{display:block;color:var(--bad);font-size:12.5px}.s5-field-err:empty{display:none}
 .s5-warn svg{color:var(--muted)}.pv-h #pv-user{display:inline-block;width:auto;height:28px;padding:2px 24px 2px 6px;font:inherit}
@@ -693,22 +677,12 @@ p,.sub,.h{text-wrap-style:pretty}
 /* 第一段:大链接 */
 .lk-tail{color:var(--muted)}
 
-/* 第二段:卡片为主,旁边是带编号的栏 */
-.b5-app{gap:12px;padding:18px;border-radius:12px;background:var(--panel)}
-.b5-app .pv-t{font-size:16px;display:inline}
-.b5-app .pv-ico{width:40px;height:40px;border-radius:10px}.b5-app .pv-ico svg{width:19px;height:19px}
-.b5-app .pv-m{margin-top:3px}
-.pa{display:inline-flex;align-items:center;gap:6px;margin:-3px -6px;padding:3px 6px;border-radius:7px;transition:background 140ms;cursor:pointer;min-width:0}
-.pa-help.off .pv-help{visibility:hidden}.pa-help.off{pointer-events:none}
-.b5-app .pv-meta .pa{font-size:12.5px}
-.b5-f .s5-field-err:empty{display:none}
+/* 第二段:订阅名里的「用户名」标签 */
 .b5-tok{display:block;height:auto;min-height:34px;padding:6px 10px;line-height:22px;white-space:pre-wrap;cursor:text}
 .b5-tok:focus{box-shadow:0 0 0 3px var(--ring);background:var(--canvas)}
 .tk{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;margin:0 1px;border-radius:6px;background:var(--ink);color:var(--canvas);font:550 12px/22px var(--sans);vertical-align:top;user-select:all}
 .tk-add{border:0;cursor:pointer;background:var(--stone);color:var(--ink);margin-left:4px}.tk-add:hover{background:var(--hover)}.tk-add svg{width:12px;height:12px}
-.b5-tr-res{display:grid;gap:3px}
 .b5-res{font-size:12.5px;color:var(--ink2)}.b5-res b{color:var(--ink);font-weight:600}
-.b5-sug{display:flex;align-items:center;flex-wrap:wrap;gap:2px}
 
 /* 第三段:客户端对格式,斑马行 */
 .b5-tbl{margin:4px 12px 0}
@@ -746,8 +720,6 @@ p,.sub,.h{text-wrap-style:pretty}
 
 .b5-lbl{font-size:12px;color:var(--muted)}
 .b5-on.off{visibility:hidden}
-.b5-app .nw{white-space:nowrap}
-.b5-app .pv-m{display:flex;flex-wrap:wrap;gap:0 12px}
 
 /* 用户页「最近在线」:在线这一列、可排序表头、工具栏右边的在线人数、节点连不上时的灰条、抽屉里的「最近连接」、悬停提示。 */
 /* 在线点:实心墨色 + 一圈淡晕,和「状态」列的实心点(正常)区分开 */
@@ -829,21 +801,13 @@ table.ut tbody tr:hover{background:var(--hover)}
 .r-copy{height:34px;flex:none}
 .r-pfx{margin:16px 0 0;max-width:520px}
 .r-pfx label{font-size:12.5px}
-/* 客户端显示:左边客户端预览(唯一的底色块),右边三栏表单直接放在画布上 */
-.r-look{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start}
-.r-stage{display:grid;gap:12px}
-.r-stage .seg{justify-self:start}
-.r-app{background:var(--panel);padding:18px;border-radius:12px}
-.r-app .pv-node{background:var(--canvas)}
-.r-app .pa{cursor:pointer}
-.r-app[data-hl="1"] .pa[data-p="1"],.r-app[data-hl="2"] .pa[data-p="2"],.r-app[data-hl="3"] .pa[data-p="3"]{background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--ink) 35%,transparent)}
-.r-fields{display:grid;gap:18px;padding-top:40px}
-.r-fields .b5-f{margin:0;padding:0;border-radius:0;background:none}
-.r-fields .b5-f.hl{background:none}
-.r-fields .b5-f.hl>label{color:var(--ink)}
-.r-fields label{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:530;color:var(--ink2)}
-.r-fields .b5-tr-res .h,.r-pfx .h{font-size:12px;color:var(--muted)}
-.r-fields .b5-sug{display:flex;align-items:center;gap:6px}
+/* 订阅信息:三栏和「链接开头」同一种写法(标签在上、宽 520),直接放在画布上 */
+.r-info{display:grid;gap:16px;max-width:520px}
+.r-info .field{margin:0}
+.r-info label{display:flex;align-items:center;gap:4px}
+.r-tok:empty{display:none}
+.r-pfx .h{font-size:12px;color:var(--muted)}
+.r-tok .tk-add{margin-left:0}
 /* 客户端格式:斑马表直接在画布上,奇数行用 panel */
 .r-tbl{margin:0}
 .r-tbl .b5-th{padding:0 12px 6px}
@@ -854,7 +818,6 @@ table.ut tbody tr:hover{background:var(--hover)}
 .r-adv .r-sum .sub{font-size:12.5px}
 .r-adv.open .s5-car{transform:rotate(180deg)}
 .r-zebra .zr-tpl{grid-template-columns:minmax(0,1fr) auto auto auto}
-@media (max-width:980px){.r-look{grid-template-columns:1fr}.r-fields{padding-top:0}}
 .r-sum .sp{flex:1}
 /* 预览用户:去掉外层底色,只留标签和一个下拉 */
 .r-ph .b5-pick{height:auto;padding:0;background:none;gap:8px}

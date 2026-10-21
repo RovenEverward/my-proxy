@@ -32,7 +32,8 @@ test("一页四段，高级默认折叠，展开才取底稿正文", async ({ pa
   const requests = [];
   page.on("request", r => { if (r.url().includes("/api/settings/templates/")) requests.push(r.url()); });
   await open(page);
-  for (const id of ["sec-link", "sec-look", "sec-clients", "sec-adv"]) await expect(page.locator("#" + id)).toHaveCount(1);
+  for (const id of ["sec-link", "sec-info", "sec-clients", "sec-adv"]) await expect(page.locator("#" + id)).toHaveCount(1);
+  await expect(page.locator("#sec-look, #pv, [data-act=s5-pv]")).toHaveCount(0);
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".zr-tpl")).toHaveCount(0);
   expect(requests).toEqual([]);
@@ -47,11 +48,11 @@ test("一页四段，高级默认折叠，展开才取底稿正文", async ({ pa
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "true");
 });
 
-test("改订阅名即时预览，输入焦点保留，保存条列出一处改动", async ({ page }) => {
+test("改订阅名输入焦点保留，保存条列出一处改动", async ({ page }) => {
   await open(page);
   await page.locator("#f-title").click();
-  // 光标放到编辑框开头,接着打的字插在「用户名」标签前面;刷新只换预览,不重画编辑框。
-  // 存进去的是「测试 {USERNAME}」,alice 看到的是「测试 alice」。
+  // 光标放到编辑框开头,接着打的字插在「用户名」标签前面;刷新不重画编辑框。
+  // 存进去的是「测试 {USERNAME}」。
   // macOS 上 Control+Home 不生效,用 Meta+ArrowLeft(到行首);其它平台用 Control+Home。
   await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Control+Home");
   await page.keyboard.type("测试 ");
@@ -59,9 +60,27 @@ test("改订阅名即时预览，输入焦点保留，保存条列出一处改�
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await expect(page.locator("#sb")).toContainText("订阅名");
   await expect.poll(() => titleValue(page)).toBe("测试 {USERNAME}");
-  await expect(page.locator(".pv-t")).toHaveText("测试 alice");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
+  expect((await settings()).profile_title).toBe("测试 {USERNAME}");
+  await expect(page.locator("#sb")).toBeEmpty();
+});
+
+// 订阅信息三栏仍走同一个保存条和 PUT /api/settings,只写改过的键。
+test("刷新间隔和帮助链接仍由保存条写进设置", async ({ page }) => {
+  await open(page);
+  const puts = [];
+  page.on("request", r => { if (r.method() === "PUT" && r.url().endsWith("/api/settings")) puts.push(r.postDataJSON()); });
+  await page.fill("#f-int", "6");
+  await page.fill("#f-help", "https://help.example.com");
+  await expect(page.locator("#sb")).toContainText("有 2 处改动");
+  await expect(page.locator("#sb")).toContainText("刷新间隔、帮助链接");
+  await save(page);
+  await expect(page.locator(".toast")).toContainText("已保存 2 处改动");
+  const stored = await settings();
+  expect(stored.update_interval).toBe(6);
+  expect(stored.support_link).toBe("https://help.example.com");
+  expect(puts[puts.length - 1].update_interval).toBe(6);
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
@@ -128,25 +147,33 @@ test("服务端 400 的订阅地址原话显示在字段下，草稿保留并可
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
 });
 
-test("最近拉过订阅的用户默认入选，下拉切换链接和用量到期", async ({ page }) => {
+test("最近拉过订阅的用户默认入选，下拉切换链接", async ({ page }) => {
   const links = await (await cp("/api/users/bob/links")).json();
   const pulled = await cpFetch(links.auto.replace(/^https?:\/\/[^/]+/, env.cpURL), { headers: { "User-Agent": "clash-verge/v2.0.0" } });
   expect(pulled.ok).toBe(true);
   await expect.poll(async () => (await (await cp("/api/sub-pulls")).json()).some(p => p.username === "bob")).toBe(true);
   await open(page);
   await expect(page.locator("#pv-user")).toHaveValue("bob");
-  await expect(page.locator(".pv-t")).toHaveText("bob");
-  await expect(page.locator(".pv-m")).toContainText("2028-01-01");
   const uiBob = await (await page.request.get(env.origin + "/api/users/bob/links")).json();
   await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
   await page.selectOption("#pv-user", "alice");
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
   await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
-  await expect(page.locator(".pv-t")).toHaveText("alice");
-  await expect(page.locator(".pv-m")).toContainText("2027-01-01");
   await page.fill("#f-prefix", "https://new.example.com");
   await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
   await linkOf(page, "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
+});
+
+// 订阅页不再画客户端预览,不取节点、入站和套餐。
+test("订阅页不请求节点、入站和套餐", async ({ page }) => {
+  await open(page);
+  // 整页重载,直接落在 #sub 上:登录时落地页(总览)发出的请求不算进来。
+  const hits = [];
+  page.on("request", r => { const p = new URL(r.url()).pathname; if (/^\/api\/(nodes|inbounds|plans)$/.test(p)) hits.push(p); });
+  await page.reload();
+  await expect(page.locator("#f-title")).toBeVisible();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  expect(hits).toEqual([]);
 });
 
 test("没有用户时标记示例", async ({ page }) => {
@@ -157,9 +184,15 @@ test("没有用户时标记示例", async ({ page }) => {
   await expect(page.locator(".r-link [data-act=copy]")).toBeDisabled();
 });
 
-test("客户端和底稿旧路由滚到对应段，底稿路由自动展开", async ({ page }) => {
+test("订阅信息、客户端和底稿路由滚到对应段，底稿路由自动展开", async ({ page }) => {
   await open(page, "sub/clients");
   await expect(page.locator("#sec-clients")).toBeInViewport();
+  // 旧的 #sub/look 和新的 #sub/info 都落到「订阅信息」。
+  for (const hash of ["sub/info", "sub/look"]) {
+    await page.goto(env.origin + "/#system");
+    await page.goto(env.origin + "/#" + hash);
+    await expect(page.locator("#sec-info")).toBeInViewport();
+  }
   await page.goto(env.origin + "/#sub/templates");
   await expect(page.locator("#sec-adv")).toBeInViewport();
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "true");
@@ -206,33 +239,6 @@ test("保存先读最新设置，只覆盖改过的键和规则", async ({ page 
   expect(stored.update_interval).toBe(48);
   expect(stored.rules).toEqual(rules);
   expect(stored.notify_days_left).toBe(7);
-});
-
-test("用户可用节点按套餐和额外授权合并，排除排水与满员节点", async ({ page }) => {
-  const users = [
-    { username: "alice", status: "active", plan_id: 1, inbound_ids: [3], used_traffic: 1024, data_limit: 2048 },
-    { username: "bob", status: "active", plan_id: 2 },
-  ];
-  const nodes = [
-    { id: 1, name: "full", display: "已满 A" }, { id: 2, name: "draining", display: "排水 A", draining: true },
-    { id: 3, name: "extra", display: "🇯🇵 东京 A" }, { id: 4, name: "other", display: "其他 A" },
-  ];
-  const inbounds = [1, 2, 3, 4].map(id => ({ id, node_id: id, protocol: "vless", security: "reality", max_users: id === 1 ? 2 : 0 }));
-  await page.route("**/api/users?*", r => r.fulfill({ json: { users, total: users.length } }));
-  await page.route("**/api/sub-pulls", r => r.fulfill({ json: [] }));
-  await page.route("**/api/nodes", r => r.fulfill({ json: nodes }));
-  await page.route("**/api/inbounds", r => r.fulfill({ json: inbounds }));
-  await page.route("**/api/plans", r => r.fulfill({ json: [{ id: 1, node_ids: [1, 2] }, { id: 2, node_ids: [1, 4] }] }));
-  await open(page);
-  await expect(page.locator(".pv-node")).toContainText("东京 A");
-  await expect(page.locator(".pv-node")).toContainText("VLESS");
-  // 节点名里的地区旗帜走 .flag-w/.flag 的矩形 SVG,节点名旁边没有自绘的地区点。
-  await expect(page.locator(".pv-node .flag-w img.flag")).toHaveAttribute("src", "/flags/jp.svg");
-  await expect(page.locator(".pv-node .dot")).toHaveCount(0);
-  expect(await page.evaluate(() => document.querySelector(".pv-node").innerText)).not.toMatch(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
-  await expect(page.locator(".pv-m")).toContainText("1.0 KB / 2.0 KB");
-  await page.selectOption("#pv-user", "bob");
-  await expect(page.locator(".pv-node")).toContainText("其他 A");
 });
 
 test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) => {
