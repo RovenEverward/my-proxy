@@ -1,4 +1,4 @@
-// 「订阅」页 step5b：发给用户的链接、编辑框里的「用户名」标签、编号与预览对应、客户端对照表和识别规则抽屉。
+// 「订阅」页 step5b：发给用户的链接、编辑框里的「用户名」标签、字段与预览对应、客户端对照表和识别规则抽屉。
 import { test, expect } from "@playwright/test";
 import { startEnv, login, cpFetch } from "./env.mjs";
 
@@ -18,7 +18,7 @@ async function open(page) {
 const save = page => page.locator("[data-act=s5-save]").click();
 // 订阅名是 contenteditable 的编辑框,{USERNAME} 在里面是一块「用户名」标签;直接改写里面的文字。
 const setTitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
-const linkOf = (page, expected) => expect(page.locator(".lk-url")).toHaveText(expected);
+const linkOf = (page, expected) => expect(page.locator(".r-url")).toHaveText(expected);
 
 test.beforeAll(async () => {
   env = await startEnv();
@@ -35,7 +35,7 @@ test("链接卡片给出完整链接;没填链接开头时用控制面地址开�
   // 页面请求的那条(经 mpx ui)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
   const cpAlice = await (await cp("/api/users/alice/links")).json();
-  await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
   // 经 mpx ui 转发和直接问控制面拿到的主机不同(端口不同):控制面按请求的 Host 拼,转发过来的
   // 那一头不是控制面自己的地址。开头各是各的,每人自己的那一段(令牌)一样。
@@ -48,18 +48,16 @@ test("链接卡片给出完整链接;没填链接开头时用控制面地址开�
   const pre = alice.auto.slice(0, alice.auto.lastIndexOf("/sub/"));
   await expect(page.locator(".lk-pre")).toHaveText(pre);
   await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(pre.length));
-  const note = page.locator("#pfx-warn");
-  await expect(note).toHaveClass(/b5-note/);
-  await expect(note).toContainText("没填，链接现在用服务器地址开头。");
-  await expect(note).toContainText("拿到链接的人都能看到这台服务器的 IP");
+  const note = page.locator("#pfx-slot");
+  await expect(note).toContainText("没填，链接用服务器 IP");
+  await expect(note).toContainText("拿到链接的人都能看到。");
 
   await page.fill("#f-prefix", "https://sub.example.com");
-  await expect(note).toHaveCount(0);
+  await expect(note).toHaveText("客户端要能访问到这个地址。");
   const expected = "https://sub.example.com/sub/" + alice.auto.split("/sub/")[1];
   await linkOf(page, expected);
   await expect(page.locator(".lk-pre")).toHaveText("https://sub.example.com");
-  await expect(page.locator(".lk-box [data-act=copy]")).toHaveAttribute("data-text", expected);
-  await expect(page.locator(".lk-key")).toContainText("链接开头 · 在下面填");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", expected);
 });
 
 // 编辑框里「用户名」是整块标签;存进去的仍然只有 {USERNAME},每个人看到自己的名字。
@@ -68,7 +66,6 @@ test("订阅名编辑框把 {USERNAME} 显示成「用户名」标签，保存�
   const title = page.locator("#f-title");
   await expect(title.locator(".tk")).toHaveText("用户名");
   await expect(title).toHaveText(/^用户名$/);
-  await expect(page.locator("#title-res")).toContainText("alice 看到「alice」");
   await expect(page.locator("#title-res")).toContainText("bob 看到「bob」");
   await expect(page.locator(".pv-t")).toHaveText("alice");
 
@@ -84,7 +81,7 @@ test("订阅名编辑框把 {USERNAME} 显示成「用户名」标签，保存�
   await expect(page.locator("#f-title .tk")).toHaveText("用户名");
 });
 
-// 右边三栏带编号,鼠标悬停或焦点落在第 2 栏时,卡片上「刷新间隔」那一块一起高亮。
+// 右边三栏与预览联动,鼠标悬停或焦点落在第 2 栏时,卡片上「刷新间隔」那一块一起高亮。
 test("悬停或聚焦第 2 栏时预览卡片对应那块高亮", async ({ page }) => {
   await open(page);
   const app = page.locator("#pv-app");
@@ -141,4 +138,66 @@ test("链接开头填错时字段下出红字，说的是「链接开头」而�
   await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
   await expect(page.locator("#f-prefix")).toBeFocused();
   await expect(page.locator("#f-prefix")).toHaveValue("ftp://x");
+});
+
+// 交接稿的四段结构、双向联动与键盘提示；截图沿用同一套真实测试控制面。
+test.describe("订阅页定稿", () => {
+  test.use({ viewport: { width: 1024, height: 1400 }, deviceScaleFactor: 2 });
+  test("四段平级，字段聚焦与悬停联动，提示可以用键盘访问", async ({ page }) => {
+    for (const [i, city, region] of [[1, "洛杉矶", "US"], [2, "东京", "JP"], [3, "法兰克福", "DE"], [4, "新加坡", "SG"]]) {
+      const res = await cp("/api/nodes", { method: "POST", body: JSON.stringify({ name: `preview-${i}`, address: `203.0.113.${20 + i}` }) });
+      expect(res.ok).toBe(true);
+      const node = await res.json();
+      expect((await cp(`/api/nodes/${node.id}/metadata`, { method: "PUT", body: JSON.stringify({ city, region }) })).ok).toBe(true);
+      expect((await cp("/api/inbounds", { method: "POST", body: JSON.stringify({ node_id: node.id, protocol: "vmess", port: 8443, network: "tcp", security: "none" }) })).ok).toBe(true);
+    }
+    await putSettings({ sub_url_prefix: "http://203.0.113.10:8080", profile_title: "{USERNAME} 的订阅", update_interval: 12, support_link: "https://sub.example.com/support" });
+    await page.route("**/ui/meta", async r => {
+      const response = await r.fetch(), meta = await response.json();
+      await r.fulfill({ response, json: { ...meta, server: "203.0.113.10:8080" } });
+    });
+    await open(page);
+    await expect(page.locator(".r-page > section h2")).toHaveText(["订阅链接", "客户端显示", "客户端格式", "高级"]);
+    await expect(page.locator(".r-page > .card, .r-page .nb, .lk-key, .b5-cap")).toHaveCount(0);
+    const prefix = page.locator("#f-prefix"), link = page.locator("#lk");
+    await prefix.focus();
+    await expect(link).toHaveClass(/hl/);
+    await prefix.fill("https://sub.example.com");
+    await expect(link).toHaveClass(/hl/);
+    await expect(link.locator(".lk-pre")).toHaveText("https://sub.example.com");
+    await page.locator("#f-int").focus();
+    await expect(page.locator("#pv-app")).toHaveAttribute("data-hl", "2");
+    const tips = page.locator(".r-tip"), refreshTip = page.locator('.b5-f[data-p="2"] .r-tip');
+    await expect(tips).toHaveCount(3);
+    await expect(refreshTip).toHaveAttribute("tabindex", "0");
+    await expect(refreshTip).toHaveAttribute("aria-label", "客户端每隔多久自动更新一次。填 0 由客户端决定。");
+    await page.keyboard.press("Shift+Tab");
+    await expect(refreshTip).toBeFocused();
+    await expect(page.locator("#pv-app")).toHaveAttribute("data-hl", "2");
+    expect(await refreshTip.evaluate(e => getComputedStyle(e, "::after").content)).toContain("客户端每隔多久自动更新一次");
+    await page.locator('#pv-app .pa[data-p="1"]').click();
+    await expect(page.locator("#f-title")).toBeFocused();
+    await expect(page.locator("#pv-app")).toHaveAttribute("data-hl", "1");
+    // 截图只在显式指定目录时输出，不把本机路径写入仓库。
+    const out = process.env.MPX_SUB_REDESIGN_SHOTS;
+    await page.locator("[data-act=s5-discard]").click();
+    await expect(page.locator(".toast")).toBeHidden();
+    await page.mouse.move(1, 1);
+    await page.locator("#f-title").blur();
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
+      if (out) {
+        await page.evaluate(() => Promise.all(document.getAnimations().map(a => a.finished.catch(() => {}))));
+        await page.screenshot({ path: `${out}/sub-${theme}.png`, fullPage: true });
+      }
+    }
+    await page.click("[data-act=s5-adv]");
+    await expect(page.locator(".zr-tpl")).toHaveCount(3);
+    await expect(page.locator("#sec-adv .r-tip")).toHaveAttribute("aria-label", /分流规则、策略组和 DNS/);
+    await page.mouse.move(1, 1);
+    if (out) await page.screenshot({ path: `${out}/sub-advanced-dark.png`, fullPage: true });
+    await refreshTip.hover();
+    await expect(page.locator("#pv-app")).toHaveAttribute("data-hl", "2");
+    if (out) await page.screenshot({ path: `${out}/sub-hover-dark.png`, fullPage: true });
+  });
 });

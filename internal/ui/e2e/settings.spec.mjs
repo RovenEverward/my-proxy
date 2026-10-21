@@ -65,7 +65,7 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   await login(page, env);
   const before = await getSettings();
   await page.goto(env.origin + "/#settings/rules");
-  await page.click(".ch [data-act=s5-rules]");
+  await page.click("#sec-clients [data-act=s5-rules]");
   env.takeLog();
   // 内置规则占 data-rp 0..9;新的一条排在最后(「其他所有客户端」之前),编号接着往下数。
   const n = await page.locator("[data-rp]").count();
@@ -91,7 +91,7 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   expect(after.rules).not.toEqual(before.rules);
   expect(after.templates).toEqual(before.templates);
   expect(after.webhook_url).toBe(before.webhook_url);
-  await page.click(".ch [data-act=s5-rules]");
+  await page.click("#sec-clients [data-act=s5-rules]");
   await page.click("[data-act=rd-reset]");
   await page.click("[data-act=rd-done]");
   // 恢复内置也要经过页面保存条，完成抽屉时还未写库。

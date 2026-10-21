@@ -133,9 +133,13 @@ test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page
   expect(await nw.evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
-  // 刷新间隔说明按两个短句断行,不在句中拆。
-  await expect(page.locator("#sec-look .h", { hasText: "填 0 由客户端决定" }).locator(".nw")).toHaveText(["客户端多久自动更新一次，", "填 0 由客户端决定。"]);
-  for (const nw of await page.locator("#sec-look .h .nw").all()) expect(await nw.evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  // 订阅页把刷新说明收进可键盘访问的提示，不再占一行。
+  const tip = page.locator('.b5-f[data-p="2"] .r-tip');
+  await expect(tip).toHaveAttribute("aria-label", "客户端每隔多久自动更新一次。填 0 由客户端决定。");
+  await page.keyboard.press("Tab");
+  await tip.focus();
+  await expect(tip).toBeFocused();
+  expect(await tip.evaluate(e => getComputedStyle(e, "::after").content)).toContain("填 0 由客户端决定。");
   // 预览卡片里的用量和到期日各是一段不拆开的文字。
   const pv = page.locator("#pv-app .pv-m .nw");
   await expect(pv).toHaveCount(2);

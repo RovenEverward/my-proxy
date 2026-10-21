@@ -317,6 +317,9 @@ const b5Say = p => { const x = b5Parse(p); if (x.all) return "其他所有客户
   return `${x.re ? "客户端标识符合" : "客户端标识里含"} ${parts.join(" 或 ")}`; };
 
 /* ---- 页头:这页只管一件事 + 预览用户 ---- */
+const tipI = t => H`<span class="r-tip" tabindex="0" role="note" aria-label="${t}" data-tip="${t}">${ic("info")}</span>`;
+const secHead = (title, extra = "") => H`<div class="r-sh"><h2>${title}</h2>${extra}</div>`;
+
 function b5Picker() {
   const PV = SUB.preview;
   if (!SUB.users.length) return H`<div class="b5-pick" title="还没有用户，下面用示例数据"><span class="b5-pick-l">预览用户</span><b>${PV.user}</b><span class="tag lab">示例</span></div>`;
@@ -325,77 +328,69 @@ function b5Picker() {
 
 /* ---- 第一段:发给用户的链接 ---- */
 function b5Link(d) {
-  const PV = SUB.preview, noPfx = !d.sub_url_prefix;
-  // 没改链接开头时逐字显示控制面给的 auto;改回原样(或从没改过)而控制面这次没给 auto,就按它当时用的开头
-  // 重新拼。开头改过就按草稿拼;没填「服务器地址」时用控制面这次用的那个(subBase 里的 appliedPrefix)。
+  const PV = SUB.preview;
   const kept = d.sub_url_prefix === SUB.orig.sub_url_prefix;
   const link = kept && PV.auto ? PV.auto : subBase(kept && PV.getAuto ? { sub_url_prefix: PV.appliedPrefix || "" } : d).replace(/\/+$/, "") + "/sub/" + PV.token;
   const base = link.slice(0, link.lastIndexOf("/sub/")), tail = link.slice(base.length);
-  return H`<div class="lk-box"><code class="lk-url"><span class="lk-pre">${base}</span><span class="lk-tail">${PV.token ? tail : "/sub/…"}</span></code>
-      <button type="button" class="btn ton lk-copy" data-act="copy" data-text="${link}" ${PV.token && SUB.users.length ? "" : raw("disabled")}>${ic("copy")}复制链接</button></div>
-    <div class="lk-key"><span><i class="sw sw-pre"></i>${noPfx ? "服务器地址 · 没填链接开头时用它" : "链接开头 · 在下面填"}</span><span><i class="sw sw-tail"></i>${PV.user} 自己的部分 · 自动生成，每人不同</span></div>
-    ${SUB.users.length ? "" : H`<div class="b5-note b5-sample">${ic("info")}<div>还没有用户，这里先用示例 alice 演示。加了用户以后，这里就是他的真实链接，可以直接复制。</div></div>`}`;
+  const can = PV.token && SUB.users.length;
+  return H`<div class="r-link"><code class="r-url"><span class="lk-pre">${base}</span><span class="lk-tail">${PV.token ? tail : "/sub/…"}</span></code>
+    <button type="button" class="btn ton r-copy" data-act="copy" data-text="${link}" ${can ? "" : raw('disabled title="加了用户才能复制"')}>${ic("copy")}复制链接</button></div>`;
 }
 function b5PfxNote(d) {
-  if (d.sub_url_prefix) return "";
-  // 提示里说的是链接开头里的那台机器:控制面按它自己的 Host 拼,经 mpx ui 转发过来时它不是页面地址。
+  if (d.sub_url_prefix) return H`<span class="h">客户端要能访问到这个地址。</span>`;
   const host = subBase(d).replace(/^https?:\/\//, "").replace(/:\d+$/, "");
-  return H`<div class="b5-note" id="pfx-warn">${ic("info")}<div><b>没填，链接现在用服务器地址开头。</b>拿到链接的人都能看到这台服务器的 IP（${host}）。有域名就填上，链接会换成域名开头。</div></div>`;
+  return H`<span class="h">没填，链接用服务器 IP（${host}）开头，拿到链接的人都能看到。</span>`;
 }
 function b5LinkCard(d, W) {
   const ro = W && !SUB.saving ? "" : raw("readonly");
-  return H`<section class="card b5-sec" id="sec-link"><div class="ch">发给用户的链接<small>· 复制给 ${SUB.preview.user}，对方粘到客户端里就能用</small></div>
-    <div class="b5-body"><div id="lk">${b5Link(d)}</div>
-    <div class="field b5-pfx"><label for="f-prefix">链接开头</label>
+  return H`<section class="r-sec b5-sec" id="sec-link">${secHead("订阅链接")}
+    <div id="lk">${b5Link(d)}</div>
+    <div class="field r-pfx"><label for="f-prefix">链接开头</label>
       <input class="in mono" id="f-prefix" data-k="sub_url_prefix" value="${d.sub_url_prefix}" placeholder="例如 https://sub.example.com" autocomplete="off" spellcheck="false" ${ro}>
       <span class="s5-field-err" id="pfx-err" role="alert">${SUB.fieldErrors?.sub_url_prefix || ""}</span>
-      <span class="h">填你的域名。后面的 /sub/… 每个人不同，自动生成。</span>
-      <div id="pfx-slot">${b5PfxNote(d)}</div></div></div></section>`;
+      <div id="pfx-slot">${b5PfxNote(d)}</div></div></section>`;
 }
 
 /* ---- 第二段:在客户端里的样子 ---- */
 let B5_HL = "";
-const nb = n => H`<i class="nb" aria-hidden="true">${n}</i>`;
 function b5Card(d) {
   const PV = SUB.preview, title = (d.profile_title || "{USERNAME}").replaceAll("{USERNAME}", PV.user);
-  const [cn, ua] = PV_CLIENTS[SUB.pv], f = b5Fmt(b5Rules(d), ua), iv = +d.update_interval || 0;
-  return H`<div class="pv-app b5-app" id="pv-app" data-hl="${B5_HL}">
+  const [, ua] = PV_CLIENTS[SUB.pv], f = b5Fmt(b5Rules(d), ua), iv = +d.update_interval || 0;
+  return H`<div class="pv-app b5-app r-app" id="pv-app" data-hl="${B5_HL}">
       <div class="pv-prof"><span class="pv-ico">${ic("sub")}</span>
-        <div class="grow"><span class="pa" data-p="1"><b class="pv-t">${title}</b>${nb(1)}</span>
+        <div class="grow"><span class="pa" data-p="1"><b class="pv-t">${title}</b></span>
           <div class="pv-m"><span class="nw">${fmtBytes(PV.used)} / ${PV.limit ? fmtBytes(PV.limit) : "不限流量"}</span><span class="nw">${PV.expire ? `${PV.expire} 到期` : "永不过期"}</span></div></div>
-        <span class="pa pa-help ${d.support_link ? "" : "off"}" data-p="3">${nb(3)}<span class="pv-help" title="${d.support_link}">${ic("help")}</span></span></div>
+        <span class="pa pa-help ${d.support_link ? "" : "off"}" data-p="3"><span class="pv-help" title="${d.support_link}">${ic("help")}</span></span></div>
       <div class="bar pv-bar"><i style="width:${PV.limit ? Math.min(100, PV.used / PV.limit * 100) : 0}%"></i></div>
-      <div class="pv-meta"><span class="pa" data-p="2">${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "客户端自己决定多久更新"}${nb(2)}</span></div>
+      <div class="pv-meta"><span class="pa" data-p="2">${ic("refresh")}${iv ? `每 ${iv} 小时更新` : "客户端自己决定多久更新"}</span></div>
       ${f === "block" ? H`<div class="pv-node pv-empty">这个客户端拿不到订阅</div>` : PV.node ? H`<div class="pv-node"><b>${PV.node}</b><span class="tag lab">${PV.proto}</span><span class="sp"></span>${PV.more > 0 ? H`<span class="sub">还有 ${PV.more} 个</span>` : ""}</div>` : ""}
-    </div>
-    <p class="b5-cap">流量和到期日按每个人的套餐显示，这里不用改。<br>${cn} 会拿到 <b>${(FMT[f] || FMT.links)[0]}</b>。</p>`;
+    </div>`;
 }
 // 订阅名编辑框:「用户名」是一块整体的标签,存的时候换回 {USERNAME}。
 const b5TokHTML = s => String(s || "").split("{USERNAME}").map(t => esc(t)).join('<span class="tk" contenteditable="false" data-tok="USERNAME">用户名</span>');
 function b5TokVal(el) { let s = ""; for (const n of el.childNodes) s += n.nodeType === 3 ? n.textContent : n.dataset?.tok ? "{USERNAME}" : n.textContent; return s.replace(/\n/g, ""); }
 function b5TitleRes(d) {
   const t = d.profile_title || "", other = SUB.users.find(u => u.username !== SUB.preview.user)?.username || "bob";
-  const has = t.includes("{USERNAME}"), me = t.replaceAll("{USERNAME}", SUB.preview.user), you = t.replaceAll("{USERNAME}", other);
+  const has = t.includes("{USERNAME}"), you = t.replaceAll("{USERNAME}", other);
   if (!t.trim()) return H`<span class="h">不填就只显示用户名。</span>`;
-  return has ? H`<span class="b5-res">${SUB.preview.user} 看到「<b>${me}</b>」，${other} 看到「<b>${you}</b>」</span><span class="h">「用户名」会自动换成每个人自己的名字。</span>`
-    : H`<span class="b5-res">每个人都看到「<b>${me}</b>」</span><span class="h b5-sug">想让每人看到自己的名字，加上 <button type="button" class="tk tk-add" data-act="b5-tok">${ic("plus")}用户名</button></span>`;
+  return has ? H`<span class="h">${other} 看到「${you}」</span>`
+    : H`<span class="h b5-sug">每个人看到的都一样。<button type="button" class="tk tk-add" data-act="b5-tok">${ic("plus")}用户名</button></span>`;
 }
 function b5LookCard(d, W) {
   const ro = W && !SUB.saving ? "" : raw("readonly");
-  return H`<section class="card b5-sec" id="sec-look"><div class="ch">在客户端里的样子<small>· ${SUB.preview.user} 把链接加进客户端后看到的</small></div>
-    <div class="b5-look">
-      <div class="b5-stage"><div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div>
+  return H`<section class="r-sec b5-sec" id="sec-look">${secHead("客户端显示")}
+    <div class="r-look">
+      <div class="r-stage"><div class="seg" role="tablist" aria-label="预览的客户端">${PV_CLIENTS.map(([n], k) => H`<button type="button" class="${k === SUB.pv ? "on" : ""}" data-act="s5-pv" data-i="${k}">${n}</button>`)}</div>
         <div id="pv">${b5Card(d)}</div></div>
-      <div class="b5-fields">
-        <div class="field b5-f" data-p="1"><label for="f-title">${nb(1)}订阅名</label>
+      <div class="r-fields">
+        <div class="field b5-f" data-p="1"><label for="f-title">订阅名</label>
           <div class="in b5-tok" id="f-title" role="textbox" aria-label="订阅名" contenteditable="${W && !SUB.saving ? "true" : "false"}" spellcheck="false">${raw(b5TokHTML(d.profile_title))}</div>
           <div class="b5-tr-res" id="title-res">${b5TitleRes(d)}</div></div>
-        <div class="field b5-f" data-p="2"><label for="f-int">${nb(2)}刷新间隔</label>
+        <div class="field b5-f" data-p="2"><label for="f-int">刷新间隔${tipI("客户端每隔多久自动更新一次。填 0 由客户端决定。")}</label>
           <div class="s5-unit"><input class="in mono" id="f-int" data-k="update_interval" value="${d.update_interval}" inputmode="numeric" autocomplete="off" ${ro}><span>小时</span></div>
-          <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span><span class="h"><span class="nw">客户端多久自动更新一次，</span><span class="nw">填 0 由客户端决定。</span></span></div>
-        <div class="field b5-f" data-p="3"><label for="f-help">${nb(3)}帮助链接</label>
-          <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="例如 https://help.example.com" autocomplete="off" spellcheck="false" ${ro}>
-          <span class="h">帮助按钮打开的网页。不填就不显示这个按钮。</span></div>
+          <span class="s5-field-err" id="int-err" role="alert">${SUB.fieldErrors?.update_interval || ""}</span></div>
+        <div class="field b5-f" data-p="3"><label for="f-help">帮助链接${tipI("客户端里帮助按钮打开的网页。不填就不显示这个按钮。")}</label>
+          <input class="in mono" id="f-help" data-k="support_link" value="${d.support_link}" placeholder="例如 https://help.example.com" autocomplete="off" spellcheck="false" ${ro}></div>
       </div></div></section>`;
 }
 
@@ -410,25 +405,23 @@ function b5Table(d) {
 }
 function b5GetCard(d, W) {
   const custom = !sameRules(b5Rules(d), SUB.builtin);
-  return H`<section class="card b5-sec" id="sec-clients"><div class="ch">不同客户端拿到什么<small>· 同一条链接，每种客户端拿到它能用的格式</small><span class="sp"></span>
-      ${custom ? H`<span class="sub b5-cust">已改过识别规则</span>` : ""}${W ? H`<button type="button" class="btn sm ton" data-act="s5-rules">${ic("sliders")}识别规则</button>` : ""}</div>
-    <div class="b5-tbl" id="b5-tbl">${b5Table(d)}</div>
-    <p class="s5-note">按这些客户端常见的标识推算，实际以控制面判断为准。</p></section>`;
+  return H`<section class="r-sec b5-sec" id="sec-clients">${secHead(H`客户端格式`, H`${tipI("按各客户端常见的标识推算，实际以控制面判断为准。")}<span class="sp"></span>
+      ${custom ? H`<span class="sub b5-cust">已改过识别规则</span>` : ""}${W ? H`<button type="button" class="btn sm ton" data-act="s5-rules">${ic("sliders")}识别规则</button>` : ""}`)}
+    <div class="b5-tbl r-tbl" id="b5-tbl">${b5Table(d)}</div></section>`;
 }
 
 /* ---- 第三段:高级 · 订阅底稿 ---- */
-const TPL_ROWS = [["clash-meta", "Clash Meta", "Clash Verge 等拿到的配置。分流规则、策略组、DNS 都在这里"], ["sing-box", "sing-box", "sing-box、Hiddify 拿到的配置"], ["xray", "Xray", "每个节点生成一份完整配置"]];
+const TPL_ROWS = [["clash-meta", "Clash Meta"], ["sing-box", "sing-box"], ["xray", "Xray"]];
 function advCard(d, bodies) {
   const custom = f => !!(d.templates && d.templates[f]), n = TPL_ROWS.filter(([f]) => custom(f)).length;
-  return H`<section class="card s5-sec s5-adv ${ADV_OPEN ? "open" : ""}" id="sec-adv">
-    <button type="button" class="ch s5-sum" data-act="s5-adv" aria-expanded="${ADV_OPEN}"><span class="s5-sum-i">${ic("tpl")}</span>
-      <span class="s5-sum-t">高级 · 订阅底稿<small>分流规则、策略组和 DNS 写在这里，多数人不用改。</small></span><span class="sp"></span>
-      <span class="sub">${n ? `${n} 种自定义` : "3 种都用内置"}</span>${ic("down", "s5-car")}</button>
-    ${ADV_OPEN ? H`<div class="zebra">${TPL_ROWS.map(([f, name, desc]) => { const b = bodies[f] || "";
-      return H`<button type="button" class="zr zr-tpl" data-act="tpl-open" data-f="${f}"><span class="zr-c"><b>${name}</b><span class="sub">${desc}</span></span>
+  return H`<section class="r-sec r-adv ${ADV_OPEN ? "open" : ""}" id="sec-adv">
+    <button type="button" class="r-sum" data-act="s5-adv" aria-expanded="${ADV_OPEN}"><h2>高级</h2><span class="sp"></span>
+      <span class="sub">订阅底稿 · ${n ? `${n} 种自定义` : "都用内置"}</span>${ic("down", "s5-car")}</button>
+    ${ADV_OPEN ? H`<div class="r-sh r-sh2"><h3>订阅底稿</h3>${tipI("分流规则、策略组和 DNS 写在底稿里。节点会自动放进去，其余部分原样发给所有人。")}</div>
+      <div class="zebra r-zebra">${TPL_ROWS.map(([f, name]) => { const b = bodies[f] || "";
+      return H`<button type="button" class="zr zr-tpl" data-act="tpl-open" data-f="${f}"><span class="zr-c"><b>${name}</b></span>
         <span class="pill ${custom(f) ? "on" : ""}">${custom(f) ? "自定义" : "内置"}</span><span class="sub mono hide-m">${b ? `${tplLines(b)} 行 · ${tplSize(tplBytes(b))}` : ""}</span>
-        <span class="btn sm">${ic("tpl")}打开</span></button>`; })}</div>
-      <p class="s5-note">节点会被自动放进底稿，其余部分原样发给所有人。原版 Clash 和节点链接不用底稿。</p>` : ""}</section>`;
+        <span class="btn sm ton">${ic("tpl")}打开</span></button>`; })}</div>` : ""}</section>`;
 }
 
 /* ---- 保存条 ---- */
@@ -450,8 +443,6 @@ function refresh() {
   const t = $("#f-title"); if (t) t.contentEditable = String(!SUB.saving && can("PUT", "/api/settings"));
   if ($("#pfx-err")) $("#pfx-err").textContent = SUB.fieldErrors?.sub_url_prefix || "";
   if ($("#int-err")) $("#int-err").textContent = SUB.fieldErrors?.update_interval || "";
-  const sl = $("#sec-link .ch small"); if (sl) sl.textContent = `· 复制给 ${SUB.preview.user}，对方粘到客户端里就能用`;
-  const sk = $("#sec-look .ch small"); if (sk) sk.textContent = `· ${SUB.preview.user} 把链接加进客户端后看到的`;
   const sb = $("#sb"); if (sb) sb.innerHTML = val(saveBar());
 }
 
@@ -549,14 +540,14 @@ PAGES.sub = {
     return { settings, builtin, users, nodes, inbounds, plans, preview, tpl };
   },
   render(d) {
-    const head = sub => H`<div class="ph b5-ph"><div><h1>订阅</h1><p>你发给用户的是一条链接。这一页决定这条链接长什么样，对方打开后看到什么、拿到什么。</p></div><span class="sp"></span>${sub}</div>`;
+    const head = sub => H`<div class="ph r-ph"><h1>订阅</h1><span class="sp"></span>${sub}</div>`;
     if (!d) return H`${head("")}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
     if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, pv: 0, leaveTarget: null };
     // 刷新不丢草稿，已经打开的底稿与用户数据仍取最新值。
     Object.assign(SUB, { builtin: d.builtin, users: d.users, preview: d.preview });
     const W = can("PUT", "/api/settings");
-    return H`${head(b5Picker())}<div class="s5 b5">${b5LinkCard(SUB.draft, W)}${b5LookCard(SUB.draft, W)}${b5GetCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
+    return H`${head(b5Picker())}<div class="b5 r-page">${b5LinkCard(SUB.draft, W)}${b5LookCard(SUB.draft, W)}${b5GetCard(SUB.draft, W)}${advCard(d.settings, d.tpl || {})}</div><div class="s5-sb" id="sb">${saveBar()}</div>`;
   },
   after(d, r) {
     if (!d) { subAnchorKey = ""; return; }
@@ -579,7 +570,7 @@ PAGES.sub = {
         SUB.draft.profile_title = v; SUB.err = ""; delete SUB.fieldErrors.profile_title; refresh();
       });
     }
-    // 编号对应:鼠标或焦点在哪一栏,卡片上对应那块就亮起来;反过来也一样。
+    // 字段与预览对应:鼠标或焦点在哪一栏,卡片上对应那块就亮起来;反过来也一样。
     const hl = n => { B5_HL = n; const a = $("#pv-app"); if (a) a.dataset.hl = n; for (const f of document.querySelectorAll(".b5-f")) f.classList.toggle("hl", f.dataset.p === n); };
     for (const f of document.querySelectorAll(".b5-f")) {
       f.addEventListener("mouseenter", () => hl(f.dataset.p)); f.addEventListener("mouseleave", () => { if (!f.contains(document.activeElement)) hl(""); });
@@ -588,6 +579,12 @@ PAGES.sub = {
     $("#pv")?.addEventListener("mouseover", e => { const p = e.target.closest(".pa"); hl(p ? p.dataset.p : (document.activeElement?.closest(".b5-f")?.dataset.p || "")); });
     $("#pv")?.addEventListener("mouseleave", () => hl(document.activeElement?.closest(".b5-f")?.dataset.p || ""));
     $("#pv")?.addEventListener("click", e => { const p = e.target.closest(".pa"); if (p) document.querySelector(`.b5-f[data-p="${p.dataset.p}"] .in`)?.focus(); });
+    const f = $(".r-pfx");
+    if (f) {
+      const on = v => $("#lk")?.classList.toggle("hl", v);
+      f.addEventListener("mouseenter", () => on(true)); f.addEventListener("mouseleave", () => on(f.contains(document.activeElement)));
+      f.addEventListener("focusin", () => on(true)); f.addEventListener("focusout", () => on(f.matches(":hover")));
+    }
   },
   canLeave(nextKey) {
     if (!SUB || !changes().length || String(nextKey || "").split("/")[0] === "sub") return true;

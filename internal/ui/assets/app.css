@@ -616,12 +616,7 @@ details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform
 .zebra>.zr-last:nth-child(odd){background:color-mix(in srgb,var(--canvas) 72%,transparent)!important}
 
 /* 高级 · 订阅底稿 */
-.s5-adv{padding-bottom:0}.s5-adv.open{padding-bottom:4px}
-.s5-sum{width:100%;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;padding:14px 18px!important;border-radius:12px}
-.s5-sum:hover{background:var(--hover)}
-.s5-sum-i{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--stone);color:var(--ink2);flex:none}.s5-sum-i svg{width:15px;height:15px}
-.s5-sum-t{display:grid;gap:2px;font-weight:600}.s5-sum-t small{margin:0;font-size:12px}
-.s5-car{width:16px;height:16px;color:var(--muted);transition:transform 160ms var(--ease)}.s5-adv.open .s5-car{transform:rotate(180deg)}
+.s5-car{width:16px;height:16px;color:var(--muted);transition:transform 160ms var(--ease)}
 .zr-tpl{grid-template-columns:minmax(0,1fr) auto auto auto}.zr-tpl .zr-c{display:grid;gap:2px}.zr-tpl .zr-c b{font-weight:560}.zr-tpl .zr-c .sub{font-weight:400}
 .zr-tpl .btn{pointer-events:none}
 
@@ -683,61 +678,29 @@ p,.sub,.h{text-wrap-style:pretty}
 .rp-fb .rp-fa{width:12px;height:12px;vertical-align:-1px;margin:0 4px;color:var(--faint)}
 
 /* 订阅页(step5b) */
-.b5-sec{scroll-margin-top:64px}
 
 /* 色调按钮(次要):石色底,不描边 */
 .btn.ton{background:var(--stone);color:var(--ink)}.btn.ton:hover{background:color-mix(in srgb,var(--ink) 9%,var(--stone))}
 .btn.ton.on{background:var(--ink);color:var(--canvas)}
 
 /* 页头 */
-.b5-ph{align-items:flex-end}.b5-ph p{max-width:640px}
 .b5-pick{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 6px 0 14px;border-radius:10px;background:var(--panel);flex:none}
 .b5-pick-l{font-size:12.5px;color:var(--muted);white-space:nowrap}
 .b5-pick select.in{height:30px;min-width:120px;background-color:var(--canvas);font-weight:560}
 .b5-pick>b{font-weight:600}.b5-pick .tag{margin-right:6px}
 
-.b5{gap:16px}
-.b5-sec>.ch{padding:18px 20px 6px;font-size:15px}
-.b5-sec>.ch small{font-size:12.5px}
-.b5-body{display:grid;gap:18px;padding:10px 20px 20px}
 
 /* 第一段:大链接 */
-.lk-box{display:flex;align-items:center;gap:14px;padding:16px 16px 16px 20px;border-radius:12px;background:var(--canvas)}
-.lk-url{flex:1;min-width:0;font:500 17px/1.5 var(--mono);letter-spacing:-.005em;word-break:break-all}
-.lk-pre{color:var(--ink);font-weight:640;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:6px;text-decoration-color:var(--ink)}
 .lk-tail{color:var(--muted)}
-.lk-copy{height:36px;flex:none;padding:0 14px}
-.lk-key{display:flex;flex-wrap:wrap;align-items:center;gap:6px 22px;margin-top:10px;padding:0 4px;font-size:12px;color:var(--muted)}
-.lk-key span{display:inline-flex;align-items:center;gap:8px}
-/* 链接卡片下面的图例线:别写成 .sw,开关(上面那条)也叫 .sw —— 碰到一起会把分流页每行的开关压成
-   0 高、里面的勾选框看不见,连点击都点不到。这里只按图例自己的类名取。 */
-.sw-pre,.sw-tail{display:inline-block;width:18px;height:0;border-radius:2px}
-.sw-pre{border-top:2px solid var(--ink)}.sw-tail{border-top:2px dotted var(--faint)}
-.b5-pfx{margin:0;max-width:620px}
-.b5-pfx .s5-field-err:empty{display:none}
-.b5-note{display:flex;gap:10px;align-items:flex-start;margin-top:4px;padding:12px 14px;border-radius:10px;background:var(--stone);font-size:12.5px;color:var(--ink2)}
-.b5-note svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--muted)}.b5-note b{display:block;color:var(--ink);font-weight:600;margin-bottom:2px}
 
 /* 第二段:卡片为主,旁边是带编号的栏 */
-.b5-look{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:28px;padding:10px 20px 20px;align-items:start}
-.b5-stage{display:grid;gap:12px;padding:16px;border-radius:14px;background:var(--canvas)}
-.b5-stage .seg{justify-self:start}
 .b5-app{gap:12px;padding:18px;border-radius:12px;background:var(--panel)}
 .b5-app .pv-t{font-size:16px;display:inline}
 .b5-app .pv-ico{width:40px;height:40px;border-radius:10px}.b5-app .pv-ico svg{width:19px;height:19px}
 .b5-app .pv-m{margin-top:3px}
 .pa{display:inline-flex;align-items:center;gap:6px;margin:-3px -6px;padding:3px 6px;border-radius:7px;transition:background 140ms;cursor:pointer;min-width:0}
-.pa-help.off .pv-help{visibility:hidden}.pa-help.off{pointer-events:none}.pa-help.off .nb{visibility:hidden}
+.pa-help.off .pv-help{visibility:hidden}.pa-help.off{pointer-events:none}
 .b5-app .pv-meta .pa{font-size:12.5px}
-.nb{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:var(--stone);color:var(--muted);font:600 10.5px/1 var(--mono);font-style:normal;flex:none;transition:background 140ms,color 140ms}
-.b5-app .nb{background:var(--canvas)}
-.b5-app[data-hl="1"] .pa[data-p="1"],.b5-app[data-hl="2"] .pa[data-p="2"],.b5-app[data-hl="3"] .pa[data-p="3"]{background:color-mix(in srgb,var(--ink) 8%,transparent)}
-.b5-app[data-hl="1"] .pa[data-p="1"] .nb,.b5-app[data-hl="2"] .pa[data-p="2"] .nb,.b5-app[data-hl="3"] .pa[data-p="3"] .nb,.b5-f.hl .nb{background:var(--ink);color:var(--canvas)}
-.b5-cap{margin:0 2px;font-size:12px;color:var(--muted)}.b5-cap b{color:var(--ink);font-weight:560}
-.b5-fields{display:grid;gap:4px;padding-top:6px}
-.b5-f{margin:0;padding:12px 14px 14px;border-radius:12px;transition:background 140ms}
-.b5-f.hl{background:color-mix(in srgb,var(--canvas) 70%,transparent)}
-.b5-f label{display:flex;align-items:center;gap:8px}
 .b5-f .s5-field-err:empty{display:none}
 .b5-tok{display:block;height:auto;min-height:34px;padding:6px 10px;line-height:22px;white-space:pre-wrap;cursor:text}
 .b5-tok:focus{box-shadow:0 0 0 3px var(--ring);background:var(--canvas)}
@@ -781,10 +744,6 @@ p,.sub,.h{text-wrap-style:pretty}
 .rd-test{padding:14px;border-radius:12px;background:var(--panel)}
 .rd-test .in{background:var(--canvas)}
 
-@media (max-width:1180px){.b5-look{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}}
-@media (max-width:980px){.b5-look{grid-template-columns:1fr}}
-.b5-cap b{white-space:nowrap}
-.b5-sample{margin-top:14px}
 .b5-lbl{font-size:12px;color:var(--muted)}
 .b5-on.off{visibility:hidden}
 .b5-app .nw{white-space:nowrap}
@@ -848,3 +807,61 @@ table.ut tbody tr:hover{background:var(--hover)}
   .pres{max-width:150px}.td-pres{min-width:128px}
 }
 .udp-now .pres-l.never{color:var(--muted)}
+/* 订阅页：四段平级，说明按需展开。 */
+.r-ph{align-items:center;margin-bottom:28px}
+.r-page{display:grid;gap:44px}
+/* 区块:画布上的平级段落,没有底色;段标题是唯一的分隔 */
+.r-sec{scroll-margin-top:64px;min-width:0}
+.r-sh{display:flex;align-items:center;gap:6px;min-height:32px;margin-bottom:12px}
+.r-sh h2,.r-sum h2{margin:0;font-size:16px;font-weight:620;letter-spacing:-.01em}
+.r-sh .sp{flex:1}
+.r-sh2{margin:14px 0 8px}.r-sh2 h3{margin:0;font-size:13px;font-weight:600}
+/* ⓘ */
+.r-tip{position:relative;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;color:var(--faint);cursor:help;outline:0;vertical-align:middle}
+.r-tip svg{width:14px;height:14px}
+.r-tip:hover,.r-tip:focus-visible{color:var(--ink);background:var(--hover)}
+.r-tip:hover::after,.r-tip:focus-visible::after{content:attr(data-tip);position:absolute;left:-6px;bottom:calc(100% + 6px);z-index:60;width:max-content;max-width:280px;padding:7px 10px;border-radius:8px;background:var(--ink);color:var(--canvas);font-size:12px;font-weight:400;line-height:1.5;box-shadow:0 4px 14px #0003;white-space:normal}
+/* 订阅链接:一条大链接放在唯一的一块底色上,复制在右 */
+.r-link{display:flex;align-items:center;gap:14px;padding:14px 14px 14px 18px;border-radius:12px;background:var(--panel)}
+.r-url{flex:1;min-width:0;font:500 16px/1.5 var(--mono);word-break:break-all}
+.r-url .lk-pre{text-decoration:none;font-weight:620;border-radius:5px;transition:background 140ms;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+#lk.hl .lk-pre{background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 10%,transparent)}
+.r-copy{height:34px;flex:none}
+.r-pfx{margin:16px 0 0;max-width:520px}
+.r-pfx label{font-size:12.5px}
+/* 客户端显示:左边客户端预览(唯一的底色块),右边三栏表单直接放在画布上 */
+.r-look{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:start}
+.r-stage{display:grid;gap:12px}
+.r-stage .seg{justify-self:start}
+.r-app{background:var(--panel);padding:18px;border-radius:12px}
+.r-app .pv-node{background:var(--canvas)}
+.r-app .pa{cursor:pointer}
+.r-app[data-hl="1"] .pa[data-p="1"],.r-app[data-hl="2"] .pa[data-p="2"],.r-app[data-hl="3"] .pa[data-p="3"]{background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:0 0 0 1.5px color-mix(in srgb,var(--ink) 35%,transparent)}
+.r-fields{display:grid;gap:18px;padding-top:40px}
+.r-fields .b5-f{margin:0;padding:0;border-radius:0;background:none}
+.r-fields .b5-f.hl{background:none}
+.r-fields .b5-f.hl>label{color:var(--ink)}
+.r-fields label{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:530;color:var(--ink2)}
+.r-fields .b5-tr-res .h,.r-pfx .h{font-size:12px;color:var(--muted)}
+.r-fields .b5-sug{display:flex;align-items:center;gap:6px}
+/* 客户端格式:斑马表直接在画布上,奇数行用 panel */
+.r-tbl{margin:0}
+.r-tbl .b5-th{padding:0 12px 6px}
+.r-tbl .b5-tb>.b5-tr:nth-child(odd){background:var(--panel)}
+/* 高级:整行是开关,展开后是底稿列表 */
+.r-adv .r-sum{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin:0 -12px;padding:6px 12px;width:calc(100% + 24px);border:0;border-radius:10px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.r-adv .r-sum:hover{background:var(--hover)}
+.r-adv .r-sum .sub{font-size:12.5px}
+.r-adv.open .s5-car{transform:rotate(180deg)}
+.r-zebra .zr-tpl{grid-template-columns:minmax(0,1fr) auto auto auto}
+@media (max-width:980px){.r-look{grid-template-columns:1fr}.r-fields{padding-top:0}}
+.r-sum .sp{flex:1}
+/* 预览用户:去掉外层底色,只留标签和一个下拉 */
+.r-ph .b5-pick{height:auto;padding:0;background:none;gap:8px}
+.r-ph .b5-pick select.in{background-color:var(--stone)}
+/* 链接开头报错时,红字代替下面那行灰字 */
+.r-pfx .s5-field-err:not(:empty)~#pfx-slot{display:none}
+/* 底稿列表在画布上:奇数行用 panel */
+.r-zebra>.zr:nth-child(odd){background:var(--panel)}.r-zebra>.zr:nth-child(even){background:none}
+.r-adv.open .r-sum .sub{display:none}
+.r-zebra{margin:0;padding:0}
