@@ -101,7 +101,7 @@ const order = page => page.locator("table.ut tbody tr td:first-child b").allText
 
 test("「最近在线」在「用户」后面:在线写「在线」和「2 个 IP · 洛杉矶 A」,节点用显示名", async ({ page }) => {
   await open(page);
-  await expect(page.locator("table.ut thead th")).toHaveText(["用户", "最近在线", "状态", "套餐", "本期用量", "到期", "重置"]);
+  await expect(page.locator("table.ut thead th")).toHaveText(["用户", "最近在线", "状态", "套餐", "本期剩余", "到期", "重置"]);
   // 只有这一列能排序:表头是按钮,默认最新在前。
   const th = page.locator("th.th-sort");
   await expect(th.locator("button")).toHaveText("最近在线");

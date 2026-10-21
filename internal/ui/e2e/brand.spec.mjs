@@ -1,4 +1,4 @@
-// 侧栏品牌：浅色显示黑色 lockup，深色显示白色 lockup，图片都真的加载出来。
+// 侧栏品牌：浅色显示石墨 lockup，深色显示浅灰 lockup，图片都真的加载出来。
 // 设置 SHOT_DIR 时顺便把侧栏截图存下来，供人工检查。
 import { test, expect } from "@playwright/test";
 import { startEnv, login } from "./env.mjs";
@@ -18,6 +18,9 @@ for (const scheme of ["light", "dark"]) {
     await expect(shown).toBeVisible();
     await expect(hidden).toBeHidden();
     expect(await shown.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
+    const svg = await (await page.request.get(await shown.evaluate(i => i.src))).text();
+    expect(svg).toContain(`stroke="${scheme === "light" ? "#2F3033" : "#DDDEE0"}"`);
+    await expect(page.locator("body")).toHaveCSS("color", scheme === "light" ? "rgb(47, 48, 51)" : "rgb(221, 222, 224)");
     const h = await shown.evaluate(i => i.getBoundingClientRect().height);
     expect(h).toBeGreaterThanOrEqual(20);
     if (process.env.SHOT_DIR) await page.locator("aside.side").screenshot({ path: `${process.env.SHOT_DIR}/sidebar-${scheme}.png` });

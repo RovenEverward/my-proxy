@@ -221,7 +221,7 @@ PAGES.users = {
   },
   render(d) {
     // 「最近在线」是唯一能排序的列:表头深色并带箭头,aria-sort 说明当前方向。
-    const head = H`<tr><th>用户</th><th class="th-sort" aria-sort="${US.dir < 0 ? "descending" : "ascending"}"><button type="button" data-act="pres-sort" title="按最近在线排序">最近在线${ic(US.dir < 0 ? "down" : "chevup", "srt")}</button></th><th>状态</th><th>套餐</th><th>本期用量</th><th class="hide-m">到期</th><th class="hide-m hide-n">重置</th></tr>`;
+    const head = H`<tr><th>用户</th><th class="th-sort" aria-sort="${US.dir < 0 ? "descending" : "ascending"}"><button type="button" data-act="pres-sort" title="按最近在线排序">最近在线${ic(US.dir < 0 ? "down" : "chevup", "srt")}</button></th><th>状态</th><th>套餐</th><th>本期剩余</th><th class="hide-m">到期</th><th class="hide-m hide-n">重置</th></tr>`;
     let inner;
     if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 7)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
@@ -325,7 +325,8 @@ function userDrawer(u, links, d) {
   const p = (d && d.plans || PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
   const nn = p ? planNodeCount(p, d && d.nodes, d && d.inbounds || PLAN_CACHE.inbounds) : 0;
   const created = JUST_CREATED === name; JUST_CREATED = "";
-  const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div><div class="sub mt8">${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
+  const R = u.data_limit ? remain(u) : null;
+  const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${R.cls}" style="width:${R.rp.toFixed(1)}%"></i></div><div class="sub mt8">已用 ${fmtBytes(u.used_traffic)} / 上限 ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
   // 连过的人:「最近连接」排最前(最常来看的就是它);刚建好、还没连过的:「发给他」排最前。
   const connected = !!u.presence?.last_active_at && !created;
   // 「最近连接」里已经有「订阅导入」这一行,「发给他」标题右边就不再重复一遍。
@@ -342,7 +343,7 @@ function userDrawer(u, links, d) {
     <button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db ud-b">${created ? H`<div class="created">${ic("check")}<span>已创建 <b>${name}</b>。把下面的二维码或链接发给他就行。</span></div>` : ""}
     ${connected ? H`${pres}${send}` : H`${send}${pres}`}
-    <section class="ud-use"><div class="sub">本期用量</div><div class="ud-v">${fmtBytes(u.used_traffic)}</div>${use}</section>
+    <section class="ud-use"><div class="sub">${R ? "本期剩余" : "本期用量"}</div><div class="ud-v${R && R.out ? " c-bad" : ""}">${R ? (R.out ? (u.used_traffic > u.data_limit ? `超出 ${fmtBytes(u.used_traffic - u.data_limit)}` : "已用完") : fmtBytes(R.left)) : fmtBytes(u.used_traffic)}</div>${use}</section>
     <dl class="kv flat ud-kv"><dt>套餐</dt><dd>${p ? H`${p.name} <span class="sub">· ${nn ? `${nn} 个节点` : "没有节点"}</span>` : userPlanDetail(u)}</dd>
       ${u.inbound_ids?.length ? H`<dt>额外授权</dt><dd>${u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `)}</dd>` : ""}
       <dt>到期</dt><dd>${expireCell(u)}</dd>

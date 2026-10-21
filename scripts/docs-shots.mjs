@@ -74,8 +74,8 @@ async function seed(env) {
     ],
   });
 
-  // 设置是整体替换:先取回再合并,免得把 templates 抹掉;识别规则给三条示例,
-  // 设置·识别规则页不是空表(平时没配过会回落内置默认,但页面上按 rules 原样显示)。
+  // 设置是整体替换:先取回再合并,免得把 templates 抹掉;识别规则保持内置默认,
+  // 文档截图不把示例改动误画成默认状态。
   const settings = await req("GET", "/api/settings");
   await req("PUT", "/api/settings", {
     ...settings,
@@ -83,11 +83,7 @@ async function seed(env) {
     profile_title: "{USERNAME} 的订阅",
     update_interval: 12,
     support_link: "https://example.com/support",
-    rules: [
-      { pattern: "(?i)karing", result: "clash-meta" },
-      { pattern: "(?i)sing-box|sfi/|sfa/|sfm/|hiddify|nekobox", result: "sing-box" },
-      { pattern: "(?i)shadowrocket", result: "base64-links" },
-    ],
+    rules: null,
   });
 
   // 设置·设备:设一个设备密码,用它让 laptop / phone 两台各接入一次(回环上

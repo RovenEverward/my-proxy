@@ -183,10 +183,19 @@ const stBadge = (cls, text) => H`<span class="st"><span class="dot ${cls}"></spa
 const userSt = s => stBadge(...(USER_ST[s] || ["", s]));
 const RESET = { none: "不重置", daily: "每天", weekly: "每周", monthly: "每月" };
 const pct = u => u.data_limit ? Math.min(100, u.used_traffic / u.data_limit * 100) : 0;
+// 剩余量(电池式):条长 = 剩余 / 上限。剩 >30% 绿,10–30% 芥末黄,≤10%(含用完、超限)红。
+// 百分比向下取整,不把快用完的说多;用完 / 超出时文字用红,条是空轨道。
+const remain = u => {
+  const left = Math.max(0, u.data_limit - u.used_traffic), rp = u.data_limit ? left / u.data_limit * 100 : 0, over = u.used_traffic - u.data_limit;
+  const cls = rp <= 10 ? "bad" : rp <= 30 ? "warn" : "ok";
+  const pctText = left <= 0 ? "剩 0%" : rp < 1 ? "剩 <1%" : `剩 ${Math.floor(rp)}%`;
+  const text = over > 0 ? `超 ${fmtBytes(over)} / ${fmtBytes(u.data_limit)}` : left <= 0 ? `剩 0 / ${fmtBytes(u.data_limit)}` : `剩 ${fmtBytes(left)} / ${fmtBytes(u.data_limit)}`;
+  return { left, rp, cls, out: left <= 0, pctText, text, tip: `已用 ${fmtBytes(u.used_traffic)} / 上限 ${fmtBytes(u.data_limit)}` };
+};
 function usageBar(u, wide) {
   if (!u.data_limit) return H`<div class="use"><span class="keep">${fmtBytes(u.used_traffic)} <span class="c-faint">· 不限</span></span></div>`;
-  const p = pct(u), cls = p >= 100 ? "bad" : p >= 80 ? "warn" : "";
-  return H`<div class="use"><div class="bar${wide ? " w100" : ""}"><i class="${cls}" style="width:${p.toFixed(1)}%"></i></div><span>${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}</span></div>`;
+  const r = remain(u);
+  return H`<div class="use" title="${r.tip}"><div class="bar${wide ? " w100" : ""}"><i class="${r.cls}" style="width:${r.rp.toFixed(1)}%"></i></div><span class="${r.out ? "c-bad" : ""}">${r.text}</span></div>`;
 }
 function expireCell(u) {
   if (!u.expire_at) return H`<span class="sub">永不过期</span>`;
@@ -568,8 +577,8 @@ const ovParts = parts => parts.filter(([n], i) => i === 0 || n > 0).map(([n, t])
 // 用量:条 + 百分比,完整数字放在悬停提示里。
 function ovUse(u) {
   if (!u.data_limit) return H`<span class="ov-use sub">${fmtBytes(u.used_traffic)} · 不限</span>`;
-  const p = pct(u), cls = p >= 100 ? "bad" : p >= 80 ? "warn" : "";
-  return H`<span class="ov-use" title="${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}"><span class="bar"><i class="${cls}" style="width:${p.toFixed(1)}%"></i></span><span class="sub">${Math.round(p)}%</span></span>`;
+  const r = remain(u);
+  return H`<span class="ov-use" title="${r.text} · ${r.tip}"><span class="bar"><i class="${r.cls}" style="width:${r.rp.toFixed(1)}%"></i></span><span class="sub${r.out ? " c-bad" : ""}">${r.pctText}</span></span>`;
 }
 function startList(S, done, allDone) {
   const cur = S.findIndex(x => !x.done);
@@ -616,7 +625,8 @@ PAGES.overview = {
   const n = k => U.filter(u => u.status === k).length;
   const usagePct = settings.notify_usage_percent || 80;
   const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
-  const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
+  const usageWarn = u => u.data_limit && pct(u) >= usagePct;
+  const near = u => u.status === "active" && usageWarn(u);
   const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
   const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
   const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
@@ -640,7 +650,7 @@ PAGES.overview = {
   <div class="grid g2 ov-main">
     <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
     ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold ell">${u.username}</b></div></td>
-      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${ovUse(u)}</td>
+      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${u.status === "limited" || usageWarn(u) ? ovUse(u) : ""}</td>
       <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table>`
       : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
       : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>

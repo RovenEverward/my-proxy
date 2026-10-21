@@ -3,13 +3,13 @@
 /* 中文:随程序带的 Noto Sans SC 可变字重子集(SIL OFL 1.1,见 fonts/OFL-NotoSansSC.txt),不走系统字体、不连 CDN。
    字表由 scripts/build-cjk-font.py 生成:GB2312 一级常用字 + 界面里出现的全部中文和全角标点。 */
 @font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF}
-:root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#0a0a0a;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
+:root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#2F3033;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
 --lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--r-card:12px;--flag-edge:rgba(0,0,0,.14);
---ok:#16a34a;--warn:#d97706;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#fffbeb;
+--ok:#16a34a;--warn:#8F6B00;--warn-ico:#C99700;--good:#4F9468;--bar-bad:#D24B45;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#FDF8E1;
 --ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace}
-[data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#ededef;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
+[data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#DDDEE0;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
 --lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;--flag-edge:rgba(255,255,255,.22);
---ok:#3fb950;--warn:#e3a008;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#271d08}
+--ok:#3fb950;--warn:#D4A72C;--warn-ico:#D4A72C;--good:#5A9A6E;--bar-bad:#DE5F5C;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#221D0B}
 *{box-sizing:border-box}html,body,#root{height:100%}html,body{overflow:hidden}
 body{margin:0;background:var(--base);color:var(--ink);font:13.5px/1.55 var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"kern","tnum"}
 /* 国旗:app.js 把区域指示符 emoji 换成本地 /flags/<xx>.svg;高度跟着字号走。 */
@@ -46,7 +46,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .tabs .tab-adv{margin-left:6px;font-size:10.5px;color:var(--faint);font-weight:450}
 .navg{font-size:11px;color:var(--faint);padding:12px 10px 4px;letter-spacing:.02em}
 .nav{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:7px;color:var(--ink2);font-weight:470;transition:background 120ms}
-.nav:hover{background:var(--hover)}.nav.on{background:var(--canvas);color:var(--ink);font-weight:560}
+.nav:hover{background:var(--hover)}.nav.on{background:var(--canvas);color:var(--ink);font-weight:560}.nav.on svg{opacity:1}
 .nav svg{width:16px;height:16px;flex:none;opacity:.75}.nav .ct{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
 .side .foot{margin-top:auto;display:grid;gap:6px;padding:10px;font-size:11.5px;color:var(--muted)}
 .ro{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;background:var(--canvas);width:max-content;font-size:11px}
@@ -106,8 +106,10 @@ tbody tr td:first-child{border-radius:8px 0 0 8px}tbody tr td:last-child{border-
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .u{display:flex;align-items:center;gap:10px}.av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--stone);color:var(--ink2)}
 .sub{color:var(--muted);font-size:12px}
-.bar{width:120px;height:5px;border-radius:9px;background:var(--stone);overflow:hidden}.bar i{display:block;height:100%;background:var(--ink);border-radius:9px}
-.bar i.warn,.bar i.bad{background:var(--ink)}
+.bar{width:120px;height:5px;border-radius:9px;background:var(--stone);overflow:hidden}.bar i{display:block;height:100%;background:var(--good);border-radius:9px}
+/* 用量条显示剩余量:剩 >30% 绿,10–30% 芥末黄,≤10%(含用完、超限)红 */
+.bar i.warn{background:var(--warn-ico)}.bar i.bad{background:var(--bar-bad)}
+.use span.c-bad,.ov-use .sub.c-bad{color:var(--bad)}
 .use{display:flex;align-items:center;gap:10px}.use span{font-size:12px;color:var(--muted);min-width:110px}
 /* toolbar */
 .tb{display:flex;align-items:center;gap:8px;padding:10px 12px}
@@ -165,7 +167,7 @@ textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:12.5px;li
 @media (max-width:860px){.use span{display:none}.bar{width:72px}.tb{overflow-x:auto;scrollbar-width:none}}
 .stack{display:grid;gap:14px}.mt{margin-top:14px}.mb{margin-bottom:14px}.w100{width:100%}
 .bold{font-weight:540}.lead{font-size:22px}.f18{font-size:18px}.f16{font-size:16px}
-.callout svg{flex:none;margin-top:1px;width:16px;height:16px}.callout .ico-warn{color:var(--warn)}.callout .ico-bad{color:var(--bad)}
+.callout svg{flex:none;margin-top:1px;width:16px;height:16px}.callout .ico-warn{color:var(--warn-ico)}.callout .ico-bad{color:var(--bad)}
 .ill svg{width:24px;height:24px}.ill.bad{background:var(--bad-bg);color:var(--bad)}
 .ib svg.sm{width:13px;height:13px}.btn[disabled]{opacity:.45;cursor:default}
 /* 危险按钮禁用时是灰底浅灰字(不是淡红),可点时才变实心红。 */
@@ -251,7 +253,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:99px;font-size:11.5px;font-weight:520;color:var(--muted);background:var(--stone);white-space:nowrap;vertical-align:1px}
 .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--faint)}.pill.on{color:var(--ink);background:var(--stone)}.pill.on::before{background:var(--ok)}
 .dh .pill{margin-left:6px}
-.lnk{background:none;border:0;padding:0;color:var(--ink);text-decoration:underline;cursor:pointer;font:inherit}
+.lnk{background:none;border:0;padding:0;color:var(--ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 45%,transparent);text-underline-offset:2px;cursor:pointer;font:inherit}
 .drawer.wide{width:min(860px,calc(100vw - 16px))}
 .tpl-db{display:flex;flex-direction:column;min-height:0}.tpl-db #tpl-ed{flex:1;min-height:280px}
 .ed{position:relative;display:flex;overflow:hidden;border-radius:10px;background:var(--panel);font:12.5px/19px var(--mono);font-variant-ligatures:none}
@@ -387,7 +389,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .lk-d,.mk-d{display:none}[data-theme=dark] .lk-l,[data-theme=dark] .mk-l{display:none}[data-theme=dark] .lk-d,[data-theme=dark] .mk-d{display:inline-block}
 
 /* ---- 入站与入口 ---- */
-:root{--amber:#b8913f}[data-theme=dark]{--amber:#c9a55c}
+
 .ngs{display:grid;gap:14px}
 .ng{background:var(--panel);border-radius:12px;padding:4px 6px 6px}
 .conn-card .ng{background:none;border-radius:0;padding:0 8px 8px}.conn-card .ng-empty{background:var(--panel)}
@@ -421,7 +423,7 @@ textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textar
 .cx-tg{grid-column:5/7;justify-self:start}
 /* 名称与节点不符 */
 .cx-warn{display:flex;align-items:center;gap:8px;padding:2px 6px 8px 156px;color:var(--muted);font-size:12.5px}
-.cx-warn .wi{width:14px;height:14px;color:var(--amber);flex:none}.cx-warn .btn{margin-left:6px;height:26px}
+.cx-warn .wi{width:14px;height:14px;color:var(--warn-ico);flex:none}.cx-warn .btn{margin-left:6px;height:26px}
 /* 空节点 */
 .ng-empty{display:flex;align-items:center;gap:14px;margin:0 0 2px;padding:14px 14px;border-radius:10px;background:var(--canvas)}
 .ng-empty .ill{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--stone);color:var(--muted)}.ng-empty .ill svg{width:17px;height:17px}
