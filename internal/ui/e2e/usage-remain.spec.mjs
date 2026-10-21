@@ -115,7 +115,9 @@ for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
     await expect(table.locator("tr")).toHaveCount(6);
     const onlyExpire = row(page, "expiring").locator("td").nth(2);
     await expect(onlyExpire).toBeEmpty();
-    for (const name of ["empty", "over", "expired-over"]) {
+    // 已过期用户只显示到期状态，即使同时超限也不显示用量条。
+    await expect(row(page, "expired-over").locator("td").nth(2)).toBeEmpty();
+    for (const name of ["empty", "over"]) {
       await expect(row(page, name).locator(".ov-use")).toHaveText("剩 0%");
       await expect(row(page, name).locator(".ov-use .sub")).toHaveCSS("color", bad);
       await barMatches(row(page, name).locator(".bar"), 0, "bad", theme);

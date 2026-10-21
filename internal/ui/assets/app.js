@@ -625,7 +625,7 @@ PAGES.overview = {
   const n = k => U.filter(u => u.status === k).length;
   const usagePct = settings.notify_usage_percent || 80;
   const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
-  const usageWarn = u => u.data_limit && pct(u) >= usagePct;
+  const usageWarn = u => u.status !== "expired" && u.data_limit && pct(u) >= usagePct;
   const near = u => u.status === "active" && usageWarn(u);
   const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
   const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
@@ -650,7 +650,7 @@ PAGES.overview = {
   <div class="grid g2 ov-main">
     <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
     ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold ell">${u.username}</b></div></td>
-      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${u.status === "limited" || usageWarn(u) ? ovUse(u) : ""}</td>
+      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${usageWarn(u) ? ovUse(u) : ""}</td>
       <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table>`
       : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
       : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>

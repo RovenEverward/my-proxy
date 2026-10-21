@@ -11,6 +11,10 @@ for (const scheme of ["light", "dark"]) {
   test(`侧栏品牌 lockup(${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await page.addInitScript(t => localStorage.setItem("mpx-theme", t), scheme);
+    // 未登录时的静态兜底页也使用相同的品牌墨色。
+    await page.goto(env.origin + "/");
+    await expect(page.locator("h1")).toHaveText("需要重新打开");
+    await expect(page.locator("h1")).toHaveCSS("color", scheme === "light" ? "rgb(47, 48, 51)" : "rgb(221, 222, 224)");
     await login(page, env);
     await expect(page).toHaveTitle("MPX");
     const shown = page.locator(`.brand img.lk-${scheme === "light" ? "l" : "d"}`);

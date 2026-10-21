@@ -7,6 +7,7 @@ package ui
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
@@ -215,6 +216,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.sessionOK(r) {
 		if r.URL.Path == "/" {
+			// 只放行这段固定兜底样式，不放宽其他页面的 CSP。
+			sum := sha256.Sum256([]byte(loginStyles))
+			h.Set("Content-Security-Policy", strings.Replace(csp, "style-src 'self'", "style-src 'self' 'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'", 1))
 			h.Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(loginPage))
@@ -370,12 +374,16 @@ func writeError(w http.ResponseWriter, code int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
+const loginStyles = `@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap}
+body{color:#3f3f46}h1{font-size:18px;color:#2F3033}
+@media(prefers-color-scheme:dark){body{background:#111214;color:#c4c4c8}h1{color:#DDDEE0}}`
+
 const loginPage = `<!doctype html><meta charset="utf-8"><title>MPX</title>
-<style>@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
-@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap}</style>
-<body style="font:14px/1.6 'Mona Sans VF',-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC','PingFang SC',sans-serif;margin:15vh auto;max-width:420px;padding:0 20px;color:#3f3f46">
+<style>` + loginStyles + `</style>
+<body style="font:14px/1.6 'Mona Sans VF',-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC','PingFang SC',sans-serif;margin:15vh auto;max-width:420px;padding:0 20px">
 <div style="position:fixed;top:0;left:0;right:0;height:var(--mygo-titlebar-height,0px);--app-region:drag"></div>
-<h1 style="font-size:18px;color:#0a0a0a">需要重新打开</h1>
+<h1>需要重新打开</h1>
 <p>这个页面的会话已失效。在终端运行 <code>mpx ui</code>,用它打印的链接打开。</p></body>`
 
 // 会话 / 登录链接失效时的提示:桌面窗口里没有「重新运行 mpx ui」这回事,
