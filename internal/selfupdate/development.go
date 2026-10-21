@@ -13,3 +13,11 @@ func CheckLocalUpdate(current string) error {
 	}
 	return nil
 }
+
+// CheckControlUpdate 与本机更新共用开发版判据，控制面改走工作区部署。
+func CheckControlUpdate(current string) error {
+	if CheckLocalUpdate(current) != nil {
+		return errors.New("开发版控制面不通过发布件更新或回退，请运行 mpx-dev deploy 或 mpx-dev deploy --rollback")
+	}
+	return nil
+}

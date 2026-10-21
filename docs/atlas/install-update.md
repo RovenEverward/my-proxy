@@ -1,8 +1,8 @@
 ---
 kind: part
 parent: README.md
-code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/]
-verified: 2026-10-21 @ 3b623f5
+code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, scripts/dev-deploy.py, scripts/dev-deploy-remote.py, scripts/dev-subdiff/]
+verified: 2026-10-21 @ 439f2df
 ---
 # 安装与升级
 
@@ -23,6 +23,11 @@ verified: 2026-10-21 @ 3b623f5
 5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。页面只放一个「更新」按钮，按 控制面 → 节点核心 → 本机 的顺序把三层升完（decisions 第 39 条，v0.8.0 起三层齐）；本机一层在桌面构建里是桌面程序本身（取 `mpx_desktop_*` 归档），升完原进程 exec 新二进制重启，`mpx.prev` 留上一版。
 6. **本机升级留痕**：命令行与页面发起的本机 CLI 升级写同一份 `update.json`，`mpx update show` 才看得到上一次的结果。页面那条路不认识 cli 包，靠 [internal/ui](../../internal/ui/) 的 `Options.CLIUpdated` 回调把结果交回 cli 侧落盘；命令行的 trigger 记 `manual`，页面记 `ui`。
 7. **本机开发版**：在工作区运行 `bash scripts/dev-install.sh`，把启动器装到 PATH 已包含的 `~/.local/bin/mpx-dev`，二进制放在 `~/.local/share/mpx-dev/`。启动器按 HEAD、已跟踪改动和未忽略的未跟踪文件内容计算指纹，变化才编译；`mpx-dev-update` 强制重编，不拉代码或切分支。编译失败时普通启动明确提示后使用上次成功版本，强制重编则返回失败；没有可用旧版就停止。重新运行 `mpx-dev app` 会关闭旧源码版本的开发窗口，相同版本提示使用现有窗口。`mpx-dev version` 显示 `dev-提交号-clean/dirty`。它与正式版共用控制面配置；桌面状态按 `mpx-dev` 独立，UI 默认随机端口，并忽略发布版的重启交接。开发版禁止本机发布件更新、回退与页面一键更新，改用重编命令，避免覆盖开发二进制或正式版更新记录。
+
+
+8. **开发控制面部署**：`mpx-dev deploy` 仅接受 clean 工作区，不拉代码。连接信息读本机 `~/.config/mpx-dev/deploy.json`，SSH 主机指纹必须预先核实并存在同目录的 `known_hosts`；私钥从配置指定的本机备份归档中临时读取，不入仓库。交叉编译后先导出所有用户的三种订阅，停服务并快照数据库、备份二进制，远端备份在root 专用的 `/var/lib/mpx-dev-deploy/backups/`，同时校验复制到 `~/mpx-backups/`，然后才切换版本链接。健康检查、presence 或订阅差异不符就恢复数据库与二进制；未确认的 SSH 会话关闭也恢复。只放行已批准的默认 DNS 和手动分组变更，其余字节变化均阻止确认。`mpx-dev deploy --rollback` 恢复上次成功部署前的备份，并先备份当前状态。备份含机密，只允许属主访问。部署期间短暂停服务，并暂停发布件更新监听；结束恢复监听原状态。开发控制面在 API 和 root 更新执行入口均拒绝发布件更新，改用部署命令。
+
+本机部署配置字段：`ssh_host`、`ssh_port`、`ssh_user`、`ssh_key_archive`（含 `id_ed25519` 的归档）、`service`、`binary`（版本链接）、`real_binary`（现有版本文件）、`db`、`addr`、`env_file`、`machine`（`x86_64` 或 `aarch64`）。配置权限必须为 0600；服务端需有 Python 3、SQLite 和 systemd。机器断电或强制杀死远端部署进程时，`/var/lib/mpx-dev-deploy/pending.json` 会阻止下一次部署，应从其指向的备份先恢复，不能直接删除标记重试。
 
 ## 坑
 

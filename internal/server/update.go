@@ -135,6 +135,10 @@ var controlRunActions = map[string]bool{"upgrade": true, "rollback": true}
 // 普通用户运行,换 /usr/local/bin/mpx 是 root 的一次性单元 `mpx update run
 // control` 干的活,两边靠 update 目录里的请求/状态文件对接。
 func (s *Server) handleUpdateControl(w http.ResponseWriter, r *http.Request) {
+	if err := selfupdate.CheckControlUpdate(buildinfo.Version()); err != nil {
+		writeErrorHint(w, http.StatusConflict, err.Error(), "这是开发版控制面，请通过开发部署入口升级或回滚。")
+		return
+	}
 	if s.updateDir == "" {
 		writeError(w, http.StatusServiceUnavailable, "控制面未配置库路径")
 		return

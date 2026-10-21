@@ -130,6 +130,8 @@ def take_over_app(stamp):
 
 def main():
     args = sys.argv[1:]
+    if args and args[0] == "deploy":
+        os.execv(sys.executable, [sys.executable, str(REPO / "scripts/dev-deploy.py"), *args[1:]])
     force = args == ["--rebuild-only"]
     STATE.mkdir(parents=True, exist_ok=True)
     # Python 文件描述符默认不跨 exec 继承，桌面运行期间不会占住编译锁。
