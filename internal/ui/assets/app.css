@@ -902,7 +902,7 @@ table.ut tbody tr:hover{background:var(--hover)}
 .ov-kv:first-of-type{flex:0 1 auto;min-width:0}.ov-kv .mono{max-width:220px}
 .ov-note .sp{flex:1}
 @media (max-width:1180px){.ov-note{gap:18px}.ov-kv{gap:6px}.ov-kv .mono{max-width:140px}}
-@media (max-width:860px){.ov-note{flex-wrap:wrap;padding:10px 12px;gap:6px 14px}.ov-done span{display:none}}
+@media (max-width:860px){.ov-note{flex-wrap:wrap;padding:10px 12px;gap:6px 14px}.ov-done-rest{display:none}}
 
 /* 窄窗(主区不到 ~700 宽):统计标签不折行;用量只留百分比,表格不横向溢出 */
 .ov .stat .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

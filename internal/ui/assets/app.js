@@ -529,7 +529,7 @@ function startBlock(S, done, allDone) {
 }
 function ovDoneChip() {
   if (clGet("hide")) return "";
-  return H`<div class="ov-done" id="start-done">${ic("check")}<span><b>开始使用</b> · 4 步都完成了</span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib sm" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>`;
+  return H`<div class="ov-done" id="start-done">${ic("check")}<span><b>开始使用</b><span class="ov-done-rest"> · 4 步都完成了</span></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib sm" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>`;
 }
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。

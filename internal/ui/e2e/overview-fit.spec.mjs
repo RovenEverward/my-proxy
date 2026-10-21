@@ -63,6 +63,11 @@ for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
     test(`${platform} ${theme} 总览 ${width}×${height}`, async ({ page }) => {
       await page.setViewportSize({ width, height });
       await overview(page, platform, theme);
+      if (width === 640 && height === 720) {
+        await expect(page.locator(".ph #start-done b")).toBeVisible();
+        await expect(page.locator(".ph #start-done b")).toHaveText("开始使用");
+        await expect(page.locator(".ph #start-done .ov-done-rest")).toBeHidden();
+      }
       const main = page.locator("main");
       const bounds = await main.evaluate(m => ({ x: m.scrollWidth - m.clientWidth, y: m.scrollHeight - m.clientHeight }));
       expect(bounds.x).toBeLessThanOrEqual(0);
