@@ -433,12 +433,18 @@ function saveBar() {
     <button type="button" class="btn" data-act="s5-discard" ${SUB.saving ? raw("disabled") : ""}>放弃</button>
     <button type="button" class="btn pri ${SUB.saving ? "busy" : ""}" data-act="s5-save" ${SUB.saving ? raw("disabled") : ""}>保存</button></div>`;
 }
+// 切客户端只更新选中状态和预览，不重画其它字段或请求控制面。
+function refreshPreview() {
+  for (const button of document.querySelectorAll('[data-act="s5-pv"]')) button.classList.toggle("on", +button.dataset.i === SUB.pv);
+  const pv = $("#pv"); if (pv) pv.innerHTML = val(b5Card(SUB.draft));
+}
 // 刷新不重绘整页,保留输入焦点:只换链接、预览卡片、订阅名结果和对照表。
 function refresh() {
   if (route[0] !== "sub" || !SUB) return;
   const d = SUB.draft;
   const set = (id, h) => { const el = document.getElementById(id); if (el) el.innerHTML = val(h); };
-  set("lk", b5Link(d)); set("pfx-slot", b5PfxNote(d)); set("pv", b5Card(d)); set("title-res", b5TitleRes(d)); set("b5-tbl", b5Table(d));
+  set("lk", b5Link(d)); set("pfx-slot", b5PfxNote(d)); set("title-res", b5TitleRes(d)); set("b5-tbl", b5Table(d));
+  refreshPreview();
   for (const el of document.querySelectorAll(".b5 [data-k]")) el.readOnly = SUB.saving || !can("PUT", "/api/settings");
   const t = $("#f-title"); if (t) t.contentEditable = String(!SUB.saving && can("PUT", "/api/settings"));
   if ($("#pfx-err")) $("#pfx-err").textContent = SUB.fieldErrors?.sub_url_prefix || "";
@@ -664,7 +670,7 @@ function rdWire() {
 }
 
 Object.assign(ACTS, {
-  "s5-pv": d => { SUB.pv = +d.i; B5_HL = ""; refresh(); },
+  "s5-pv": d => { SUB.pv = +d.i; B5_HL = ""; refreshPreview(); },
   "s5-adv": async () => {
     ADV_OPEN = !ADV_OPEN; paint();
     if (ADV_OPEN) {

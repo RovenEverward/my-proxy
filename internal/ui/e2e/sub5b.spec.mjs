@@ -30,6 +30,51 @@ test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_ti
 
 // 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是这次请求的地址
 // (控制面按请求的 Host 拼;经 mpx ui 转发时 Host 是 mpx ui 的地址,端口与控制面不同),并有一条灰色说明。
+test("客户端预览切换即时完成且不请求 API", async ({ page }) => {
+  await open(page);
+  const requests = [];
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requests.push(path);
+  });
+  const measurements = [];
+  for (const index of [1, 2, 0, 1, 2, 0]) {
+    await page.evaluate(index => {
+      const button = document.querySelector(`[data-act="s5-pv"][data-i="${index}"]`);
+      const preview = document.querySelector("#pv");
+      const before = preview.firstElementChild;
+      window.previewTiming = { highlight: null, preview: null };
+      window.previewDone = new Promise(resolve => button.addEventListener("click", () => {
+        const start = performance.now();
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          observer.disconnect();
+          resolve(window.previewTiming);
+        };
+        const observer = new MutationObserver(() => {
+          if (button.classList.contains("on") && window.previewTiming.highlight === null) window.previewTiming.highlight = performance.now() - start;
+          if (preview.firstElementChild !== before && window.previewTiming.preview === null) window.previewTiming.preview = performance.now() - start;
+          if (window.previewTiming.highlight !== null && window.previewTiming.preview !== null) requestAnimationFrame(finish);
+        });
+        observer.observe(document.querySelector("#sec-look"), { subtree: true, childList: true, attributes: true });
+        setTimeout(finish, 150);
+      }, { capture: true, once: true }));
+    }, index);
+    await page.locator(`[data-act="s5-pv"][data-i="${index}"]`).click();
+    const timing = await page.evaluate(() => window.previewDone);
+    expect(await page.locator(`[data-act="s5-pv"][data-i="${index}"]`).evaluate(button => button.classList.contains("on"))).toBe(true);
+    expect(timing.highlight).not.toBeNull();
+    expect(timing.preview).not.toBeNull();
+    expect(timing.highlight).toBeLessThan(50);
+    expect(timing.preview).toBeLessThan(50);
+    measurements.push(timing);
+  }
+  expect(requests).toEqual([]);
+  console.log("PREVIEW_TIMING " + JSON.stringify({ measurements, requests }));
+});
+
 test("链接卡片给出完整链接;没填链接开头时用控制面地址开头并说明", async ({ page }) => {
   await open(page);
   // 页面请求的那条(经 mpx ui)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
