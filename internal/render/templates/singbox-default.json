@@ -44,8 +44,7 @@
     {
       "type": "selector",
       "tag": "proxy",
-      "outbounds": null,
-      "default": "auto"
+      "outbounds": null
     },
     {
       "type": "urltest",
@@ -66,11 +65,11 @@
       "type": "selector",
       "tag": "全球代理",
       "outbounds": [
-        "auto",
         "proxy",
+        "auto",
         "direct"
       ],
-      "default": "auto"
+      "default": "proxy"
     },
     {
       "type": "selector",

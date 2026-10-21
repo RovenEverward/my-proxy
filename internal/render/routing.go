@@ -327,6 +327,16 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 	route["rules"] = rules
 	route["rule_set"] = sets
 	route["final"] = names.final
+	// 内置 DNS 与实际路由共用选择链，手动换节点后 DNS 也跟着换；自定义模板保持原配置。
+	if strings.TrimSpace(string(template)) == "" {
+		dns, _ := cfg["dns"].(map[string]any)
+		for _, server := range toAnySlice(dns["servers"]) {
+			ns, _ := server.(map[string]any)
+			if ns["detour"] == singboxProxyTag {
+				ns["detour"] = names.final
+			}
+		}
+	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 

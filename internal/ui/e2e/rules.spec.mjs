@@ -36,6 +36,10 @@ test.afterAll(async () => { await env?.stop(); });
 
 test("首次启动已迁移:规则表来自内置底稿,订阅按规则表生成", async ({ page }) => {
   const r = await getJSON("/api/routing");
+  const groups = await getJSON("/api/proxy-groups");
+  const manual = groups.find(g => g.name === "手动切换");
+  expect(manual.mode).toBe("manual");
+  expect((await getJSON("/api/rules")).final).toBe("group:" + manual.id);
   expect(r.mode).toBe("rules");
   expect(r.migration.status).toBe("migrated");
   await login(page, env);
@@ -140,7 +144,7 @@ test("策略组:新建与 mpx group add 结果一致,预览随条件变化;被�
 
   // 被规则引用:控制面拒绝,原话报出来
   const final = (await getJSON("/api/rules")).final;
-  await page.locator(".rp-g", { hasText: "自动选择" }).click();
+  await page.locator(".rp-g", { hasText: "手动切换" }).click();
   await page.click("[data-act=gp-rm]");
   await page.click("#okb");
   await expect(page.locator("#modal-err")).not.toBeEmpty();

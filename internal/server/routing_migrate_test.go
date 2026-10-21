@@ -7,6 +7,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
+	"gopkg.in/yaml.v3"
 )
 
 func migrateAPI(t *testing.T, e *env, body map[string]bool) MigrationReport {
@@ -57,6 +58,47 @@ func TestMigrateDefault(t *testing.T) {
 	groups, _ := e.st.ListProxyGroups()
 	if len(groups) == 0 {
 		t.Fatalf("应生成策略组: %+v", groups)
+	}
+
+	// 新库的真实订阅应使用手动策略；不改写已有库的规则。
+	var manualID int64
+	for _, g := range groups {
+		if g.Name == "手动切换" && g.Mode == model.GroupManual {
+			manualID = g.ID
+		}
+	}
+	scope, err := e.st.GetRouteScope(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manualID == 0 || scope.Final != model.GroupTarget(manualID) {
+		t.Fatalf("默认兜底没有指向手动组：%+v", scope)
+	}
+	code, _, subscription := e.sub(path, "")
+	if code != 200 {
+		t.Fatalf("订阅 %d：%s", code, subscription)
+	}
+	var doc struct {
+		Groups []struct {
+			Name    string   `yaml:"name"`
+			Type    string   `yaml:"type"`
+			Proxies []string `yaml:"proxies"`
+		} `yaml:"proxy-groups"`
+	}
+	if err := yaml.Unmarshal(subscription, &doc); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, g := range doc.Groups {
+		if g.Name == render.FinalGroupName {
+			found = true
+			if g.Type != "select" || len(g.Proxies) == 0 || g.Proxies[0] != "手动切换" {
+				t.Fatalf("实际订阅兜底 = %+v", g)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("实际订阅缺少兜底组")
 	}
 
 	// 再启动不会重复迁移

@@ -12,6 +12,7 @@
 - 总览卡片改成「近 24 小时在用」，按节点的实际流量算；旧版控制面没有这个数据时，写的是「近 24 小时拉过订阅」。
 
 ### 改进
+- 订阅内容变更：新安装或重新生成策略后，Clash Meta 和 sing-box 默认为「手动切换」，「自动选择」仍可主动选。Clash Meta 默认模板的 DNS 改经「手动切换」，内置 sing-box 模板的 DNS 跟随实际兜底选择器。已有规则与兜底去向不改写，使用默认模板的用户重新拉取订阅后更新 DNS。
 - 订阅内容变更：Clash Meta（mihomo）的国外域名改为经代理用 Cloudflare / Google DoH 解析，国内域名仍直连国内 DoH，节点域名改用国内 DoH；删除一条无效的占位解析规则。重新拉取订阅后生效。
 - 管理接口限流放宽到每秒 10 个、突发 60 个（桌面端和 mpx ui 的请求都从一个地址进来，一次页面加载就要十几个）。
 - 焦点框统一成中性色，按钮、列表行、侧栏、标签页都一样。
@@ -28,7 +29,7 @@
 - 控制面 API 只有新增：`GET /api/users` 里每位用户多 `presence`（在线、IP 数、最后在线、节点数据是否旧了），页面多顶层 `presence`；新增 `GET /api/users/{username}/activity`；新增后台任务接口 `POST /api/nodes/{id}/diagnostics/jobs`、`POST /api/nodes/{id}/install/jobs`、`GET /api/jobs/{id}`、`GET /api/nodes/{id}/jobs`，原来的同步接口不变。
 - 节点可能带 `template_drift`；设置接口 400 时多 `field`（出错的字段名）；`GET /api/users/{username}/links` 可能带 `base`。
 - `sub_url_prefix` 填错时的提示文字改为说「链接开头」，要按这句话匹配的话请一起改。
-- 新增公开字体路由 `/sub/-/fonts/{name}`（只有两个文件），订阅页字体也从这里按相对路径加载。订阅内容不变。
+- 新增公开字体路由 `/sub/-/fonts/{name}`（只有两个文件），订阅页字体也从这里按相对路径加载。字体改动不影响订阅内容。
 - `mpx user export` 的 CSV 末尾多一列「最后在线（UTC+8）」，导入带不带这一列都行。
 - 新增表 `user_activity`、`node_sampled`、`node_jobs`，`nodes` 表新增 `deployed_template_hash` 列；首次升级时会从流量历史回填最近在线。
 

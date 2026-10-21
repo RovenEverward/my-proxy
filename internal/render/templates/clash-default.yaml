@@ -918,7 +918,7 @@ proxy-groups:
     tolerance: 50
   - name: 全球代理
     type: select
-    proxies: [自动选择, 手动切换, DIRECT]
+    proxies: [手动切换, 自动选择, DIRECT]
     include-all-proxies: true
   - name: 广告拦截
     type: select
@@ -1157,8 +1157,8 @@ dns:
   # 查询从代理出口发出，让结果与出口一致，不向国内 DNS 发送查询。
   # 需要较新的 mihomo，旧版不认这套写法。
   nameserver:
-    - 'https://1.1.1.1/dns-query#自动选择'
-    - 'https://8.8.8.8/dns-query#自动选择'
+    - 'https://1.1.1.1/dns-query#手动切换'
+    - 'https://8.8.8.8/dns-query#手动切换'
   # 国内域名按策略直连国内 DoH，不经代理。
   nameserver-policy:
     geosite:cn,private,apple:

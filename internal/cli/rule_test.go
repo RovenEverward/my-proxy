@@ -83,7 +83,7 @@ func TestRuleAndGroupCLI(t *testing.T) {
 	if out := run(rule, "migrate", "--dry-run"); !strings.Contains(out, "已经有规则表") {
 		t.Fatal(out)
 	}
-	if out := run(rule, "migrate", "--replace"); !strings.Contains(out, "已迁移") || !strings.Contains(out, "其他全部 → 自动选择") {
+	if out := run(rule, "migrate", "--replace"); !strings.Contains(out, "已迁移") || !strings.Contains(out, "其他全部 → 手动切换") {
 		t.Fatal(out)
 	}
 	if out := run(rule, "migrate", "--report"); !strings.Contains(out, "当前模式:rules") {
