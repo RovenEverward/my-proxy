@@ -326,7 +326,9 @@ function applyMode(form, probe, verb) {
 }
 async function inboundEditor(id, presetNode) {
   let v = null, nodes = [];
-  try { [v, nodes] = await Promise.all([id ? api(inbPath(id)) : null, api("/api/nodes")]); } catch (e) { toast(e.message, true); return; }
+  const packet = await readDrawer(id ? "编辑连接方式" : "添加连接方式", () => Promise.all([id ? api(inbPath(id)) : null, api("/api/nodes")]), () => inboundEditor(id, presetNode));
+  if (!packet) return;
+  [v, nodes] = packet.value;
   const isNew = !v;
   const base = v ? asModelInbound(v) : { node_id: presetNode || nodes[0]?.id, protocol: "vless", port: 0, network: "tcp", security: "none", wg_mtu: 1420 };
   openDrawer(H`<form id="inb-form" novalidate><div class="dh"><h2>${isNew ? "添加连接方式" : "编辑连接方式 " + inbTitle(v, nodes.find(n => n.id === v.node_id))}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
@@ -369,11 +371,9 @@ async function inboundEditor(id, presetNode) {
 /* ---------- 编辑连接:名称、地址在顶上,入站细节收进「高级」 ---------- */
 async function connectionEditor(inbID) {
   let inb, hosts, nodes;
-  const seq = ++CONN_OPEN_SEQ;
-  try {
-    [inb, hosts, nodes] = await Promise.all([api(inbPath(inbID)), api(inbPath(inbID) + "/hosts"), api("/api/nodes")]);
-  } catch (e) { toast(e.message, true); return; }
-  if (seq !== CONN_OPEN_SEQ) return;
+  const packet = await readDrawer(inbTitleById(inbID), () => Promise.all([api(inbPath(inbID)), api(inbPath(inbID) + "/hosts"), api("/api/nodes")]), () => connectionEditor(inbID));
+  if (!packet) return;
+  [inb, hosts, nodes] = packet.value;
   const n = nodes.find(x => x.id === inb.node_id) || { address: "", id: inb.node_id };
   const h = firstHost(hosts), base = asModelInbound(inb);
   const defName = nameOfHost(inb, h, n);
@@ -496,12 +496,15 @@ function drawAddConnection() {
 /* ---------- 入口(host)编辑器 ---------- */
 // 抽屉要先拉数据再打开:连点两下或在一个抽屉里打开另一个时,只让最后一次打开的生效,
 // 先发出去的那个请求回来后不再把抽屉换掉。
-let CONN_OPEN_SEQ = 0;
 async function hostEditor(inbID, hostID) {
   let hosts = [];
-  const seq = ++CONN_OPEN_SEQ;
-  try { hosts = await api(inbPath(inbID) + "/hosts"); } catch (e) { toast(e.message, true); return; }
-  if (seq !== CONN_OPEN_SEQ) return;
+  const packet = await readDrawer(hostID ? "编辑对外地址" : "添加对外地址", async () => {
+    const rows = await api(inbPath(inbID) + "/hosts");
+    if (hostID && !rows.some(h => h.id === hostID)) throw new Error(`连接方式 ${inbID} 上没有 id 为 ${hostID} 的对外地址`);
+    return rows;
+  }, () => hostEditor(inbID, hostID));
+  if (!packet) return;
+  hosts = packet.value;
   const found = hostID ? hosts.find(h => h.id === hostID) : null;
   if (hostID && !found) { toast(`连接方式 ${inbID} 上没有 id 为 ${hostID} 的对外地址`, true); return; }
   const isNew = !found, h = found ? asModelHost(found) : { inbound_id: inbID, remark: "", address: "", port: 0 };

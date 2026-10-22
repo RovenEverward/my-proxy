@@ -186,7 +186,9 @@ function validateTpl(f, text) {
 
 async function templateDrawer(f) {
   let text = "";
-  try { text = await api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } }); } catch (e) { toast(e.message, true); return; }
+  const packet = await readDrawer(f + " 订阅底稿", () => api("/api/settings/templates/" + f, { asText: true, headers: { Accept: "text/plain" } }), () => templateDrawer(f), "wide");
+  if (!packet) return;
+  text = packet.value;
   const m = TPL_META[f], W = can("PUT", "/api/settings/templates/x"), c = !!(current.data?.settings?.templates || {})[f], orig = text;
   openDrawer(H`<form id="tpl-form" novalidate><div class="dh"><span class="fi">${ic("tpl")}</span><div style="min-width:0"><h2><span class="mono">${f}</span> 订阅底稿 <span class="pill ${c ? "on" : ""}">${c ? "自定义" : "内置默认"}</span></h2><div class="sub ell">${m.how}</div></div><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db tpl-db">
@@ -501,6 +503,8 @@ function subLeaveModal(target) {
 
 PAGES.sub = {
   title: "订阅",
+  viewKey: r => r[0],
+  prepare: r => { if (r[1] === "templates") ADV_OPEN = true; },
   crumb: () => H`<b>订阅</b>`,
   async load(r, read = api) {
     // 侧栏的节点、用户数字来自 STATUS;直接打开订阅页时也取一次。

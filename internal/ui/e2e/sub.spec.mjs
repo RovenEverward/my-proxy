@@ -462,8 +462,11 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
   await expect(page.locator("#modal.open")).toHaveCount(0);
   expect(calls).toEqual([]);
   await expect.poll(() => titleValue(page)).toBe("切换前草稿");
-  await choose(); await page.getByRole("button", { name: "不保存", exact: true }).click();
+  await choose();
+  const reloaded = page.waitForEvent("load");
+  await page.getByRole("button", { name: "不保存", exact: true }).click();
   await expect.poll(() => calls.length).toBe(1);
+  await reloaded;
   // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
   await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
   // 切换成功会整页刷新。等新页面把数据取完再往下点:刷新途中还会重画一次侧栏,
@@ -540,7 +543,7 @@ test("切换控制面选不保存但切换失败：页面已画回保存的值",
 });
 
 // 离页对话框开着时,慢回来的「切换控制面」弹窗换掉它,要先收掉它的焦点陷阱;再点「添加控制面」后 Tab 不被拦回弹窗。
-test("弹窗被换掉时先收掉离页对话框的焦点陷阱", async ({ page }) => {
+test("关闭列表后旧响应不覆盖离页确认，重新打开时清理焦点陷阱", async ({ page }) => {
   let release;
   const held = new Promise(r => { release = r; });
   await page.route("**/local/profiles", async r => { await held; await r.fulfill({ json: [
@@ -550,9 +553,16 @@ test("弹窗被换掉时先收掉离页对话框的焦点陷阱", async ({ page 
   await setTitle(page, "陷阱测试");
   await page.click(".profile[data-act=cp-toggle]");
   await page.click(".cp-pop [data-act=cp-switch]");
+  await expect(page.locator("#modal.open [aria-busy=true]")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.locator('.side a.nav[href="#nodes"]').click();
   await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
-  release();
+  const returned = page.waitForResponse(r => new URL(r.url()).pathname === "/local/profiles");
+  release(); await returned;
+  await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
+  await page.getByRole("button", { name: "留下", exact: true }).click();
+  await page.click(".cp-pop [data-act=cp-switch]");
+  await expect(page.locator(".pfitem")).toHaveCount(2);
   await expect(page.locator("#modal.open h2")).toHaveText("切换控制面");
   await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
   await expect(page.locator("#modal")).toHaveAttribute("role", "alertdialog");

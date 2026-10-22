@@ -11,12 +11,17 @@ const finalPath = u => "/api/rules/final" + (u ? "?user=" + encodeURIComponent(u
 const groupPath = id => "/api/proxy-groups/" + id;
 const groupID = t => /^group:(\d+)$/.test(t || "") ? +t.slice(6) : 0;
 
+function rpBar(d) {
+  return H`<div class="rp-bar"><div class="seg">${[["rules", "规则", d ? d.rules.global.length + 1 : ""], ["groups", "策略组", d ? d.groups.length : ""]].map(([k, t, n]) => H`<button class="${RP.tab === k ? "on" : ""}" data-act="rp-tab" data-k="${k}">${t}<em>${n}</em></button>`)}</div><span class="sp"></span>
+      ${RP.tab === "rules" ? H`<span class="sub">作用于</span><select class="in w200" id="rp-scope" ${d ? "" : raw("disabled")}><option value="">全部用户(全局)</option>${(d?.users || RP.d?.users || []).map(u => H`<option value="${u}" ${raw(RP.scope === u ? "selected" : "")}>只改 ${u}</option>`)}</select>` : ""}</div>`;
+}
+
 PAGES.rules = {
+  prepare: r => { if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1]; },
   readKey: () => RP.scope,
   title: "分流", closeTo: "rules",
   crumb: () => H`<b>分流规则</b>`,
   async load(r, read = api) {
-    if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1];
     const [routing, rules, groups, catalog, users] = await Promise.all([
       read("/api/routing"), read(rulesPath(RP.scope)), read("/api/proxy-groups"), read("/api/rule-catalog"), read("/api/users?limit=1000"),
     ]);
@@ -29,12 +34,11 @@ PAGES.rules = {
   },
   render(d) {
     const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。改完，客户端更新一次订阅就生效。</p></div></div>`;
-    if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
+    if (!d) return H`${head}${rpBar(null)}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     RP.d = d;
     const R = d.rules, G = d.groups;
     if (!R.global.length && !G.length && !RP.scope) return H`${head}${modeBanner(d)}${rpEmpty(d)}`;
-    const tabs = H`<div class="rp-bar"><div class="seg">${[["rules", "规则", R.global.length + 1], ["groups", "策略组", G.length]].map(([k, t, n]) => H`<button class="${RP.tab === k ? "on" : ""}" data-act="rp-tab" data-k="${k}">${t}<em>${n}</em></button>`)}</div><span class="sp"></span>
-      ${RP.tab === "rules" ? H`<span class="sub">作用于</span><select class="in w200" id="rp-scope"><option value="">全部用户(全局)</option>${d.users.map(u => H`<option value="${u}" ${raw(RP.scope === u ? "selected" : "")}>只改 ${u}</option>`)}</select>` : ""}</div>`;
+    const tabs = rpBar(d);
     return H`${head}${modeBanner(d)}${tabs}<div class="rp-main"><div>${RP.tab === "rules" ? rpRulesCard(d) : rpGroupsCard(d)}</div>
       <div class="rp-side">${rpTestCard()}</div></div>`;
   },
@@ -185,12 +189,9 @@ async function groupEditor(id) {
   const d = RP.d, g0 = d.groups.find(g => g.id === +id), W = can(g0 ? "PUT" : "POST", "/api/proxy-groups/x");
   const g = g0 ? JSON.parse(JSON.stringify(g0)) : { name: "", icon: "", mode: "auto", regions: [], protocols: [], capabilities: [], tags: [] };
   for (const k of ["regions", "protocols", "capabilities", "tags"]) g[k] ||= [];
-  openDrawer(H`<div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db" role="status">正在读取可选节点…</div>`);
-  const opening = $("#drawer").firstElementChild;
-  let all;
-  try { all = g0 && d.previews?.[g0.id] || await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
-  catch (e) { if (opening.isConnected) $("#drawer .db").textContent = e.message; return; }
-  if (!opening.isConnected || (!$("#drawer.open") && !DRAWER_RAF)) return;
+  const packet = await readDrawer(g0 ? g0.name : "新建策略组", () => g0 && d.previews?.[g0.id] || api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }), () => groupEditor(id));
+  if (!packet) return;
+  const all = packet.value;
   const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有节点带这一项</span>`; };
   const regions = all.map(e => e.region).filter(Boolean), protos = all.map(e => e.protocol).filter(Boolean);
   openDrawer(H`<form id="gp-form" novalidate><div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">
@@ -273,12 +274,9 @@ async function rpSetFinal(v) {
 
 Object.assign(ACTS, {
   "rp-tab": async d => {
-    const previous = RP.tab;
     RP.tab = d.k; RP.edit = null;
     history.replaceState(null, "", "#rules/" + d.k); paint();
-    const loading = load(true, true, true), seq = loadSeq;
-    await loading;
-    if (seq === loadSeq && current.error) { RP.tab = previous; history.replaceState(null, "", "#rules/" + previous); paint(); }
+    await load(true, true, true);
   },
   "rp-try": d => { RP.test = d.d; const t = $("#rp-test"); if (t) t.value = d.d; rpRunTest(); },
   "rp-toggle": async (d, el) => { const { rules } = rpScopeList(), r = rules[+d.i]; el.disabled = true;

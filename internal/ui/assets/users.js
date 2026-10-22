@@ -320,6 +320,7 @@ PAGES.users = {
     const pf = $("#uf-plan");
     if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; PICK.clear(); withFeedback(pf, () => load(true, true, true)); });
     if (d && r[1] && d.user) userDrawer(drawerUser(d), d.links, d);
+    else if (r[1]) openDrawer(H`<div${current.loading ? raw(' aria-busy="true"') : ""}><div class="dh"><h2>${r[1]}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${current.error ? errorBox("用户详情", current.error) : H`<p role="status">正在加载…</p>`}</div></div>`);
     document.querySelectorAll(".td-pick [data-ind]").forEach(x => { x.indeterminate = true; });
   },
 };
@@ -439,8 +440,9 @@ async function refreshDrawer(name) {
 /* ---- 编辑器 ---- */
 async function userEditor(name) {
   let u = null, inbounds = [], nodes = [], plans = [];
-  try { [u, inbounds, nodes, plans] = await Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes"), api("/api/plans")]); }
-  catch (e) { toast(e.message, true); return; }
+  const packet = await readDrawer(name ? "编辑 " + name : "添加用户", () => Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes"), api("/api/plans")]), () => userEditor(name));
+  if (!packet) return;
+  [u, inbounds, nodes, plans] = packet.value;
   const isNew = !u;
   u = u || { username: "", data_limit: 0, expire_at: null, reset_strategy: "none", inbound_ids: [], note: "", enabled: true, plan_id: null };
   const nodeName = id => { const n = nodes.find(x => x.id === id); return n ? nodeLabel(n) : "节点"; };

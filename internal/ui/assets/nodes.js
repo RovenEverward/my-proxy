@@ -42,8 +42,9 @@ const certText = c => c.error ? "读不到" : c.days_left < 0 ? "已过期" : `�
 
 PAGES.nodes = {
   title: "节点",
+  loadingTitle: r => r[1] ? nodeLabel(NODE_LABEL_BY_ID[r[1]]) || "节点详情" : "节点",
   count: () => NODES_TOTAL ?? STATUS?.counts?.nodes ?? "",
-  crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${nodeLabel(d?.node) || "节点"}</b>` : H`<b>节点</b>`,
+  crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${nodeLabel(d?.node || NODE_LABEL_BY_ID[r[1]]) || "节点详情"}</b>` : H`<b>节点</b>`,
   async load(r, read = api) {
     if (r[1]) {
       const id = +r[1];
@@ -284,7 +285,7 @@ function plainSummary(lines, d) {
 }
 
 function nodeDetail(d) {
-  if (!d) return H`<div class="ph"><div><h1><span class="sk" style="width:160px"></span></h1><p><span class="sk" style="width:220px"></span></p></div></div><div class="grid g3"><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div></div>`;
+  if (!d) return H`<div class="ph"><div><h1>${PAGES.nodes.loadingTitle(route)}</h1><p><span class="sk" style="width:220px"></span></p></div></div><div class="grid g3"><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div><div class="card stat"><span class="sk w80"></span></div></div>`;
   const n = d.node, s = n.status, id = n.id, W = can("POST", "/api/nodes/x");
   const certs = s?.certificates || [];
   const rep = d.report && !d.report.error ? d.report : null;
@@ -350,7 +351,11 @@ function nodeDetail(d) {
 async function nodeEditor(id) {
   let v = null;
   let meta = null;
-  if (id) { try { [v, meta] = await Promise.all([api(nodePath(id)), api(nodePath(id) + "/metadata")]); } catch (e) { toast(e.message, true); return; } }
+  if (id) {
+    const packet = await readDrawer("编辑 " + (nodeLabel(NODE_LABEL_BY_ID[id]) || "节点"), () => Promise.all([api(nodePath(id)), api(nodePath(id) + "/metadata")]), () => nodeEditor(id));
+    if (!packet) return;
+    [v, meta] = packet.value;
+  }
   const isNew = !v, n = v || { name: "", address: "", ssh_port: 0, ssh_user: "", api_port: 0, config_path: "", service_name: "", outbound_ip: "" };
   const num = x => x ? String(x) : "";
   openDrawer(H`<form id="node-form" novalidate><div class="dh"><h2>${isNew ? "添加节点" : "编辑 " + nodeLabel(v)}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
@@ -419,7 +424,7 @@ async function nodeEditor(id) {
     const c = collect(), btn = $("#n-save");
     $("#n-err").textContent = c.err.join("\n");
     if (c.err.length) return;
-    btn.disabled = true; btn.classList.add("busy");
+    if (btn) { btn.disabled = true; btn.classList.add("busy"); }
     try {
       if (isNew) {
         // 与 node add 一致:model.Node 整体序列化,没有 ssh_password;outbound_ip 空串不带键。
@@ -490,8 +495,8 @@ function infoDrawer(title, sub, body) {
   openDrawer(H`<div class="dh"><div style="min-width:0"><h2 class="ell">${title}</h2><div class="sub">${sub}</div></div><span class="sp" style="flex:1"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${body}</div>`);
 }
 async function busy(btn, fn) {
-  btn.disabled = true; btn.classList.add("busy");
-  try { await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.classList.remove("busy"); }
+  if (btn) { btn.disabled = true; btn.classList.add("busy"); }
+  try { await fn(); } catch (e) { toast(e.message, true); } finally { if (btn) { btn.disabled = false; btn.classList.remove("busy"); } }
 }
 // jobStarted:后台任务接下了(202 新的、200 这台已经在跑)。确认框立刻关掉:接下来要等几分钟
 // 到十几分钟,不该把人留在弹窗里。提示一句已经在跑,再用刚从任务带回的那一份重画详情
@@ -555,18 +560,23 @@ Object.assign(ACTS, {
     let r;
     // 读不到就明说读不到,不能落成「没有在线用户」。409 = 节点配置没开在线统计,应用一次配置就好。
     // 其他错误原话是英文的 SSH 报错,还带内部名:主句只说显示名和怎么办,原话收进「详情」。
-    try { r = await api(nodePath(d.id) + "/online"); } catch (e) {
+    const packet = await readDrawer(`${d.label || d.name || "节点"} 在线`, () => api(nodePath(d.id) + "/online").catch(error => { if (!error.status) throw error; return { error }; }), () => ACTS["node-online"](d, null));
+    if (!packet) return;
+    try { if (packet.value.error) throw packet.value.error; r = packet.value; } catch (e) {
       if (!e.status || e.status < 400) throw e;
-      if (e.status !== 409) return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>连不上${d.label || "这台节点"}，这次读不到在线名单。稍后再试，或者先「刷新状态」看看节点是不是在线。</p><details class="sum-raw"><summary>详情${ic("down")}</summary><div class="mono">${e.message}</div></details></div>`);
+      const retry = H`<button class="btn sm mt" data-act="node-online" data-id="${d.id}" data-label="${d.label || d.name || "节点"}">重试</button>`;
+      if (e.status !== 409) return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>连不上${d.label || "这台节点"}，这次读不到在线名单。稍后再试，或者先「刷新状态」看看节点是不是在线。</p><details class="sum-raw"><summary>详情${ic("down")}</summary><div class="mono">${e.message}</div></details>${retry}</div>`);
       const fix = can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm mt" data-act="node-sync" data-id="${d.id}" data-label="${d.label || ""}" data-name="${d.name || ""}">把配置应用到节点</button>` : "";
-      return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>${e.message}</p>${fix}</div>`);
+      return infoDrawer(`${d.label || d.name} 在线`, H`现场读出的结果`, H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到在线名单</h4><p>${e.message}</p>${fix}${retry}</div>`);
     }
     infoDrawer(`${d.label || r.node} 在线`, H`现场读出的结果`, r.online.length
       ? H`<div class="tw"><table><thead><tr><th>用户</th><th class="num">IP 数</th><th>IP</th></tr></thead><tbody>${r.online.map(e => H`<tr><td><b class="bold">${e.user}</b></td><td class="num">${e.count}</td><td class="mono sub">${(e.ips || []).join(", ")}</td></tr>`)}</tbody></table></div>`
       : emptyBox("users", "没有在线用户", "此刻没有用户连在这台节点上。", ""));
   }),
   "node-config": (d, b) => busy(b, async () => {
-    const cfg = await api(nodePath(d.id) + "/config");
+    const packet = await readDrawer(`${d.label || d.name || "节点"} 的配置预览`, () => api(nodePath(d.id) + "/config"), () => ACTS["node-config"](d, null));
+    if (!packet) return;
+    const cfg = packet.value;
     infoDrawer(`${d.label || d.name || "节点"} 的配置预览`, H`「应用到节点」会推这一份`, H`<pre class="code">${typeof cfg === "string" ? cfg : JSON.stringify(cfg, null, 2)}</pre>`);
   }),
   "node-rm": d => confirmBox({ title: `删除节点 ${d.label || d.name}？`, text: H`不可恢复：它上面的连接方式会一起删掉，订阅里不再有它。节点上的代理程序和配置文件会留着；只想让新订阅<span class="nw">别再发它</span>，用<span class="nw">「暂停分配」</span>。`, ok: "删除节点", danger: true, typed: d.name,

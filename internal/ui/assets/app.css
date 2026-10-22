@@ -925,3 +925,9 @@ table.ut tbody tr.picked{background:color-mix(in srgb,var(--ink) 5%,transparent)
 .modal.open:has(.rm-list){max-height:calc(100dvh - var(--mygo-titlebar-height,0px) - 24px);display:flex;flex-direction:column}
 .modal:has(.rm-list) .mbody{min-height:0;overflow-y:auto;overflow-wrap:anywhere}
 .modal:has(.rm-list) .mf{flex-shrink:0}
+
+/* 读取抽屉先显示标题与加载状态，不等滑入动画。 */
+.drawer:has([data-drawer-loading]),.drawer:has([aria-busy="true"]){transition:none}
+
+@keyframes nav-skeleton-reveal{to{visibility:visible}}
+main[aria-busy="true"] .sk{visibility:hidden;animation:nav-skeleton-reveal 0s 100ms forwards}

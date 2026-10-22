@@ -520,7 +520,7 @@ function shell(page, body, crumb) {
   return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${shortVer(META.cli_version)}</small></div>
   ${cpCard()}
   ${nav}</aside>
-  <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
+  <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
   <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
@@ -770,14 +770,47 @@ document.addEventListener("mousedown", e => {
 }, true);
 document.addEventListener("keydown", e => { if (SELMENU && e.key === "Escape") { e.stopPropagation(); const s = SELMENU.sel; closeSelMenu(); s.focus(); } }, true);
 addEventListener("resize", closeSelMenu); document.addEventListener("scroll", e => { if (SELMENU && !SELMENU.el.contains(e.target)) closeSelMenu(); }, true);
-let DRAWER_RAF = 0;
-function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
-function closeOverlays() {
+let DRAWER_RAF = 0, overlaySeq = 0;
+function openDrawer(html, cls = "") {
+  ++overlaySeq;
+  const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html);
+  cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
+  const reveal = () => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); d.querySelector("h2[tabindex]")?.focus({ preventScroll: true }); };
+  if (d.querySelector('[aria-busy="true"]')) reveal();
+  else DRAWER_RAF = requestAnimationFrame(reveal);
+}
+// 先打开目标框架，再读取；关闭、换页或打开别的抽屉后丢弃这次结果。
+async function readDrawer(title, read, retry, cls = "") {
+  openDrawer(H`<div data-drawer-loading aria-busy="true"><div class="dh"><h2 tabindex="-1">${title}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db"><p role="status">正在加载…</p><div data-read-skeleton hidden><span class="sk w80"></span></div></div></div>`, cls);
+  const seq = overlaySeq, frame = $("#drawer").firstElementChild;
+  const owns = () => overlaySeq === seq && frame.isConnected && ($("#drawer").classList.contains("open") || DRAWER_RAF);
+  const timer = setTimeout(() => { if (owns()) frame.querySelector("[data-read-skeleton]").hidden = false; }, 100);
+  try {
+    const value = await read();
+    return owns() ? { value } : null;
+  } catch (e) {
+    if (owns()) {
+      frame.removeAttribute("aria-busy");
+      frame.querySelector(".db").innerHTML = val(errorBox(title, e));
+      frame.querySelector('[data-act="reload"]').onclick = event => { event.stopPropagation(); retry(); };
+    }
+    return null;
+  } finally { clearTimeout(timer); }
+}
+function dismissOverlays() {
   if ($("#modal").dataset.locked) return;
+  ++overlaySeq;
   cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
   $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open");
   updPollStop();
-  if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
+}
+function closeOverlays() {
+  if ($("#modal").dataset.locked) return;
+  dismissOverlays();
+  if (route[1] && PAGES[route[0]]?.closeTo) {
+    here = PAGES[route[0]].closeTo; history.replaceState(null, "", "#" + here); route = routeOf(here);
+    if (current.loading || !current.data) load(true, true, true);
+  }
 }
 // action:{ label, run } 给 toast 加一个按钮(比如「放弃」后的「撤销」);有按钮时多停一会儿。
 function toast(text, bad, action) {
@@ -855,12 +888,24 @@ const cpName = (name, server) => (!name || name === "default") ? (cpAddr(server)
 // reload。只有一个档又接不了新控制面时,不弹,只提示一句。
 async function openProfiles() {
   if (!META.profiles) return;
+  const panel = $("#modal");
+  modalTake(); panel.innerHTML = val(H`<div class="mbody" aria-busy="true"><h2>切换控制面</h2><p role="status">正在加载…</p></div><div class="mf"><button class="btn" data-act="modal-cancel">取消</button></div>`);
+  panel.classList.add("open"); $("#scrim").classList.add("open");
+  const frame = panel.firstElementChild;
   let list;
   try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
-  catch (e) { toast("读不到控制面列表：" + e.message, true); return; }
+  catch (e) {
+    if (frame.isConnected && panel.classList.contains("open")) {
+      frame.removeAttribute("aria-busy"); frame.innerHTML = val(H`<h2>切换控制面</h2>${errorBox("控制面列表", e)}`);
+      frame.querySelector('[data-act="reload"]').onclick = event => { event.stopPropagation(); openProfiles(); };
+    }
+    return;
+  }
+  if (!frame.isConnected || !panel.classList.contains("open")) return;
   if (!Array.isArray(list)) list = [];
   const canAdd = !!META.connect && typeof window.openConnectForm === "function";
   if (list.length <= 1 && !canAdd) {
+    closeModal();
     toast(H`只有一个控制面 ${cpName(list[0]?.name, list[0]?.server)};这里不能添加新的控制面`);
     return;
   }
@@ -879,15 +924,16 @@ async function openProfiles() {
 // useProfile:切到 name。成功整页刷新,让所有页面数据都跟着新控制面重来。
 async function useProfile(name, el, confirmed = false) {
   if (!confirmed && PAGES[route[0]]?.canLeave && await PAGES[route[0]].canLeave(() => useProfile(name, null, true)) === false) return;
-  if (el) { el.disabled = true; el.classList.add("busy"); }
+  const m = $("#modal");
+  modalTake(); m.innerHTML = val(H`<div class="mbody" aria-busy="true"><h2>正在切换到 ${name}</h2><p role="status">正在连接，完成后加载页面…</p></div>`);
+  m.dataset.locked = "1"; m.classList.add("open"); $("#scrim").classList.add("open");
   try {
     await api("/local/profiles/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
     location.reload();
   } catch (e) {
-    const box = $("#prof-err");
-    if (box) box.textContent = e.message; else toast(e.message, true);
-    if (el) { el.disabled = false; el.classList.remove("busy"); }
-  }
+    m.innerHTML = val(H`<div class="mbody"><h2>切换到 ${name}</h2><div id="prof-err" role="alert">${e.message}</div></div><div class="mf"><button class="btn" data-act="modal-cancel">关闭</button><button class="btn pri" id="profile-retry">重试</button></div>`);
+    $("#profile-retry").onclick = () => useProfile(name, null, true);
+  } finally { delete m.dataset.locked; }
 }
 
 /* ---------- 渲染与路由 ---------- */
@@ -922,14 +968,17 @@ function clearMainScroll() {
   $("main")?.classList.remove("scrolling");
 }
 addEventListener("pagehide", clearMainScroll);
-function paint() {
+function paint(resetScroll = false) {
   const p = PAGES[route[0]] || PAGES.overview;
   const crumb = p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`;
   let body;
-  if (current.error && !current.data) body = H`<div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
-  else body = p.render(current.loading && !current.data ? null : current.data, route);
+  if (current.error && !current.data) body = H`<div class="ph"><h1>${p.loadingTitle?.(route) || p.title}</h1></div><div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
+  else {
+    body = p.render(current.loading && !current.data ? null : current.data, route);
+    if (current.error && current.errorInline) body = H`${body}<div class="card mt">${errorBox(p.title + "数据", current.error)}</div>`;
+  }
   // 滚动的是内容区 main,不是整页。
-  const y = $("main")?.scrollTop || 0;
+  const y = resetScroll ? 0 : ($("main")?.scrollTop || 0);
   clearMainScroll();
   $("#root").innerHTML = val(shell(p, body, crumb));
   const m = $("main");
@@ -942,6 +991,7 @@ function paint() {
     }, { passive: true });
   }
   p.after?.(current.data, route);
+  if (resetScroll) { const h = $('#drawer.open [aria-busy="true"] h2') || $("#page h1"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); }
 }
 async function load(soft, force, local) {
   const fresh = local === null;
@@ -952,6 +1002,7 @@ async function load(soft, force, local) {
   let key = (location.hash.slice(1) || "overview");
   const moved = migrateKey(key);
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
+  const previousKey = here;
   route = routeOf(key);
   if (!PAGES[route[0]]) route = ["overview"];
   here = route[0] === "overview" ? "overview" : key;
@@ -959,35 +1010,41 @@ async function load(soft, force, local) {
   // 丢掉,免得下次进来突然弹出「应用到节点」。
   if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
   const p = PAGES[route[0]];
+  const changed = current.page !== p || (p.viewKey ? p.viewKey(routeOf(previousKey)) !== p.viewKey(route) : previousKey !== here);
+  const navigation = changed || current.key !== here;
+  if (changed) dismissOverlays();
+  p.prepare?.(route);
   const seq = ++loadSeq;
   const stopProgress = (!soft || force || local || fresh) ? showProgress() : () => {};
   // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
   document.documentElement.dataset.loading = "1";
-  document.querySelector("main")?.setAttribute("aria-busy", "true");
-  if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
+  current.loading = true;
+  if (!soft || changed) { current = { page: p, key: here, data: null, error: null, loading: true, at: null }; paint(true); }
+  else document.querySelector("main")?.setAttribute("aria-busy", "true");
   try {
     const packet = await pageData(p, key, local, fresh);
     if (seq !== loadSeq || epoch !== readEpoch) {
-      if (seq === loadSeq) { delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
+      if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
       stopProgress();
       if (seq === loadSeq && epoch !== readEpoch && !current.data) { inflight = null; return load(true, true, null); }
       return;
     }
     const data = packet.data;
     if (!packet.local) readSnapshot = { page: p, values: packet.collected };
-    current = { page: p, data, error: null, loading: false, at: new Date() };
+    current = { page: p, key: here, data, error: null, loading: false, at: new Date() };
     CP_OK = true;
   } catch (e) {
     if (seq !== loadSeq) { stopProgress(); return; }
     // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
     window.AUTO_APPLY = null;
-    current = { ...current, error: e, loading: false };
+    // 导航和手动刷新保留可重试错误；后台轮询失败只提示，不增加页面错误卡。
+    current = { ...current, error: e, errorInline: navigation || fresh, loading: false };
     // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
     if (current.data) toast("刷新失败：" + e.message, true);
   }
   if (!soft || force || !$("#drawer.open, #modal.open")) paint();
-  if (seq === loadSeq) { delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
+  if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
   if (!current.error) refreshUpdatePill();
   stopProgress();
 }
@@ -1012,7 +1069,14 @@ const ACTS = {
   close: () => closeOverlays(),
   "modal-cancel": () => closeModal(),
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
-  "update-open": async () => { if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch {} } openUpdateModal(); },
+  "update-open": async () => {
+    openUpdateModal();
+    const frame = $("#modal").firstElementChild;
+    if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) {
+      try { await api("/api/nodes"); } catch {}
+      if (frame?.isConnected && $("#modal.open")) for (const b of $("#modal").querySelectorAll(".upd-row b")) b.textContent = labelOfName(b.textContent);
+    }
+  },
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
@@ -1051,9 +1115,14 @@ const ACTS = {
     m.hidden = false; el.setAttribute("aria-expanded", "true");
     m.classList.toggle("up", el.getBoundingClientRect().bottom + m.offsetHeight + 12 > innerHeight);
   },
-  go: d => { closeRowMenus(); location.hash = d.href; },
+  go: d => { closeRowMenus(); followRoute(d.href); },
   "go-expired": () => { if (typeof US !== "undefined") { US.status = "expired"; US.offset = 0; US.search = ""; US.plan = ""; PICK.clear(); } location.hash = "users"; },
 };
+// 点击直接进入同一个 load 入口，省掉等待浏览器派发 hashchange 的一帧。
+function followRoute(key) {
+  location.hash = key;
+  if (!PAGES[route[0]]?.canLeave) load(true, true);
+}
 function closeRowMenus() { for (const m of document.querySelectorAll(".mw .menu:not(#user-menu)")) { m.hidden = true; m.previousElementSibling?.setAttribute("aria-expanded", "false"); } }
 document.addEventListener("click", e => { if (!e.target.closest?.(".mw") || e.target.closest?.(".mw .menu button")) closeRowMenus(); });
 document.addEventListener("click", e => {
@@ -1063,7 +1132,11 @@ document.addEventListener("click", e => {
   if (a && ACTS[a.dataset.act]) { e.preventDefault(); withFeedback(a, () => ACTS[a.dataset.act](a.dataset, a, e)).catch(error => toast(error.message, true)); return; }
   const tr = e.target.closest("tr[data-href]");
   // 勾选格(.td-pick)和行尾操作格(.ov-act)里点空白处也不打开详情。
-  if (tr && tr.dataset.href && !e.target.closest(".td-pick, .ov-act")) location.hash = tr.dataset.href;
+  if (tr && tr.dataset.href && !e.target.closest(".td-pick, .ov-act")) { followRoute(tr.dataset.href); return; }
+  const link = e.target.closest('a[href^="#"]');
+  if (link && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !link.target) {
+    e.preventDefault(); followRoute(link.getAttribute("href"));
+  }
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") { closeRowMenus(); closeOverlays(); }
@@ -1081,13 +1154,22 @@ document.addEventListener("visibilitychange", () => {
 // 应用内对话框;这里把地址改回当前页(replaceState 不触发新的 hashchange),也不加载新页。
 addEventListener("hashchange", async () => {
   const nextKey = migrateKey(location.hash.slice(1) || "overview");
+  if (nextKey === here) {
+    if (location.hash !== "#" + nextKey) history.replaceState(null, "", "#" + nextKey);
+    return;
+  }
   const p = PAGES[route[0]];
   if (p?.canLeave) {
     let ok = true;
     try { ok = await p.canLeave(nextKey); } catch { ok = true; }
     if (!ok) { history.replaceState(null, "", "#" + here); return; }
   }
-  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open"); }
+  const nextRoute = routeOf(nextKey);
+  if (p === PAGES[nextRoute[0]] && p.viewKey && p.viewKey(route) === p.viewKey(nextRoute) && current.data) {
+    if (here !== nextKey) dismissOverlays();
+    route = nextRoute; here = nextKey; p.prepare?.(route); paint();
+    return load(true, true);
+  }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。
