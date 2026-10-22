@@ -28,10 +28,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .side>.tb-drag{height:clamp(0px,calc(var(--mygo-titlebar-inset-left,0px) * 1000),36px)}
 /* 标志自成一行:左右内边距 10 → 标志框左缘 x=20,和导航图标框、控制面圆点对齐(标志和图标都是 24 格内缩 3,墨迹左缘同在 21.5)。 */
 .brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin-bottom:14px;font-weight:620;font-size:14px;--app-region:drag}
-/* 版本号全文显示、靠右(右缘 212 = 导航数字、下拉箭头右缘);margin-top 7.5 让它的基线落在字标基线(标志高的 18/24 = 16.5)。 */
+/* 版本号等宽显示、靠右(右缘 212 = 导航数字、下拉箭头右缘);margin-top 7.5 让它的基线落在字标基线(标志高的 18/24 = 16.5)。 */
 .brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:7.5px;font:500 11px/1 var(--mono);color:var(--faint);white-space:nowrap}
-/* 完整开发版包含提交号与 clean/dirty；长串用现有正文字体，保留字号可读性和对齐。 */
-.brand small.long{font:500 9.5px/1 var(--sans);margin-top:8.5px;color:var(--muted)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
 .profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}

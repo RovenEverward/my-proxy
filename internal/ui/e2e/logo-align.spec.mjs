@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { startEnv, login } from './env.mjs';
 let env;
 const VERSION = 'dev-aaaaaaaaaaaa-clean';
+const DISPLAY_VERSION = 'dev-aaaaaaa';
 test.use({ deviceScaleFactor: 2, viewport: { width: 1280, height: 820 } });
 test.beforeAll(async () => {
   env = await startEnv();
@@ -46,8 +47,18 @@ async function dimensions(page) {
       baseline, versionFits: brand.scrollWidth <= brand.clientWidth, sideOverflow: document.querySelector('.side').scrollWidth > document.querySelector('.side').clientWidth };
   });
 }
-async function aligned(page, mode, version = VERSION) {
-  await expect(page.locator('.brand small')).toHaveText(version);
+async function aligned(page, mode, version = VERSION, display = DISPLAY_VERSION) {
+  const el = page.locator('.brand small');
+  await expect(el).toHaveText(display);
+  await expect(el).toHaveCSS('font-size', '11px');
+  await expect(el).toHaveCSS('margin-top', '7.5px');
+  const style = await el.evaluate(e => {
+    const s = getComputedStyle(e);
+    return { family: s.fontFamily, faint: getComputedStyle(document.querySelector('.nav.on .ct')).color, overflow: s.textOverflow };
+  });
+  expect(style.family).toContain('Mona Sans Mono VF');
+  expect(style.overflow).not.toBe('ellipsis');
+  await expect(el).toHaveCSS('color', style.faint);
   await expect(page.locator('.brand small')).toHaveAttribute('title', version);
   const m = await dimensions(page);
   console.log('LOGO_ALIGN ' + JSON.stringify({ mode, ...m }));
@@ -66,9 +77,8 @@ for (const mode of ['mac', 'mac-fullscreen', 'browser', 'windows']) for (const t
   test(`${mode} ${theme} 标志、版本、卡片对齐`, async ({ page }) => {
     await setup(page, mode, theme);
     await aligned(page, mode);
-    if (process.env.MPX_LOGO_ALIGN_SHOTS && mode !== 'windows') {
+    if (process.env.MPX_LOGO_ALIGN_SHOTS && mode === 'mac' && theme === 'light') {
       const dir = process.env.MPX_LOGO_ALIGN_SHOTS; mkdirSync(dir, { recursive: true });
-      await page.screenshot({ path: `${dir}/${mode}-${theme}.png` });
       await page.screenshot({ path: `${dir}/${mode}-${theme}-crop.png`, clip: { x: 0, y: 0, width: 240, height: 200 } });
     }
   });
@@ -86,12 +96,13 @@ test('Mac 进出全屏：inset 归零时收起拖拽行，恢复时重新占36px
   }
 });
 
-for (const version of ['v0.9.13', 'dev-aaaaaaaaaaaa-clean', 'dev-aaaaaaaaaaaa-dirty']) test('版本全文与字体 · ' + version, async ({ page }) => {
+for (const [version, display] of [
+  ['v0.9.11', 'v0.9.11'],
+  ['dev-aaaaaaaaaaaa-clean', 'dev-aaaaaaa'],
+  ['dev-aaaaaaaaaaaa-dirty', 'dev-aaaaaaa*'],
+  ['dev-aaaaaaaaaaaa', 'dev-aaaaaaaaaaaa'],
+  ['dev-aaaaaaaaaaaaa', 'dev-aaaaaaa'],
+]) test('版本短显示与完整提示 · ' + version, async ({ page }) => {
   await setup(page, 'browser', 'light', version);
-  const el = page.locator('.brand small');
-  await expect(el).toHaveText(version);
-  await expect(el).toHaveCSS('font-size', version.startsWith('dev-') ? '9.5px' : '11px');
-  const family = await el.evaluate(e => getComputedStyle(e).fontFamily);
-  expect(family).toContain(version.startsWith('dev-') ? 'Mona Sans VF' : 'Mona Sans Mono VF');
-  await aligned(page, 'browser', version);
+  await aligned(page, 'browser', version, display);
 });

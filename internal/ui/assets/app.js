@@ -94,8 +94,13 @@ let writeGen = 0; // 写请求的代数,见 pageData
 const nodeLabel = n => (n && (n.display || n.name)) || "";
 const NODE_LABELS = {};
 const labelOfName = name => NODE_LABELS[name] || name;
-// shortVer:版本号只取开头的 vX.Y.Z(伪版本、dirty 尾巴都舍掉),匹配不到就原样显示。
-const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); return m ? (m[0][0] === "v" ? m[0] : "v" + m[0]) : (v ?? ""); };
+// 正式版只显示 vX.Y.Z；长开发版保留七位提交号，未提交改动用 * 标记。完整版本由 title 展示。
+const shortVer = v => {
+  const s = String(v ?? ""), m = /^v?\d+\.\d+\.\d+/.exec(s);
+  if (m) return m[0][0] === "v" ? m[0] : "v" + m[0];
+  const d = /^dev-([0-9a-f]{7,40})(?:-(clean|dirty))?$/.exec(s);
+  return s.length > 16 && d ? "dev-" + d[1].slice(0, 7) + (d[2] === "dirty" ? "*" : "") : s;
+};
 // field:控制面拒绝时点名的字段(例如 sub_url_prefix);旧控制面不报,就是 undefined。
 class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; this.field = undefined; } }
 async function api(path, init = {}) {
@@ -535,7 +540,7 @@ function shell(page, body, crumb) {
   const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   const version = shortVer(META.cli_version);
-  return H`<div class="app"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small class="${version.length > 16 ? "long" : ""}" title="${META.cli_version}">${version}</small></div>
+  return H`<div class="app"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small title="${META.cli_version}">${version}</small></div>
   ${cpCard()}
   ${nav}</aside>
   <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
