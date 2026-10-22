@@ -223,12 +223,8 @@ async function connLoad(nodeIds, read = api) {
     Promise.all(picked.map(n => read(`/api/nodes/${n.id}/metadata`).catch(() => null))),
     read("/api/nodes/pending").catch(() => []),
   ]);
-  INB_PENDING = new Set((pend || []).map(p => p.node_id));
   const nodes = picked.map((n, k) => ({ ...n, region: metas[k]?.region || "", city: metas[k]?.city || "" }));
-  INB_TOTAL = all.length;
-  INB_CACHE = { inbounds, nodes, all };
-  INB_HOSTS = Object.fromEntries(inbounds.map((i, k) => [i.id, hosts[k]]));
-  return { inbounds, nodes, hosts: INB_HOSTS, total: all.length };
+  return { inbounds, nodes, hosts: Object.fromEntries(inbounds.map((i, k) => [i.id, hosts[k]])), total: all.length, all, pending: (pend || []).map(p => p.node_id) };
 }
 
 function connGroupEmpty(n, opts) {
@@ -253,7 +249,14 @@ function connGroups(d, opts = {}) {
   return H`<div class="ngs" data-conn-groups>${nodes.map(n => inbGroup(n, byNode.get(n.id) || []))}${orphan.length ? H`<section class="ng"><div class="ng-h"><b class="ng-n">未知节点</b><span class="ng-c">${orphan.length} 个连接</span></div><div class="cx-list">${orphan.map(i => inbRow(i, hosts[i.id] || [], { address: "", id: i.node_id }))}</div></section>` : ""}</div>`;
 }
 
-const CONN = { load: connLoad, groups: connGroups, pending: connPending, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
+// 只有实际采用该页结果时才更新编辑器的数据；缓存首帧也走同一入口，迟到读取不写全局。
+function useConnections(d) {
+  INB_CACHE = { inbounds: d.inbounds, nodes: d.nodes, all: d.all };
+  INB_HOSTS = d.hosts;
+  INB_TOTAL = d.total;
+  INB_PENDING = new Set(d.pending);
+}
+const CONN = { load: connLoad, use: useConnections, groups: connGroups, pending: connPending, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
 window.CONN = CONN;
 
 /* ---------- 入站字段:完整编辑器与「高级」共用 ---------- */

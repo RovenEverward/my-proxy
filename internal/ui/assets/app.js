@@ -21,6 +21,21 @@ let refreshTimer = 0, refreshQueued = false;
 const copyRead = value => value == null ? value : structuredClone(value);
 const resourceOf = path => new URL(path, location.origin).pathname.split('/')[2];
 const isReadRequest = (path, init) => !init.method || init.method === "GET" || /\/proxy-groups\/preview$|\/rules\/test$|\/settings\/test-webhook$|^\/local\/(profiles|setup\/check|relabel\/plan)$/.test(path);
+// 成功页的展示缓存与局部请求快照职责不同：前者用于返回先显示，后者用于原地免重读。
+// 只保留本会话最近 16 个完整读取，缓存取出与存入均复制，页面草稿不回写缓存。
+const viewCache = new Map();
+const viewCacheKey = (p, key) => JSON.stringify([key, p.readKey?.() || ""]);
+function cachedView(key) {
+  const entry = viewCache.get(key);
+  if (!entry) return null;
+  viewCache.delete(key); viewCache.set(key, entry);
+  return { ...entry, data: copyRead(entry.data) };
+}
+function rememberView(key, p, packet) {
+  viewCache.delete(key);
+  viewCache.set(key, { page: p, data: copyRead(packet.data), at: new Date(), paths: [...packet.collected.values()].map(x => x.path) });
+  if (viewCache.size > 16) viewCache.delete(viewCache.keys().next().value);
+}
 function invalidateReads(path) {
   readEpoch++;
   const resource = path && resourceOf(path);
@@ -30,18 +45,20 @@ function invalidateReads(path) {
     hosts: ["hosts", "inbounds", "nodes", "plans", "users", "proxy-groups"],
     settings: ["settings", "users"], rules: ["rules"], "proxy-groups": ["proxy-groups", "routing"], devices: ["devices"], "device-password": ["devices"] };
   const affected = resource && dependencies[resource] ? new Set(dependencies[resource]) : null;
-  for (const [key, entry] of readSnapshot.values) {
-    let invalid = !affected || affected.has(resourceOf(entry.path));
+  const invalidPath = entryPath => {
+    let invalid = !affected || affected.has(resourceOf(entryPath));
     if (resource === "settings") {
       const target = new URL(path, location.origin).pathname;
-      const cached = new URL(entry.path, location.origin).pathname;
+      const cached = new URL(entryPath, location.origin).pathname;
       invalid = target.startsWith("/api/settings/templates/")
         ? cached === "/api/settings" || cached === target
         : cached.startsWith("/api/settings") || /^\/api\/users\/[^/]+\/links$/.test(cached);
     }
-    if (resource === "proxy-groups" && /\/proxy-groups\/preview$/.test(entry.path)) invalid = false;
-    if (invalid) readSnapshot.values.delete(key);
-  }
+    if (resource === "proxy-groups" && /\/proxy-groups\/preview$/.test(entryPath)) invalid = false;
+    return invalid;
+  };
+  for (const [key, entry] of readSnapshot.values) if (invalidPath(entry.path)) readSnapshot.values.delete(key);
+  for (const [key, entry] of viewCache) if (entry.paths.some(invalidPath)) viewCache.delete(key);
 }
 // 异步交互共用进行中反馈；同一元素尚未完成时不重复执行。
 let progressCount = 0;
@@ -809,7 +826,8 @@ function closeOverlays() {
   dismissOverlays();
   if (route[1] && PAGES[route[0]]?.closeTo) {
     here = PAGES[route[0]].closeTo; history.replaceState(null, "", "#" + here); route = routeOf(here);
-    if (current.loading || !current.data) load(true, true, true);
+    updateCrumb();
+    if (!current.data && !current.loading) load(true, true, true);
   }
 }
 // action:{ label, run } 给 toast 加一个按钮(比如「放弃」后的「撤销」);有按钮时多停一会儿。
@@ -942,7 +960,7 @@ let loadSeq = 0;
 // 把这一页的几个 GET 全发一遍,白白多耗一倍限流桶,连着点两下就会被控制面 429。
 // 同一页、同一代(期间没有写请求回来)还在路上的读直接复用,不再重发。
 let inflight = null;
-function pageData(p, key, local, fresh) {
+function pageData(p, key, local, fresh, readRoute = route.slice()) {
   key = JSON.stringify([key, p.readKey?.() || ""]);
   if (!fresh && inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
   if (readSnapshot.page !== p) readSnapshot = { page: p, values: new Map() };
@@ -950,13 +968,17 @@ function pageData(p, key, local, fresh) {
   const collected = new Map(), requests = new Map();
   const read = (path, init = {}) => {
     const signature = JSON.stringify([path, init.method || "GET", init.body || "", !!init.asText]);
-    if (local && snapshot.has(signature)) return Promise.resolve(copyRead(snapshot.get(signature).value));
+    if (local && snapshot.has(signature)) {
+      const entry = snapshot.get(signature);
+      collected.set(signature, entry);
+      return Promise.resolve(copyRead(entry.value));
+    }
     if (requests.has(signature)) return requests.get(signature).then(copyRead);
     const request = api(path, init).then(value => { collected.set(signature, { path, value: copyRead(value) }); return value; });
     requests.set(signature, request);
     return request.then(copyRead);
   };
-  const promise = Promise.resolve(p.load(route.slice(), read)).then(data => ({ data, collected, local }));
+  const promise = Promise.resolve(p.load(readRoute, read)).then(data => ({ data, collected, local }));
   const mine = inflight = { key, gen: writeGen, promise };
   promise.then(() => {}, () => {}).then(() => { if (inflight === mine) inflight = null; });
   return promise;
@@ -993,60 +1015,89 @@ function paint(resetScroll = false) {
   p.after?.(current.data, route);
   if (resetScroll) { const h = $('#drawer.open [aria-busy="true"] h2') || $("#page h1"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); }
 }
+function updateCrumb() {
+  const p = PAGES[route[0]], el = $(".crumb");
+  if (el && p) el.innerHTML = val(p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`);
+}
+function overlayRoute(p, r) { return !!(p.overlay && r[1]); }
+// 同一基页的详情地址只驱动叠层；不触发列表读取、paint 或进度提示。
+function moveOverlay(p, next, key) {
+  if (!p.overlay || current.page !== p || !current.data || next[0] !== route[0] || next[1] === route[1]) return false;
+  const had = !!route[1];
+  route = next; here = key;
+  if (had || next[1]) dismissOverlays();
+  updateCrumb();
+  if (next[1]) p.overlay(next, current.data);
+  return true;
+}
 async function load(soft, force, local) {
-  const fresh = local === null;
-  local = local === true || (!fresh && refreshQueued);
-  refreshQueued = false; clearTimeout(refreshTimer);
-  const epoch = readEpoch;
-
-  let key = (location.hash.slice(1) || "overview");
+  let key = location.hash.slice(1) || "overview";
   const moved = migrateKey(key);
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
-  const previousKey = here;
-  route = routeOf(key);
-  if (!PAGES[route[0]]) route = ["overview"];
-  here = route[0] === "overview" ? "overview" : key;
-  // 体检页带过来的 AUTO_APPLY 只对它指向的那台节点有效:换了页、换到别的节点都
-  // 丢掉,免得下次进来突然弹出「应用到节点」。
+  let next = routeOf(key);
+  if (!PAGES[next[0]]) { next = ["overview"]; key = "overview"; }
+  const p = PAGES[next[0]], previousKey = here;
+  if (moveOverlay(p, next, key)) return;
+  const fresh = local === null, written = refreshQueued, epoch = readEpoch;
+  local = local === true || (!fresh && written);
+  refreshQueued = false; clearTimeout(refreshTimer);
+  route = next; here = key;
   if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
-  const p = PAGES[route[0]];
-  const changed = current.page !== p || (p.viewKey ? p.viewKey(routeOf(previousKey)) !== p.viewKey(route) : previousKey !== here);
-  const navigation = changed || current.key !== here;
-  if (changed) dismissOverlays();
+  // users/name 由独立叠层读取；基页始终按 users 读取并缓存。
+  const readRoute = p.overlay ? [route[0]] : route.slice();
+  const readKey = p.overlay ? route[0] : key;
+  const cacheKey = viewCacheKey(p, readKey);
+  const changed = current.page !== p || (p.overlay ? current.key !== readKey : p.viewKey ? p.viewKey(routeOf(previousKey)) !== p.viewKey(route) : previousKey !== here);
+  const navigation = changed || (!p.overlay && current.key !== readKey);
+  const cached = changed && !fresh ? cachedView(cacheKey) : null;
+  if (changed) {
+    const previous = viewCache.get(current.cacheKey);
+    if (previous) previous.scroll = $("main")?.scrollTop || 0;
+    dismissOverlays();
+  }
   p.prepare?.(route);
   const seq = ++loadSeq;
-  const stopProgress = (!soft || force || local || fresh) ? showProgress() : () => {};
-  // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
+  const seed = cached?.data || (changed ? p.seed?.(route) : null);
+  const background = !!cached || (!!current.data && !fresh && !local && !changed);
+  const stopProgress = !background && !overlayRoute(p, route) ? showProgress() : () => {};
   document.documentElement.dataset.loading = "1";
-  current.loading = true;
-  if (!soft || changed) { current = { page: p, key: here, data: null, error: null, loading: true, at: null }; paint(true); }
-  else document.querySelector("main")?.setAttribute("aria-busy", "true");
+  current.loading = !background;
+  if (!soft || changed) {
+    current = { page: p, key: readKey, cacheKey, data: seed || null, error: null, loading: !background, at: cached?.at || null };
+    paint(true);
+    if (cached) $("main").scrollTop = cached.scroll || 0;
+  } else if (!background) $("main")?.setAttribute("aria-busy", "true");
+  if (overlayRoute(p, route)) p.overlay(route, current.data);
   try {
-    const packet = await pageData(p, key, local, fresh);
+    const packet = await pageData(p, readKey, local, fresh, readRoute);
     if (seq !== loadSeq || epoch !== readEpoch) {
-      if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
-      stopProgress();
       if (seq === loadSeq && epoch !== readEpoch && !current.data) { inflight = null; return load(true, true, null); }
       return;
     }
-    const data = packet.data;
-    if (!packet.local) readSnapshot = { page: p, values: packet.collected };
-    current = { page: p, key: here, data, error: null, loading: false, at: new Date() };
+    if (!packet.local) {
+      readSnapshot = { page: p, values: packet.collected };
+    }
+    // 展示缓存收完整页面结果；局部读取仍不回写请求快照。
+    rememberView(cacheKey, p, packet);
     CP_OK = true;
+    // 只读叠层下冻结当前数据与 DOM；结果进入缓存，下次正常刷新才采用。
+    // 写后的明确刷新仍要更新列表和详情，不把已确认的修改藏到下一轮。
+    if (overlayRoute(p, route) && current.data && !written && background) return;
+    current = { page: p, key: readKey, cacheKey, data: packet.data, error: null, loading: false, at: new Date() };
+    if (!soft || force || !$("#drawer.open, #modal.open")) paint();
+    if (overlayRoute(p, route)) p.overlay(route, current.data, written || fresh);
   } catch (e) {
-    if (seq !== loadSeq) { stopProgress(); return; }
-    // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
+    if (seq !== loadSeq) return;
     window.AUTO_APPLY = null;
-    // 导航和手动刷新保留可重试错误；后台轮询失败只提示，不增加页面错误卡。
-    current = { ...current, error: e, errorInline: navigation || fresh, loading: false };
-    // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
+    current = { ...current, error: e, errorInline: !cached && (navigation || fresh), loading: false };
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
     if (current.data) toast("刷新失败：" + e.message, true);
+    if (!current.data || (!overlayRoute(p, route) && (!soft || force || !$("#drawer.open, #modal.open")))) paint();
+  } finally {
+    if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; $("main")?.removeAttribute("aria-busy"); }
+    stopProgress();
   }
-  if (!soft || force || !$("#drawer.open, #modal.open")) paint();
-  if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; document.querySelector("main")?.removeAttribute("aria-busy"); }
   if (!current.error) refreshUpdatePill();
-  stopProgress();
 }
 
 // reportTheme 把页面当前主题交给桌面窗口(标题栏、窗口底色一起换)。浏览器里

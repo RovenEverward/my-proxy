@@ -203,7 +203,7 @@ const RENEW_DAYS = [30, 90, 365];
 // 点「续期」之后发出的请求仍是 readModify 的 GET + PUT,和 mpx user renew 逐条一致(users.spec 对照的就是这个)。
 async function renewBox(name) {
   const D = current.data || {}, same = x => x && x.username === name;
-  const u = (same(D.user) && D.user) || D.page?.users?.find(same) || D.users?.users?.find(same);
+  const u = (USER_DETAIL && ownsUserDetail(USER_DETAIL) && same(USER_DETAIL.data.user) && USER_DETAIL.data.user) || (same(D.user) && D.user) || D.page?.users?.find(same) || D.users?.users?.find(same);
   if (!u) throw new Error("用户资料已变化，请刷新后再续期");
   const over = u.data_limit && u.used_traffic >= u.data_limit;
   const left = u.expire_at ? daysLeft(u.expire_at) : null;
@@ -250,6 +250,7 @@ async function renewBox(name) {
 PAGES.users = {
   readKey: () => JSON.stringify([US.status, US.search, US.offset, US.plan]),
   title: "用户", closeTo: "users",
+  overlay: (r, base, fresh) => openUserDetail(r[1], base, fresh),
   count: () => USERS_TOTAL ?? STATUS?.counts?.users ?? "",
   crumb: r => r[1] ? H`<a href="#users">用户</a><i>/</i><b>${r[1]}</b>` : H`<b>用户</b>`,
   async load(r, read = api) {
@@ -270,18 +271,11 @@ PAGES.users = {
     // 要看订阅拉取记录。两个都读不到时只是少显示一点,不影响列表。
     const nodes = read("/api/nodes").catch(() => []);
     const pulls = read("/api/sub-pulls").catch(() => null);
-    // 详情里的「最近连接」是另一个接口:读不到只让这一块说读不到,抽屉其余部分照常。
-    const activity = r[1] ? read(userPath(r[1]) + "/activity").then(a => ({ a }), e => ({ error: e.message })) : null;
-    // 详情还要:订阅前缀(没设时提示链接里是 IP)。
-    const detail = r[1] ? Promise.all([read(userPath(r[1])), read(userPath(r[1]) + "/links"), read("/api/settings").catch(() => null)]) : null;
-    const [page, cs, pl, ib, nd, pu, d, act] = await Promise.all([read("/api/users?" + q), counts, plans, inbounds, nodes, pulls, detail, activity]);
+    const [page, cs, pl, ib, nd, pu] = await Promise.all([read("/api/users?" + q), counts, plans, inbounds, nodes, pulls]);
     USERS_TOTAL = cs[""];
     PLAN_CACHE.plans = pl || [];
     PLAN_CACHE.inbounds = ib || [];
-    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, nodes: nd || [], pulls: pu || [],
-      user: d && d[0], links: d && d[1], settings: d && d[2],
-      pull: pu && r[1] ? pu.find(p => p.username === r[1]) || null : null, pullsKnown: !!pu,
-      activity: act && act.a || null, activityError: act && act.error || "" };
+    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, nodes: nd || [], pulls: pu || [], pullsKnown: !!pu };
   },
   render(d) {
     if (d) {
@@ -319,8 +313,6 @@ PAGES.users = {
     if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; PICK.clear(); load(true, false, true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
     if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; PICK.clear(); withFeedback(pf, () => load(true, true, true)); });
-    if (d && r[1] && d.user) userDrawer(drawerUser(d), d.links, d);
-    else if (r[1]) openDrawer(H`<div${current.loading ? raw(' aria-busy="true"') : ""}><div class="dh"><h2>${r[1]}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${current.error ? errorBox("用户详情", current.error) : H`<p role="status">正在加载…</p>`}</div></div>`);
     document.querySelectorAll(".td-pick [data-ind]").forEach(x => { x.indeterminate = true; });
   },
 };
@@ -345,22 +337,22 @@ const SEND_FORMATS = [["links", "分享链接", "一行一个节点，粘贴进 
 // 「发给他」:创建后和用户详情共用。二维码由本机 /local/qr.svg 画,永远放在白底上(暗色也一样),保证能扫。
 function sendBlock(u, links, d) {
   const name = u.username, L = (links && links.auto) || "";
-  // 按稿子用 ?u=<名字>,由本机进程向控制面取链接再画;v 让换了新链接后不吃旧图。
-  // 本机取不到(比如撞上控制面限流)时,改用页面手里现成的链接 ?d= 画,见 userDrawer。
-  // 「保存二维码」直接用 ?d=:点的时候不必再问一次控制面。
-  const qr = `/local/qr.svg?u=${encodeURIComponent(name)}&v=${encodeURIComponent(L.slice(-10))}`, qrD = `/local/qr.svg?d=${encodeURIComponent(L)}`;
+  if (!L && d?.detailPending?.links) return H`<section class="send" id="send" aria-busy="true"><div class="send-h"><h3>发给他</h3></div><p class="sub">正在读取订阅链接…</p></section>`;
+  if (!L && d?.detailErrors?.links) return H`<section class="send" id="send"><h3>发给他</h3>${detailReadError("订阅链接", "links", d)}</section>`;
+  // 复用已读的链接，本机画码不再触发第二次远端查询。
+  const qr = `/local/qr.svg?d=${encodeURIComponent(L)}`;
   const noPrefix = d && d.settings && !d.settings.sub_url_prefix;
   const pull = d && d.pull;
   return H`<section class="send" id="send">
     <div class="send-h"><h3>发给他</h3><span class="sub" id="send-pull">${pull ? pullText(pull) : d && d.pullsKnown ? "还没有客户端导入过" : ""}</span></div>
-    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" data-fb="${qrD}" alt="${name} 的订阅二维码"></div>
+    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" alt="${name} 的订阅二维码"></div>
       <div class="send-r">
         <button type="button" class="btn pri send-copy" data-act="copy" data-text="${L}">${ic("copy")}复制订阅链接</button>
         <div class="send-link mono" title="${L}">${L.replace(/^https?:\/\//, "")}</div>
-        <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
+        <a class="btn" href="${qr}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
         <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入，会自动拿到适合它的格式。</p>
       </div></div>
-    ${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
+    ${d?.detailErrors?.links ? detailReadError("订阅链接", "links", d) : ""}${d?.detailErrors?.settings ? detailReadError("订阅设置", "settings", d) : ""}${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
     <details class="fmts"><summary>${ic("arrow", "car")}其他格式<span class="sub">客户端不认自动识别时再用</span></summary>
       <div class="fmt-l">${SEND_FORMATS.filter(([k]) => links && links[k]).map(([k, n, t]) => H`<div class="fmt"><div class="fmt-t"><b>${n}</b><span class="sub">${t}</span></div><button type="button" class="ib" data-act="copy" data-text="${links[k]}" title="复制 ${n} 链接" aria-label="复制 ${n} 链接">${ic("copy")}</button></div>`)}</div>
     </details></section>`;
@@ -384,26 +376,27 @@ function presenceBlock(u, d) {
   // 只在这个人此刻在线、而且这一轮数据不旧时才报 IP:IP 是「现在」的事,下线了就没有了。
   const ips = known && p.online && !stale ? H`<div class="udp-ips"><span class="sub">此刻的 IP</span>${(a.ips || []).map(x => H`<span class="udp-ip"><span class="mono">${x.ip}</span><span class="sub">${agoShort(x.last_seen)}</span></span>`)}</div>` : "";
   // 最近连接读不到:这一块直说,错误原文收在「详情」里,抽屉其余部分照常画。
+  const loading = d.detailPending?.activity && !d.activity ? H`<p class="sub" role="status">正在读取最近连接…</p>` : "";
   const broken = d.activityError ? H`<p class="sub udp-foot">读不到最近连接</p><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono"><li>${d.activityError}</li></ul></details>` : "";
   const hint = !p.last_active_at && pull ? H`<div class="udp-hint">${ic("info")}<div><p>${cat(`${clientLabel(pull.client)} ${relTime(pull.last_pulled_at)}`, "拉取过订阅")}，但之后一直没有流量。多半是客户端里没打开代理，或者连不上节点。</p><a class="btn sm" href="#doctor">${ic("pulse")}去体检</a></div></div>`
     : !p.last_active_at ? H`<p class="sub udp-foot">把上面的二维码或链接发给他，他用起来以后会显示在这里。</p>` : "";
   // 订阅导入单独一行、换了底色:和上面的流量分开,免得「拉过订阅」被当成「在用」。
   const pullRow = H`<div class="udp-pull">${ic("sub")}<div><b>订阅导入</b><span class="sub">${pull ? H`${pullText(pull)} · ${(SEND_FORMATS.find(f => f[0] === pull.format) || [, pull.format])[1]}` : "还没有客户端导入过"}</span></div></div>`;
   return H`<section class="ud-pres" id="ud-pres"><div class="udp-h"><h3>最近连接</h3>${upd}</div>${now}${broken || list}${broken ? "" : ips}${hint}
-    ${p.last_active_at ? H`<p class="sub udp-foot">按节点上的流量算，每 30 秒更新一次。<br>客户端开着但没有流量，不算在线。</p>` : ""}${hint && pull ? "" : pullRow}</section>`;
+    ${loading}${d.detailErrors?.activity ? detailReadError("最近连接", "activity", d) : ""}${p.last_active_at ? H`<p class="sub udp-foot">按节点上的流量算，每 30 秒更新一次。<br>客户端开着但没有流量，不算在线。</p>` : ""}${hint && pull ? "" : pullRow}</section>`;
 }
-function userDrawer(u, links, d) {
+function userDrawer(u, links, d, patch = false) {
   const W = can("PUT", "/api/users/x"), name = u.username;
   const p = (d && d.plans || PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
   const nn = p ? planNodeCount(p, d && d.nodes, d && d.inbounds || PLAN_CACHE.inbounds) : 0;
-  const created = JUST_CREATED === name; JUST_CREATED = "";
+  const created = d.created ?? (JUST_CREATED === name); JUST_CREATED = "";
   const R = u.data_limit ? remain(u) : null;
   const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${R.cls}" style="width:${R.rp.toFixed(1)}%"></i></div><div class="sub mt8">已用 ${fmtBytes(u.used_traffic)} / 上限 ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
   // 连过的人:「最近连接」排最前(最常来看的就是它);刚建好、还没连过的:「发给他」排最前。
   const connected = !!u.presence?.last_active_at && !created;
   // 「最近连接」里已经有「订阅导入」这一行,「发给他」标题右边就不再重复一遍。
   const pres = presenceBlock(u, d), send = sendBlock(u, links, connected ? { ...d, pull: null, pullsKnown: false } : d);
-  openDrawer(H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
+  const html = H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
     ${W ? H`<button class="ib" title="编辑" aria-label="编辑" data-act="user-edit" data-name="${name}">${ic("pen")}</button>
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="user-menu">${ic("more")}</button><div class="menu" role="menu" id="user-menu" hidden>
       <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期</button>
@@ -419,10 +412,15 @@ function userDrawer(u, links, d) {
     <dl class="kv flat ud-kv"><dt>套餐</dt><dd>${p ? H`${p.name} <span class="sub">· ${nn ? `${nn} 个节点` : "没有节点"}</span>` : userPlanDetail(u)}</dd>
       ${u.inbound_ids?.length ? H`<dt>额外授权</dt><dd>${u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `)}</dd>` : ""}
       <dt>到期</dt><dd>${expireCell(u)}</dd>
-      <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
-  </div>`);
-  const img = $("#send .qrs");
-  img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
+      <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${d.detailErrors?.user ? H`<dt>资料读取</dt><dd>${detailReadError("用户资料", "user", d)}</dd>` : ""}${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
+  </div>`;
+  if (patch && $("#drawer .ud-b")) {
+    const next = document.createElement("div"); next.innerHTML = val(html);
+    for (const selector of [".ud-h", "#send", "#ud-pres", ".ud-use", ".ud-kv"]) {
+      const before = $("#drawer " + selector), after = next.querySelector(selector);
+      if (before && after && before.outerHTML !== after.outerHTML) before.replaceWith(after);
+    }
+  } else openDrawer(html);
 }
 // drawerUser:抽屉里画的那个人 = 用户本身 + 最近连接接口带回的在线情况(和列表页打开抽屉时同一份)。
 // 列表条目里的 presence 来自另一次请求,可能比 activity 旧;activity 里有就用它的。activity 里没有
@@ -431,10 +429,73 @@ const drawerUser = d => {
   const p = d.activity?.presence || d.page?.users?.find(u => u.username === d.user.username)?.presence;
   return p ? { ...d.user, presence: p } : d.user;
 };
+let USER_DETAIL = null;
+const userDetailKey = name => JSON.stringify(["users/" + encodeURIComponent(name), "detail"]);
+function detailReadError(label, part, d) {
+  return H`<p class="sub" role="alert">读不到${label}：${d.detailErrors[part]}</p><button class="btn sm" data-act="user-detail-retry" data-part="${part}">重试</button>`;
+}
+function ownsUserDetail(state) {
+  return !!state && USER_DETAIL === state && route[0] === "users" && route[1] === state.name && state.frame?.isConnected && state.owner === overlaySeq;
+}
+function renderUserDetail(state, first = false) {
+  if (!first && !ownsUserDetail(state)) return;
+  const d = state.data;
+  if (d.user) userDrawer(drawerUser(d), d.links, d, !first);
+  else openDrawer(H`<div aria-busy="${!!d.detailPending.user}"><div class="dh"><h2>${state.name}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${d.detailErrors.user ? detailReadError("用户资料", "user", d) : H`<p role="status">正在读取用户资料…</p>`}</div></div>`);
+  state.owner = overlaySeq; state.frame = $("#drawer").firstElementChild;
+  const body = $("#drawer .ud-b");
+  if (body) { if (state.pending.size) body.setAttribute("aria-busy", "true"); else body.removeAttribute("aria-busy"); }
+}
+async function readUserDetailPart(state, part) {
+  const epoch = readEpoch;
+  state.pending.add(part); state.data.detailPending[part] = true; delete state.data.detailErrors[part];
+  const paths = { user: userPath(state.name), links: userPath(state.name) + "/links", activity: userPath(state.name) + "/activity", settings: "/api/settings" };
+  try {
+    const value = await api(paths[part]);
+    if (!ownsUserDetail(state) || epoch !== readEpoch) return;
+    state.data[part] = value;
+    if (part === "activity") state.data.activityError = "";
+  } catch (error) {
+    if (!ownsUserDetail(state)) return;
+    state.data.detailErrors[part] = error.message;
+    if (part === "activity") state.data.activityError = error.message;
+  } finally {
+    state.pending.delete(part); state.data.detailPending[part] = false;
+    if (ownsUserDetail(state)) {
+      if (epoch !== readEpoch) state.data.detailErrors[part] = "资料在读取时有变动，请重试";
+      renderUserDetail(state);
+      if (state.epoch === readEpoch && !state.pending.size && !Object.keys(state.data.detailErrors).length && state.data.user) {
+        const d = state.data;
+        rememberView(userDetailKey(state.name), PAGES.users, { data: { user: d.user, links: d.links, activity: d.activity, settings: d.settings }, collected: new Map(Object.values(paths).map(path => [path, { path }])) });
+      }
+    }
+  }
+}
+function openUserDetail(name, base, fresh = false) {
+  if (!name) return;
+  if (!fresh && USER_DETAIL?.name === name && ownsUserDetail(USER_DETAIL)) {
+    if (base && USER_DETAIL.base !== base) {
+      const state = USER_DETAIL, detail = state.data;
+      state.base = base; state.data = { ...base, ...detail, page: base.page, plans: base.plans, nodes: base.nodes, inbounds: base.inbounds,
+        user: base.page?.users?.find(u => u.username === name) || detail.user, pull: base.pulls?.find(p => p.username === name) || null, pullsKnown: base.pullsKnown };
+      renderUserDetail(state);
+    }
+    return;
+  }
+  const cached = !fresh && cachedView(userDetailKey(name));
+  const found = base?.page?.users?.find(u => u.username === name);
+  const data = { ...(base || {}), ...(cached?.data || {}), user: found || cached?.data?.user || null,
+    pull: base?.pulls?.find(p => p.username === name) || null, detailPending: {}, detailErrors: {}, created: JUST_CREATED === name };
+  const parts = ["links", "activity", "settings"];
+  if (!found) parts.push("user");
+  for (const part of parts) data.detailPending[part] = true;
+  const state = USER_DETAIL = { name, base, data, pending: new Set(parts), epoch: readEpoch };
+  renderUserDetail(state, true);
+  for (const part of parts) readUserDetailPart(state, part);
+}
 async function refreshDrawer(name) {
   await load(true, true);
-  const d = current.data;
-  if (route[0] === "users" && route[1] === name && d?.user) userDrawer(drawerUser(d), d.links, d);
+  if (route[0] === "users" && route[1] === name && !ownsUserDetail(USER_DETAIL)) openUserDetail(name, current.data, true);
 }
 
 /* ---- 编辑器 ---- */
@@ -560,6 +621,7 @@ Object.assign(ACTS, {
   "pres-sort": () => { US.dir = -US.dir; paint(); },
   "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); PICK.clear(); return load(true, true, true); },
   "user-new": () => userEditor(null),
+  "user-detail-retry": d => { const s = USER_DETAIL; if (s && ownsUserDetail(s) && !s.pending.has(d.part)) { readUserDetailPart(s, d.part); renderUserDetail(s); } },
   "user-edit": d => userEditor(d.name),
   "user-export": () => confirmBox({ title: "导出 CSV", text: "导出用户清单暂不支持在窗口里操作。", ok: "知道了", run: async () => {} }),
   "user-renew": d => renewBox(d.name),

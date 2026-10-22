@@ -508,12 +508,13 @@ PAGES.sub = {
   crumb: () => H`<b>订阅</b>`,
   async load(r, read = api) {
     // 侧栏的节点、用户数字来自 STATUS;直接打开订阅页时也取一次。
-    STATUS = await read("/api/status").catch(() => STATUS);
+    const status = read("/api/status").catch(() => STATUS);
     if (r[1] === "templates") ADV_OPEN = true;
-    const [settings, builtin, users, pulls] = await Promise.all([
+    const [settings, builtin, users, pulls, latestStatus] = await Promise.all([
       read("/api/settings"), read("/api/settings/builtin-rules"), subUsers(read),
-      read("/api/sub-pulls").catch(() => []),
+      read("/api/sub-pulls").catch(() => []), status,
     ]);
+    STATUS = latestStatus;
     const recent = [...(pulls || [])].sort((a, b) => new Date(b.last_pulled_at) - new Date(a.last_pulled_at)).find(p => users.some(u => u.username === p.username));
     const user = users.find(u => u.username === SUB?.preview.user) || users.find(u => u.username === recent?.username) || users[0];
     const preview = await subPreview(user, read);

@@ -42,6 +42,12 @@ const certText = c => c.error ? "读不到" : c.days_left < 0 ? "已过期" : `�
 
 PAGES.nodes = {
   title: "节点",
+  seed: r => {
+    if (!r[1]) return null;
+    const list = cachedView(viewCacheKey(PAGES.nodes, "nodes"));
+    const node = list?.data.nodes?.find(n => String(n.id) === r[1]);
+    return node ? { node } : null;
+  },
   loadingTitle: r => r[1] ? nodeLabel(NODE_LABEL_BY_ID[r[1]]) || "节点详情" : "节点",
   count: () => NODES_TOTAL ?? STATUS?.counts?.nodes ?? "",
   crumb: (r, d) => r[1] ? H`<a href="#nodes">节点</a><i>/</i><b>${nodeLabel(d?.node || NODE_LABEL_BY_ID[r[1]]) || "节点详情"}</b>` : H`<b>节点</b>`,
@@ -61,13 +67,13 @@ PAGES.nodes = {
     for (const n of nodes) NODE_LABEL_BY_ID[n.id] = n;
     return { nodes };
   },
-  render(d, r) { return r[1] ? nodeDetail(d) : nodeList(d); },
+  render(d, r) { if (r[1] && d?.conn) CONN.use(d.conn); return r[1] ? nodeDetail(d) : nodeList(d); },
   // after:详情画好后(innerHTML 已换),先把体检页带过来的 AUTO_APPLY 用掉:能应用就替用户
   // 打开「应用到节点」的确认弹窗,不能就说明白。之后才接手正在跑的体检/安装 —— 顺序不能反:
   // 没有正在跑的任务时 jobsAfter 会把轮询停掉,那一停会把确认框一起收掉。
   // d 为空是骨架那一次:标志既不清也不做,留着等详情那一画用(同一页内很快就到);详情取不到
   // 时由 app.js 清掉,超过 10 秒也当过期。
-  after(d, r) { if (d && r[1]) { autoApplyPending(+r[1], d); jobsAfter(d); } },
+  after(d, r) { if (d && r[1] && Object.hasOwn(d, "report")) { autoApplyPending(+r[1], d); jobsAfter(d); } },
 };
 // NODE_LABEL_BY_ID:节点 id → 显示名。列表页一拉到节点就顺手记下(见 PAGES.nodes.load),
 // 提示里那句「已开始在 🇯🇵 东京 A 上安装 xray」和轮询时的提示都用得着它。
@@ -315,7 +321,7 @@ function nodeDetail(d) {
   // 正在跑的体检/安装:对应的按钮换成灰的(aria-disabled 仍可聚焦,读屏读得到原因),避免再起一个。
   const run = (d.jobs?.active || []).find(j => j.status === "running") || null;
   const runWhy = run ? (run.kind === "diagnose" ? "这台节点正在体检，等它做完再点" : "这台节点正在安装，等它做完再点") : "";
-  const busyAttrs = (kind, whyID) => run && run.kind === kind ? ` aria-disabled="true" aria-describedby="${whyID}" data-tip="${runWhy}"` : "";
+  const busyAttrs = (kind, whyID) => !Object.hasOwn(d, "jobs") ? ' aria-disabled="true" data-tip="正在读取任务状态"' : run && run.kind === kind ? ` aria-disabled="true" aria-describedby="${whyID}" data-tip="${runWhy}"` : "";
   const busyWhy = (kind, whyID) => run && run.kind === kind ? H`<span id="${whyID}" class="vh">${runWhy}</span>` : "";
   return H`<div class="ph"><div><h1 class="hrow">${nodeLabel(n)} ${nodeSt(n)}</h1><p class="mono">${n.address} · ${sshText(n)}${n.display ? H` · <span title="命令行与数据里用的名字">内部名 ${n.name}</span>` : ""}</p></div><div class="sp"></div>
     ${W && down && needApply ? H`<button type="button" class="btn" data-act="node-sync" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}" aria-disabled="true" aria-describedby="sync-why" data-tip="${tip}">应用到节点</button><span id="sync-why" class="vh">${tip}</span>` : ""}
@@ -335,10 +341,10 @@ function nodeDetail(d) {
     <div class="card stat"><div class="l">节点配置</div><div class="v f18" title="${s?.observed_hash || ""}">${driftCell(n)}</div><div class="s">${n.deployed_at ? H`应用于 ${ymd(new Date(n.deployed_at))} ${hm(new Date(n.deployed_at))}` : ""}</div></div>
     <div class="card stat"><div class="l">证书</div><div class="v f18">${certs.length ? certs.map(certText).join(" · ") : ""}</div><div class="s">${certs.map(c => c.inbound_name).join(" · ") || "没有用到 TLS 的连接方式"}</div></div>
   </div>
-  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds.length}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}">${ic("plus")}添加连接</button>` : ""}</div>
+  <div class="card mt conn-card"><div class="ch">连接方式<small>· ${d.inbounds ? d.inbounds.length : "正在读取…"}</small><span class="sp"></span>${CONN.pending(n, { tagOnly: true })}${can("POST", "/api/inbounds") ? H`<button class="btn sm" data-act="conn-new" data-node="${id}" ${d.conn ? "" : raw('aria-disabled="true" aria-describedby="conn-loading-why" data-tip="正在读取连接方式"')}>${ic("plus")}添加连接</button>${!d.conn ? H`<span class="vh" id="conn-loading-why">正在读取连接方式</span>` : ""}` : ""}</div>
     ${CONN.groups(d.conn, { node: id })}</div>
   <div class="card mt"><div class="ch">维护</div>
-    <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : "还没有体检报告"}</div>
+    <div class="row"><div><b class="bold">体检</b><div class="sub">${rep ? H`上次 ${ymd(new Date(rep.checked_at))} ${hm(new Date(rep.checked_at))}${rep.measured_address ? H` · 测量地址 ${rep.measured_address}` : ""}` : d.report?.error ? H`<span class="c-bad">${d.report.error}</span>` : !Object.hasOwn(d, "report") ? "正在读取体检报告…" : "还没有体检报告"}</div>
       ${summary.length ? H`<ul class="summary">${plainSummary(summary, d).map(x => H`<li>${x}</li>`)}</ul><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono">${summary.filter(Boolean).map(x => H`<li>${x}</li>`)}</ul></details>` : ""}</div><span class="sp"></span>${W ? H`<button class="btn sm" data-act="node-diagnose" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${raw(busyAttrs("diagnose", "diag-why"))}>开始体检</button>${busyWhy("diagnose", "diag-why")}` : ""}</div>
     ${W ? H`<div class="row"><div><b class="bold">安装代理程序</b><div class="sub">把代理程序装到这台节点上并启动，会用当前配置</div></div><span class="sp"></span><button class="btn sm" data-act="node-install" data-id="${id}" data-name="${n.name}" data-label="${nodeLabel(n)}"${raw(busyAttrs("install", "inst-why"))}>安装</button>${busyWhy("install", "inst-why")}</div>` : ""}
     <div class="row"><div><b class="bold">在线用户</b><div class="sub">实时查看每个用户连着几个 IP</div></div><span class="sp"></span><button class="btn sm" data-act="node-online" data-id="${id}" data-label="${nodeLabel(n)}">查看</button></div>

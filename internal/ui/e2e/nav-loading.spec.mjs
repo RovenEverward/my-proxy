@@ -59,7 +59,7 @@ async function measure(page, selector, hash, title, overlay = false) {
         const root = document.querySelector(args.overlay === 'modal' ? '#modal.open' : args.overlay ? '#drawer.open' : '#page');
         const h = root?.querySelector(args.overlay ? 'h2' : 'h1');
         const rect = h?.getBoundingClientRect();
-        const busy = args.overlay ? root?.querySelector('[aria-busy=true]') : document.querySelector('main[aria-busy=true]');
+        const busy = args.overlay ? root?.querySelector('[aria-busy=true]') : document.querySelector('main[aria-busy=true]') || root?.querySelector('table,.rp-bar,.stats,.sys-tabs');
         if (location.hash === '#' + args.hash && h?.textContent.includes(args.title) && rect?.top >= 0 && rect?.bottom <= innerHeight && busy) {
           resolve(performance.now() - start); observer.disconnect();
         }
@@ -110,7 +110,7 @@ test('失败留在目标页可重试，乱序响应与关闭抽屉不会回跳',
     await new Promise(resolve => setTimeout(resolve, 300)); await r.continue();
   });
   await page.click('tr[data-href="#nodes/1"]');
-  await expect(page.locator('#page h1')).toHaveText('nav-a');
+  await expect(page.locator('#page h1')).toContainText('nav-a');
   await expect(page.locator('#page [role=alert]')).toBeVisible();
   await expect(page).toHaveURL(/#nodes\/1$/);
   fail = false; const oldResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/nodes/1');
@@ -130,7 +130,7 @@ test('失败留在目标页可重试，乱序响应与关闭抽屉不会回跳',
 });
 test('用户详情读取失败后关闭，恢复用户列表而非错误页', async ({ page }) => {
   await platform(page, 'mac'); await login(page, env); await ready(page, 'users');
-  await page.route('**/api/users/nav-user', r => r.fulfill({ status: 404, json: { error: '详情读取失败测试' } }));
+  await page.route('**/api/users/nav-user/links', r => r.fulfill({ status: 404, json: { error: '详情读取失败测试' } }));
   await page.click('tr[data-href="#users/nav-user"]');
   await expect(page.locator('#drawer.open [role=alert]')).toBeVisible();
   await page.click('#drawer [data-act=close]');
@@ -141,9 +141,10 @@ test('用户详情读取失败后关闭，恢复用户列表而非错误页', as
 });
 test('抽屉先显示目标，读取失败可重试；关闭后不复活', async ({ page }) => {
   await platform(page, 'mac'); await delay(page); await login(page, env); await ready(page, 'users');
+  const completed = page.waitForResponse(r => new URL(r.url()).pathname === '/api/plans');
   await measure(page, '[data-act=user-new]', 'users', '添加用户', true);
   await page.click('#drawer [data-act=close]');
-  await page.waitForResponse(r => new URL(r.url()).pathname === '/api/plans');
+  await completed; await settleRoutes(page);
   await expect(page.locator('#drawer.open')).toHaveCount(0);
   await expect(page.locator('[data-act=user-new]')).not.toHaveAttribute('aria-busy', 'true');
   await page.click('[data-act=user-new]'); await expect(page.locator('#user-form')).toBeVisible();
@@ -228,10 +229,13 @@ test('分流冷启动与标签切换的加载框架保留标签和规则作用�
   await expect(page.locator('[data-act=rp-tab][data-k=rules].on')).toBeVisible();
   await expect(page.locator('html[data-loading]')).toHaveCount(0);
   gate = new Promise(resolve => { release = resolve; });
-  await page.click('[data-act=rp-tab][data-k=groups]');
-  await expect(page.locator('main[aria-busy=true] .sk').first()).toBeVisible();
-  await expect(page.locator('[data-act=rp-tab][data-k=groups].on')).toBeVisible();
-  release(); await expect(page.locator('.rp-g').first()).toBeVisible();
+  try {
+    await page.click('[data-act=rp-tab][data-k=groups]');
+    await expect(page.locator('[data-act=rp-tab][data-k=groups].on')).toBeVisible();
+    await expect(page.locator('.rp-g').first()).toBeVisible();
+    await expect(page.locator('#page .sk')).toHaveCount(0);
+  } finally { release(); }
+  await expect(page.locator('.rp-g').first()).toBeVisible();
   await expect(page.locator('html[data-loading]')).toHaveCount(0);
 });
 test('后台轮询失败只提示，手动刷新失败才显示页面重试', async ({ page }) => {

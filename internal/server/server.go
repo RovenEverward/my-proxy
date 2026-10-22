@@ -268,7 +268,7 @@ func (s *Server) routes() {
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
-	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(api)))
+	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
 	// 设备接入不要 token(它就是来领 token 的),自带三道闸,见 connect.go。
 	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
 }
