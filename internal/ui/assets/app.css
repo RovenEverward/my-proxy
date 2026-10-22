@@ -22,9 +22,16 @@ button,input,select,textarea{font:inherit;color:inherit}a{color:inherit;text-dec
 code,.mono{font-family:var(--mono);font-size:12.5px}
 .app{display:grid;grid-template-columns:232px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%}
 /* sidebar */
-.side{height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
-.brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px calc(8px + var(--mygo-titlebar-inset-left,0px));min-height:calc(var(--mygo-titlebar-height,0px) - 14px);font-weight:620;font-size:14px;--app-region:drag}
-.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
+.side{height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:max(0px,calc(14px - var(--mygo-titlebar-inset-left,0px) * 1000)) 10px 14px;background:var(--base)}
+/* 侧栏顶上的拖拽行:只在左上角有红绿灯(Mac 桌面窗口,--mygo-titlebar-inset-left > 0)时占 36px,里面只放红绿灯。
+   浏览器、Linux、Windows(按钮在右边)、Mac 全屏时 inset-left 为 0:这一行高 0,侧栏上内边距回到 14。 */
+.side>.tb-drag{height:clamp(0px,calc(var(--mygo-titlebar-inset-left,0px) * 1000),36px)}
+/* 标志自成一行:左右内边距 10 → 标志框左缘 x=20,和导航图标框、控制面圆点对齐(标志和图标都是 24 格内缩 3,墨迹左缘同在 21.5)。 */
+.brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin-bottom:14px;font-weight:620;font-size:14px;--app-region:drag}
+/* 版本号全文显示、靠右(右缘 212 = 导航数字、下拉箭头右缘);margin-top 7.5 让它的基线落在字标基线(标志高的 18/24 = 16.5)。 */
+.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:7.5px;font:500 11px/1 var(--mono);color:var(--faint);white-space:nowrap}
+/* 完整开发版包含提交号与 clean/dirty；长串用现有正文字体，保留字号可读性和对齐。 */
+.brand small.long{font:500 9.5px/1 var(--sans);margin-top:8.5px;color:var(--muted)}
 .profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:12.5px}
 .profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}
@@ -33,7 +40,8 @@ code,.mono{font-family:var(--mono);font-size:12.5px}
 .pfitem:hover{background:var(--hover)}.pfitem.on{background:var(--canvas);box-shadow:inset 0 0 0 1px var(--stone)}
 .pfitem .pf-t{flex:1;min-width:0}.pfitem b,.pfitem span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pfitem b{font-weight:560;font-size:13px}.pfitem span{color:var(--muted);font-family:var(--mono);font-size:11.5px}
 .pfitem svg{width:15px;height:15px;flex:none;color:var(--ok)}
-.cpw{margin:0 2px 12px}.cpw .profile{margin:0}
+/* 控制面卡片和导航高亮同宽(10–222);左内边距 11 让圆点左缘落在 21,贴近图标墨迹 21.43(整数,Windows 1x 不发虚)。 */
+.cpw{margin:0 0 12px}.cpw .profile{margin:0;padding-left:11px}
 .pf-car{transition:transform 160ms var(--ease,ease)}.pf-car.up{transform:rotate(180deg)}
 .cpw .dot.ok{background:var(--ink);box-shadow:none}
 .cp-pop{margin-top:6px;padding:10px 12px 12px;border-radius:9px;background:var(--canvas)}
@@ -184,7 +192,6 @@ a.row{color:inherit}
 .ro svg{width:12px;height:12px}
 .ell{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stat,.grid>*{min-width:0}dl.kv{margin:0}
-.brand small{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .err{color:var(--bad);font-size:12.5px;margin:-4px 0 10px;white-space:pre-wrap}.err:empty{display:none}
 .c-ink{color:var(--ink)}
 .btn.busy{position:relative;color:transparent}.btn.busy::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-color:var(--canvas) transparent var(--canvas) var(--canvas);animation:spin .7s linear infinite}

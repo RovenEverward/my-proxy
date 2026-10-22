@@ -534,7 +534,8 @@ function shell(page, body, crumb) {
   const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}">${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
   const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
-  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${shortVer(META.cli_version)}</small></div>
+  const version = shortVer(META.cli_version);
+  return H`<div class="app"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small class="${version.length > 16 ? "long" : ""}" title="${META.cli_version}">${version}</small></div>
   ${cpCard()}
   ${nav}</aside>
   <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
