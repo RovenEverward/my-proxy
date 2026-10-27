@@ -19,8 +19,8 @@ import (
 // installKey 用密码登一次节点,把控制面的公钥追加进 authorized_keys。
 //
 // 这是唯一用密码的地方:它跑完一次就结束,之后控制面与该节点之间全是密钥。
-// 密码不落库、不进日志、不进进程参数 —— 它走 SSH_ASKPASS 的 stdout 回给 ssh,
-// 只有这两个进程看得见。
+// 密码不落库、不进日志、不进进程参数、也不进进程环境变量 —— 写进 0600 临时文件,
+// askpass 脚本读文件后经 stdout 回给 ssh;用完删目录。
 //
 // pubkey 是控制面自己那对密钥的 .pub 内容(一行 ssh-ed25519 …),由调用方从
 // 磁盘读出来;这个函数不碰文件系统里属于控制面的东西,只负责把它送过去。
@@ -89,7 +89,8 @@ func passwordSSHArgs(n model.Node) []string {
 // runPasswordSSH 用密码认证跑一条 ssh 命令,返回它的 stdout。
 //
 // askpass 脚本替 ssh 回答密码:SSH_ASKPASS_REQUIRE=force 让 ssh 连 TTY 都不看、
-// 只走这个脚本;密码用环境变量带进去,不出现在 ps 里,也不进命令行。
+// 只走这个脚本;密码落在 0600 临时文件里由脚本读出,不进命令行、也不进环境变量
+// (避免 /proc/<pid>/environ 泄露)。
 func runPasswordSSH(ctx context.Context, n model.Node, args []string, password string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	if err := execPasswordSSH(ctx, n, args, password, nil, &stdout, &stderr); err != nil {
@@ -109,18 +110,15 @@ func execPasswordSSH(ctx context.Context, n model.Node, args []string, password 
 	}
 	defer os.RemoveAll(dir)
 
-	askpass := filepath.Join(dir, "askpass.sh")
-	// 引号处理:printf '%s' "$MPX_ASKPASS_PASSWORD" 原样吐密码,不换行不解释。
-	script := "#!/bin/sh\nprintf '%s' \"$MPX_ASKPASS_PASSWORD\"\n"
-	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
-		return fmt.Errorf("写 askpass 脚本: %w", err)
+	if err := writeAskpass(dir, password); err != nil {
+		return err
 	}
+	askpass := filepath.Join(dir, "askpass.sh")
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Env = append(os.Environ(),
 		"SSH_ASKPASS="+askpass,
 		"SSH_ASKPASS_REQUIRE=force",
-		"MPX_ASKPASS_PASSWORD="+password,
 		"DISPLAY=:0", // 有些 OpenSSH 版本要求 DISPLAY 非空才走 askpass
 	)
 	cmd.Stdout = stdout
@@ -137,6 +135,23 @@ func execPasswordSSH(ctx context.Context, n model.Node, args []string, password 
 			return fmt.Errorf("节点 %s: 命令被取消", n.Name)
 		}
 		return fmt.Errorf("节点 %s: %s", n.Name, sshErrText(err, stderr))
+	}
+	return nil
+}
+
+// writeAskpass 在 dir 里放下密码文件(0600)与 askpass 脚本(0700)。
+//
+// 脚本只 cat 同目录的 password 文件:路径由我们生成、不含空格与引号,内嵌单引号即可。
+// 密码本身可以含任意字节(除我们不在文件里解释),所以绝不拼进脚本正文或环境变量。
+func writeAskpass(dir, password string) error {
+	passFile := filepath.Join(dir, "password")
+	if err := os.WriteFile(passFile, []byte(password), 0o600); err != nil {
+		return fmt.Errorf("写 askpass 密码文件: %w", err)
+	}
+	askpass := filepath.Join(dir, "askpass.sh")
+	script := "#!/bin/sh\nexec cat '" + passFile + "'\n"
+	if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
+		return fmt.Errorf("写 askpass 脚本: %w", err)
 	}
 	return nil
 }
