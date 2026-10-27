@@ -2,6 +2,12 @@
 (() => {
   let t = null;
   try { t = localStorage.getItem("mpx-theme"); } catch {}
-  if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (t !== "light" && t !== "dark") t = "light";
   document.documentElement.dataset.theme = t;
+})();
+
+// Mac 使用系统滚动条，其他平台使用细滚动条。
+(() => {
+  const p = navigator.userAgentData?.platform || navigator.platform || "";
+  if (/^Mac/i.test(p)) document.documentElement.classList.add("os-mac");
 })();

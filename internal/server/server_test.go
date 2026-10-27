@@ -1028,6 +1028,27 @@ func TestUserLinksUseConfiguredPrefix(t *testing.T) {
 	if !strings.HasPrefix(links["auto"], "http://127.0.0.1:") {
 		t.Fatalf("没配前缀时应当回落到请求的 Host: %q", links["auto"])
 	}
+	// 只加的 base 字段:没配前缀时就是这次请求的 Host,页面拿它判断「链接开头就是这台控制面」。
+	host := strings.TrimSuffix(links["auto"], "/sub/"+user.SubToken)
+	if host != e.srv.URL || links["base"] != host {
+		t.Fatalf("没配前缀时 base 应当是请求的 Host, got %q(请求 Host %q)", links["base"], e.srv.URL)
+	}
+
+	// 配了前缀时 auto 按前缀拼,base 不出现。
+	if code, _ := e.api("PUT", "/api/settings", model.Settings{SubURLPrefix: "https://sub.example.com"}); code != http.StatusOK {
+		t.Fatalf("存设置失败")
+	}
+	code, data = e.api("GET", "/api/users/alice/links", nil)
+	if code != http.StatusOK {
+		t.Fatalf("取订阅地址: got %d", code)
+	}
+	links = decodeJSON[map[string]string](t, data)
+	if _, ok := links["base"]; ok {
+		t.Fatalf("配了前缀时不该再有 base: %q", links["base"])
+	}
+	if links["auto"] != want {
+		t.Fatalf("配了前缀时 auto 应当按前缀拼: %q", links["auto"])
+	}
 }
 
 // ---- 节点配置预览 ----

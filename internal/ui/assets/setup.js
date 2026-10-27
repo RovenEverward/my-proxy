@@ -58,7 +58,7 @@ function bindInput(sel, key) {
 /* ---------- 屏 1:欢迎 ---------- */
 function renderWelcome() {
   S.step = 1;
-  setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-light.svg" alt=""><img class="mk-d" src="/mark-dark.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
+  setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-dot-globe.svg" alt=""><img class="mk-d" src="/mark-dot-globe.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
   <p class="lead">一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、连接方式和对外地址</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>
@@ -95,7 +95,7 @@ function renderConnectCP() {
   ${CN.probing ? H`<ol class="plist">${row("run", "连上控制面，取回证书指纹")}</ol>` : ""}
   ${fp ? H`<div class="field"><label>证书指纹</label><div class="cmd">${CN.fp}</div><span class="h">和首次安装完成时显示的那一行对一下，或向控制面的管理员确认</span></div>
   <label class="chk mb"><input type="checkbox" id="s-cp-ok" ${CN.ok ? raw("checked") : ""}> 指纹核对无误，是我的控制面</label>
-  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「系统 → 设备与接入」里重设")}` : ""}
+  ${field("设备密码", pwBox("s-cp-pw", CN.pwShown), "首次安装时设的；忘了可以在已接入设备的「系统」页的「设备与接入」里重设")}` : ""}
   <p class="sub">接入时会核对证书指纹，设备密码只用于这一次接入。</p>`,
   H`${btn(add ? "取消" : "上一步", "ghost", "back", "s-cp-back")}<span class="sp"></span>${fp ? H`${btn("重新取指纹", "", "refresh", "s-cp-probe")}${btn("接入", "pri", "", "s-cp-go")}` : raw(`<button type="button" class="btn pri" id="s-cp-probe"${CN.probing ? ' disabled style="opacity:.5"' : ""}>${CN.probing ? "取指纹中…" : "取指纹"}</button>`)}`);
   $("#s-cp-addr").value = CN.addr; $("#s-cp-name").value = CN.name;
@@ -263,8 +263,8 @@ function applyPortProbe(p) {
   if (p.api_busy) {
     if (p.api_suggest) {
       if (S.portProbe !== p) S.addr = String(S.addr || "0.0.0.0:8080").replace(/:\d+$/, ":" + p.api_suggest);
-      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在下面「高级 → 监听地址」里改。`);
-    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在下面「高级 → 监听地址」里换一个端口。`);
+      notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，已改用 ${p.api_suggest}。可在下面「高级」里的「监听地址」改。`);
+    } else notes.push(`控制面默认用的 ${p.api_port} 端口已被 ${p.api_busy} 占用，请在下面「高级」里的「监听地址」换一个端口。`);
   }
   if (p.inbound_busy && p.inbound_suggest) {
     if (S.portProbe !== p) S.inboundPort = +p.inbound_suggest;
@@ -305,7 +305,7 @@ function renderSettings() {
   <div class="two"><div class="field"><label>设备密码</label>${pwBox("s-dpw", S.dpwShown)}<div class="meter" id="s-meter">${raw(meterHtml(S.dpw))}</div><span class="h" id="s-str">强度：${SW[strength(S.dpw)]}</span>${e.dpw ? H`<span class="fe">${e.dpw}</span>` : ""}</div>
   <div class="field"><label>再输一次</label>${pwBox("s-dpw2", S.dpwShown)}${e.dpw2 ? H`<span class="fe">${e.dpw2}</span>` : ""}</div></div>
   <p class="sub" style="margin-top:-4px">在另一台设备的 MPX 里选「接入已有控制面」时要用它。不会保存在这台电脑之外。</p>
-  ${field("订阅地址", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="例如 https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
+  ${field("链接开头", H`<input id="s-sub" class="in mono" autocomplete="off" placeholder="例如 https://sub.example.com">`, "发给用户的链接以它开头。不填就会把服务器 IP 发给用户;之后在「订阅」里也能改。")}
   <details class="adv"><summary>高级</summary>
    ${field("监听地址", H`<input id="s-addr" class="in mono ${e.addr ? "bad" : ""}" autocomplete="off">`, "", e.addr)}${field("SNI", H`<input id="s-sni" class="in mono" autocomplete="off">`, "第一个连接方式用的 REALITY SNI")}</details>
   `,

@@ -19,7 +19,7 @@ import (
 const (
 	// singboxProxyTag 是给用户在客户端里手动切节点用的 selector。
 	singboxProxyTag = "proxy"
-	// singboxAutoTag 是按延迟自动选路的 urltest;selector 默认指向它。
+	// singboxAutoTag 是按延迟自动选路的 urltest，用户可以主动选择它。
 	singboxAutoTag = "auto"
 	// singboxDirectTag 与 singboxBlockTag 是路由规则按 tag 引用的直连与拦截出口。
 	singboxDirectTag = "direct"
@@ -97,7 +97,8 @@ func SingBox(eps []Endpoint, templateJSON []byte) ([]byte, error) {
 		for _, o := range outs {
 			if m, ok := o.(map[string]any); ok && m["tag"] == singboxProxyTag {
 				if cands, ok := m["outbounds"].([]any); ok {
-					m["outbounds"] = append(cands, wgTags...)
+					// auto 保留在最后，手动选择时优先使用节点（含 WireGuard）。
+					m["outbounds"] = append(append(cands[:len(cands)-1], wgTags...), singboxAutoTag)
 				}
 			}
 		}
@@ -327,8 +328,8 @@ func singboxOutbounds(prev any, nodes []any, tags []string) ([]any, error) {
 		nodeTags = append(nodeTags, tag)
 	}
 	proxyOutbounds := make([]any, 0, len(tags)+1)
-	proxyOutbounds = append(proxyOutbounds, singboxAutoTag)
 	proxyOutbounds = append(proxyOutbounds, nodeTags...)
+	proxyOutbounds = append(proxyOutbounds, singboxAutoTag)
 
 	out := make([]any, 0, len(nodes)+6)
 	out = append(out,
@@ -336,7 +337,6 @@ func singboxOutbounds(prev any, nodes []any, tags []string) ([]any, error) {
 			"type":      "selector",
 			"tag":       singboxProxyTag,
 			"outbounds": proxyOutbounds,
-			"default":   singboxAutoTag,
 		},
 		map[string]any{
 			"type":      "urltest",

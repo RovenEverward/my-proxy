@@ -94,10 +94,10 @@ func assertSkeleton(t *testing.T, cfg map[string]any, nodeTags []string) {
 	if proxy["type"] != "selector" {
 		t.Errorf("proxy 不是 selector: %v", proxy["type"])
 	}
-	if proxy["default"] != singboxAutoTag {
-		t.Errorf("selector 的 default = %v, 期望 %q", proxy["default"], singboxAutoTag)
+	if _, ok := proxy["default"]; ok {
+		t.Errorf("手动 selector 不应固定默认组：%v", proxy["default"])
 	}
-	wantProxy := append([]any{singboxAutoTag}, stringsToAny(nodeTags)...)
+	wantProxy := append(stringsToAny(nodeTags), singboxAutoTag)
 	if !reflect.DeepEqual(proxy["outbounds"], wantProxy) {
 		t.Errorf("selector 的 outbounds = %v, 期望 %v", proxy["outbounds"], wantProxy)
 	}
@@ -395,7 +395,7 @@ func TestSingBoxWireguardEndpoint(t *testing.T) {
 
 	// selector 的 outbounds 必须把 wg endpoint 的 tag 带上,否则选不中。
 	proxy := findOutbound(t, cfg, singboxProxyTag)
-	if !reflect.DeepEqual(proxy["outbounds"], []any{singboxAutoTag, "wg-0"}) {
+	if !reflect.DeepEqual(proxy["outbounds"], []any{"wg-0", singboxAutoTag}) {
 		t.Errorf("selector.outbounds = %v", proxy["outbounds"])
 	}
 }
@@ -638,6 +638,81 @@ func TestSingBoxDefaultTemplate(t *testing.T) {
 		}
 	}
 	assertSkeleton(t, cfg, []string{ep.Remark})
+}
+
+// 模板与实际订阅的 selector 默认链不能落到测速组；用户仍可主动选择测速组。
+func TestSingBoxDefaultManualChains(t *testing.T) {
+	eps := routingEndpoints()
+	for _, routing := range []bool{false, true} {
+		name := "模板原样输出"
+		if routing {
+			name = "实际订阅"
+		}
+		t.Run(name, func(t *testing.T) {
+			var raw []byte
+			var err error
+			if routing {
+				raw, err = SingBoxRouting(eps, seedPlan(t, eps), nil)
+			} else {
+				raw, err = SingBox(eps, nil)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := decodeConfig(t, raw)
+			byTag := map[string]map[string]any{}
+			for _, item := range outboundsOf(t, cfg) {
+				ob := item.(map[string]any)
+				byTag[ob["tag"].(string)] = ob
+			}
+			for tag, ob := range byTag {
+				if ob["type"] != "selector" {
+					continue
+				}
+				next := tag
+				for depth := 0; ; depth++ {
+					if next == singboxProxyTag || next == "手动切换" || next == singboxDirectTag || next == singboxBlockTag {
+						break
+					}
+					if depth >= len(byTag) {
+						t.Fatalf("%s 默认链有环", tag)
+					}
+					current := byTag[next]
+					if current == nil || current["type"] != "selector" {
+						t.Errorf("%s 默认链落到非手动组 %s", tag, next)
+						break
+					}
+					target, _ := current["default"].(string)
+					if target == "" {
+						candidates, _ := current["outbounds"].([]any)
+						if len(candidates) == 0 {
+							t.Fatalf("%s 缺少候选", next)
+						}
+						target = candidates[0].(string)
+					}
+					next = target
+				}
+			}
+			assertSkeleton(t, cfg, []string{"Daily", "Media"})
+			if routing {
+				final := findOutbound(t, cfg, FinalGroupName)
+				if got := final["outbounds"].([]any)[0]; got != "手动切换" {
+					t.Errorf("兜底首项 = %v，想要手动切换", got)
+				}
+			} else if got := findOutbound(t, cfg, "全球代理")["default"]; got != singboxProxyTag {
+				t.Errorf("全球代理默认 = %v，想要手动 selector", got)
+			}
+		})
+	}
+}
+
+// 没有节点时保留空测速入口，不添加新的直连兜底。
+func TestSingBoxEmptyManualSelector(t *testing.T) {
+	raw, err := SingBox(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSkeleton(t, decodeConfig(t, raw), nil)
 }
 
 // TestSingBoxDeterministic 校验同一输入多次渲染字节一致。

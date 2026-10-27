@@ -179,6 +179,9 @@ func (s *Server) routes() {
 	sub.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
 	// 订阅页上的"换个订阅地址":鉴权就是这个 token 本身(见 handleRotateSub)。
 	sub.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
+	// 订阅页的内置字体。挂在 /sub/ 下、用四段路径,是为了让只转发 /sub/ 的
+	// 反向代理也能取到字体,而且永远不会撞上三段式的 /sub/{token}/{format}。
+	sub.HandleFunc("GET /sub/-/fonts/{name}", s.handleSubFont)
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
@@ -186,6 +189,7 @@ func (s *Server) routes() {
 	s.routingRoutes(api)
 	s.planRoutes(api)
 	s.diagnosticRoutes(api)
+	s.jobRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/update", s.handleUpdate)
 	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的
@@ -242,6 +246,7 @@ func (s *Server) routes() {
 	api.HandleFunc("POST /api/users/{username}/reset-traffic", s.handleResetUserTraffic)
 	api.HandleFunc("POST /api/users/{username}/revoke-sub", s.handleRevokeSub)
 	api.HandleFunc("GET /api/users/{username}/links", s.handleUserLinks)
+	api.HandleFunc("GET /api/users/{username}/activity", s.handleUserActivity)
 
 	api.HandleFunc("GET /api/settings", s.handleGetSettings)
 	api.HandleFunc("PUT /api/settings", s.handleSaveSettings)
@@ -263,7 +268,7 @@ func (s *Server) routes() {
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
-	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(api)))
+	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
 	// 设备接入不要 token(它就是来领 token 的),自带三道闸,见 connect.go。
 	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
 }
@@ -293,6 +298,12 @@ func writeErrorHint(w http.ResponseWriter, code int, msg, uiHint string) {
 		return
 	}
 	writeJSON(w, code, map[string]string{"error": msg, "ui_hint": uiHint})
+}
+
+// writeErrorField 在 writeError 的回答里多带一个 field:出错的是哪个字段(JSON
+// 里的名字),界面据此把红字放到那一栏下面。error 本身照旧,旧读者不受影响。
+func writeErrorField(w http.ResponseWriter, code int, msg, field string) {
+	writeJSON(w, code, map[string]string{"error": msg, "field": field})
 }
 
 // writeStoreError 把存储层的错误翻成合适的状态码。

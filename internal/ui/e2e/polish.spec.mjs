@@ -23,12 +23,18 @@ async function openDelete(page) {
   await page.click("[data-act=node-rm]");
   await expect(page.locator("#modal.open #okb")).toBeVisible();
 }
+// 键盘聚焦光圈只看 :focus-visible 那条规则。脚本里 focus() 不一定会让 :focus-visible 成立(浏览器按最近的输入方式算),
+// 所以先真的按一下 Tab 进入键盘导航,再把焦点挪到要找的控件上。
+async function keyboardFocus(page, selector) {
+  await page.keyboard.press("Tab");
+  await page.locator(selector).first().evaluate(el => el.focus());
+  return page.locator(selector).first().evaluate(el => ({ color: getComputedStyle(el).outlineColor, style: getComputedStyle(el).outlineStyle, fv: el.matches(":focus-visible") }));
+}
 
 test("M1 普通 #sub 不自动滚动，页标题露着;#sub/clients 滚到段且段标题不在顶栏下", async ({ page }) => {
   await go(page, "sub");
   await expect(page.locator("#f-title")).toBeVisible();
-  await page.waitForTimeout(300);
-  expect(await page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
+  await expect.poll(() => page.locator("main").evaluate(m => m.scrollTop)).toBe(0);
   await expect(page.locator(".ph h1")).toHaveText("订阅");
   // 应用内从别的页(已经往下滚过)点侧栏进「订阅」,也停在顶上。
   await page.goto(env.origin + "/#rules"); await settle(page);
@@ -58,13 +64,33 @@ test("M2 删除按钮禁用时灰底浅灰字、不透明;可点时才是实心�
 test("M3 输入框聚焦光圈是中性色，不是蓝色(删除确认里的输入框)", async ({ page }) => {
   await openDelete(page);
   await page.focus("#typed");
-  await page.waitForTimeout(500); // 光圈有过渡动画,等它停下再读
+  // 光圈有过渡动画:轮询到它停下再读。
+  await expect(async () => {
+    const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
+    // 光圈得真的在(box-shadow 不是 none),再看它的颜色。
+    expect(sh.split("|")[0]).not.toBe("none");
+    const cs = colorsIn(sh);
+    expect(cs.length).toBeGreaterThan(0);
+    for (const c of cs) expect(neutral(c), c).toBe(true);
+  }).toPass();
   const sh = await page.locator("#typed").evaluate(e => { const s = getComputedStyle(e); return s.boxShadow + "|" + s.outlineColor; });
-  // 光圈得真的在(box-shadow 不是 none),再看它的颜色。
-  expect(sh.split("|")[0]).not.toBe("none");
   const cs = colorsIn(sh);
-  expect(cs.length).toBeGreaterThan(0);
   for (const c of cs) expect(neutral(c), c).toBe(true);
+});
+
+test("M5 键盘聚焦光圈是中性色，不是蓝色(按钮、侧栏、选项卡、表格行)", async ({ page }) => {
+  await go(page, "users");
+  // 用户页同时有按钮、侧栏项、选项卡和可聚焦的表格行。
+  for (const sel of [".side .nav", ".page .btn", ".tabs a", "tbody tr[tabindex]"]) {
+    await expect(page.locator(sel).first()).toHaveCount(1);
+    // 光圈有过渡动画:轮询到它停下再读。
+    await expect(async () => {
+      const s = await keyboardFocus(page, sel);
+      expect(s.fv, `${sel} 没拿到键盘焦点`).toBe(true);
+      expect(s.style, sel).toBe("solid");
+      expect(neutral(s.color), `${sel} ${s.color}`).toBe(true);
+    }).toPass();
+  }
 });
 
 test("N1 侧栏版本号去掉伪版本尾巴", async ({ page }) => {
@@ -88,26 +114,32 @@ test("N3 分流页说明不重复卡片标题，用「匹配」，句末有「�
   await expect(page.locator("main")).not.toContainText("比对");
 });
 
+// 订阅名是 contenteditable 的编辑框,直接改写里面的文字就能标记改动。
+const retitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+
 test("N4 离开对话框文案带逗号", async ({ page }) => {
   await go(page, "sub");
-  await page.fill("#f-title", "改一下");
+  await retitle(page, "改一下");
   await page.locator('.side a.nav[href="#nodes"]').click();
   await expect(page.locator("#modal.open p").first()).toHaveText("离开「订阅」页，这些改动就会丢：");
 });
 
 test("N5 不拆「暂停分配」;说明段落避免末行孤字", async ({ page }) => {
   await openDelete(page);
-  await expect(page.locator("#modal.open .nw")).toHaveText("「暂停分配」");
-  expect(await page.locator("#modal.open .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  // 删除确认里有两块不拆开的文字:「别再发它」和「暂停分配」,只看后者。
+  const nw = page.locator("#modal.open .nw", { hasText: "暂停分配" });
+  await expect(page.locator("#modal.open .nw")).toHaveCount(2);
+  await expect(nw).toHaveText("「暂停分配」");
+  expect(await nw.evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
   expect(await page.locator("#modal.open .mbody p").first().evaluate(e => getComputedStyle(e).textWrapStyle)).toBe("pretty");
   await page.goto(env.origin + "/#sub"); await settle(page);
-  await expect(page.locator("#sec-addr")).toContainText("客户端多久自动更新一次，填 0 由客户端决定。");
-  // 刷新间隔说明按两个短句断行,不在句中拆。
-  await expect(page.locator("#sec-addr .h", { hasText: "填 0 由客户端决定" }).locator(".nw")).toHaveText(["客户端多久自动更新一次，", "填 0 由客户端决定。"]);
-  // 预览里「Clash Meta 配置，带完整分流和策略组。」整段不拆行。
-  await expect(page.locator(".pv-f .nw")).toHaveCount(1);
-  await expect(page.locator(".pv-f .nw b")).toHaveCount(1);
-  expect(await page.locator(".pv-f .nw").evaluate(e => getComputedStyle(e).whiteSpace)).toBe("nowrap");
+  // 订阅页把刷新说明收进可键盘访问的提示，不再占一行。
+  const tip = page.locator('label[for="f-int"] .r-tip');
+  await expect(tip).toHaveAttribute("aria-label", "客户端多久自动更新一次订阅，单位小时。填 0 由客户端决定。");
+  await page.keyboard.press("Tab");
+  await tip.focus();
+  await expect(tip).toBeFocused();
+  expect(await tip.evaluate(e => getComputedStyle(e, "::after").content)).toContain("填 0 由客户端决定。");
 });
 
 test("N6 删除确认标题里旗帜按正常空格排，不吃弹性间距", async ({ page }) => {
@@ -138,22 +170,32 @@ test("N9 有改动时滚到底，保存条不压住最后一行底稿(Xray)", as
   await go(page, "sub");
   await page.click("[data-act=s5-adv]");
   await expect(page.locator(".zr-tpl")).toHaveCount(3);
-  await page.fill("#f-title", "改一下");
+  await retitle(page, "改一下");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
-  await page.waitForTimeout(200);
-  const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top }));
-  expect(r.last).toBeLessThanOrEqual(r.sb);
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top })); return r.last - r.sb; }).toBeLessThanOrEqual(0);
 });
 
 test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {
   await go(page, "rules");
   const ch = page.locator(".rp-card > .ch");
   await page.locator("main").evaluate(m => { m.scrollTop = 600; });
-  await page.waitForTimeout(200);
-  const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top }));
-  expect(Math.abs(r.ch - r.bar)).toBeLessThan(2);
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ bar: document.querySelector("main > .top").getBoundingClientRect().bottom, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.bar); }).toBeLessThan(2);
   await expect(ch.locator("[data-act=rp-add]")).toBeInViewport();
+});
+
+test("N12 Windows 标题栏模式下内容已让出顶栏，分流卡片头吸顶贴 main 的顶", async ({ page }) => {
+  // 必须是一个能滚动的页:卡片全在首屏时 main 没有滚动,卡片头根本到不了吸顶位置。窗口矮一点。
+  await page.setViewportSize({ width: 1440, height: 560 });
+  await go(page, "rules");
+  // 浏览器里没有 mygo 注入的标题栏:CSP 不让 addStyleTag,这里直接加 tb-right 类、设窗口高度变量(同 winFrame)。
+  // 两个变量都要设:页面每次 resize 都按 --mygo-titlebar-inset-right 重新加/摘 tb-right,只加类会被摘掉。
+  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); st.setProperty("--mygo-titlebar-inset-right", "138px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
+  await page.locator("main").evaluate(m => { m.scrollTop = 600; });
+  // 顶栏在 tb-right 下挪到标题栏里、不在 main 的滚动区里;卡片头贴 main 的顶,而且滚到底也贴得住(不是只露出了 8px 边距)。
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
+  await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
+  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
 });
 
 test("N11 订阅地址占位文字带「例如」，用浅灰", async ({ page }) => {
@@ -211,8 +253,15 @@ async function winFrame(page) {
 }
 async function clearOfCaption(page, sel) {
   const box = page.locator(sel).first();
-  await expect(box).toBeVisible(); await page.waitForTimeout(350); // 等滑入/淡入动画结束
-  const r = await box.boundingBox(), vw = page.viewportSize().width;
+  await expect(box).toBeVisible();
+  // 等滑入/淡入动画结束:轮询到位置不再变,再量它压不压窗口按钮。
+  let r, vw = page.viewportSize().width;
+  await expect(async () => {
+    const a = await box.boundingBox();
+    await page.waitForFunction(() => document.getAnimations().every(x => x.playState !== "running"));
+    r = await box.boundingBox();
+    expect(r).toEqual(a);
+  }).toPass();
   const hitsCaption = r.y < 52 && r.x + r.width > vw - 138;
   expect(hitsCaption, `${sel} 压到了窗口按钮:${JSON.stringify(r)}`).toBe(false);
 }
@@ -306,12 +355,15 @@ test("D1 体检结论翻成人话:没有内部叫法和英文原话，原话收�
   await expect(raw).toContainText("parser_error: netflix_title_evidence");
 });
 
-test("C1 安装和体检的确认文案:全角括号，没有内部叫法，不再说「期间别关这个页面」", async ({ page }) => {
+test("C1 安装和体检的确认文案:全角括号，没有内部叫法，说清楚可以关掉页面", async ({ page }) => {
   await go(page, "nodes/1");
   for (const act of ["node-install", "node-diagnose"]) {
     await page.click(`[data-act=${act}]`);
     const p = (await page.locator("#modal.open .mbody p").first().innerText());
     expect(p).not.toMatch(/期间别关这个页面|Fusion|测速开|硬件测试关|SSH|[()]/);
+    // 这两件事都在控制面后台跑:关掉页面不会让它停下,做完会显示在节点上。
+    expect(p).toContain("可以关掉这个页面，做完会在节点上显示结果。");
+    expect(p).not.toContain("会中断");
     await page.click("[data-act=modal-cancel]"); await expect(page.locator("#modal.open")).toHaveCount(0);
   }
 });

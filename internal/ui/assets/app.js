@@ -15,23 +15,105 @@ const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const val = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(val).join("") : esc(v);
 function H(strings, ...vals) { let s = strings[0]; vals.forEach((v, i) => { s += val(v) + strings[i + 1]; }); return raw(s); }
 
+let readEpoch = 0;
+let readSnapshot = { page: null, values: new Map() };
+let refreshTimer = 0, refreshQueued = false;
+const copyRead = value => value == null ? value : structuredClone(value);
+const resourceOf = path => new URL(path, location.origin).pathname.split('/')[2];
+const isReadRequest = (path, init) => !init.method || init.method === "GET" || /\/proxy-groups\/preview$|\/rules\/test$|\/settings\/test-webhook$|^\/local\/(profiles|setup\/check|relabel\/plan)$/.test(path);
+// 成功页的展示缓存与局部请求快照职责不同：前者用于返回先显示，后者用于原地免重读。
+// 只保留本会话最近 16 个完整读取，缓存取出与存入均复制，页面草稿不回写缓存。
+const viewCache = new Map();
+const viewCacheKey = (p, key) => JSON.stringify([key, p.readKey?.() || ""]);
+function cachedView(key) {
+  const entry = viewCache.get(key);
+  if (!entry) return null;
+  viewCache.delete(key); viewCache.set(key, entry);
+  return { ...entry, data: copyRead(entry.data) };
+}
+function rememberView(key, p, packet) {
+  viewCache.delete(key);
+  viewCache.set(key, { page: p, data: copyRead(packet.data), at: new Date(), paths: [...packet.collected.values()].map(x => x.path) });
+  if (viewCache.size > 16) viewCache.delete(viewCache.keys().next().value);
+}
+function invalidateReads(path) {
+  readEpoch++;
+  const resource = path && resourceOf(path);
+  const dependencies = { users: ["users", "plans", "status", "sub-pulls"], plans: ["plans", "users"],
+    nodes: ["nodes", "inbounds", "hosts", "proxy-groups", "plans"],
+    inbounds: ["inbounds", "hosts", "nodes", "plans", "users", "proxy-groups"],
+    hosts: ["hosts", "inbounds", "nodes", "plans", "users", "proxy-groups"],
+    settings: ["settings", "users"], rules: ["rules"], "proxy-groups": ["proxy-groups", "routing"], devices: ["devices"], "device-password": ["devices"] };
+  const affected = resource && dependencies[resource] ? new Set(dependencies[resource]) : null;
+  const invalidPath = entryPath => {
+    let invalid = !affected || affected.has(resourceOf(entryPath));
+    if (resource === "settings") {
+      const target = new URL(path, location.origin).pathname;
+      const cached = new URL(entryPath, location.origin).pathname;
+      invalid = target.startsWith("/api/settings/templates/")
+        ? cached === "/api/settings" || cached === target
+        : cached.startsWith("/api/settings") || /^\/api\/users\/[^/]+\/links$/.test(cached);
+    }
+    if (resource === "proxy-groups" && /\/proxy-groups\/preview$/.test(entryPath)) invalid = false;
+    return invalid;
+  };
+  for (const [key, entry] of readSnapshot.values) if (invalidPath(entry.path)) readSnapshot.values.delete(key);
+  for (const [key, entry] of viewCache) if (entry.paths.some(invalidPath)) viewCache.delete(key);
+}
+// 异步交互共用进行中反馈；同一元素尚未完成时不重复执行。
+let progressCount = 0;
+function showProgress() {
+  progressCount++;
+  let status = $("#ui-progress");
+  if (!status) { status = document.createElement("div"); status.id = "ui-progress"; status.className = "ui-progress"; status.setAttribute("role", "status"); status.textContent = "正在处理…"; document.body.append(status); }
+  let done = false;
+  return () => { if (done) return; done = true; if (--progressCount === 0) $("#ui-progress")?.remove(); };
+}
+const pendingInteractions = new WeakMap();
+function withFeedback(element, operation) {
+  if (element && pendingInteractions.has(element)) return pendingInteractions.get(element);
+  let result;
+  try { result = operation(); } catch (e) { return Promise.reject(e); }
+  if (!result?.then || !element) return Promise.resolve(result);
+  const stopProgress = showProgress();
+  const previous = element.getAttribute("aria-busy");
+  const wasDisabled = element instanceof HTMLSelectElement ? element.disabled : null;
+  if (wasDisabled !== null) element.disabled = true;
+  element.setAttribute("aria-busy", "true"); element.classList.add("ui-pending");
+  const pending = Promise.resolve(result).finally(() => {
+    if (previous === null) element.removeAttribute("aria-busy"); else element.setAttribute("aria-busy", previous);
+    if (wasDisabled !== null) element.disabled = wasDisabled;
+    element.classList.remove("ui-pending"); pendingInteractions.delete(element); stopProgress();
+  });
+  pendingInteractions.set(element, pending);
+  return pending;
+}
 let writeGen = 0; // 写请求的代数,见 pageData
 // 界面里指代节点一律用显示名(🇺🇸 洛杉矶 A);内部名(la-1)只在节点详情与编辑里作次要信息。
 // NODE_LABELS:内部名 → 显示名,每次拉到节点列表时记下,给只带内部名的数据(更新弹窗、退避)用。
 const nodeLabel = n => (n && (n.display || n.name)) || "";
 const NODE_LABELS = {};
 const labelOfName = name => NODE_LABELS[name] || name;
-// shortVer:版本号只取开头的 vX.Y.Z(伪版本、dirty 尾巴都舍掉),匹配不到就原样显示。
-const shortVer = v => { const m = /^v?\d+\.\d+\.\d+/.exec(String(v || "")); return m ? (m[0][0] === "v" ? m[0] : "v" + m[0]) : (v ?? ""); };
-class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+// 正式版只显示 vX.Y.Z；长开发版保留七位提交号，未提交改动用 * 标记。完整版本由 title 展示。
+const shortVer = v => {
+  const s = String(v ?? ""), m = /^v?\d+\.\d+\.\d+/.exec(s);
+  if (m) return m[0][0] === "v" ? m[0] : "v" + m[0];
+  const d = /^dev-([0-9a-f]{7,40})(?:-(clean|dirty))?$/.exec(s);
+  return s.length > 16 && d ? "dev-" + d[1].slice(0, 7) + (d[2] === "dirty" ? "*" : "") : s;
+};
+// field:控制面拒绝时点名的字段(例如 sub_url_prefix);旧控制面不报,就是 undefined。
+class APIError extends Error { constructor(status, msg) { super(msg); this.status = status; this.field = undefined; } }
 async function api(path, init = {}) {
+  const mutation = !isReadRequest(path, init);
+  if (mutation) invalidateReads(path);
   for (let attempt = 0; ; attempt++) {
     let res;
     try {
       res = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...(init.headers || {}) } });
     } catch (e) { throw new APIError(0, "连不上本地服务：MPX 可能已经退出，请重新打开"); }
     // 写请求回来之后,之前发出的读都可能是旧的:换一代,load 不再复用它们(见 pageData)。
-    if ((init.method || "GET") !== "GET") writeGen++;
+    if (mutation) { writeGen++; invalidateReads(path); }
+    if (mutation && res.ok) refreshQueued = true;
     // 控制面 /api 按 IP 限流,被拒的请求没有执行过,等一下再试是安全的(同 CLI)。
     // 只重试限流闸门的 429(带 Retry-After);体检自己的频率限制也回 429,但不带这个头,
     // 那是「这台刚测过」,重试只会再被拒一次。
@@ -43,7 +125,7 @@ async function api(path, init = {}) {
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     // 控制面给界面的说法(ui_hint,不提命令)优先;没有才用 error 原话。
-    if (!res.ok) throw new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText);
+    if (!res.ok) throw Object.assign(new APIError(res.status, (body && (body.ui_hint || body.error)) || text || res.statusText), { field: body && typeof body === "object" ? body.field : undefined });
     return body;
   }
 }
@@ -83,6 +165,11 @@ const ICONS = {
   split: '<path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4M18 3v6a4 4 0 0 1-4 4"/><path d="m3 6 3-3 3 3M15 6l3-3 3 3"/>',
   pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6H21"/>',
   swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  infinity: '<path d="M12 12c-2-2.7-3.6-4-5.3-4a4 4 0 0 0 0 8c1.7 0 3.3-1.3 5.3-4zm0 0c2 2.7 3.6 4 5.3 4a4 4 0 0 0 0-8c-1.7 0-3.3 1.3-5.3 4z"/>',
 };
 const ic = (n, cls = "") => raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
@@ -100,16 +187,37 @@ const fmtDur = s => { s = Math.floor(+s || 0); const d = Math.floor(s / 86400), 
 // fmtSecs:秒数写成中文单位,不到 0.01 秒不写成「0.00 秒」。
 const fmtSecs = v => { v = +v || 0; if (v < 0.01) return "不到 0.01 秒"; if (v < 60) return `${v.toFixed(v < 10 ? 2 : 1)} 秒`; return fmtDur(v); };
 const sinceText = iso => { if (!iso) return "—"; const d = new Date(iso), s = (Date.now() - d) / 1e3; if (s < 60) return "刚刚"; if (s < 3600) return `${Math.floor(s / 60)} 分钟前`; if (s < 86400) return hm(d); return ymd(d); };
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+// relTime 是相对时间的统一写法(用户页「最近在线」与订阅拉取共用):
+// 3 分钟前 / 今天 06:48 / 昨天 21:14 / 10 月 2 日 / 2025 年 12 月 3 日。
+function relTime(iso) {
+  const d = new Date(iso), now = new Date(), s = (now - d) / 1e3;
+  if (s < 60) return "刚刚";
+  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`;
+  if (sameDay(d, now)) return `今天 ${hm(d)}`;
+  if (sameDay(d, new Date(now - DAY))) return `昨天 ${hm(d)}`;
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+}
 
 const USER_ST = { active: ["ok", "正常"], disabled: ["", "已停用"], expired: ["warn", "已过期"], limited: ["warn", "已超限"] };
 const stBadge = (cls, text) => H`<span class="st"><span class="dot ${cls}"></span>${text}</span>`;
 const userSt = s => stBadge(...(USER_ST[s] || ["", s]));
 const RESET = { none: "不重置", daily: "每天", weekly: "每周", monthly: "每月" };
 const pct = u => u.data_limit ? Math.min(100, u.used_traffic / u.data_limit * 100) : 0;
+// 剩余量(电池式):条长 = 剩余 / 上限。剩 >30% 绿,10–30% 芥末黄,≤10%(含用完、超限)红。
+// 百分比向下取整,不把快用完的说多;用完 / 超出时文字用红,条是空轨道。
+const remain = u => {
+  const left = Math.max(0, u.data_limit - u.used_traffic), rp = u.data_limit ? left / u.data_limit * 100 : 0, over = u.used_traffic - u.data_limit;
+  const cls = rp <= 10 ? "bad" : rp <= 30 ? "warn" : "ok";
+  const pctText = left <= 0 ? "剩 0%" : rp < 1 ? "剩 <1%" : `剩 ${Math.floor(rp)}%`;
+  const text = over > 0 ? `超 ${fmtBytes(over)} / ${fmtBytes(u.data_limit)}` : left <= 0 ? `剩 0 / ${fmtBytes(u.data_limit)}` : `剩 ${fmtBytes(left)} / ${fmtBytes(u.data_limit)}`;
+  return { left, rp, cls, out: left <= 0, pctText, text, tip: `已用 ${fmtBytes(u.used_traffic)} / 上限 ${fmtBytes(u.data_limit)}` };
+};
 function usageBar(u, wide) {
   if (!u.data_limit) return H`<div class="use"><span class="keep">${fmtBytes(u.used_traffic)} <span class="c-faint">· 不限</span></span></div>`;
-  const p = pct(u), cls = p >= 100 ? "bad" : p >= 80 ? "warn" : "";
-  return H`<div class="use"><div class="bar${wide ? " w100" : ""}"><i class="${cls}" style="width:${p.toFixed(1)}%"></i></div><span>${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}</span></div>`;
+  const r = remain(u);
+  return H`<div class="use" title="${r.tip}"><div class="bar${wide ? " w100" : ""}"><i class="${r.cls}" style="width:${r.rp.toFixed(1)}%"></i></div><span class="${r.out ? "c-bad" : ""}">${r.text}</span></div>`;
 }
 function expireCell(u) {
   if (!u.expire_at) return H`<span class="sub">永不过期</span>`;
@@ -126,6 +234,11 @@ function nodeSt(n) {
 }
 // 快到期:剩 7 天以内(与原型确认的阈值一致)。快用完:按控制面的通知阈值。
 const EXPIRE_SOON_DAYS = 7;
+// 已过期多少天(没过期或不过期是 0)。过期超过 EXPIRED_KEEP_DAYS 天的不再列进总览的「需要处理的用户」,
+// 只留在「用户」页的「已过期」筛选里集中清理 —— 放了一个月还没续的,多半不会再续了。
+const EXPIRED_KEEP_DAYS = 30;
+const expiredFor = u => u.status === "expired" && u.expire_at ? Math.max(0, -daysLeft(u.expire_at)) : 0;
+const expiredStale = u => u.status === "expired" && expiredFor(u) > EXPIRED_KEEP_DAYS;
 
 /* ---------- 共享的块 ---------- */
 const skRows = (n, c) => raw(Array.from({ length: n }, () => `<tr>${Array.from({ length: c }, (_, i) => `<td><span class="sk" style="width:${[70, 50, 90, 40, 60][i % 5]}%"></span></td>`).join("")}</tr>`).join(""));
@@ -208,7 +321,7 @@ async function refreshUpdatePill(force) {
 let modalCleanup = null;
 // 换一个弹窗内容前先收掉上一个弹窗留下的焦点陷阱等(离页确认会设)。
 function modalTake() { const c = modalCleanup; modalCleanup = null; c?.(); }
-function closeModal() { const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
+function closeModal() { if ($("#modal").dataset.locked) return; const cleanup = modalCleanup; modalCleanup = null; cleanup?.(); $("#modal").classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); updPollStop(); }
 function updTitle(u) {
   const c = u.control || {}, l = u.cli || {};
   const ver = c.latest && l.latest && c.latest !== l.latest ? `控制面 ${c.latest} / 本机 ${l.latest}` : (c.latest || l.latest || "");
@@ -217,13 +330,13 @@ function updTitle(u) {
 function updRow(name, p) {
   p = p || {};
   const to = p.latest || "—";
-  return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
+  return H`<div class="upd-row"><b>${name}</b><span class="mono">${p.current || "未知"}</span>${ic("arrow", "upd-arrow")}<span class="mono">${to}</span><span class="sp"></span>${p.available ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是最新</span>`}</div>`;
 }
 // 节点核心一行:「🇺🇸 洛杉矶 A · xray 26.3.27 → 26.4.1」;已在推荐版本上的只报现版本。
 function nodeUpdRow(n) {
   const up = nodeUpgradable(n);
   return H`<div class="upd-row"><b>${labelOfName(n.name)}</b><span class="sub">${n.core}</span>
-  ${up ? H`<span class="mono">${n.current || "未知"}</span><span class="upd-arrow">→</span><span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
+  ${up ? H`<span class="mono">${n.current || "未知"}</span>${ic("arrow", "upd-arrow")}<span class="mono">${n.target}</span>` : H`<span class="mono">${n.current || "未知"}</span>`}
   <span class="sp"></span>${up ? H`<span class="tag g">可升级</span>` : H`<span class="sub">已是推荐版本</span>`}</div>`;
 }
 // openUpdateModal 直接写 #modal,与 confirmBox 同一套 .mbody / .mf 结构。
@@ -426,10 +539,11 @@ function shell(page, body, crumb) {
   const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}">${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
   const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
-  return H`<div class="app"><aside class="side"><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small>${shortVer(META.cli_version)}</small></div>
+  const version = shortVer(META.cli_version);
+  return H`<div class="app"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small title="${META.cli_version}">${version}</small></div>
   ${cpCard()}
   ${nav}</aside>
-  <main><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
+  <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
   <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
@@ -482,78 +596,122 @@ function startSteps(d) {
       go: u ? H`<a class="btn sm pri" href="${userLink(u.username)}">${ic("qr")}发给 ${u.username}</a>` : "" },
   ];
 }
-function startBlock(S, done, allDone) {
-  if (allDone && clGet("hide")) return "";
+const OV_MAX = 6;
+const ovNodeRank = x => !x.status ? 3 : !x.status.reachable ? 0 : (x.status.certificates || []).some(c => c.not_after && c.days_left <= 14) ? 1 : !x.status.active ? 2 : x.draining ? 4 : 5;
+// 统计格副行只列不为 0 的类别,第一项(正常 / 运行)总是列出。
+// 总览里运行时长只到最大的单位(3 天 / 5 小时 / 12 分钟),精确值在悬停提示里。
+const ovDur = v => { v = Math.floor(+v || 0); const d = Math.floor(v / 86400), h = Math.floor(v / 3600); return d ? `${d} 天` : h ? `${h} 小时` : `${Math.floor(v / 60)} 分钟`; };
+const ovParts = parts => parts.filter(([n], i) => i === 0 || n > 0).map(([n, t]) => `${n} ${t}`).join(" · ");
+// 用量:条 + 百分比,完整数字放在悬停提示里。
+function ovUse(u) {
+  if (!u.data_limit) return H`<span class="ov-use sub">${fmtBytes(u.used_traffic)} · 不限</span>`;
+  const r = remain(u);
+  return H`<span class="ov-use" title="${r.text} · ${r.tip}"><span class="bar"><i class="${r.cls}" style="width:${r.rp.toFixed(1)}%"></i></span><span class="sub${r.out ? " c-bad" : ""}">${r.pctText}</span></span>`;
+}
+function startList(S, done, allDone) {
   const cur = S.findIndex(x => !x.done);
   const item = (x, i) => H`<li class="ck ${x.done ? "done" : i === cur ? "cur" : ""}"><span class="ck-i">${x.done ? ic("check") : String(i + 1)}</span>
     <div class="ck-t"><b>${x.t}</b><span class="sub">${x.done ? x.dDone : x.dTodo}</span></div>
     <div class="ck-a">${!x.done && i === cur ? H`${x.skip ? H`<button class="btn sm" data-act="cl-skip">先用 IP</button>` : ""}${x.go}` : ""}</div></li>`;
   const optional = H`<li class="ck opt"><span class="ck-i">${ic("plus")}</span><div class="ck-t"><b>可选：让它更好用</b><span class="sub">随时都能做，不影响上面的进度</span></div>
     <div class="ck-a">${PAGES.nodes ? H`<a class="btn sm" href="#nodes">${ic("nodes")}再加一个节点</a>` : ""}${PAGES.rules ? H`<a class="btn sm" href="#rules">${ic("split")}调整分流</a>` : ""}${PAGES.system ? H`<a class="btn sm" href="#system">${ic("bell")}打开到期提醒</a>` : ""}</div></li>`;
-  const list = H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去，大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
+  return H`<section class="card cl" id="start"><div class="cl-h"><div><h3>开始使用</h3><p class="sub">${done === 0 ? "四步把第一条订阅发出去，大约 5 分钟" : allDone ? "4 步都完成了" : `还差 ${S.length - done} 步`}</p></div><span class="sp" style="flex:1"></span><span class="cl-n"><b>${done}</b> / ${S.length}</span></div>
     <div class="cl-bar">${S.map(x => H`<i class="${x.done ? "on" : ""}"></i>`)}</div>
     <ol class="cks">${S.map(item)}${optional}</ol></section>`;
-  if (!allDone) return H`<div class="mb">${list}</div>`;
-  return H`<div class="cl-done" id="start-done">${ic("check")}<span><b>开始使用</b> · 4 步都完成了</span><span class="sp" style="flex:1"></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>${CL_OPEN ? H`<div class="mb">${list}</div>` : ""}`;
 }
+function startBlock(S, done, allDone) {
+  if (!allDone) return H`<div class="mb">${startList(S, done, allDone)}</div>`;
+  return CL_OPEN && !clGet("hide") ? H`<div class="mb">${startList(S, done, allDone)}</div>` : "";
+}
+function ovDoneChip() {
+  if (clGet("hide")) return "";
+  return H`<div class="ov-done" id="start-done">${ic("check")}<span><b>开始使用</b><span class="ov-done-rest"> · 4 步都完成了</span></span><button type="button" class="btn sm ghost" data-act="cl-open">${CL_OPEN ? "收起" : "再看一眼"}</button><button type="button" class="ib sm" title="不再显示" aria-label="不再显示" data-act="cl-hide">${ic("x")}</button></div>`;
+}
+// 「需要处理的用户」的一行。已过期的整行置灰(不画用量条,即使也超限了 —— 先续期,流量是续期之后的事),
+// 右侧给最常用的「续期」;删除收进行尾的「⋯」,红字,点了还要再确认一次。
+function ovUserRow(u, { soon, usageWarn, W, RM }) {
+  const href = PAGES.users ? "#users/" + encodeURIComponent(u.username) : "";
+  const name = H`<td><div class="u">${avatar(u.username)}<b class="bold ell" title="${u.username}">${u.username}</b></div></td>`;
+  // 状态格直接写「已过期 N 天」,右边两格合成一格放操作 —— 卡片窄(900 宽窗口里约 330px)时也放得下。
+  if (u.status === "expired") return H`<tr class="is-exp" data-href="${href}">${name}<td>${stBadge("warn", `已过期 ${expiredFor(u)} 天`)}</td><td></td>
+      <td class="ov-act" colspan="2">${W ? H`<button type="button" class="btn sm" data-act="user-renew" data-name="${u.username}">续期</button>` : ""}${W || RM ? rowMenu(u.username, [
+        [href ? H`<button type="button" data-act="go" data-href="${href}">${ic("user")}查看详情</button>` : ""],
+        [RM ? H`<div class="msep"></div><button type="button" class="dg" data-act="user-rm" data-name="${u.username}" data-back="overview">${ic("trash")}删除用户</button>` : ""]]) : ""}</td></tr>`;
+  return H`<tr data-href="${href}">${name}
+      <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td>${usageWarn(u) ? ovUse(u) : ""}</td>
+      <td class="num sub">${u.expire_at ? `剩 ${daysLeft(u.expire_at)} 天` : ""}</td><td class="ov-act"></td></tr>`;
+}
+// 行尾「⋯」菜单:同一时刻只开一个;点菜单项或别处就收起(见文件末尾的 click 监听)。
+const rowMenu = (name, items) => H`<span class="mw"><button type="button" class="ib sm" title="更多" aria-label="${name} 的更多操作" aria-haspopup="menu" aria-expanded="false" data-act="row-menu">${ic("more")}</button><div class="menu" role="menu" hidden>${items.map(i => i[0])}</div></span>`;
+// 过期超过 30 天的不在卡片里,这里说一句它们去哪了,点了直接到「用户」页的「已过期」筛选。
+const ovStaleNote = n => H`<div class="ov-stale sub">另有 ${n} 个用户过期超过 ${EXPIRED_KEEP_DAYS} 天，不再列在这里。${PAGES.users ? H`<button type="button" class="lnk" data-act="go-expired">到「已过期」里清理</button>` : ""}</div>`;
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
 PAGES.overview = {
   title: "总览",
-  async load() {
-    const [status, nodes, settings, users, pulls] = await Promise.all([
-      api("/api/status"), api("/api/nodes"), api("/api/settings"), api("/api/users?limit=1000"),
-      api("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
+  async load(r, read = api) {
+    const [status, nodes, settings, users, pulls, presence] = await Promise.all([
+      read("/api/status"), read("/api/nodes"), read("/api/settings"), read("/api/users?limit=1000"),
+      read("/api/sub-pulls").catch(() => null),  // 老控制面没有拉取记录
+      read("/api/users?limit=1").catch(() => null),  // 近 24 小时在用的总数;老控制面没有 presence
     ]);
     STATUS = status;
-    return { status, nodes, settings, users, pulls };
+    return { status, nodes, settings, users, pulls, presence: presence?.presence || null };
   },
   render(d) {
-    const L = !d;
-    const stat = (label, v, sub, dot, tip) => H`<div class="card stat" ${tip ? raw(`title="${esc(val(tip))}"`) : ""}><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s">${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
-    if (L) return H`<div class="ph"><div><h1>总览</h1><p><span class="sk" style="width:260px"></span></p></div></div>
-      <div class="grid g4">${stat()}${stat()}${stat()}${stat()}</div>
-      <div class="grid g2 mt"><div class="card"><div class="ch">需要处理的用户</div><table><tbody>${skRows(4, 3)}</tbody></table></div><div class="card"><div class="ch">节点</div><table><tbody>${skRows(4, 2)}</tbody></table></div></div>`;
-    const { status: s, nodes, settings, users, pulls } = d, U = users.users;
-    const S = startSteps(d), done = S.filter(x => x.done).length, allDone = done === S.length;
-    const pulled24 = (pulls || []).filter(p => Date.now() - new Date(p.last_pulled_at) < 864e5).length;
-    const n = k => U.filter(u => u.status === k).length;
-    const usagePct = settings.notify_usage_percent || 80;
-    const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
-    const near = u => u.status === "active" && u.data_limit && pct(u) >= usagePct;
-    const attention = [...U.filter(u => u.status === "limited"), ...U.filter(u => u.status === "expired"), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
-    const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
-    const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
-    const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
-    const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
-    const partial = users.total > U.length;
-    // 标题下一句按稿子:还没走完「开始使用」时是欢迎语,走完了是人数和节点数。
-    return H`<div class="ph"><div><h1>总览</h1><p>${allDone ? `${users.total} 个用户 · ${nodes.length} 个节点` : "欢迎用 MPX。跟着下面几步，把第一条订阅发出去。"}</p></div></div>
-    ${startBlock(S, done, allDone)}
-    ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
-      : s.backoffs.length ? H`<div class="callout mb">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
-    <div class="grid g4">
-      ${stat("用户", users.total, H`${n("active")} 正常 · ${n("limited")} 超限 · ${n("expired")} 过期 · ${n("disabled")} 停用${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
-      ${stat("节点", s.counts.nodes, `${run} 运行 · ${drain} 暂停分配 · ${down} 连不上`)}
-      ${pulls ? stat("近 24 小时在用", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
-      ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${fmtDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${fmtDur(s.uptime_seconds)}`, "ink", tick)}
-    </div>
-    <div class="grid g2 mt">
-      <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
-      ${attention.length ? H`<div class="tw"><table><tbody>${attention.slice(0, 6).map(u => H`<tr data-href="${PAGES.users ? "#users/" + encodeURIComponent(u.username) : ""}"><td><div class="u">${avatar(u.username)}<b class="bold">${u.username}</b></div></td>
-        <td>${u.status !== "active" ? userSt(u.status) : soon(u) ? stBadge("warn", "快到期") : stBadge("warn", "快用完")}</td><td class="hide-m">${usageBar(u)}</td>
-        <td class="num sub">${u.expire_at ? (daysLeft(u.expire_at) < 0 ? "已过期" : `剩 ${daysLeft(u.expire_at)} 天`) : "—"}</td></tr>`)}</tbody></table></div>`
-        : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
-        : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
-      <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
-      ${nodes.length ? nodes.map(x => { const c = certWarn(x); return H`<a class="row" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold" style="min-width:72px">${nodeLabel(x)}</b><span class="sub mono hide-m">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
-        : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
-    </div>
-    <div class="card mt"><div class="ch">通知</div>
-      <dl class="kv"><dt>Webhook</dt><dd class="mono">${settings.webhook_url || H`<span class="sub">未配置，不发通知</span>`}</dd>
-      <dt>到期提醒</dt><dd>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</dd>
-      <dt>用量提醒</dt><dd>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</dd></dl></div>`;
+  const L = !d;
+  const stat = (label, v, sub, dot, tip) => H`<div class="card stat" ${tip ? raw(`title="${esc(val(tip))}"`) : ""}><div class="l">${dot ? H`<span class="dot ${dot}"></span>` : ""}${label}</div><div class="v">${L ? H`<span class="sk h26 w60"></span>` : v}</div><div class="s" ${!L && typeof sub === "string" ? raw(`title="${esc(sub)}"`) : ""}>${L ? H`<span class="sk w80"></span>` : sub}</div></div>`;
+  if (L) return H`<div class="ov"><div class="ph"><h1>总览</h1></div>
+    <div class="grid g4">${stat()}${stat()}${stat()}${stat()}</div>
+    <div class="grid g2 ov-main"><div class="card"><div class="ch">需要处理的用户</div><table><tbody>${skRows(4, 3)}</tbody></table></div><div class="card"><div class="ch">节点</div><table><tbody>${skRows(4, 2)}</tbody></table></div></div></div>`;
+  const { status: s, nodes, settings, users, pulls } = d, U = users.users;
+  const S = startSteps(d), done = S.filter(x => x.done).length, allDone = done === S.length;
+  const pulled24 = (pulls || []).filter(p => Date.now() - new Date(p.last_pulled_at) < 864e5).length;
+  const n = k => U.filter(u => u.status === k).length;
+  const usagePct = settings.notify_usage_percent || 80;
+  const soon = u => u.status === "active" && u.expire_at && daysLeft(u.expire_at) <= EXPIRE_SOON_DAYS;
+  const usageWarn = u => u.status !== "expired" && u.data_limit && pct(u) >= usagePct;
+  const near = u => u.status === "active" && usageWarn(u);
+  // 过期的按「最近过期」在前;过期超过 30 天的不列(见 EXPIRED_KEEP_DAYS),卡片底部给一句去处。
+  const expired = U.filter(u => u.status === "expired"), stale = expired.filter(expiredStale);
+  const attention = [...U.filter(u => u.status === "limited"), ...expired.filter(u => !expiredStale(u)).sort((a, b) => expiredFor(a) - expiredFor(b)), ...U.filter(soon), ...U.filter(u => near(u) && !soon(u))];
+  const W = can("PUT", "/api/users/x"), RM = can("DELETE", "/api/users/x");
+  const run = nodes.filter(x => x.status?.reachable && !x.draining).length, drain = nodes.filter(x => x.draining).length, down = nodes.filter(x => x.status && !x.status.reachable).length;
+  const tick = s.last_tick_at ? H`上一轮 ${hms(new Date(s.last_tick_at))}，用时 ${fmtSecs(s.last_tick_seconds)}` : "还没跑过一轮";
+  const upd = s.update || {}, behind = upd.behind > 0 && !isDevVer(s.version);
+  const certWarn = x => (x.status?.certificates || []).filter(c => c.not_after && c.days_left <= 14).sort((a, b) => a.days_left - b.days_left)[0];
+  const partial = users.total > U.length;
+  const shown = nodes.map((x, i) => [x, i]).sort((a, b) => ovNodeRank(a[0]) - ovNodeRank(b[0]) || a[1] - b[1]).slice(0, OV_MAX).map(a => a[0]);
+  const hook = settings.webhook_url;
+  const backoffTitle = s.backoffs.map(b => `${labelOfName(b.node_name)}：连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。`).join(" ");
+  return H`<div class="ov"><div class="ph"><div><h1>总览</h1>${allDone ? "" : H`<p>欢迎用 MPX。跟着下面几步，把第一条订阅发出去。</p>`}</div><span class="sp"></span>${allDone ? ovDoneChip() : ""}</div>
+  ${startBlock(S, done, allDone)}
+  ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
+    : s.backoffs.length ? H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
+  <div class="grid g4">
+    ${stat("用户", users.total, H`${ovParts([[n("active"), "正常"], [n("limited"), "超限"], [n("expired"), "过期"], [n("disabled"), "停用"]])}${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
+    ${stat("节点", s.counts.nodes, ovParts([[run, "运行"], [drain, "暂停分配"], [down, "连不上"]]))}
+    ${d.presence ? stat("近 24 小时在用", H`${d.presence.active_24h ?? 0}<small>人</small>`, "按节点流量算")
+      : pulls ? stat("近 24 小时拉过订阅", H`${pulled24}<small>人</small>`, "客户端拉取过订阅") : stat("连接方式", H`${s.counts.inbounds}<small>/ ${s.counts.hosts}</small>`, `${s.counts.inbounds} 条连接 · ${s.counts.hosts} 个对外地址`)}
+    ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${ovDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${ovDur(s.uptime_seconds)}`, "ink", H`${tick} · 已运行 ${fmtDur(s.uptime_seconds)}`)}
+  </div>
+  <div class="grid g2 ov-main">
+    <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
+    ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => ovUserRow(u, { soon, usageWarn, W, RM }))}</tbody></table>${stale.length ? ovStaleNote(stale.length) : ""}`
+      : stale.length ? H`${emptyBox("check", "没有要处理的用户", `没有超限、${EXPIRED_KEEP_DAYS} 天内过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}${ovStaleNote(stale.length)}`
+      : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
+      : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
+    <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
+    ${nodes.length ? shown.map(x => { const c = certWarn(x); return H`<a class="row ov-n" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold ell">${nodeLabel(x)}</b><span class="sub mono ov-addr">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
+      : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
+  </div>
+  <div class="ov-note" id="ov-notify"><span class="ov-note-h">${ic("bell")}通知</span>
+    <span class="ov-kv"><span class="sub">Webhook</span>${hook ? H`<span class="mono ell" title="${hook}">${hook}</span>` : H`<span class="sub">未配置，不发通知</span>`}</span>
+    <span class="ov-kv"><span class="sub">到期提醒</span>${settings.notify_days_left ? `剩 ${settings.notify_days_left} 天时` : "关闭"}</span>
+    <span class="ov-kv"><span class="sub">用量提醒</span>${settings.notify_usage_percent ? `用到 ${settings.notify_usage_percent}% 时` : "关闭"}</span>
+    <span class="sp"></span>${PAGES.system ? H`<a class="btn ghost sm" href="#system">设置 ${ic("arrow")}</a>` : ""}</div></div>`;
+
   },
 };
 
@@ -635,13 +793,48 @@ document.addEventListener("mousedown", e => {
 }, true);
 document.addEventListener("keydown", e => { if (SELMENU && e.key === "Escape") { e.stopPropagation(); const s = SELMENU.sel; closeSelMenu(); s.focus(); } }, true);
 addEventListener("resize", closeSelMenu); document.addEventListener("scroll", e => { if (SELMENU && !SELMENU.el.contains(e.target)) closeSelMenu(); }, true);
-let DRAWER_RAF = 0;
-function openDrawer(html, cls = "") { const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html); cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = requestAnimationFrame(() => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); }); }
-function closeOverlays() {
+let DRAWER_RAF = 0, overlaySeq = 0;
+function openDrawer(html, cls = "") {
+  ++overlaySeq;
+  const d = $("#drawer"); d.classList.toggle("wide", cls === "wide"); d.innerHTML = val(html);
+  cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
+  const reveal = () => { DRAWER_RAF = 0; d.classList.add("open"); $("#scrim").classList.add("open"); d.querySelector("h2[tabindex]")?.focus({ preventScroll: true }); };
+  if (d.querySelector('[aria-busy="true"]')) reveal();
+  else DRAWER_RAF = requestAnimationFrame(reveal);
+}
+// 先打开目标框架，再读取；关闭、换页或打开别的抽屉后丢弃这次结果。
+async function readDrawer(title, read, retry, cls = "") {
+  openDrawer(H`<div data-drawer-loading aria-busy="true"><div class="dh"><h2 tabindex="-1">${title}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db"><p role="status">正在加载…</p><div data-read-skeleton hidden><span class="sk w80"></span></div></div></div>`, cls);
+  const seq = overlaySeq, frame = $("#drawer").firstElementChild;
+  const owns = () => overlaySeq === seq && frame.isConnected && ($("#drawer").classList.contains("open") || DRAWER_RAF);
+  const timer = setTimeout(() => { if (owns()) frame.querySelector("[data-read-skeleton]").hidden = false; }, 100);
+  try {
+    const value = await read();
+    return owns() ? { value } : null;
+  } catch (e) {
+    if (owns()) {
+      frame.removeAttribute("aria-busy");
+      frame.querySelector(".db").innerHTML = val(errorBox(title, e));
+      frame.querySelector('[data-act="reload"]').onclick = event => { event.stopPropagation(); retry(); };
+    }
+    return null;
+  } finally { clearTimeout(timer); }
+}
+function dismissOverlays() {
+  if ($("#modal").dataset.locked) return;
+  ++overlaySeq;
   cancelAnimationFrame(DRAWER_RAF); DRAWER_RAF = 0;
   $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open");
   updPollStop();
-  if (route[1] && PAGES[route[0]]?.closeTo) { history.replaceState(null, "", "#" + PAGES[route[0]].closeTo); route = [route[0]]; }
+}
+function closeOverlays() {
+  if ($("#modal").dataset.locked) return;
+  dismissOverlays();
+  if (route[1] && PAGES[route[0]]?.closeTo) {
+    here = PAGES[route[0]].closeTo; history.replaceState(null, "", "#" + here); route = routeOf(here);
+    updateCrumb();
+    if (!current.data && !current.loading) load(true, true, true);
+  }
 }
 // action:{ label, run } 给 toast 加一个按钮(比如「放弃」后的「撤销」);有按钮时多停一会儿。
 function toast(text, bad, action) {
@@ -666,28 +859,46 @@ async function write(method, path, body, okText) {
   if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
   const res = await api(path, init);
   if (okText) toast(okText);
-  afterWrite();
+  afterWrite(path);
   return res;
 }
-// 任何写成功后都重新拉当前页。放到宏任务里,等调用方关掉抽屉/改完地址再读 location.hash;
+// 写成功后合并一次局部读取，未受影响的资源复用快照。放到宏任务里，等调用方关掉抽屉/改完地址再读 location.hash；
 // 否则地址没变(例如在 #users 删掉用户后又设 location.hash="users")时不会有 hashchange,列表就停在旧数据。
-function afterWrite() { setTimeout(() => load(true, true), 0); }
+function afterWrite(path) {
+  if (!path) invalidateReads();
+  refreshQueued = !!path;
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => load(true, true), 0);
+}
 // 确认框。typed 给了就要求逐字输入它才放行;run 抛错时框不关,错误显示在框里。
 // extra 是插在说明下面的表单。
 // alt:{ label, run } 再给一个次要选项(比如「只删除，稍后应用」),和主按钮一样受 typed 约束。
-function confirmBox({ title, text, ok, danger, typed, run, extra, alt }) {
+function confirmBox({ title, text, ok, danger, typed, run, extra, alt, lock = false }) {
   const m = $("#modal");
   modalTake(); m.innerHTML = val(H`<div class="mbody"><h2>${danger ? H`<span class="warnico">${ic("warn")}</span>` : ""}<span class="mt-t">${title}</span></h2><p>${text}</p>
-  ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in mono" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
+  ${typed ? H`<div class="field"><label class="sub">输入 <b class="c-ink">${typed}</b> 确认</label><input class="in ${/[\u3400-\u9fff]/.test(typed) ? "" : "mono"}" id="typed" autocomplete="off" spellcheck="false"></div>` : ""}
   ${extra || ""}<div class="err" id="modal-err" role="alert"></div></div>
   <div class="mf"><button class="btn" data-act="modal-cancel">取消</button>${alt ? H`<button id="altb" class="btn" ${typed ? raw("disabled") : ""}>${alt.label}</button>` : ""}<button id="okb" class="btn ${danger ? "danger" : "pri"}" ${typed ? raw("disabled") : ""}>${ok}</button></div>`);
   $("#scrim").classList.add("open"); m.classList.add("open");
   const okb = $("#okb"), altb = $("#altb"), t = $("#typed");
-  if (t) { t.addEventListener("input", () => { okb.disabled = t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
+  let busy = false;
+  if (t) { t.addEventListener("input", () => { okb.disabled = busy || t.value !== typed; if (altb) altb.disabled = okb.disabled; }); setTimeout(() => t.focus(), 50); } else setTimeout(() => okb.focus(), 50);
   const go = (b, fn) => b && b.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    const controls = lock ? [...m.querySelectorAll("button,input,select")].map(e => [e, e.disabled]) : [];
+    if (lock) { m.dataset.locked = "true"; m.setAttribute("aria-busy", "true"); for (const [e] of controls) e.disabled = true; }
     okb.disabled = true; if (altb) altb.disabled = true; b.classList.add("busy");
-    try { await fn(); m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); }
-    catch (e) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); }
+    try { await fn(); if (m.contains(okb)) { m.classList.remove("open"); if (!$("#drawer.open")) $("#scrim").classList.remove("open"); } }
+    catch (e) { if (m.contains(okb)) { $("#modal-err").textContent = e.message; okb.disabled = false; if (altb) altb.disabled = false; b.classList.remove("busy"); } }
+    finally {
+      busy = false;
+      if (m.contains(okb)) {
+        delete m.dataset.locked; m.removeAttribute("aria-busy");
+        for (const [e, disabled] of controls) e.disabled = disabled || e.getAttribute("aria-disabled") === "true";
+        if (t) okb.disabled = t.value !== typed;
+      }
+    }
   });
   go(okb, run); go(altb, alt && alt.run);
 }
@@ -701,12 +912,24 @@ const cpName = (name, server) => (!name || name === "default") ? (cpAddr(server)
 // reload。只有一个档又接不了新控制面时,不弹,只提示一句。
 async function openProfiles() {
   if (!META.profiles) return;
+  const panel = $("#modal");
+  modalTake(); panel.innerHTML = val(H`<div class="mbody" aria-busy="true"><h2>切换控制面</h2><p role="status">正在加载…</p></div><div class="mf"><button class="btn" data-act="modal-cancel">取消</button></div>`);
+  panel.classList.add("open"); $("#scrim").classList.add("open");
+  const frame = panel.firstElementChild;
   let list;
   try { list = await api("/local/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
-  catch (e) { toast("读不到控制面列表：" + e.message, true); return; }
+  catch (e) {
+    if (frame.isConnected && panel.classList.contains("open")) {
+      frame.removeAttribute("aria-busy"); frame.innerHTML = val(H`<h2>切换控制面</h2>${errorBox("控制面列表", e)}`);
+      frame.querySelector('[data-act="reload"]').onclick = event => { event.stopPropagation(); openProfiles(); };
+    }
+    return;
+  }
+  if (!frame.isConnected || !panel.classList.contains("open")) return;
   if (!Array.isArray(list)) list = [];
   const canAdd = !!META.connect && typeof window.openConnectForm === "function";
   if (list.length <= 1 && !canAdd) {
+    closeModal();
     toast(H`只有一个控制面 ${cpName(list[0]?.name, list[0]?.server)};这里不能添加新的控制面`);
     return;
   }
@@ -725,15 +948,16 @@ async function openProfiles() {
 // useProfile:切到 name。成功整页刷新,让所有页面数据都跟着新控制面重来。
 async function useProfile(name, el, confirmed = false) {
   if (!confirmed && PAGES[route[0]]?.canLeave && await PAGES[route[0]].canLeave(() => useProfile(name, null, true)) === false) return;
-  if (el) { el.disabled = true; el.classList.add("busy"); }
+  const m = $("#modal");
+  modalTake(); m.innerHTML = val(H`<div class="mbody" aria-busy="true"><h2>正在切换到 ${name}</h2><p role="status">正在连接，完成后加载页面…</p></div>`);
+  m.dataset.locked = "1"; m.classList.add("open"); $("#scrim").classList.add("open");
   try {
     await api("/local/profiles/use", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
     location.reload();
   } catch (e) {
-    const box = $("#prof-err");
-    if (box) box.textContent = e.message; else toast(e.message, true);
-    if (el) { el.disabled = false; el.classList.remove("busy"); }
-  }
+    m.innerHTML = val(H`<div class="mbody"><h2>切换到 ${name}</h2><div id="prof-err" role="alert">${e.message}</div></div><div class="mf"><button class="btn" data-act="modal-cancel">关闭</button><button class="btn pri" id="profile-retry">重试</button></div>`);
+    $("#profile-retry").onclick = () => useProfile(name, null, true);
+  } finally { delete m.dataset.locked; }
 }
 
 /* ---------- 渲染与路由 ---------- */
@@ -742,56 +966,143 @@ let loadSeq = 0;
 // 把这一页的几个 GET 全发一遍,白白多耗一倍限流桶,连着点两下就会被控制面 429。
 // 同一页、同一代(期间没有写请求回来)还在路上的读直接复用,不再重发。
 let inflight = null;
-function pageData(p, key) {
-  if (inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
-  const promise = p.load(route);
+function pageData(p, key, local, fresh, readRoute = route.slice()) {
+  key = JSON.stringify([key, p.readKey?.() || ""]);
+  if (!fresh && inflight && inflight.key === key && inflight.gen === writeGen) return inflight.promise;
+  if (readSnapshot.page !== p) readSnapshot = { page: p, values: new Map() };
+  const snapshot = new Map(readSnapshot.values);
+  const collected = new Map(), requests = new Map();
+  const read = (path, init = {}) => {
+    const signature = JSON.stringify([path, init.method || "GET", init.body || "", !!init.asText]);
+    if (local && snapshot.has(signature)) {
+      const entry = snapshot.get(signature);
+      collected.set(signature, entry);
+      return Promise.resolve(copyRead(entry.value));
+    }
+    if (requests.has(signature)) return requests.get(signature).then(copyRead);
+    const request = api(path, init).then(value => { collected.set(signature, { path, value: copyRead(value) }); return value; });
+    requests.set(signature, request);
+    return request.then(copyRead);
+  };
+  const promise = Promise.resolve(p.load(readRoute, read)).then(data => ({ data, collected, local }));
   const mine = inflight = { key, gen: writeGen, promise };
   promise.then(() => {}, () => {}).then(() => { if (inflight === mine) inflight = null; });
   return promise;
 }
-function paint() {
+// 内容区滚动时短暂显示滑块，重画或离开页面时清掉计时器。
+let mainScrollTimer = 0;
+function clearMainScroll() {
+  clearTimeout(mainScrollTimer); mainScrollTimer = 0;
+  $("main")?.classList.remove("scrolling");
+}
+addEventListener("pagehide", clearMainScroll);
+function paint(resetScroll = false) {
   const p = PAGES[route[0]] || PAGES.overview;
   const crumb = p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`;
   let body;
-  if (current.error && !current.data) body = H`<div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
-  else body = p.render(current.loading && !current.data ? null : current.data, route);
+  if (current.error && !current.data) body = H`<div class="ph"><h1>${p.loadingTitle?.(route) || p.title}</h1></div><div class="card">${errorBox(p.title + "数据", current.error)}</div>`;
+  else {
+    body = p.render(current.loading && !current.data ? null : current.data, route);
+    if (current.error && current.errorInline) body = H`${body}<div class="card mt">${errorBox(p.title + "数据", current.error)}</div>`;
+  }
   // 滚动的是内容区 main,不是整页。
-  const y = $("main")?.scrollTop || 0;
+  const y = resetScroll ? 0 : ($("main")?.scrollTop || 0);
+  clearMainScroll();
   $("#root").innerHTML = val(shell(p, body, crumb));
-  const m = $("main"); if (m) m.scrollTop = y;
+  const m = $("main");
+  if (m) {
+    m.scrollTop = y;
+    m.addEventListener("scroll", () => {
+      if (!m.isConnected) return;
+      clearMainScroll(); m.classList.add("scrolling");
+      mainScrollTimer = setTimeout(clearMainScroll, 700);
+    }, { passive: true });
+  }
   p.after?.(current.data, route);
+  if (resetScroll) { const h = $('#drawer.open [aria-busy="true"] h2') || $("#page h1"); h?.setAttribute("tabindex", "-1"); h?.focus({ preventScroll: true }); }
 }
-async function load(soft, force) {
-  let key = (location.hash.slice(1) || "overview");
+function updateCrumb() {
+  const p = PAGES[route[0]], el = $(".crumb");
+  if (el && p) el.innerHTML = val(p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`);
+}
+function overlayRoute(p, r) { return !!(p.overlay && r[1]); }
+// 同一基页的详情地址只驱动叠层；不触发列表读取、paint 或进度提示。
+function moveOverlay(p, next, key) {
+  if (!p.overlay || current.page !== p || !current.data || next[0] !== route[0] || next[1] === route[1]) return false;
+  const had = !!route[1];
+  route = next; here = key;
+  if (had || next[1]) dismissOverlays();
+  updateCrumb();
+  if (next[1]) p.overlay(next, current.data);
+  return true;
+}
+async function load(soft, force, local) {
+  let key = location.hash.slice(1) || "overview";
   const moved = migrateKey(key);
   if (moved !== key) { history.replaceState(null, "", "#" + moved); key = moved; }
-  route = routeOf(key);
-  if (!PAGES[route[0]]) route = ["overview"];
-  here = route[0] === "overview" ? "overview" : key;
-  // 体检页带过来的 AUTO_APPLY 只对它指向的那台节点有效:换了页、换到别的节点都
-  // 丢掉,免得下次进来突然弹出「应用到节点」。
+  let next = routeOf(key);
+  if (!PAGES[next[0]]) { next = ["overview"]; key = "overview"; }
+  const p = PAGES[next[0]], previousKey = here;
+  if (moveOverlay(p, next, key)) return;
+  const fresh = local === null, written = refreshQueued, epoch = readEpoch;
+  local = local === true || (!fresh && written);
+  refreshQueued = false; clearTimeout(refreshTimer);
+  route = next; here = key;
   if (!(route[0] === "nodes" && route[1] && String(window.AUTO_APPLY?.id) === String(route[1]))) window.AUTO_APPLY = null;
-  const p = PAGES[route[0]];
+  // users/name 由独立叠层读取；基页始终按 users 读取并缓存。
+  const readRoute = p.overlay ? [route[0]] : route.slice();
+  const readKey = p.overlay ? route[0] : key;
+  const cacheKey = viewCacheKey(p, readKey);
+  const changed = current.page !== p || (p.overlay ? current.key !== readKey : p.viewKey ? p.viewKey(routeOf(previousKey)) !== p.viewKey(route) : previousKey !== here);
+  const navigation = changed || (!p.overlay && current.key !== readKey);
+  const cached = changed && !fresh ? cachedView(cacheKey) : null;
+  if (changed) {
+    const previous = viewCache.get(current.cacheKey);
+    if (previous) previous.scroll = $("main")?.scrollTop || 0;
+    dismissOverlays();
+  }
+  p.prepare?.(route);
   const seq = ++loadSeq;
-  // 页面在取数据时 <html data-loading>,画完摘掉:测试和截图脚本等它摘掉再点,免得点到正被换掉的元素。
+  const seed = cached?.data || (changed ? p.seed?.(route) : null);
+  const background = !!cached || (!!current.data && !fresh && !local && !changed);
+  const stopProgress = !background && !overlayRoute(p, route) ? showProgress() : () => {};
   document.documentElement.dataset.loading = "1";
-  if (!soft || current.page !== p) { current = { page: p, data: null, error: null, loading: true, at: null }; paint(); }
+  current.loading = !background;
+  if (!soft || changed) {
+    current = { page: p, key: readKey, cacheKey, data: seed || null, error: null, loading: !background, at: cached?.at || null };
+    paint(true);
+    if (cached) $("main").scrollTop = cached.scroll || 0;
+  } else if (!background) $("main")?.setAttribute("aria-busy", "true");
+  if (overlayRoute(p, route)) p.overlay(route, current.data);
   try {
-    const data = await pageData(p, key);
-    if (seq !== loadSeq) return;
-    current = { page: p, data, error: null, loading: false, at: new Date() };
+    const packet = await pageData(p, readKey, local, fresh, readRoute);
+    if (seq !== loadSeq || epoch !== readEpoch) {
+      if (seq === loadSeq && epoch !== readEpoch && !current.data) { inflight = null; return load(true, true, null); }
+      return;
+    }
+    if (!packet.local) {
+      readSnapshot = { page: p, values: packet.collected };
+    }
+    // 展示缓存收完整页面结果；局部读取仍不回写请求快照。
+    rememberView(cacheKey, p, packet);
     CP_OK = true;
+    // 只读叠层下冻结当前数据与 DOM；结果进入缓存，下次正常刷新才采用。
+    // 写后的明确刷新仍要更新列表和详情，不把已确认的修改藏到下一轮。
+    if (overlayRoute(p, route) && current.data && !written && background) return;
+    current = { page: p, key: readKey, cacheKey, data: packet.data, error: null, loading: false, at: new Date() };
+    if (!soft || force || !$("#drawer.open, #modal.open")) paint();
+    if (overlayRoute(p, route)) p.overlay(route, current.data, written || fresh);
   } catch (e) {
     if (seq !== loadSeq) return;
-    // 详情没取到,体检留下的 AUTO_APPLY 不能留到下一次加载。
     window.AUTO_APPLY = null;
-    current = { ...current, error: e, loading: false };
-    // 连不上控制面(本地服务没了或网关 5xx)时,侧栏控制面的绿点不能还亮着。
+    current = { ...current, error: e, errorInline: !cached && (navigation || fresh), loading: false };
     if (!(e && e.status >= 400 && e.status < 500)) CP_OK = false;
     if (current.data) toast("刷新失败：" + e.message, true);
+    if (!current.data || (!overlayRoute(p, route) && (!soft || force || !$("#drawer.open, #modal.open")))) paint();
+  } finally {
+    if (seq === loadSeq) { current.loading = false; delete document.documentElement.dataset.loading; $("main")?.removeAttribute("aria-busy"); }
+    stopProgress();
   }
-  if (!soft || force || !$("#drawer.open, #modal.open")) paint();
-  if (seq === loadSeq) delete document.documentElement.dataset.loading;
   if (!current.error) refreshUpdatePill();
 }
 
@@ -803,19 +1114,26 @@ async function reportTheme(theme) {
     await fetch("/local/app/theme", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme }) });
   } catch {}
 }
-// 页面加载时报一次:存过 light/dark 就报那个,没存过表示跟随系统。
+// 页面加载时报一次：存过 light/dark 就报那个，没存过使用浅色。
 function savedTheme() {
   try { const t = localStorage.getItem("mpx-theme"); if (t === "light" || t === "dark") return t; } catch {}
-  return "system";
+  return "light";
 }
 
 const ACTS = {
-  reload: () => load(true),
+  reload: () => load(true, false, null),
   theme: () => { const d = document.documentElement, t = d.dataset.theme === "dark" ? "light" : "dark"; d.dataset.theme = t; try { localStorage.setItem("mpx-theme", t); } catch {} reportTheme(t); paint(); },
   close: () => closeOverlays(),
   "modal-cancel": () => closeModal(),
   // 节点行要显示名:还没拉过节点列表(比如直接停在设置页)就先拉一次。
-  "update-open": async () => { if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) { try { await api("/api/nodes"); } catch {} } openUpdateModal(); },
+  "update-open": async () => {
+    openUpdateModal();
+    const frame = $("#modal").firstElementChild;
+    if (!Object.keys(NODE_LABELS).length && can("GET", "/api/nodes")) {
+      try { await api("/api/nodes"); } catch {}
+      if (frame?.isConnected && $("#modal.open")) for (const b of $("#modal").querySelectorAll(".upd-row b")) b.textContent = labelOfName(b.textContent);
+    }
+  },
   // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
   "update-skip": () => { const v = updLatest(UPDATE); if (v) { try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch {} } closeModal(); const b = $("#upd-pill"); if (b) b.hidden = true; },
   "update-apply": (d, el) => applyUpdate(el),
@@ -846,17 +1164,39 @@ const ACTS = {
   "cl-open": () => { CL_OPEN = !CL_OPEN; paint(); },
   "cl-hide": () => { clSet("hide", true); CL_OPEN = false; paint(); },
   copy: async d => { try { await navigator.clipboard.writeText(d.text); toast("已复制"); } catch { toast("复制失败，请手动选中复制", true); } },
+  // 行尾「⋯」:开这个之前先收起别的。靠近窗口底部时往上开,不被裁掉。
+  "row-menu": (d, el) => {
+    const m = el.nextElementSibling, open = m.hidden;
+    closeRowMenus();
+    if (!open) return;
+    m.hidden = false; el.setAttribute("aria-expanded", "true");
+    m.classList.toggle("up", el.getBoundingClientRect().bottom + m.offsetHeight + 12 > innerHeight);
+  },
+  go: d => { closeRowMenus(); followRoute(d.href); },
+  "go-expired": () => { if (typeof US !== "undefined") { US.status = "expired"; US.offset = 0; US.search = ""; US.plan = ""; PICK.clear(); } location.hash = "users"; },
 };
+// 点击直接进入同一个 load 入口，省掉等待浏览器派发 hashchange 的一帧。
+function followRoute(key) {
+  location.hash = key;
+  if (!PAGES[route[0]]?.canLeave) load(true, true);
+}
+function closeRowMenus() { for (const m of document.querySelectorAll(".mw .menu:not(#user-menu)")) { m.hidden = true; m.previousElementSibling?.setAttribute("aria-expanded", "false"); } }
+document.addEventListener("click", e => { if (!e.target.closest?.(".mw") || e.target.closest?.(".mw .menu button")) closeRowMenus(); });
 document.addEventListener("click", e => {
   const a = e.target.closest("[data-act]");
   // aria-disabled 的按钮仍可聚焦(读屏/键盘能读到),但不能真的触发动作。
   if (a && a.getAttribute("aria-disabled") === "true") { e.preventDefault(); return; }
-  if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a, e); return; }
+  if (a && ACTS[a.dataset.act]) { e.preventDefault(); withFeedback(a, () => ACTS[a.dataset.act](a.dataset, a, e)).catch(error => toast(error.message, true)); return; }
   const tr = e.target.closest("tr[data-href]");
-  if (tr && tr.dataset.href) location.hash = tr.dataset.href;
+  // 勾选格(.td-pick)和行尾操作格(.ov-act)里点空白处也不打开详情。
+  if (tr && tr.dataset.href && !e.target.closest(".td-pick, .ov-act")) { followRoute(tr.dataset.href); return; }
+  const link = e.target.closest('a[href^="#"]');
+  if (link && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !link.target) {
+    e.preventDefault(); followRoute(link.getAttribute("href"));
+  }
 });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeOverlays();
+  if (e.key === "Escape") { closeRowMenus(); closeOverlays(); }
   if ((e.key === "Enter" || e.key === " ") && e.target.matches?.(".profile[data-act=cp-toggle]")) { e.preventDefault(); ACTS["cp-toggle"](); }
 });
 // 一键更新轮询随页面可见性走:藏起来停拍,回到可见立刻补一次。
@@ -871,13 +1211,22 @@ document.addEventListener("visibilitychange", () => {
 // 应用内对话框;这里把地址改回当前页(replaceState 不触发新的 hashchange),也不加载新页。
 addEventListener("hashchange", async () => {
   const nextKey = migrateKey(location.hash.slice(1) || "overview");
+  if (nextKey === here) {
+    if (location.hash !== "#" + nextKey) history.replaceState(null, "", "#" + nextKey);
+    return;
+  }
   const p = PAGES[route[0]];
   if (p?.canLeave) {
     let ok = true;
     try { ok = await p.canLeave(nextKey); } catch { ok = true; }
     if (!ok) { history.replaceState(null, "", "#" + here); return; }
   }
-  if (routeOf(nextKey)[0] !== route[0]) { $("#drawer").classList.remove("open"); closeModal(); $("#scrim").classList.remove("open"); }
+  const nextRoute = routeOf(nextKey);
+  if (p === PAGES[nextRoute[0]] && p.viewKey && p.viewKey(route) === p.viewKey(nextRoute) && current.data) {
+    if (here !== nextKey) dismissOverlays();
+    route = nextRoute; here = nextKey; p.prepare?.(route); paint();
+    return load(true, true);
+  }
   load(true, true);
 });
 // 每 30 秒刷一次(和后台循环同一个节奏);页面在后台时不刷,省得白白耗限流桶。

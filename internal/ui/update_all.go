@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 	"github.com/RovenEverward/my-proxy/internal/updatecheck"
 )
 
@@ -89,6 +90,10 @@ type updateAllState struct {
 //
 // 同一时刻只允许一轮:正在跑或正在重启时再点返回 409,而不是排队或合并。
 func (s *Server) updateAllStart(w http.ResponseWriter, r *http.Request) {
+	if err := selfupdate.CheckLocalUpdate(updateLocalVersion()); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if !s.beginUpdateAll() {
 		writeError(w, http.StatusConflict, "已有一键更新在跑")
 		return

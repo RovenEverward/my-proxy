@@ -56,7 +56,7 @@ async function readModify(name, change) {
   const u = asModelUser(await api(userPath(name)));
   change(u);
   const res = await api(userPath(name), { method: "PUT", body: JSON.stringify(u), headers: { "Content-Type": "application/json" } });
-  afterWrite();
+  afterWrite(userPath(name));
   return res;
 }
 
@@ -95,53 +95,207 @@ function userPlanDetail(u) {
 
 /* ---- 列表状态 ---- */
 const PAGE_SIZE = 50;
-const US = { status: "", search: "", plan: "", offset: 0 };
+// dir 是「最近在线」这一列的排序方向:-1 最新在前(默认),1 反过来;从未连接的两边都在最后。
+const US = { status: "", search: "", plan: "", offset: 0, dir: -1 };
+// 「已过期」筛选下的多选:只记用户名;换筛选、换页、删完都清空,不跨筛选带着勾。
+const PICK = new Set();
+const pickable = () => US.status === "expired" && can("DELETE", "/api/users/x");
 const STATUS_TABS = [["", "全部"], ["active", "正常"], ["limited", "已超限"], ["expired", "已过期"], ["disabled", "已停用"]];
 
 // 用户页顶部的「用户 | 套餐」页签:套餐是用户的属性,不再单独占侧栏一级(#users/plans)。
 const userTabs = plans => PAGES.plans ? H`<div class="tabs"><a class="${plans ? "" : "on"}" href="#users">用户</a><a class="${plans ? "on" : ""}" href="#users/plans">套餐</a></div>` : "";
 
+/* ---- 「最近在线」的时间 ---- */
+// tzLabel 按时区算标签(浏览器的时区偏移,和操作者看到的钟一致)。
+const tzLabel = () => { const o = -new Date().getTimezoneOffset() / 60; return `UTC${o >= 0 ? "+" : ""}${o}`; };
+// 悬停提示里的绝对时间:「2026 年 10 月 17 日 21:14:40（UTC+8）」。
+const absTime = iso => { const d = new Date(iso); return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 ${hms(d)}（${tzLabel()}）`; };
+// agoShort 是给「几十秒前」这种短跨度用的:采样 30 秒一次,这里只说个大概。
+const agoShort = iso => { const s = Math.max(0, (Date.now() - new Date(iso)) / 1e3); return s < 60 ? `${Math.max(1, Math.round(s))} 秒前` : s < 3600 ? `${Math.floor(s / 60)} 分钟前` : relTime(iso); };
+// 一段使用:「今天 07:42 – 现在」「昨天 21:14 – 23:50」。start 是这几天内时,当天写时刻。
+function spanText(sg) {
+  const a = new Date(sg.start), b = sg.end ? new Date(sg.end) : null;
+  const head = relTime(sg.start).replace(/^(\d+ 分钟前|刚刚)$/, `今天 ${hm(a)}`);
+  const day = /日$/.test(head) ? `${head} ${hm(a)}` : head;
+  return `${day} – ${b ? (sameDay(a, b) ? hm(b) : relTime(sg.end)) : "现在"}`;
+}
+// 中文和字母数字之间才加空格:「42 分钟前拉取过」「Shadowrocket 10 月 16 日拉取过」。
+const cat = (a, b) => /[A-Za-z0-9]$/.test(a) || /^[A-Za-z0-9]/.test(b) ? `${a} ${b}` : a + b;
+
+/* ---- 「最近在线」这一列 ---- */
+// 界面上说节点一律用显示名(nodeLabel);内部名只在节点详情里作次要信息出现。
+const presNodeText = (d, id) => { const n = (d.nodes || []).find(x => x.id === id); return n ? nodeLabel(n) : `节点 #${id}`; };
+// 提示是纯文本,旗帜在里面只会显示成两个字母:去掉前缀,只留地区名。
+const bareNode = s => s.replace(/^\S+ /, "");
+// 控制面这次没算出在线状态:顶层没有 presence,或者给了 presence 却没有更新时间。
+// 这时不猜 —— 不说「在线」,也不说「从未连接」,只报最后有流量的时间。
+const presInfo = d => (d && d.page && d.page.presence) || null;
+const presKnown = d => { const p = presInfo(d); return !!(p && p.updated_at); };
+// 两轮(约 60 秒)没更新就算旧:旧数据不写「在线」,只写最后看到的时间。
+const presStale = d => presKnown(d) && Date.now() - new Date(presInfo(d).updated_at) > 90e3;
+const staleNodeOf = (d, id) => (presInfo(d)?.stale_nodes || []).find(s => s.node_id === id);
+// 只有「节点连不上之前 2 分钟内还有流量」的人才写「可能还在线」;更早就走了的人照常显示时间。
+const staleHint = (d, p) => { const s = p.last_node_id ? staleNodeOf(d, p.last_node_id) : null; return s && new Date(p.last_active_at) >= new Date(s.since) - 12e4 ? s : null; };
+// 最后一次有流量的绝对时间(悬停提示)。提示是纯文本:节点去掉旗帜,只留地区名。
+const activeTip = (d, p) => "最后一次有流量：" + absTime(p.last_active_at) + (p.last_node_id ? " · " + bareNode(presNodeText(d, p.last_node_id)) : "");
+// 在线的节点:一个写名字,多个写「洛杉矶 A 等 2 个节点」。
+function nodesText(d, ids) {
+  const list = ids || [];
+  if (!list.length) return "";
+  if (list.length === 1) return presNodeText(d, list[0]);
+  return `${presNodeText(d, list[0])} 等 ${list.length} 个节点`;
+}
+// presenceCell 画「最近在线」这一列:在线(带晕圈的实心点、IP 数、节点)、相对时间,
+// 或者「从未连接」。IP 数只数来源 IP,不写成「台设备」—— 一台路由器后面一家人只算 1 个。
+function presenceCell(u, d) {
+  const p = u.presence || {}, pull = (d.pulls || []).find(x => x.username === u.username);
+  // 读不到在线状态:只写最后有流量的时间,别的都不猜。
+  if (!presKnown(d)) return H`<div class="pres">${p.last_active_at ? H`<span class="pres-l ${Date.now() - new Date(p.last_active_at) > DAY ? "old" : ""}">${relTime(p.last_active_at)}</span>` : ""}</div>`;
+  if (p.online && !presStale(d)) {
+    const tip = activeTip(d, p) + (p.online_nodes?.length > 1 ? " · " + p.online_nodes.map(id => bareNode(presNodeText(d, id))).join("、") : "");
+    return H`<div class="pres" data-tip="${tip}"><span class="pres-l on"><span class="pdot"></span>在线</span><div class="sub ell">${p.online_ips ? `${p.online_ips} 个 IP · ` : ""}${nodesText(d, p.online_nodes)}</div></div>`;
+  }
+  // 整轮采样落后:不再说「在线」,只说最后看到的时间。
+  if (p.online) return H`<div class="pres" data-tip="${activeTip(d, p)}"><span class="pres-l"><span class="pdot hollow"></span>${agoShort(presInfo(d).updated_at)}在线</span><div class="sub ell">${nodesText(d, p.online_nodes)}</div></div>`;
+  if (!p.last_active_at) {
+    const tip = pull ? `${clientLabel(pull.client)} ${absTime(pull.last_pulled_at)} 拉取过订阅，之后没有流量` : "";
+    return H`<div class="pres" ${raw(tip ? `data-tip="${esc(tip)}"` : "")}><span class="pres-l never">从未连接</span>${pull ? H`<div class="sub ell">导入过订阅，还没连上</div>` : ""}</div>`;
+  }
+  const sn = staleHint(d, p);
+  return H`<div class="pres" data-tip="${activeTip(d, p)}"><span class="pres-l ${Date.now() - new Date(p.last_active_at) > DAY ? "old" : ""}">${relTime(p.last_active_at)}</span>${sn ? H`<div class="sub ell">${bareNode(presNodeText(d, p.last_node_id))} 连不上，可能还在线</div>` : ""}</div>`;
+}
+// 排序键:在线的最前(IP 多的靠前),然后按最后有流量的时间;从未连接的按创建时间排。
+function presKey(d, u) {
+  const p = u.presence || {};
+  if (presKnown(d) && p.online) return 4e12 + (p.online_ips || 0);
+  return p.last_active_at ? +new Date(p.last_active_at) : -4e12 + +new Date(u.created_at || 0) / 1e3;
+}
+// 默认按最近在线倒序,点表头后反过来;从未连接的不管正序倒序都排最后,所以先按「有没有
+// 最后在线时间」分成两段,再按 dir 排同段里的先后,最后按用户名兜底(时间一样时顺序才是稳的)。
+const presCompare = d => (a, b) =>
+  (!!b.presence?.last_active_at - !!a.presence?.last_active_at) || US.dir * (presKey(d, a) - presKey(d, b)) || a.username.localeCompare(b.username);
+// 某台节点连不上时的灰条:不是用户做错了什么,只是数据旧了,所以用灰色不用红色。
+// 整句是一个 .pres-note 的直接子元素 span,里面不再套块:节点名里的旗帜换成图后仍在这一句里。
+const staleNote = (d, sn) => sn ? H`<div class="pres-note">${ic("clock")}<span>${presNodeText(d, sn.node_id)} 从 ${hm(new Date(sn.since))} 起连不上，这台上的在线状态停在 ${agoShort(sn.since)}。</span><a class="lnk" href="#nodes/${sn.node_id}">看节点</a></div>` : "";
+// 在线人数放在工具栏右边,不进状态筛选:筛选是账号状态(互斥),在线是另一回事;默认
+// 排序已经把在线的人排在最上面。读不到在线状态时直说「读不到」,不写「0 人在线」。
+function presSum(d) {
+  if (!presKnown(d)) return H`<span class="pres-sum stale-t" data-tip="控制面这次没算出在线状态，刷新页面再试">${ic("clock")}在线状态读不到</span>`;
+  const at = presInfo(d).updated_at;
+  if (presStale(d)) return H`<span class="pres-sum stale-t" data-tip="${"上一次拿到在线状态：" + absTime(at)}">${ic("clock")}在线状态 ${agoShort(at)}更新</span>`;
+  return H`<span class="pres-sum" data-tip="${"在线状态 " + agoShort(at) + "更新，每 30 秒一次"}"><span class="pdot"></span>${presInfo(d).online} 人在线</span>`;
+}
+
+// 「已过期」筛选下的批量栏:没勾时是一句说明 + 「选中过期超过 30 天的」;勾了显示人数和「批量删除」。
+// 删除是唯一的红色;按钮本身是浅底红字,真正的实心红按钮只在确认框里。
+function bulkBar(list) {
+  const old = list.filter(u => expiredFor(u) > EXPIRED_KEEP_DAYS).map(u => u.username), n = PICK.size;
+  const pickOld = old.some(x => !PICK.has(x)) ? H`<button type="button" class="lnk" data-act="pick-old">选中过期超过 ${EXPIRED_KEEP_DAYS} 天的 ${old.length} 个</button>` : "";
+  return H`<div class="bulk${n ? " on" : ""}" role="region" aria-label="批量操作">${n
+    ? H`<b>已选 ${n} 个</b>${pickOld}<span class="sp"></span><button type="button" class="btn sm ghost" data-act="pick-clear">取消选择</button><button type="button" class="btn sm dg-t" data-act="user-rm-many">${ic("trash")}批量删除</button>`
+    : H`<span class="sub">勾选要清理的用户，可以一次删掉。</span>${pickOld}`}</div>`;
+}
+
+// 续期框:沿用确认框(confirmBox 的 extra),选项和 mpx user renew 一致 —— 按天顺延(--days)或定死一个日期(--expire)。
+// 顺延从「原到期日与今天中较晚的那个」起算(renewTarget),已过期的就是从今天算。超限的人只续期还是连不上,给一个「同时清零本期用量」。
+const RENEW_DAYS = [30, 90, 365];
+// 框里的「现在的到期日」「本期已用」取页面上已有的那份(抽屉 / 用户列表 / 总览),不为开框多打一次 GET ——
+// 点「续期」之后发出的请求仍是 readModify 的 GET + PUT,和 mpx user renew 逐条一致(users.spec 对照的就是这个)。
+async function renewBox(name) {
+  const D = current.data || {}, same = x => x && x.username === name;
+  const u = (USER_DETAIL && ownsUserDetail(USER_DETAIL) && same(USER_DETAIL.data.user) && USER_DETAIL.data.user) || (same(D.user) && D.user) || D.page?.users?.find(same) || D.users?.users?.find(same);
+  if (!u) throw new Error("用户资料已变化，请刷新后再续期");
+  const over = u.data_limit && u.used_traffic >= u.data_limit;
+  const left = u.expire_at ? daysLeft(u.expire_at) : null;
+  const now = u.expire_at ? H`现在的到期日是 <b class="c-ink">${ymd(new Date(u.expire_at))}</b>（${left < 0 ? `已过 ${-left} 天` : left === 0 ? "今天到期" : `还剩 ${left} 天`}）。` : H`他现在永不过期。`;
+  const from = left === null || left < 0 ? "从今天起算。" : "从原到期日往后顺延。";
+  let pick = RENEW_DAYS[0], savedTarget = null;
+  const target = () => pick === "date" ? null : renewTarget(u.expire_at, pick);
+  const extra = H`<div class="rn">
+    <div class="seg rn-seg" role="radiogroup" aria-label="续多久">${RENEW_DAYS.map(n => H`<button type="button" role="radio" class="${n === pick ? "on" : ""}" aria-checked="${n === pick ? "true" : "false"}" data-rn="${n}">${n} 天</button>`)}<button type="button" role="radio" aria-checked="false" data-rn="date">指定日期</button></div>
+    <div class="rn-to" id="rn-to"><span class="sub">新的到期日</span><b>${ymd(new Date(target()))}</b></div>
+    <div class="field rn-date" id="rn-date" hidden><label for="rn-in">到期日</label><input class="in mono" id="rn-in" value="${ymd(new Date(target()))}" placeholder="YYYY-MM-DD" autocomplete="off"><span class="h">当天 23:59:59 到期，按这台电脑的时区。</span></div>
+    ${over ? H`<label class="chk rn-reset"><input type="checkbox" id="rn-reset"><span>同时清零本期用量<span class="sub">本期已用 ${fmtBytes(u.used_traffic)}，上限 ${fmtBytes(u.data_limit)}。不清零的话，续期后他仍然是「已超限」，连不上。</span></span></label>` : ""}</div>`;
+  confirmBox({ title: `给 ${name} 续期`, text: H`${now}${from}`, ok: "续期", extra, lock: true,
+    run: async () => {
+      let t = savedTarget;
+      const reset = !!$("#rn-reset")?.checked;
+      if (!t) {
+        const date = pick === "date" ? parseExpire($("#rn-in").value) : null;
+        if (date && daysLeft(date) < 1) throw new Error("新的到期日要晚于今天");
+        await readModify(name, m => { t = date || renewTarget(m.expire_at, pick); m.expire_at = t; });
+        savedTarget = t;
+        for (const b of document.querySelectorAll(".rn-seg button")) b.setAttribute("aria-disabled", "true");
+        $("#rn-in").readOnly = true;
+      }
+      if (reset) {
+        try { await api(userPath(name) + "/reset-traffic", { method: "POST" }); }
+        catch (e) { $("#okb").textContent = "重试清零"; throw new Error(`续期已保存，清零没成功：${e.message}。重试只会清零，不会再次续期。`); }
+      }
+      toast(`已把用户 ${name} 的到期日设为 ${ymd(new Date(t))}${reset ? "，本期用量已清零" : ""}`);
+      if (route[0] === "users" && route[1] === name) await refreshDrawer(name); else load(true, true);
+    } });
+  const seg = $(".rn-seg");
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("[data-rn]"); if (!b || savedTarget) return;
+    const next = b.dataset.rn === "date" ? "date" : +b.dataset.rn;
+    if (next === "date" && pick !== "date") $("#rn-in").value = ymd(new Date(target()));
+    pick = next;
+    for (const x of seg.children) { x.classList.toggle("on", x === b); x.setAttribute("aria-checked", x === b ? "true" : "false"); }
+    $("#rn-date").hidden = pick !== "date"; $("#rn-to").hidden = pick === "date";
+    if (pick === "date") { const i = $("#rn-in"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); } else $("#rn-to b").textContent = ymd(new Date(target()));
+  });
+}
+
 PAGES.users = {
+  readKey: () => JSON.stringify([US.status, US.search, US.offset, US.plan]),
   title: "用户", closeTo: "users",
+  overlay: (r, base, fresh) => openUserDetail(r[1], base, fresh),
   count: () => USERS_TOTAL ?? STATUS?.counts?.users ?? "",
   crumb: r => r[1] ? H`<a href="#users">用户</a><i>/</i><b>${r[1]}</b>` : H`<b>用户</b>`,
-  async load(r) {
+  async load(r, read = api) {
     const q = new URLSearchParams({ limit: PAGE_SIZE, offset: US.offset });
     if (US.status) q.set("status", US.status);
     if (US.search) q.set("search", US.search);
     if (US.plan) q.set("plan", US.plan);
     // 各状态的人数:一次取回(≤1000 人)按控制面给的 status 数,不再为每个标签各打一次
     // 请求 —— /api 按 IP 限流,一页五六个请求很容易撞上。人更多时不显示数字。
-    const counts = api("/api/users?limit=1000").then(p => {
+    const counts = read("/api/users?limit=1000").then(p => {
       const c = { "": p.total };
       if (p.total <= p.users.length) for (const [s] of STATUS_TABS.slice(1)) c[s] = p.users.filter(u => u.status === s).length;
       return c;
     });
-    const plans = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.plans) : api("/api/plans");
-    const inbounds = PLAN_CACHE.loaded ? Promise.resolve(PLAN_CACHE.inbounds) : api("/api/inbounds");
-    // 详情还要:拉取记录(「发给他」标题右边的状态;老控制面没有这个接口就当没有)、
-    // 订阅前缀(没设时提示链接里是 IP)、节点数(套餐「N 个节点」)。
-    const detail = r[1] ? Promise.all([api(userPath(r[1])), api(userPath(r[1]) + "/links"),
-      api("/api/sub-pulls").catch(() => null), api("/api/settings").catch(() => null), api("/api/nodes").catch(() => [])]) : null;
-    const [page, cs, pl, ib, d] = await Promise.all([api("/api/users?" + q), counts, plans, inbounds, detail]);
+    const plans = read("/api/plans");
+    const inbounds = read("/api/inbounds");
+    // 「最近在线」这一列要节点的显示名(在线节点、最后所在节点);「导入过订阅，还没连上」
+    // 要看订阅拉取记录。两个都读不到时只是少显示一点,不影响列表。
+    const nodes = read("/api/nodes").catch(() => []);
+    const pulls = read("/api/sub-pulls").catch(() => null);
+    const [page, cs, pl, ib, nd, pu] = await Promise.all([read("/api/users?" + q), counts, plans, inbounds, nodes, pulls]);
     USERS_TOTAL = cs[""];
     PLAN_CACHE.plans = pl || [];
     PLAN_CACHE.inbounds = ib || [];
-    PLAN_CACHE.loaded = true;
-    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, user: d && d[0], links: d && d[1],
-      pull: d && d[2] ? d[2].find(p => p.username === r[1]) || null : null, pullsKnown: !!(d && d[2]), settings: d && d[3], nodes: d ? d[4] : [] };
+    return { page, counts: cs, plans: PLAN_CACHE.plans, inbounds: PLAN_CACHE.inbounds, nodes: nd || [], pulls: pu || [], pullsKnown: !!pu };
   },
   render(d) {
-    const head = H`<tr><th>用户</th><th>状态</th><th>套餐</th><th>本期用量</th><th class="hide-m">到期</th><th class="hide-m">重置</th></tr>`;
+    if (d) {
+      const valid = new Set(d.page.users.filter(u => u.status === "expired").map(u => u.username));
+      for (const n of PICK) if (!pickable() || !valid.has(n)) PICK.delete(n);
+    }
+    // 「最近在线」是唯一能排序的列:表头深色并带箭头,aria-sort 说明当前方向。
+    const P0 = pickable(), pageNames = d ? d.page.users.map(u => u.username) : [], allOn = P0 && pageNames.length && pageNames.every(n => PICK.has(n));
+    const pickTh = P0 ? H`<th class="td-pick"><input type="checkbox" data-pick="*" aria-label="全选这一页" ${allOn ? raw("checked") : ""} ${!allOn && pageNames.some(n => PICK.has(n)) ? raw("data-ind=1") : ""}></th>` : "";
+    const head = H`<tr>${pickTh}<th>用户</th><th class="th-sort" aria-sort="${US.dir < 0 ? "descending" : "ascending"}"><button type="button" data-act="pres-sort" title="按最近在线排序">最近在线${ic(US.dir < 0 ? "down" : "chevup", "srt")}</button></th><th>状态</th><th>套餐</th><th>本期剩余</th><th class="hide-m">到期</th><th class="hide-m hide-n">重置</th></tr>`;
     let inner;
-    if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 6)}</tbody></table>`;
+    if (!d) inner = H`<table><thead>${head}</thead><tbody>${skRows(8, 7)}</tbody></table>`;
     else if (!d.page.users.length) inner = US.status || US.search
       ? emptyBox("search", "没有匹配的用户", "换个筛选条件或搜索词试试。", "")
       : emptyBox("users", "还没有用户", "加一个用户，他就会拿到一条订阅地址。之后续期、停用、重置流量都在这里。", "", can("POST", "/api/users") ? H`<button class="btn pri sm" data-act="user-new">${ic("plus")}添加用户</button>` : "");
     else {
       const P = d.page, end = P.offset + P.users.length;
-      inner = H`<div class="tw"><table><thead>${head}</thead><tbody>${P.users.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0"><td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
-        <td>${userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
+      const rows = P.users.slice().sort(presCompare(d));
+      inner = H`${staleNote(d, (presInfo(d)?.stale_nodes || [])[0])}${P0 ? bulkBar(P.users) : ""}<div class="tw"><table class="ut"><thead>${head}</thead><tbody>${rows.map(u => H`<tr data-href="#users/${encodeURIComponent(u.username)}" tabindex="0" class="${u.status === "expired" ? "is-exp" : ""}${PICK.has(u.username) ? " picked" : ""}">${P0 ? H`<td class="td-pick"><input type="checkbox" data-pick="${u.username}" aria-label="选中 ${u.username}" ${PICK.has(u.username) ? raw("checked") : ""}></td>` : ""}<td><div class="u">${avatar(u.username)}<div><b class="bold">${u.username}</b>${u.note ? H`<div class="sub">${u.note}</div>` : ""}</div></div></td>
+        <td class="td-pres">${presenceCell(u, d)}</td><td>${u.status === "expired" ? stBadge("warn", `已过期 ${expiredFor(u)} 天`) : userSt(u.status)}</td><td>${userPlanCell(u, d)}</td><td>${usageBar(u)}</td><td class="hide-m">${expireCell(u)}</td><td class="hide-m hide-n sub">${RESET[u.reset_strategy] || u.reset_strategy}</td></tr>`)}</tbody></table></div>
         <div class="pager">显示 ${P.offset + 1}–${end}，共 ${P.total} 个<span class="sp"></span><button class="btn sm" data-act="user-page" data-dir="-1" ${P.offset ? "" : raw("disabled")}>上一页</button><button class="btn sm" data-act="user-page" data-dir="1" ${end < P.total ? "" : raw("disabled")}>下一页</button></div>`;
     }
     const c = d ? d.counts : {};
@@ -151,15 +305,15 @@ PAGES.users = {
       ${can("POST", "/api/users") ? H`<button class="btn pri" data-act="user-new">${ic("plus")}添加用户</button>` : ""}</div>
       ${userTabs(false)}
       <div class="card"><div class="tb"><div class="seg" role="tablist">${STATUS_TABS.map(([k, t]) => H`<button role="tab" class="${US.status === k ? "on" : ""}" data-act="user-filter" data-status="${k}">${t}<em>${c[k] ?? ""}</em></button>`)}</div>
-      <span class="sp" style="flex:1"></span><select class="in w180" id="uf-plan" aria-label="按套餐筛选"><option value="">全部套餐</option>${planOpts.map(p => H`<option value="${p.id}" ${raw(US.plan == p.id ? "selected" : "")}>${p.name}</option>`)}</select>
+      <span class="sp" style="flex:1"></span>${d ? presSum(d) : ""}<select class="in w180" id="uf-plan" aria-label="按套餐筛选"><option value="">全部套餐</option>${planOpts.map(p => H`<option value="${p.id}" ${raw(US.plan == p.id ? "selected" : "")}>${p.name}</option>`)}</select>
       <label class="search in-card">${ic("search")}<input type="search" id="user-search" placeholder="搜索用户名" value="${US.search}" autocomplete="off"></label></div>${inner}</div>`;
   },
   after(d, r) {
     const s = $("#user-search");
-    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; load(true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
+    if (s) { let t; s.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { US.search = s.value.trim(); US.offset = 0; PICK.clear(); load(true, false, true).then(() => { const n = $("#user-search"); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }); }, 250); }); }
     const pf = $("#uf-plan");
-    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; load(true); });
-    if (d && r[1] && d.user) userDrawer(d.user, d.links, d);
+    if (pf) pf.addEventListener("change", () => { US.plan = pf.value; US.offset = 0; PICK.clear(); withFeedback(pf, () => load(true, true, true)); });
+    document.querySelectorAll(".td-pick [data-ind]").forEach(x => { x.indeterminate = true; });
   },
 };
 let USERS_TOTAL = null;
@@ -177,49 +331,75 @@ function planNodeCount(p, nodes, inbounds) {
 // 控制面记的是 User-Agent 第一段,常见的换成客户端自己的写法;认不出的照原样。
 const CLIENT_NAMES = { "clash-verge": "Clash Verge", "clash.meta": "Clash Meta", mihomo: "Mihomo", clash: "Clash", shadowrocket: "Shadowrocket", stash: "Stash", "sing-box": "sing-box", sfa: "sing-box", sfi: "sing-box", sfm: "sing-box", v2rayn: "v2rayN", v2rayng: "v2rayNG", karing: "Karing", hiddify: "Hiddify", nekobox: "NekoBox", quantumult: "Quantumult X", surge: "Surge", loon: "Loon" };
 const clientLabel = c => !c || c === "unknown" ? "客户端" : CLIENT_NAMES[c.toLowerCase()] || c;
-// 「sing-box 在 14:37 拉取过」;一分钟内写「刚刚」,一小时内写「N 分钟前」。
-function pullText(p) {
-  const d = new Date(p.last_pulled_at), sec = (Date.now() - d) / 1e3, who = clientLabel(p.client);
-  if (sec < 60) return `${who} 刚刚拉取过`;
-  if (sec < 3600) return `${who} ${Math.floor(sec / 60)} 分钟前拉取过`;
-  return `${who} 在 ${sec < 86400 ? hm(d) : ymd(d)} 拉取过`;
-}
+// 「sing-box 42 分钟前拉取过」:和「最近在线」用同一套相对时间,不再写「在 2026-10-16 拉取过」。
+function pullText(p) { return cat(`${clientLabel(p.client)} ${relTime(p.last_pulled_at)}`, "拉取过"); }
 const SEND_FORMATS = [["links", "分享链接", "一行一个节点，粘贴进 v2rayN、Shadowrocket"], ["base64-links", "Base64", "老客户端认的订阅格式"], ["clash-meta", "Clash Meta", "Clash Verge、Mihomo"], ["clash", "Clash", "老版 Clash 内核"], ["sing-box", "sing-box", "sing-box 官方客户端、Karing"], ["xray", "Xray", "Xray 内核的 JSON 配置"]];
 // 「发给他」:创建后和用户详情共用。二维码由本机 /local/qr.svg 画,永远放在白底上(暗色也一样),保证能扫。
 function sendBlock(u, links, d) {
   const name = u.username, L = (links && links.auto) || "";
-  // 按稿子用 ?u=<名字>,由本机进程向控制面取链接再画;v 让换了新链接后不吃旧图。
-  // 本机取不到(比如撞上控制面限流)时,改用页面手里现成的链接 ?d= 画,见 userDrawer。
-  // 「保存二维码」直接用 ?d=:点的时候不必再问一次控制面。
-  const qr = `/local/qr.svg?u=${encodeURIComponent(name)}&v=${encodeURIComponent(L.slice(-10))}`, qrD = `/local/qr.svg?d=${encodeURIComponent(L)}`;
+  if (!L && d?.detailPending?.links) return H`<section class="send" id="send" aria-busy="true"><div class="send-h"><h3>发给他</h3></div><p class="sub">正在读取订阅链接…</p></section>`;
+  if (!L && d?.detailErrors?.links) return H`<section class="send" id="send"><h3>发给他</h3>${detailReadError("订阅链接", "links", d)}</section>`;
+  // 复用已读的链接，本机画码不再触发第二次远端查询。
+  const qr = `/local/qr.svg?d=${encodeURIComponent(L)}`;
   const noPrefix = d && d.settings && !d.settings.sub_url_prefix;
   const pull = d && d.pull;
   return H`<section class="send" id="send">
     <div class="send-h"><h3>发给他</h3><span class="sub" id="send-pull">${pull ? pullText(pull) : d && d.pullsKnown ? "还没有客户端导入过" : ""}</span></div>
-    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" data-fb="${qrD}" alt="${name} 的订阅二维码"></div>
+    <div class="send-b"><div class="qr-tile"><img class="qrs" src="${qr}" alt="${name} 的订阅二维码"></div>
       <div class="send-r">
         <button type="button" class="btn pri send-copy" data-act="copy" data-text="${L}">${ic("copy")}复制订阅链接</button>
         <div class="send-link mono" title="${L}">${L.replace(/^https?:\/\//, "")}</div>
-        <a class="btn" href="${qrD}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
+        <a class="btn" href="${qr}" download="${name}-订阅二维码.svg">${ic("dl")}保存二维码</a>
         <p class="send-hint">Clash Verge、Shadowrocket、sing-box、v2rayN 都能直接扫码或粘贴导入，会自动拿到适合它的格式。</p>
       </div></div>
-    ${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
+    ${d?.detailErrors?.links ? detailReadError("订阅链接", "links", d) : ""}${d?.detailErrors?.settings ? detailReadError("订阅设置", "settings", d) : ""}${noPrefix ? H`<div class="send-ip"><span class="send-ip-t" title="链接里是服务器 IP，设好订阅地址后新旧链接都能用">${ic("warn")}链接里是服务器 IP，设好订阅地址后新旧链接都能用</span><a class="lnk u-link" href="#sub">去设置</a></div>` : ""}
     <details class="fmts"><summary>${ic("arrow", "car")}其他格式<span class="sub">客户端不认自动识别时再用</span></summary>
       <div class="fmt-l">${SEND_FORMATS.filter(([k]) => links && links[k]).map(([k, n, t]) => H`<div class="fmt"><div class="fmt-t"><b>${n}</b><span class="sub">${t}</span></div><button type="button" class="ib" data-act="copy" data-text="${links[k]}" title="复制 ${n} 链接" aria-label="复制 ${n} 链接">${ic("copy")}</button></div>`)}</div>
     </details></section>`;
 }
 let JUST_CREATED = "";  // 刚建好的用户:详情顶上多一行「已创建 X」
-function userDrawer(u, links, d) {
+/* ---- 详情抽屉里的「最近连接」 ---- */
+// 这个人连过的话这一块排在最前面(打开抽屉最常看的就是它);刚建好、还没连过的,
+// 「发给他」仍然排第一。数据一律以控制面给的为准:读不到就说读不到。
+function presenceBlock(u, d) {
+  const p = u.presence || {}, a = d.activity || { segments: [], ips: [] }, pull = d.pull;
+  const known = presKnown(d), stale = presStale(d), sn = known && p.last_active_at ? staleHint(d, p) : null;
+  const upd = !known ? "" : sn
+    ? H`<span class="sub udp-upd" data-tip="${absTime(sn.since)}">${ic("clock")}${bareNode(presNodeText(d, sn.node_id))} 的在线状态 ${agoShort(sn.since)}更新</span>`
+    : H`<span class="sub udp-upd" data-tip="${absTime(presInfo(d).updated_at)}">${stale ? H`${ic("clock")}` : ""}在线状态 ${agoShort(presInfo(d).updated_at)}更新</span>`;
+  let now;
+  if (known && p.online && !stale) now = H`<div class="udp-now"><span class="pres-l on"><span class="pdot"></span>在线</span><span class="sub">${p.online_ips ? `${p.online_ips} 个 IP · ` : ""}${nodesText(d, p.online_nodes)}</span></div>`;
+  else if (p.last_active_at) now = H`<div class="udp-now"><span class="pres-l">${relTime(p.last_active_at)}</span><span class="sub">最后一次有流量 · ${presNodeText(d, p.last_node_id)}${sn ? "（这台现在连不上，可能还在线）" : ""}</span></div>`;
+  else now = H`<div class="udp-now"><span class="pres-l never">还没连接过</span></div>`;
+  const segs = (a.segments || []).slice(0, 4);
+  const list = segs.length ? H`<div class="udp-list">${segs.map(sg => H`<div class="udp-r" data-tip="${absTime(sg.start) + " 起"}"><span class="udp-t">${spanText(sg)}</span><span class="udp-n ell">${presNodeText(d, sg.node_id)}</span><span class="udp-b">${fmtBytes(sg.bytes)}</span></div>`)}</div>` : "";
+  // 只在这个人此刻在线、而且这一轮数据不旧时才报 IP:IP 是「现在」的事,下线了就没有了。
+  const ips = known && p.online && !stale ? H`<div class="udp-ips"><span class="sub">此刻的 IP</span>${(a.ips || []).map(x => H`<span class="udp-ip"><span class="mono">${x.ip}</span><span class="sub">${agoShort(x.last_seen)}</span></span>`)}</div>` : "";
+  // 最近连接读不到:这一块直说,错误原文收在「详情」里,抽屉其余部分照常画。
+  const loading = d.detailPending?.activity && !d.activity ? H`<p class="sub" role="status">正在读取最近连接…</p>` : "";
+  const broken = d.activityError ? H`<p class="sub udp-foot">读不到最近连接</p><details class="sum-raw"><summary>详情${ic("down")}</summary><ul class="summary mono"><li>${d.activityError}</li></ul></details>` : "";
+  const hint = !p.last_active_at && pull ? H`<div class="udp-hint">${ic("info")}<div><p>${cat(`${clientLabel(pull.client)} ${relTime(pull.last_pulled_at)}`, "拉取过订阅")}，但之后一直没有流量。多半是客户端里没打开代理，或者连不上节点。</p><a class="btn sm" href="#doctor">${ic("pulse")}去体检</a></div></div>`
+    : !p.last_active_at ? H`<p class="sub udp-foot">把上面的二维码或链接发给他，他用起来以后会显示在这里。</p>` : "";
+  // 订阅导入单独一行、换了底色:和上面的流量分开,免得「拉过订阅」被当成「在用」。
+  const pullRow = H`<div class="udp-pull">${ic("sub")}<div><b>订阅导入</b><span class="sub">${pull ? H`${pullText(pull)} · ${(SEND_FORMATS.find(f => f[0] === pull.format) || [, pull.format])[1]}` : "还没有客户端导入过"}</span></div></div>`;
+  return H`<section class="ud-pres" id="ud-pres"><div class="udp-h"><h3>最近连接</h3>${upd}</div>${now}${broken || list}${broken ? "" : ips}${hint}
+    ${loading}${d.detailErrors?.activity ? detailReadError("最近连接", "activity", d) : ""}${p.last_active_at ? H`<p class="sub udp-foot">按节点上的流量算，每 30 秒更新一次。<br>客户端开着但没有流量，不算在线。</p>` : ""}${hint && pull ? "" : pullRow}</section>`;
+}
+function userDrawer(u, links, d, patch = false) {
   const W = can("PUT", "/api/users/x"), name = u.username;
   const p = (d && d.plans || PLAN_CACHE.plans || []).find(x => x.id === u.plan_id);
   const nn = p ? planNodeCount(p, d && d.nodes, d && d.inbounds || PLAN_CACHE.inbounds) : 0;
-  const created = JUST_CREATED === name; JUST_CREATED = "";
-  const pull = d && d.pull;
-  const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${pct(u) >= 100 ? "bad" : pct(u) >= 80 ? "warn" : ""}" style="width:${pct(u).toFixed(1)}%"></i></div><div class="sub mt8">${fmtBytes(u.used_traffic)} / ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
-  openDrawer(H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
+  const created = d.created ?? (JUST_CREATED === name); JUST_CREATED = "";
+  const R = u.data_limit ? remain(u) : null;
+  const use = u.data_limit ? H`<div class="bar w100 tall"><i class="${R.cls}" style="width:${R.rp.toFixed(1)}%"></i></div><div class="sub mt8">已用 ${fmtBytes(u.used_traffic)} / 上限 ${fmtBytes(u.data_limit)}${u.reset_strategy && u.reset_strategy !== "none" ? ` · ${RESET[u.reset_strategy]}清零` : ""}</div>` : H`<div class="sub mt8">不限流量</div>`;
+  // 连过的人:「最近连接」排最前(最常来看的就是它);刚建好、还没连过的:「发给他」排最前。
+  const connected = !!u.presence?.last_active_at && !created;
+  // 「最近连接」里已经有「订阅导入」这一行,「发给他」标题右边就不再重复一遍。
+  const pres = presenceBlock(u, d), send = sendBlock(u, links, connected ? { ...d, pull: null, pullsKnown: false } : d);
+  const html = H`<div class="dh ud-h">${avatar(name)}<div class="ud-t"><h2 class="ell">${name}</h2>${userSt(u.status)}</div><span class="sp" style="flex:1"></span>
     ${W ? H`<button class="ib" title="编辑" aria-label="编辑" data-act="user-edit" data-name="${name}">${ic("pen")}</button>
     <span class="mw"><button class="ib" title="更多" aria-label="更多" aria-haspopup="menu" data-act="user-menu">${ic("more")}</button><div class="menu" role="menu" id="user-menu" hidden>
-      <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期 30 天</button>
+      <button type="button" data-act="user-renew" data-name="${name}">${ic("clock")}续期</button>
       <button type="button" data-act="user-reset" data-name="${name}">${ic("undo")}清零本期用量</button>
       <button type="button" data-act="user-toggle" data-name="${name}" data-on="${u.enabled ? "1" : ""}">${ic("pause")}${u.enabled ? "停用" : "启用"}</button>
       <div class="msep"></div>
@@ -227,28 +407,103 @@ function userDrawer(u, links, d) {
       <button type="button" class="dg" data-act="user-rm" data-name="${name}">${ic("trash")}删除用户</button></div></span>` : ""}
     <button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
   <div class="db ud-b">${created ? H`<div class="created">${ic("check")}<span>已创建 <b>${name}</b>。把下面的二维码或链接发给他就行。</span></div>` : ""}
-    ${sendBlock(u, links, d)}
-    <section class="ud-use"><div class="sub">本期用量</div><div class="ud-v">${fmtBytes(u.used_traffic)}</div>${use}</section>
+    ${connected ? H`${pres}${send}` : H`${send}${pres}`}
+    <section class="ud-use"><div class="sub">${R ? "本期剩余" : "本期用量"}</div><div class="ud-v${R && R.out ? " c-bad" : ""}">${R ? (R.out ? (u.used_traffic > u.data_limit ? `超出 ${fmtBytes(u.used_traffic - u.data_limit)}` : "已用完") : fmtBytes(R.left)) : fmtBytes(u.used_traffic)}</div>${use}</section>
     <dl class="kv flat ud-kv"><dt>套餐</dt><dd>${p ? H`${p.name} <span class="sub">· ${nn ? `${nn} 个节点` : "没有节点"}</span>` : userPlanDetail(u)}</dd>
       ${u.inbound_ids?.length ? H`<dt>额外授权</dt><dd>${u.inbound_ids.map(i => H`<span class="tag">${inboundDisplay(i)}</span> `)}</dd>` : ""}
       <dt>到期</dt><dd>${expireCell(u)}</dd>
-      <dt>最近导入</dt><dd>${pull ? pullText(pull) : "还没有"}</dd>
-      <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
-  </div>`);
-  const img = $("#send .qrs");
-  img?.addEventListener("error", () => { if (img.dataset.fb && img.src.indexOf("?u=") >= 0) img.src = img.dataset.fb; });
+      <dt>创建于</dt><dd>${ymd(new Date(u.created_at))}</dd>${d.detailErrors?.user ? H`<dt>资料读取</dt><dd>${detailReadError("用户资料", "user", d)}</dd>` : ""}${u.note ? H`<dt>备注</dt><dd>${u.note}</dd>` : ""}</dl>
+  </div>`;
+  if (patch && $("#drawer .ud-b")) {
+    const next = document.createElement("div"); next.innerHTML = val(html);
+    for (const selector of [".ud-h", "#send", "#ud-pres", ".ud-use", ".ud-kv"]) {
+      const before = $("#drawer " + selector), after = next.querySelector(selector);
+      if (before && after && before.outerHTML !== after.outerHTML) before.replaceWith(after);
+    }
+  } else openDrawer(html);
+}
+// drawerUser:抽屉里画的那个人 = 用户本身 + 最近连接接口带回的在线情况(和列表页打开抽屉时同一份)。
+// 列表条目里的 presence 来自另一次请求,可能比 activity 旧;activity 里有就用它的。activity 里没有
+// (旧控制面,或者没算出来)时用列表里同一个人的那份,列表没有这个人才当作没有。
+const drawerUser = d => {
+  const p = d.activity?.presence || d.page?.users?.find(u => u.username === d.user.username)?.presence;
+  return p ? { ...d.user, presence: p } : d.user;
+};
+let USER_DETAIL = null;
+const userDetailKey = name => JSON.stringify(["users/" + encodeURIComponent(name), "detail"]);
+function detailReadError(label, part, d) {
+  return H`<p class="sub" role="alert">读不到${label}：${d.detailErrors[part]}</p><button class="btn sm" data-act="user-detail-retry" data-part="${part}">重试</button>`;
+}
+function ownsUserDetail(state) {
+  return !!state && USER_DETAIL === state && route[0] === "users" && route[1] === state.name && state.frame?.isConnected && state.owner === overlaySeq;
+}
+function renderUserDetail(state, first = false) {
+  if (!first && !ownsUserDetail(state)) return;
+  const d = state.data;
+  if (d.user) userDrawer(drawerUser(d), d.links, d, !first);
+  else openDrawer(H`<div aria-busy="${!!d.detailPending.user}"><div class="dh"><h2>${state.name}</h2><span class="sp"></span><button class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">${d.detailErrors.user ? detailReadError("用户资料", "user", d) : H`<p role="status">正在读取用户资料…</p>`}</div></div>`);
+  state.owner = overlaySeq; state.frame = $("#drawer").firstElementChild;
+  const body = $("#drawer .ud-b");
+  if (body) { if (state.pending.size) body.setAttribute("aria-busy", "true"); else body.removeAttribute("aria-busy"); }
+}
+async function readUserDetailPart(state, part) {
+  const epoch = readEpoch;
+  state.pending.add(part); state.data.detailPending[part] = true; delete state.data.detailErrors[part];
+  const paths = { user: userPath(state.name), links: userPath(state.name) + "/links", activity: userPath(state.name) + "/activity", settings: "/api/settings" };
+  try {
+    const value = await api(paths[part]);
+    if (!ownsUserDetail(state) || epoch !== readEpoch) return;
+    state.data[part] = value;
+    if (part === "activity") state.data.activityError = "";
+  } catch (error) {
+    if (!ownsUserDetail(state)) return;
+    state.data.detailErrors[part] = error.message;
+    if (part === "activity") state.data.activityError = error.message;
+  } finally {
+    state.pending.delete(part); state.data.detailPending[part] = false;
+    if (ownsUserDetail(state)) {
+      if (epoch !== readEpoch) state.data.detailErrors[part] = "资料在读取时有变动，请重试";
+      renderUserDetail(state);
+      if (state.epoch === readEpoch && !state.pending.size && !Object.keys(state.data.detailErrors).length && state.data.user) {
+        const d = state.data;
+        rememberView(userDetailKey(state.name), PAGES.users, { data: { user: d.user, links: d.links, activity: d.activity, settings: d.settings }, collected: new Map(Object.values(paths).map(path => [path, { path }])) });
+      }
+    }
+  }
+}
+function openUserDetail(name, base, fresh = false) {
+  if (!name) return;
+  if (!fresh && USER_DETAIL?.name === name && ownsUserDetail(USER_DETAIL)) {
+    if (base && USER_DETAIL.base !== base) {
+      const state = USER_DETAIL, detail = state.data;
+      state.base = base; state.data = { ...base, ...detail, page: base.page, plans: base.plans, nodes: base.nodes, inbounds: base.inbounds,
+        user: base.page?.users?.find(u => u.username === name) || detail.user, pull: base.pulls?.find(p => p.username === name) || null, pullsKnown: base.pullsKnown };
+      renderUserDetail(state);
+    }
+    return;
+  }
+  const cached = !fresh && cachedView(userDetailKey(name));
+  const found = base?.page?.users?.find(u => u.username === name);
+  const data = { ...(base || {}), ...(cached?.data || {}), user: found || cached?.data?.user || null,
+    pull: base?.pulls?.find(p => p.username === name) || null, detailPending: {}, detailErrors: {}, created: JUST_CREATED === name };
+  const parts = ["links", "activity", "settings"];
+  if (!found) parts.push("user");
+  for (const part of parts) data.detailPending[part] = true;
+  const state = USER_DETAIL = { name, base, data, pending: new Set(parts), epoch: readEpoch };
+  renderUserDetail(state, true);
+  for (const part of parts) readUserDetailPart(state, part);
 }
 async function refreshDrawer(name) {
   await load(true, true);
-  const d = current.data;
-  if (route[0] === "users" && route[1] === name && d?.user) userDrawer(d.user, d.links, d);
+  if (route[0] === "users" && route[1] === name && !ownsUserDetail(USER_DETAIL)) openUserDetail(name, current.data, true);
 }
 
 /* ---- 编辑器 ---- */
 async function userEditor(name) {
   let u = null, inbounds = [], nodes = [], plans = [];
-  try { [u, inbounds, nodes, plans] = await Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes"), api("/api/plans")]); }
-  catch (e) { toast(e.message, true); return; }
+  const packet = await readDrawer(name ? "编辑 " + name : "添加用户", () => Promise.all([name ? api(userPath(name)) : null, api("/api/inbounds"), api("/api/nodes"), api("/api/plans")]), () => userEditor(name));
+  if (!packet) return;
+  [u, inbounds, nodes, plans] = packet.value;
   const isNew = !u;
   u = u || { username: "", data_limit: 0, expire_at: null, reset_strategy: "none", inbound_ids: [], note: "", enabled: true, plan_id: null };
   const nodeName = id => { const n = nodes.find(x => x.id === id); return n ? nodeLabel(n) : "节点"; };
@@ -355,19 +610,21 @@ async function userEditor(name) {
 
 /* ---- 动作 ---- */
 Object.assign(ACTS, {
-  "user-filter": d => { US.status = d.status; US.offset = 0; load(true); },
-  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); load(true); },
+  "user-filter": async (d, el) => {
+    const previous = { status: US.status, offset: US.offset };
+    US.status = d.status; US.offset = 0; PICK.clear(); paint();
+    const loading = load(true, true, true), seq = loadSeq;
+    await loading;
+    if (seq === loadSeq && current.error) { Object.assign(US, previous); paint(); }
+  },
+  // 表头点了就换个方向:默认最新在前,再点一次反过来。从未连接的始终在最后。
+  "pres-sort": () => { US.dir = -US.dir; paint(); },
+  "user-page": d => { US.offset = Math.max(0, US.offset + PAGE_SIZE * +d.dir); PICK.clear(); return load(true, true, true); },
   "user-new": () => userEditor(null),
+  "user-detail-retry": d => { const s = USER_DETAIL; if (s && ownsUserDetail(s) && !s.pending.has(d.part)) { readUserDetailPart(s, d.part); renderUserDetail(s); } },
   "user-edit": d => userEditor(d.name),
   "user-export": () => confirmBox({ title: "导出 CSV", text: "导出用户清单暂不支持在窗口里操作。", ok: "知道了", run: async () => {} }),
-  "user-renew": async d => {
-    try {
-      let target;
-      await readModify(d.name, m => { target = renewTarget(m.expire_at, 30); m.expire_at = target; });
-      toast(`已把用户 ${d.name} 的到期日设为 ${ymd(new Date(target))}`);
-      await refreshDrawer(d.name);
-    } catch (e) { toast(e.message, true); }
-  },
+  "user-renew": d => renewBox(d.name),
   "user-toggle": d => {
     const off = !!d.on, verb = off ? "停用" : "启用";
     const run = async () => { await readModify(d.name, m => { m.enabled = !off; }); toast(`已${verb}用户 ${d.name}`); await refreshDrawer(d.name); };
@@ -382,7 +639,68 @@ Object.assign(ACTS, {
   // ⋯ 菜单:点按钮开合;点菜单里的项或别处就收起。
   "user-menu": () => { const m = $("#user-menu"); if (m) m.hidden = !m.hidden; },
   "user-rm": d => confirmBox({ title: `删除 ${d.name}？`, text: "不可恢复：协议凭证与订阅 token 一起删掉，已经连上的客户端会断开，订阅地址立刻 404。只想让人连不上，用「停用」。", ok: "删除用户", danger: true, typed: d.name,
-    run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); closeOverlays(); location.hash = "users"; } }),
+    run: async () => { await write("DELETE", userPath(d.name), undefined, `已删除用户 ${d.name}`); PICK.delete(d.name); if (d.back === "overview") return; closeOverlays(); location.hash = "users"; } }),
+  // 多选:勾一个 / 勾整页。只改 PICK 再重画,不重新读接口。
+  "pick-old": () => { for (const u of current.data?.page?.users || []) if (expiredFor(u) > EXPIRED_KEEP_DAYS) PICK.add(u.username); paint(); },
+  "pick-clear": () => { PICK.clear(); paint(); },
+  // 批量删除:逐个 DELETE(与 mpx user rm a b c 一样,一个失败不中止其余)。全成功才关框;
+  // 有失败的,框留着列出失败的名字,成功的已经从勾选里去掉,再点一次只重试失败的。
+  "user-rm-many": () => {
+    // 名单按过期天数从多到少,最多列 8 个;放在说明里(确认输入框上面),先看清删谁再输入。
+    const rows = current.data?.page?.users || [], days = x => expiredFor(rows.find(y => y.username === x) || {});
+    const names = rows.filter(u => u.status === "expired" && PICK.has(u.username)).map(u => u.username).sort((a, b) => days(b) - days(a)), n = names.length;
+    if (!pickable() || !n) return;
+    const pending = new Set(names);
+    const list = H`<span class="rm-list">${names.slice(0, 8).map(x => H`<span class="tag">${x}<span class="sub">已过 ${days(x)} 天</span></span>`)}${n > 8 ? H`<span class="sub">等 ${n} 个</span>` : ""}</span>`;
+    confirmBox({ title: `删除 ${n} 个已过期用户？`, text: H`不可恢复：他们的协议凭证与订阅 token 一起删掉，订阅地址立刻 404。只想让人连不上，过期本身已经做到了。${list}`, ok: `删除 ${n} 个用户`, danger: true, typed: `删除 ${n} 个用户`, lock: true,
+      run: async () => {
+        const failed = [], okb = $("#okb"), attempt = [...pending], done = n - attempt.length;
+        for (const [i, x] of attempt.entries()) {
+          okb.textContent = `正在删除 ${done + i + 1} / ${n}`;
+          try { await api(userPath(x), { method: "DELETE" }); pending.delete(x); PICK.delete(x); } catch (e) { failed.push(`${x}（${e.message}）`); }
+        }
+        afterWrite("/api/users");
+        if (failed.length) { okb.textContent = `重试 ${failed.length} 个`; throw new Error(`删掉了 ${n - failed.length} 个，${failed.length} 个没删掉：${failed.join("、")}`); }
+        toast(`已删除 ${n} 个用户`);
+      } });
+  },
+
 });
-document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr) location.hash = tr.dataset.href; } });
+/* ---- 悬停提示:data-tip 的绝对时间浮在 body 上(固定定位),表格滚动区裁不掉;键盘聚焦也显示。 ---- */
+let TIP = null;
+const tipHide = () => { TIP?.remove(); TIP = null; };
+// 只管用户页里的 [data-tip](「最近在线」的格子、工具栏的在线人数、抽屉里的各段时间);
+// 别的页的 [aria-disabled=true][data-tip] 仍用 app.css 里的 ::after 提示,这里不碰。
+const tipOf = t => t?.closest?.(".td-pres, .pres-sum, .udp-list, .udp-upd") ? t : null;
+function tipShow(t) {
+  if (TIP && TIP.dataset.tip === t.dataset.tip) { tipPlace(t); return; }
+  tipHide();
+  TIP = document.createElement("div"); TIP.className = "ftip"; TIP.textContent = t.dataset.tip; TIP.dataset.tip = t.dataset.tip;
+  document.body.append(TIP);
+  tipPlace(t);
+}
+// 放在元素的左下方,靠右时往左收,靠底时放到元素上面。
+function tipPlace(t) {
+  if (!TIP) return;
+  const r = t.getBoundingClientRect();
+  TIP.style.left = Math.max(8, Math.min(r.left, innerWidth - TIP.offsetWidth - 8)) + "px";
+  TIP.style.top = (r.bottom + 6 + TIP.offsetHeight > innerHeight ? r.top - 6 - TIP.offsetHeight : r.bottom + 6) + "px";
+}
+document.addEventListener("mouseover", e => { const t = tipOf(e.target.closest?.("[data-tip]")); if (t) tipShow(t); else tipHide(); });
+document.addEventListener("mouseout", e => { if (e.target.closest?.("[data-tip]") && !e.relatedTarget?.closest?.("[data-tip]")) tipHide(); });
+document.addEventListener("focusin", e => { const t = tipOf(e.target.closest?.("[data-tip]")); if (t) tipShow(t); else tipHide(); });
+document.addEventListener("focusout", e => { if (e.target.closest?.("[data-tip]")) tipHide(); });
+// 滚动、换页、点别处时提示跟着收掉,不留在原处。
+// 没加 capture:冒泡到 document 的是 main、抽屉这些滚动区自己的滚动,换了页面就不再跟。
+document.addEventListener("scroll", e => { if (e.target?.closest?.(".td-pres, .pres-sum, .udp-list")) tipHide(); });
+document.addEventListener("click", e => { if (!e.target.closest?.("[data-tip]")) tipHide(); });
+document.addEventListener("keydown", e => { if (e.key === "Enter") { const tr = e.target.closest?.("tr[data-href]"); if (tr && !e.target.closest(".td-pick,.ov-act,[data-act]")) location.hash = tr.dataset.href; } });
 document.addEventListener("click", e => { const m = $("#user-menu"); if (m && !m.hidden && (!e.target.closest(".mw") || e.target.closest("#user-menu button"))) m.hidden = true; });
+
+// 勾选框:在 .td-pick 里点不打开详情(app.js 的行点击跳过 .td-pick)。整页勾选按当前页的用户名。
+document.addEventListener("change", e => {
+  const c = e.target.closest?.("input[data-pick]"); if (!c) return;
+  const names = c.dataset.pick === "*" ? (current.data?.page?.users || []).map(u => u.username) : [c.dataset.pick];
+  for (const n of names) c.checked ? PICK.add(n) : PICK.delete(n);
+  paint();
+});

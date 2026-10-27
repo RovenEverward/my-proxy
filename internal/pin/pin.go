@@ -83,6 +83,9 @@ func TLSConfig(fp string) *tls.Config {
 // 传输(用于 http:// 地址)。
 func Transport(fp string) *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
+	// UI pages read several resources in parallel; retain those connections
+	// instead of paying a new TLS handshake on every navigation.
+	t.MaxIdleConnsPerHost = 16
 	if fp != "" {
 		t.TLSClientConfig = TLSConfig(fp)
 		// 控制面那头只说 HTTP/1.1(见 server 的嗅探监听);明说出来,免得 h2

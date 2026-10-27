@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,18 +20,31 @@ import (
 // CSV 的列名。用中文:这份文件的读者是人(导出来改一行再导回去),列名与
 // user list 的表头共用同一套词,不另造一套英文名。
 const (
-	csvColumnUsername = "用户名"
-	csvColumnLimit    = "流量上限"
-	csvColumnExpire   = "到期时间"
-	csvColumnEnabled  = "可用性"
-	csvColumnStrategy = "重置策略"
-	csvColumnInbounds = "入站范围"
-	csvColumnPlan     = "套餐"
-	csvColumnNote     = "备注"
+	csvColumnUsername   = "用户名"
+	csvColumnLimit      = "流量上限"
+	csvColumnExpire     = "到期时间"
+	csvColumnEnabled    = "可用性"
+	csvColumnStrategy   = "重置策略"
+	csvColumnInbounds   = "入站范围"
+	csvColumnPlan       = "套餐"
+	csvColumnNote       = "备注"
+	csvColumnLastActive = "最后在线（UTC+8）"
 )
 
-// userCSVHeader 是导出的表头,也是导入时认识的全部列(顺序固定)。
+// userCSVHeader 是导出的表头(顺序固定)。
 var userCSVHeader = []string{
+	csvColumnUsername, csvColumnLimit, csvColumnExpire,
+	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
+	csvColumnLastActive,
+}
+
+// userCSVImportHeader 是导入认的表头,也是缺「用户名」时报错里给人看的一览。
+//
+// 「最后在线（UTC+8）」只导出、不导入:它是只读的,回到控制面的数据才算数。所以导入
+// 的表头比导出少这一列 —— 老版本导出的 8 列文件正好是这个表头,照常能导;带这一列的
+// 新文件也能导,这一列认不出,直接忽略。行宽按文件自己的表头算(见 importUsersCSV),
+// 不拿导出的表头常量去比:老文件比它少一列,那样每一行都会被判成列数不对。
+var userCSVImportHeader = []string{
 	csvColumnUsername, csvColumnLimit, csvColumnExpire,
 	csvColumnEnabled, csvColumnStrategy, csvColumnInbounds, csvColumnPlan, csvColumnNote,
 }
@@ -44,7 +58,8 @@ var userExportCmd = &cobra.Command{
   mpx user export > users.csv && mpx user import -f users.csv
 
 导出的内容可以直接用 user import 导回来:两边对空值与"不限/不过期/全部"的
-写法是同一套。导出不看 -o,它本身就是一种输出格式。`,
+写法是同一套。最后一列"最后在线（UTC+8）"只读:按 UTC+8 写这个用户最后一次
+有流量的时间,从没连过的人留空;导入时这一列被忽略。导出不看 -o,它本身就是一种输出格式。`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := newClient()
@@ -107,6 +122,7 @@ func writeUsersCSV(w io.Writer, users []userRow) error {
 			joinIDs(u.InboundIDs),
 			u.PlanName,
 			u.Note,
+			lastActiveText(u.Presence),
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -114,6 +130,15 @@ func writeUsersCSV(w io.Writer, users []userRow) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// lastActiveText 写「最后在线（UTC+8）」列:固定按 UTC+8 写,和操作机时区无关 ——
+// 同一份导出在哪台机器上读到的时刻都一样。从没连过的人留空。
+func lastActiveText(p *userPresence) string {
+	if p == nil || p.LastActiveAt == nil {
+		return ""
+	}
+	return p.LastActiveAt.UTC().Add(8 * time.Hour).Format("2006-01-02 15:04:05")
 }
 
 // enabledText 写 CSV 的"可用性"列。
@@ -211,6 +236,9 @@ type importReport struct {
 //
 // 代价是失去"要么全成要么全不成"的原子性。这份数据的用途(批量建/改用户)不值得
 // 为它放弃逐行的好处,见 decisions.md 第 25 条。
+//
+// 行宽按文件自己的表头比对,而不是导出表头常量:老版本导出的文件没有「最后在线（UTC+8）」
+// 这一列,拿 9 列的常量去比,老文件的每一行都会被判成列数不对。
 func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 	var rep importReport
 	cr := csv.NewReader(r)
@@ -226,7 +254,6 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 	if err != nil {
 		return rep, err
 	}
-
 	// 有「套餐」列时把套餐名→id 映出来一次,逐行复用。空单元格表示不改编归属。
 	var planIDs map[string]int64
 	if _, ok := cols[csvColumnPlan]; ok {
@@ -239,6 +266,10 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 			planIDs[p.Name] = p.ID
 		}
 	}
+
+	// 行宽按这个文件自己的表头算:老版本导出的文件少一列「最后在线（UTC+8）」,
+	// 拿导出常量去比会把每一行都判成列数不对。
+	width := len(header)
 
 	readErrors := 0
 	for line := 2; ; line++ {
@@ -260,10 +291,10 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 			continue
 		}
 		readErrors = 0
-		if len(rec) != len(header) {
+		if len(rec) != width {
 			rep.Failed++
 			rep.Errors = append(rep.Errors, importError{Line: line,
-				Error: fmt.Sprintf("列数与表头不一致(表头 %d 列,这行 %d 列)", len(header), len(rec))})
+				Error: fmt.Sprintf("列数与表头不一致(表头 %d 列,这行 %d 列)", width, len(rec))})
 			continue
 		}
 		u, err := csvRowToUser(cols, rec)
@@ -297,8 +328,9 @@ func importUsersCSV(c *Client, r io.Reader) (importReport, error) {
 
 // userCSVColumns 把表头映射成"列名 -> 下标"。
 //
-// 不认识的列直接忽略:以后加列时,旧文件还能读。缺"用户名"这份文件就没法用了
-// (那一行要写谁都不知道),直接挡下。
+// 不认识的列直接忽略:以后加列时,旧文件还能读;导出专有的「最后在线（UTC+8）」
+// 也落在这一类里 —— 文件里有它也没关系,行宽按这个文件的表头算。缺"用户名"这份
+// 文件就没法用了(那一行要写谁都不知道),直接挡下。
 func userCSVColumns(header []string) (map[string]int, error) {
 	cols := make(map[string]int, len(header))
 	for i, name := range header {
@@ -306,7 +338,7 @@ func userCSVColumns(header []string) (map[string]int, error) {
 	}
 	if _, ok := cols[csvColumnUsername]; !ok {
 		return nil, fmt.Errorf("CSV 缺「%s」列;表头要包含:%s",
-			csvColumnUsername, strings.Join(userCSVHeader, ","))
+			csvColumnUsername, strings.Join(userCSVImportHeader, ","))
 	}
 	return cols, nil
 }

@@ -8,9 +8,8 @@
 
 /* ---- 共享给用户页的套餐解析 ---- */
 // PLAN_CACHE 是页面之间共用的一份原始数据:套餐、节点、入站、用户(≤1000)。
-// 用户页与套餐页各自 load 时刷新它,渲染只读这里的值。loaded 用来让用户页在
-// 进入时按需取一次套餐/入站(控制面 /api 按 IP 限流,能省一次是一次)。
-const PLAN_CACHE = { plans: [], nodes: [], inbounds: [], users: [], loaded: false };
+// 用户页与套餐页各自 load 时刷新它，渲染只读这里的值；请求复用由页面 read 统一管理。
+const PLAN_CACHE = { plans: [], nodes: [], inbounds: [], users: [] };
 
 const planNodeName = n => (n ? nodeLabel(n) : "");
 // 入站在套餐里按可读名显示(VLESS Reality :443);自定义过标签的仍显示标签。
@@ -63,15 +62,14 @@ PAGES.plans = {
   title: "套餐", navAs: "users", closeTo: "users/plans",
   crumb: () => H`<a href="#users">用户</a><i>/</i><b>套餐</b>`,
   count: () => PLAN_CACHE.plans.length || "",
-  async load() {
+  async load(r, read = api) {
     const [plans, nodes, inbounds, users] = await Promise.all([
-      api("/api/plans"), api("/api/nodes"), api("/api/inbounds"), api("/api/users?limit=1000"),
+      read("/api/plans"), read("/api/nodes"), read("/api/inbounds"), read("/api/users?limit=1000"),
     ]);
     PLAN_CACHE.plans = plans || [];
     PLAN_CACHE.nodes = nodes || [];
     PLAN_CACHE.inbounds = inbounds || [];
     PLAN_CACHE.users = users.users || [];
-    PLAN_CACHE.loaded = true;
     return { plans: PLAN_CACHE.plans, nodes: PLAN_CACHE.nodes, inbounds: PLAN_CACHE.inbounds, users: PLAN_CACHE.users };
   },
   render(d) {

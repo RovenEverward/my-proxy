@@ -118,6 +118,15 @@ type Node struct {
 	DeployedHash string `json:"deployed_hash,omitempty"`
 	// DeployedAt 是那次下发发生的时刻;没推过时为 nil。
 	DeployedAt *time.Time `json:"deployed_at,omitempty"`
+	// DeployedTemplateHash 是那次下发时「配置模板」的哈希:同一份节点与入站、不带
+	// 任何用户渲染出来的配置的 sha256。DeployedHash 里含着用户名单,用户增删都会
+	// 让它变,所以它比不出「新版本换了写法」;这一份只随模板与结构变化。
+	// 空串表示还没在装着这一版的控制面上下发过。
+	DeployedTemplateHash string `json:"deployed_template_hash,omitempty"`
+	// TemplateDrift 表示按现在这版控制面的写法渲染,得到的模板哈希与下发时记下的
+	// 不一样:新版本改了节点配置的样子,应用一次才生效。它和「有改动未应用」
+	// (节点上的文件与下发的不一致)是两回事,只在读节点时现算,不落库。
+	TemplateDrift bool `json:"template_drift,omitempty"`
 
 	// Draining 表示这台节点正在排水:订阅渲染不再把它的入口发给用户,让已连
 	// 的用户随重连自然离开。它只是订阅层的开关,不摘 xray 上已有的用户 ——

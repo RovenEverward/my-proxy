@@ -63,6 +63,15 @@ type userRow struct {
 	PlanID        *int64     `json:"plan_id,omitempty"`
 	PlanName      string     `json:"-"`
 	Note          string     `json:"note"`
+	// Presence 是控制面算出来的在线状态,导出 CSV 要写"最后在线"。老控制面不给这个
+	// 字段,解出来是 nil,那一列就空着 —— 猜一个时间比空着更糟。
+	Presence *userPresence `json:"presence"`
+}
+
+// userPresence 只解析导出要用的那一个字段(时间);IP 数、在线节点、节点连不上这些
+// 是界面上的事,CLI 的表格和 CSV 都不展示。
+type userPresence struct {
+	LastActiveAt *time.Time `json:"last_active_at"`
 }
 
 func (u userRow) row() []string {

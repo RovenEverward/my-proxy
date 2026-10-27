@@ -45,9 +45,9 @@ func scanNodeStatus(sc rowScanner) (*model.NodeStatus, error) {
 // 就得再加一张表和一个保留策略,而真要看趋势时人问的是某一刻的结论,那个结论
 // 在告警日志里有。
 //
-// 注意这里不碰 nodes 表:deployed_hash 是"我们最后一次推上去的是什么",属于
-// 节点自己的属性。让状态写入顺手更新它,等于用观察值覆盖基准值,漂移就永远
-// 看不出来了。
+// 注意这里不碰 nodes 表:deployed_hash / deployed_template_hash 是"我们最后
+// 一次推上去的是什么",属于节点自己的属性。让状态写入顺手更新它,等于用观察值
+// 覆盖基准值,漂移就永远看不出来了。
 func (s *Store) UpsertNodeStatus(st model.NodeStatus) error {
 	certs, err := encodeSlice(st.Certificates)
 	if err != nil {
@@ -126,6 +126,21 @@ func (s *Store) SetNodeDeployed(nodeID int64, hash string, at time.Time) error {
 		hash, normalizeTime(at).Unix(), nodeID)
 	if err != nil {
 		return fmt.Errorf("记录节点 %d 的下发哈希: %w", nodeID, err)
+	}
+	return affectedOrNotFound(res, fmt.Sprintf("节点 %d", nodeID))
+}
+
+// SetNodeTemplateHash 记下这次下发时「配置模板」的哈希:同一份节点与入站、不带
+// 任何用户渲染出来的配置的 sha256。
+//
+// 和 SetNodeDeployed 分开存,也分开写:deployed_hash 里含着用户名单,用户一增删
+// 它就变,比不出模板有没有换写法;模板哈希只随模板与节点结构变。它只在真下发
+// 成功之后才被改写,免得旧节点在没应用前就被当成「已是最新」。
+func (s *Store) SetNodeTemplateHash(nodeID int64, hash string) error {
+	res, err := s.db.Exec(
+		`UPDATE nodes SET deployed_template_hash = ? WHERE id = ?`, hash, nodeID)
+	if err != nil {
+		return fmt.Errorf("记录节点 %d 的模板哈希: %w", nodeID, err)
 	}
 	return affectedOrNotFound(res, fmt.Sprintf("节点 %d", nodeID))
 }

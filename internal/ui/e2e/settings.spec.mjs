@@ -65,16 +65,25 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   await login(page, env);
   const before = await getSettings();
   await page.goto(env.origin + "/#settings/rules");
-  await page.click(".ch [data-act=s5-rules]");
+  await page.click("#sec-clients [data-act=s5-rules]");
   env.takeLog();
+  // 内置规则占 data-rp 0..9;新的一条排在最后(「其他所有客户端」之前),编号接着往下数。
+  const n = await page.locator("[data-rp]").count();
   await page.click("[data-act=rd-add]");
-  const added = page.locator("[data-rp]").last();
-  await added.fill("(?i)^myclient/");
+  // 新的一条的标识框里已经是 (?i),只填后面的文字。
+  const added = page.locator(`[data-rp="${n}"]`);
+  await expect(added).toBeFocused();
+  await added.fill("^myclient/");
   await added.press("Tab");
-  await page.locator('[data-act=rd-mv][aria-label="上移"]').last().click();
-  await page.locator("[data-act=rd-rm]").last().click();
+  // 框里显示的是标识正文;(?i) 是内置的大小写开关,不跟着显示。
+  await expect(page.locator(`[data-rp="${n}"]`)).toHaveValue("^myclient/");
+  // 新的一条在最下面,「下移」不可点;往上挪一位,把被挤到下面的那条删掉,草稿里留下一处改动。
+  await page.locator(`[data-act=rd-mv][data-i="${n}"][aria-label="上移"]`).click();
+  await expect(page.locator(`[data-rp="${n - 1}"]`)).toHaveValue("^myclient/");
+  await page.locator(`[data-act=rd-rm][data-i="${n}"]`).click();
+  await expect(page.locator(`[data-rp="${n - 1}"]`)).toHaveValue("^myclient/");
   await page.click("[data-act=rd-done]");
-  await expect(page.locator("#sb")).toContainText("客户端识别规则");
+  await expect(page.locator("#sb")).toContainText("识别规则");
   expect(env.takeLog()).toEqual([]);
   await page.click("[data-act=s5-save]");
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
@@ -82,7 +91,7 @@ test("识别规则：抽屉里增删排序只改草稿，页面统一保存", as
   expect(after.rules).not.toEqual(before.rules);
   expect(after.templates).toEqual(before.templates);
   expect(after.webhook_url).toBe(before.webhook_url);
-  await page.click(".ch [data-act=s5-rules]");
+  await page.click("#sec-clients [data-act=s5-rules]");
   await page.click("[data-act=rd-reset]");
   await page.click("[data-act=rd-done]");
   // 恢复内置也要经过页面保存条，完成抽屉时还未写库。

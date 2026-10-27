@@ -66,6 +66,9 @@ func init() {
 
 // runUpdateRunControl 组装 root 侧执行器并跑一轮。
 func runUpdateRunControl(cmd *cobra.Command, args []string) error {
+	if err := selfupdate.CheckControlUpdate(buildinfo.Version()); err != nil {
+		return err
+	}
 	db := updateRunFlags.db
 	dir := filepath.Join(filepath.Dir(db), "update")
 	paths := selfupdate.DefaultControlPaths()

@@ -59,6 +59,14 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	}
 	defer st.Close()
 
+	// 上次进程没了,后台任务(体检、安装)不可能再有结局:把它们标成中断,否则
+	// 会一直显示在跑,还挡住同一节点上同名任务重新开始。
+	if n, err := st.InterruptRunningJobs(time.Now()); err != nil {
+		logger.Warn("把没做完的后台任务标成中断失败", "error", err)
+	} else if n > 0 {
+		logger.Info("上次没做完的后台任务标成了中断", "count", n)
+	}
+
 	// 核心缓存放在数据库旁边:服务单元的 ProtectSystem=strict 只给控制面留了
 	// /var/lib/mpx 一处可写,而缓存要能长期留存、重启之后还在。
 	ctrl := control.New(st, node.SSH{}, logger, filepath.Join(filepath.Dir(opt.DBPath), "xray"))

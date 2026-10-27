@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -102,10 +103,23 @@ func (s *Server) rateLimit(l *ipRateLimiter, next http.Handler) http.Handler {
 // /sub/ 开头的路径(订阅本体与 rotate),/api 罩整个管理面。
 const (
 	subRate, subBurst = 10.0, 30.0
-	apiRate, apiBurst = 5.0, 10.0
+	// 桌面端 / mpx ui 的代理把所有请求都从一个 IP 进来,一次页面加载就有约 15 个请求
+	// 同时打上来,桶要比「单运维手工操作」的口径宽出这 15 个的量。
+	apiRate, apiBurst = 10.0, 60.0
 	// 桶闲置多久可以扔。比客户端刷新间隔长一点,免得一轮重连就把桶删掉。
 	bucketIdle = 10 * time.Minute
 )
 
 func newSubLimiter() *ipRateLimiter { return newIPRateLimiter(subRate, subBurst, bucketIdle) }
-func newAPILimiter() *ipRateLimiter { return newIPRateLimiter(apiRate, apiBurst, bucketIdle) }
+
+// newAPILimiter 的桶默认每秒 10、突发 60。浏览器测试可以让它宽一些:一个进程、一个 IP、
+// 几十条用例连着跑,突发 60 一会就见底,429 会拖慢整套。只认正数,读不到或写错都按默认走。
+func newAPILimiter() *ipRateLimiter {
+	burst := apiBurst
+	if v := os.Getenv("MPX_API_BURST"); v != "" {
+		if n, err := strconv.ParseFloat(v, 64); err == nil && n > 0 {
+			burst = n
+		}
+	}
+	return newIPRateLimiter(apiRate, burst, bucketIdle)
+}

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -38,6 +39,12 @@ const (
 	// 实测约 40 秒,慢链路按 100KB/s 算约 11 分钟。它和 CLI 侧的
 	// installTimeout(15 分钟)对齐:HTTP 请求还在等的时候,不该先在节点这一层断掉。
 	installBudget = 15 * time.Minute
+	// onlineBudget 是后台刷新一台节点在线名单的上限:一次 SSH 里发两条命令,
+	// 按每个在线用户分块取 IP 的那条随人数变长,15 秒是个宽松的上限。
+	onlineBudget = 15 * time.Second
+	// onlineRefreshEvery 是同一台节点两次刷新在线名单的最短间隔:名单变化很快,
+	// 但没必要每轮(30 秒)都去问 —— 一分钟一次已经够看。
+	onlineRefreshEvery = 60 * time.Second
 )
 
 // Control 持有跨节点动作需要的依赖。
@@ -51,6 +58,15 @@ type Control struct {
 	// Internal overrides keep deadline-exhaustion regression tests fast.
 	sampleTimeout    time.Duration
 	reconcileTimeout time.Duration
+
+	// onlineMu 保护下面的在线名单快照与上次尝试时间。它只放内存:名单过期得太快,
+	// 不落库。
+	onlineMu sync.Mutex
+	online   map[int64]model.OnlineSnapshot
+	// onlineTried 记每台节点上次去问在线名单的时刻,不管问没问到。限流按它算,
+	// 而不是按快照的时间:读失败的节点没有快照,只按快照限流的话它会被每轮(30 秒)
+	// 问一遍 —— 配置没开在线统计的节点正是这种每问必败的情况。
+	onlineTried map[int64]time.Time
 }
 
 // New 接起这一层。
@@ -108,7 +124,32 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err := c.store.SetNodeDeployed(n.ID, hashOf(cfg), now); err != nil {
 		return errors.Join(quicErr, fmt.Errorf("记录节点 %s 的下发哈希失败: %w", n.Name, err))
 	}
+	// 顺带记下模板哈希,下次读节点时就能看出新版本有没有改配置的写法。这一步
+	// 失败不影响下发本身:配置已经在节点上跑着了,只是这一台暂时报不出模板漂移。
+	if th, err := TemplateHash(n, inbounds); err != nil {
+		c.logger.Warn("算节点模板哈希失败,这次不记模板漂移基准", "node", n.Name, "error", err)
+	} else if err := c.store.SetNodeTemplateHash(n.ID, th); err != nil {
+		c.logger.Warn("记录节点模板哈希失败", "node", n.Name, "error", err)
+	}
 	return quicErr
+}
+
+// TemplateHash 是「配置模板」的 sha256:同一份节点与入站、不带任何用户渲染出的
+// 配置的哈希,定在 time.Unix(0, 0)。
+//
+// 为什么不拿整份下发内容当基准:那份里含着用户名单,用户天天在增删,哈希也就天天
+// 在变;新版本改了配置的写法(policy、入站字段之类)时,两边反而都是文件哈希、
+// 照样相等,界面就说「已是最新」。用户名单由收敛动态维护,与模板无关;去掉它之后
+// 剩下的部分只随模板和节点结构变,这才比得出「新版本要应用一次」。
+//
+// 用户列表传 nil:ServerConfig 对空名单照常渲染(clients / peers 写空数组,
+// shadowsocks 的服务端 psk 由入站 tag 派生,不依赖用户),所以不需要探针用户。
+func TemplateHash(n model.Node, inbounds []model.Inbound) (string, error) {
+	cfg, err := render.ServerConfig(n, inbounds, nil, time.Unix(0, 0).UTC())
+	if err != nil {
+		return "", err
+	}
+	return hashOf(cfg), nil
 }
 
 // hashOf 是配置内容的 sha256,十六进制小写 —— 与节点上 sha256sum 的输出同格式,
@@ -133,6 +174,81 @@ func (c *Control) OnlineIPs(ctx context.Context, n model.Node) (map[string][]str
 		return nil, fmt.Errorf("sing-box 不提供单用户在线 IP API; 含 QUIC 的节点无法返回完整在线名单")
 	}
 	return node.OnlineIPs(ctx, c.runner, n)
+}
+
+// refreshOnline 刷新一台节点的在线名单快照,给后台循环和接口读。
+//
+// 同一台节点一分钟内只问一次:node.OnlineIPs 已经把该节点所有人的 IP 查询合进
+// 一次 SSH 会话,再多问只会给节点添负担 —— 这与节点上有几个人无关,一台节点
+// 每分钟最多一次。限流按上次「尝试」算,问失败了也照样算(见 onlineTried)。
+//
+// 读不到就删掉这台节点的快照,而不是留着旧名单:旧名单看着新鲜,却可能在说一个
+// 已经下线的人还连着 —— 没有比有一份过期的名单更坏。两种情况不记日志:
+// 配置没开在线统计(node.ErrOnlineStatsOff)和含 sing-box 的节点(天生读不全),
+// 它们每轮都会失败,记下来只是噪音。
+func (c *Control) refreshOnline(ctx context.Context, n model.Node, now time.Time) {
+	c.onlineMu.Lock()
+	tried, ok := c.onlineTried[n.ID]
+	if ok && now.Sub(tried) < onlineRefreshEvery {
+		c.onlineMu.Unlock()
+		return
+	}
+	// 先记下这次尝试,再出门问:失败的尝试也算数,否则失败一次就是每轮都问。
+	if c.onlineTried == nil {
+		c.onlineTried = map[int64]time.Time{}
+	}
+	c.onlineTried[n.ID] = now
+	c.onlineMu.Unlock()
+
+	octx, cancel := context.WithTimeout(ctx, onlineBudget)
+	defer cancel()
+	users, err := c.OnlineIPs(octx, n)
+	if err != nil {
+		c.ForgetOnline(n.ID)
+		if !errors.Is(err, node.ErrOnlineStatsOff) && !strings.Contains(err.Error(), "sing-box") {
+			c.logger.Debug("刷新在线名单失败", "node", n.Name, "error", err)
+		}
+		return
+	}
+
+	if users == nil {
+		users = map[string][]string{}
+	}
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	if c.online == nil {
+		c.online = map[int64]model.OnlineSnapshot{}
+	}
+	c.online[n.ID] = model.OnlineSnapshot{NodeID: n.ID, At: now, Users: users}
+}
+
+// OnlineSnapshots 返回所有节点在线名单的深拷贝。
+//
+// 返回拷贝是因为调用方(接口、测试)可能会改它:共享同一份 map 的话,一次改写就
+// 会悄悄改掉后台看到的状态,还会和 refreshOnline 抢同一张 map。
+func (c *Control) OnlineSnapshots() map[int64]model.OnlineSnapshot {
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	out := make(map[int64]model.OnlineSnapshot, len(c.online))
+	for id, snap := range c.online {
+		users := make(map[string][]string, len(snap.Users))
+		for name, ips := range snap.Users {
+			users[name] = append([]string(nil), ips...)
+		}
+		snap.Users = users
+		out[id] = snap
+	}
+	return out
+}
+
+// ForgetOnline 删掉一台节点的在线名单快照:节点被跳过、采样失败或已删除时用。
+//
+// 它只删快照,不删上次尝试时间:那次尝试是真的发生过,而且遗忘之后不该立刻
+// 再问一遍 —— 限流跟着尝试走,不跟着快照走(见 onlineTried)。
+func (c *Control) ForgetOnline(nodeID int64) {
+	c.onlineMu.Lock()
+	defer c.onlineMu.Unlock()
+	delete(c.online, nodeID)
 }
 
 // SampleTraffic 采一次该节点上的用户流量,算出相对上次采样的增量并累加进数据库。

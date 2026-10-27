@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -608,7 +609,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 		t.Fatalf("userCSVColumns: %v", err)
 	}
 	// 只有用户名,其余全空。
-	rec := []string{"alice", "", "", "", "", "", "", ""}
+	rec := []string{"alice", "", "", "", "", "", "", "", ""}
 	u, err := csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -645,7 +646,7 @@ func TestCSVRowToUserEmptyCells(t *testing.T) {
 	}
 
 	// 单元格两侧的空白会被有意去掉(导出->导入不等价于原样保留空白)。
-	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "", "  备注  "}
+	rec = []string{"  spaced  ", " 1GB ", " 2027-01-01 ", "启用", "none", "全部", "", "  备注  ", ""}
 	u, err = csvRowToUser(cols, rec)
 	if err != nil {
 		t.Fatalf("csvRowToUser: %v", err)
@@ -674,7 +675,7 @@ func TestImportBadRowsColumnMismatch(t *testing.T) {
 	}
 	// 表头 8 列;第 3 行(数据第 2 行)只给了 4 列。
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
 		"bob,2GB,2027-02-01,启用",
 		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
@@ -722,7 +723,7 @@ func TestImportBadRowsUnknownEnabled(t *testing.T) {
 		t.Fatalf("newClient: %v", err)
 	}
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"alice,1GB,2027-01-01,启用,none,全部,,备注一",
 		"bob,2GB,2027-02-01,啟用,none,全部,,备注二", // 繁体"啟用"认不出
 		"carol,3GB,2027-03-01,停用,none,全部,,备注三",
@@ -783,7 +784,7 @@ func TestImportStopsAfterThreeBadRows(t *testing.T) {
 		t.Fatalf("newClient: %v", err)
 	}
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		`alice,1GB,2027-01-01,启用,none,全部,,"坏"引号`,
 		`bob,2GB,2027-02-01,停用,none,全部,,"坏"引号`,
 		`carol,3GB,2027-03-01,启用,none,全部,,"坏"引号`,
@@ -827,7 +828,7 @@ func TestImportCSVColumnCountUsesCSVRecords(t *testing.T) {
 	}
 	// 注意第二行备注用引号括起了逗号 —— CSV 眼里它仍是 7 个字段。
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		`alice,1GB,2027-01-01,启用,none,全部,,"备注,有逗号"`,
 		"bob,2GB",
 	}, "\n") + "\n"
@@ -896,7 +897,7 @@ func TestCSVImportPlanColumn(t *testing.T) {
 		t.Fatalf("newClient: %v", err)
 	}
 	csvText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"alice,不限,不过期,启用,none,全部,基础,", // 改挂「基础」
 		"bob,不限,不过期,启用,none,全部,全球,",   // 新建并挂「全球」
 		"carol,不限,不过期,启用,none,全部,,",   // 新建,不挂套餐
@@ -929,7 +930,7 @@ func TestCSVImportPlanColumn(t *testing.T) {
 
 	// 空「套餐」单元格覆盖已有用户时保持原套餐不动。
 	keepText := strings.Join([]string{
-		strings.Join(userCSVHeader, ","),
+		strings.Join(userCSVImportHeader, ","),
 		"alice,2GB,不过期,启用,none,全部,,备注",
 	}, "\n") + "\n"
 	rep, err = importUsersCSV(c, strings.NewReader(keepText))
@@ -974,5 +975,116 @@ func TestCSVImportWithoutPlanColumnKeepsPlan(t *testing.T) {
 	got, _ := f.get("alice")
 	if got.PlanID == nil || *got.PlanID != global {
 		t.Fatalf("旧格式导入碰了套餐归属: %+v", got.PlanID)
+	}
+}
+
+// TestCSVExportLastActiveColumn 断言「最后在线（UTC+8）」列:固定按 UTC+8 写、不看操作机
+// 时区;从没连过的人(没有 presence 或 last_active_at 为空)留空。
+func TestCSVExportLastActiveColumn(t *testing.T) {
+	seen := time.Date(2026, 10, 17, 13, 14, 40, 0, time.UTC)
+	users := []userRow{
+		{Username: "alice", Enabled: true, ResetStrategy: string(model.ResetNone), Presence: &userPresence{LastActiveAt: &seen}},
+		{Username: "hana", Enabled: true, ResetStrategy: string(model.ResetNone), Presence: &userPresence{}},
+		{Username: "old", Enabled: true, ResetStrategy: string(model.ResetNone)}, // 老控制面不给 presence
+	}
+
+	var buf bytes.Buffer
+	if err := writeUsersCSV(&buf, users); err != nil {
+		t.Fatalf("writeUsersCSV: %v", err)
+	}
+	recs, err := csv.NewReader(strings.NewReader(buf.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("读回 CSV: %v", err)
+	}
+	if n := len(recs[0]); n != len(userCSVHeader) {
+		t.Fatalf("表头 %d 列, want %d: %v", n, len(userCSVHeader), recs[0])
+	}
+	// 最后一列的表头和常量是同一句话,常量本身也要是这句(界面和导出里都按它写)。
+	if got := recs[0][len(recs[0])-1]; got != csvColumnLastActive {
+		t.Fatalf("最后一列 = %q, want %q", got, csvColumnLastActive)
+	}
+	if csvColumnLastActive != "最后在线（UTC+8）" {
+		t.Fatalf("csvColumnLastActive = %q, want 最后在线（UTC+8）", csvColumnLastActive)
+	}
+	// 13:14:40 UTC = 21:14:40 UTC+8,与浏览器/操作机时区无关。
+	for _, rec := range recs[1:] {
+		want := map[string]string{"alice": "2026-10-17 21:14:40", "hana": "", "old": ""}[rec[0]]
+		if got := rec[len(rec)-1]; got != want {
+			t.Fatalf("%s 的最后在线 = %q, want %q", rec[0], got, want)
+		}
+	}
+}
+
+// TestCSVImportOldEightColumnFile 断言老版本导出的文件(8 列,没有
+// 「最后在线（UTC+8）」)照常能导:行宽按文件自己的表头算,不拿 9 列的导出表头去比。
+func TestCSVImportOldEightColumnFile(t *testing.T) {
+	f := newFakeUserAPI(t)
+	global := int64(7)
+	f.addPlan(model.Plan{ID: global, Name: "全球"})
+	f.add(model.User{Username: "alice", Enabled: true, PlanID: &global})
+
+	c, err := newClient()
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	// 老版本的导出表头:用户名、流量上限、到期时间、可用性、重置策略、入站范围、套餐、备注。
+	csvText := strings.Join([]string{
+		"用户名,流量上限,到期时间,可用性,重置策略,入站范围,套餐,备注",
+		"alice,2GB,不过期,启用,none,全部,,备注",
+		"bob,1GB,2027-01-01,停用,none,全部,全球,备注二",
+	}, "\n") + "\n"
+
+	rep, err := importUsersCSV(c, strings.NewReader(csvText))
+	if err != nil {
+		t.Fatalf("importUsersCSV: %v", err)
+	}
+	if rep.Added != 1 || rep.Updated != 1 || rep.Failed != 0 {
+		t.Fatalf("导入结果 = %+v, want 1 新增 / 1 更新 / 0 失败", rep)
+	}
+	got, ok := f.get("bob")
+	if !ok {
+		t.Fatal("bob 没导入")
+	}
+	if got.Enabled || got.PlanID == nil || *got.PlanID != global {
+		t.Fatalf("bob = %+v, want 停用并挂「全球」", got)
+	}
+	if got, _ := f.get("alice"); got.DataLimit != 2<<30 || got.PlanID == nil || *got.PlanID != global {
+		t.Fatalf("alice = %+v, want 2GB 且套餐不变", got)
+	}
+}
+
+// TestCSVImportNineColumnFileIgnoresLastActive 断言带「最后在线（UTC+8）」列的
+// 9 列文件也能导:这一列只导出、不导入,写什么都不认。
+func TestCSVImportNineColumnFileIgnoresLastActive(t *testing.T) {
+	f := newFakeUserAPI(t)
+	c, err := newClient()
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	if len(userCSVHeader) != 9 || userCSVHeader[len(userCSVHeader)-1] != csvColumnLastActive {
+		t.Fatalf("导出表头 = %v, want 9 列且最后一列是 %q", userCSVHeader, csvColumnLastActive)
+	}
+	csvText := strings.Join([]string{
+		strings.Join(userCSVHeader, ","),
+		"alice,1GB,2027-01-01,启用,none,全部,,备注一,2026-10-17 21:14:40",
+		"bob,2GB,2027-02-01,停用,none,全部,,备注二,",
+	}, "\n") + "\n"
+
+	rep, err := importUsersCSV(c, strings.NewReader(csvText))
+	if err != nil {
+		t.Fatalf("importUsersCSV: %v", err)
+	}
+	if rep.Added != 2 || rep.Failed != 0 {
+		t.Fatalf("导入结果 = %+v, want 2 新增 0 失败", rep)
+	}
+	got, ok := f.get("alice")
+	if !ok {
+		t.Fatal("alice 没导入")
+	}
+	if got.DataLimit != 1<<30 || got.Note != "备注一" {
+		t.Fatalf("alice = %+v, want 1GB 且备注为「备注一」", got)
+	}
+	if b, _ := f.get("bob"); b.Enabled {
+		t.Fatalf("bob 应当是停用: %+v", b)
 	}
 }

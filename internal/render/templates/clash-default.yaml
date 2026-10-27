@@ -918,7 +918,7 @@ proxy-groups:
     tolerance: 50
   - name: 全球代理
     type: select
-    proxies: [自动选择, 手动切换, DIRECT]
+    proxies: [手动切换, 自动选择, DIRECT]
     include-all-proxies: true
   - name: 广告拦截
     type: select
@@ -1145,24 +1145,25 @@ dns:
   ipv6: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.0/16
-  # 启动期与规则域名(如 DoH 主机名)的兜底解析,用国内 UDP 即可。
+  # 只用纯 IP 解析 DoH 服务器的主机名，避免启动时循环依赖。
   default-nameserver:
     - 119.29.29.29
     - 223.5.5.5
-  # 节点域名用国内 DNS 解析,避免节点地址被污染或查不到。
+  # 节点域名直连国内 DoH 解析，不依赖尚未连上的代理。
   proxy-server-nameserver:
-    - 119.29.29.29
-    - 223.5.5.5
-  # fake-ip 下走代理的域名本地根本不解析(域名交给节点),nameserver 主要
-  # 服务直连域名,用国内 DoH 就够。
-  nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
+  # 国外域名默认经代理用 Cloudflare / Google DoH 解析。
+  # 查询从代理出口发出，让结果与出口一致，不向国内 DNS 发送查询。
+  # 需要较新的 mihomo，旧版不认这套写法。
+  nameserver:
+    - 'https://1.1.1.1/dns-query#手动切换'
+    - 'https://8.8.8.8/dns-query#手动切换'
+  # 国内域名按策略直连国内 DoH，不经代理。
   nameserver-policy:
     geosite:cn,private,apple:
       - https://doh.pub/dns-query
       - https://dns.alidns.com/dns-query
-    +.linux.do: https://xxx.ddd.oaifree.com/query-dns
   # `*` 在 mihomo 里只匹配一级域名,`+.` 才是多级(含裸域)。
   fake-ip-filter:
     - '+.lan'

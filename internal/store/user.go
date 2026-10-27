@@ -384,7 +384,15 @@ func (s *Store) DeleteUser(username string) error {
 	if err != nil {
 		return fmt.Errorf("删除用户 %q: %w", username, err)
 	}
-	return affectedOrNotFound(res, fmt.Sprintf("用户 %q", username))
+	if err := affectedOrNotFound(res, fmt.Sprintf("用户 %q", username)); err != nil {
+		return err
+	}
+	// 活跃时间按用户名字符串记,没有指向 users 的外键,得手动清掉;不然同名用户
+	// 再建出来会捡回旧时间。
+	if _, err := s.db.Exec(`DELETE FROM user_activity WHERE username = ?`, username); err != nil {
+		return fmt.Errorf("删除用户 %q 的活跃时间: %w", username, err)
+	}
+	return nil
 }
 
 // AddUserTraffic 把 up 与 down 累加到用户的流量上。

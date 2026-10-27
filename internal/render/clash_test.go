@@ -2,6 +2,8 @@ package render
 
 import (
 	"bytes"
+	"net/url"
+	"reflect"
 	"testing"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -238,6 +240,71 @@ func TestClashStructure(t *testing.T) {
 			}
 		}
 	})
+}
+
+// 默认 DNS 在模板原样输出和实际订阅中都必须指向存在的代理组。
+func TestClashDefaultDNS(t *testing.T) {
+	eps := clashTestEndpoints()
+	cases := []struct {
+		name   string
+		render func() ([]byte, error)
+	}{
+		{"模板原样输出", func() ([]byte, error) { return Clash(eps, true, nil) }},
+		{"实际订阅", func() ([]byte, error) { return ClashRouting(eps, seedPlan(t, eps), nil) }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			raw, err := c.render()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc map[string]any
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			groups := map[string]bool{}
+			for _, g := range doc["proxy-groups"].([]any) {
+				groups[g.(map[string]any)["name"].(string)] = true
+			}
+			dns, ok := doc["dns"].(map[string]any)
+			if !ok {
+				t.Fatal("缺少 DNS 配置")
+			}
+			domestic := []any{"https://doh.pub/dns-query", "https://dns.alidns.com/dns-query"}
+			wantDNS := map[string]any{
+				"default-nameserver":      []any{"119.29.29.29", "223.5.5.5"},
+				"proxy-server-nameserver": domestic,
+				"nameserver-policy":       map[string]any{"geosite:cn,private,apple": domestic},
+			}
+			for key, want := range wantDNS {
+				if !reflect.DeepEqual(dns[key], want) {
+					t.Errorf("dns.%s = %#v, want %#v", key, dns[key], want)
+				}
+			}
+			servers, ok := dns["nameserver"].([]any)
+			wantServers := []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
+			if !ok || len(servers) != len(wantServers) {
+				t.Fatalf("nameserver = %#v，想要两条国外 DoH", dns["nameserver"])
+			}
+			for i, server := range servers {
+				address, ok := server.(string)
+				if !ok {
+					t.Fatalf("DoH 地址不是字符串：%#v", server)
+				}
+				u, err := url.Parse(address)
+				if err != nil {
+					t.Fatalf("DoH 地址解析失败：%v", err)
+				}
+				if u.Fragment == "" || !groups[u.Fragment] {
+					t.Errorf("DoH 指向不存在的代理组 %q", u.Fragment)
+				}
+				u.Fragment = ""
+				if got := u.String(); got != wantServers[i] {
+					t.Errorf("nameserver[%d] = %q, want %q", i, got, wantServers[i])
+				}
+			}
+		})
+	}
 }
 
 // TestClashCustomTemplate 覆盖 meta 版套用自定义模板:proxies 注入到自定义

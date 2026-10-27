@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """生成界面用的中文字体子集:internal/ui/assets/fonts/NotoSansSC-subset.woff2。
 
-字符集 = GB2312 一级常用字(3755 个)
+字符集 = GB2312 一级和二级字(6763 个)
        + 界面资产(internal/ui/assets 下 js/html/css)、Go 源码(界面会显示的
          ui_hint 等)和 CHANGELOG(更新弹窗里的发布说明)里出现的全部中文、全角标点
        + CJK 标点、全角符号两个整块。
@@ -25,7 +25,7 @@ def wide(ch):
 
 def main(src):
     chars = set()
-    for b1 in range(0xB0, 0xD8):  # GB2312 一级:B0A1–D7F9
+    for b1 in range(0xB0, 0xF8):  # GB2312 一级 + 二级:B0A1–D7F9、D8A1–F7FE
         for b2 in range(0xA1, 0xFF):
             try:
                 chars.add(bytes([b1, b2]).decode("gb2312"))

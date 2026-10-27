@@ -22,7 +22,8 @@ const inbAutoTag = i => !i.tag || i.tag === `${i.protocol}-${i.port}`;
 const inbKind = i => [PROTO_NAMES[i.protocol] || i.protocol, NET_NAMES[i.network], i.security === "reality" ? "Reality" : i.security === "tls" ? "TLS" : ""].filter(Boolean).join(" ");
 // 列表行里的短标签(设计稿只给 64px):Reality / WS / gRPC…,没有传输层名时用协议名;全称放在 title 里。
 const inbShortKind = i => i.security === "reality" ? "Reality" : NET_NAMES[i.network] || PROTO_NAMES[i.protocol] || i.protocol;
-const inbReadable = (i, node) => `${node ? nodeLabel(node) + " · " : ""}${inbKind(i)} :${i.port}`;
+// 只在界面上用(inbTitle 的文字、删除按钮的 data-title):端口前不留空格,写成「VLESS Reality:8443」。
+const inbReadable = (i, node) => `${node ? nodeLabel(node) + " · " : ""}${inbKind(i)}:${i.port}`;
 const inbTitle = (i, node) => inbAutoTag(i) ? inbReadable(i, node) : inbTag(i);
 // 订阅里的名字:控制面按订阅同一套规则算好(sub_name);没起名的跟随节点显示名。
 // inbTitleById:从入站页已拉到的数据里找入站的可读写法;不在那页时退回「入站」。
@@ -180,9 +181,16 @@ function connPending(n, opts = {}) {
   if (!INB_PENDING.has(n.id)) return "";
   return H`<span class="tag pend" data-pending="${n.id}">有改动未应用</span>${!opts.tagOnly && can("POST", "/api/nodes/x/sync") ? H`<button type="button" class="btn sm" data-act="node-sync" data-id="${n.id}" data-name="${n.name || ""}" data-label="${nodeLabel(n)}">应用</button>` : ""}`;
 }
-// 给灰字说明用的节点名:不带国旗。
-const plainNodeName = n => String(nodeLabel(n) || n?.name || "节点").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || "节点";
+// 给灰字说明用的节点名:不带国旗。显示名是「🇺🇸 洛杉矶 B」这种旗子 + 空格的写法,
+// 旗子去掉后开头那个空格也一起去掉;万一剩下的只有旗子和空格,用内部名。
+const plainNodeName = n => {
+  const name = nodeLabel(n) || n?.name;
+  return String(name || "").replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, "").trim() || String(n?.name || "").trim() || "节点";
+};
 const restartNote = n => `会重启${plainNodeName(n)} 上的代理，已连着的用户会断开几秒`;
+// pendingToast:「改了要应用」的提示统一从这里拼 —— 只保存不应用之后提示节点上有改动待应用。
+// 节点名用 plainNodeName(不带国旗),中间的标点与收尾说明同一套。
+const pendingToast = (done, n, tail = "随时可以应用") => toast(`${done}；${plainNodeName(n)} 显示「有改动未应用」，${tail}`);
 // 抽屉底部:次要「只…，稍后应用」+ 主按钮「…并应用到节点」,主按钮下面一行灰字。
 function applyFoot(n, main, later, id = "i-save") {
   return H`<div class="df df-apply"><div class="df-row"><button type="button" class="btn" id="x-later">${later}</button><button type="submit" class="btn pri" id="${id}">${main}</button></div><p class="df-note" id="x-note">${restartNote(n)}</p></div>`;
@@ -201,27 +209,22 @@ async function applyAfterWrite(n, done) {
     toast(`${done}，但应用到 ${plainNodeName(n)} 失败：${e.message}`, true);
   }
 }
-async function connLoad(nodeIds) {
-  const all = await api("/api/inbounds");
+async function connLoad(nodeIds, read = api) {
+  const [all, rawNodes] = await Promise.all([read("/api/inbounds"), read("/api/nodes")]);
   const want = Array.isArray(nodeIds) && nodeIds.length ? new Set(nodeIds.map(Number)) : null;
   const inbounds = want ? all.filter(i => want.has(i.node_id)) : all;
-  const rawNodes = await api("/api/nodes");
   const picked = want ? rawNodes.filter(n => want.has(n.id)) : rawNodes;
   // 入口按入站各取一次:控制面没有「全部入口」的接口。
   // 节点的 region / city 只在 metadata 里(节点 JSON 只给拼好的显示名),名称与
   // 节点所在地的对照要用它们;读不到就当没有地区,不提醒。
   // 有未应用改动的节点(老控制面没有这个接口,当作没有)。
   const [hosts, metas, pend] = await Promise.all([
-    Promise.all(inbounds.map(i => api(inbPath(i.id) + "/hosts"))),
-    Promise.all(picked.map(n => api(`/api/nodes/${n.id}/metadata`).catch(() => null))),
-    api("/api/nodes/pending").catch(() => []),
+    Promise.all(inbounds.map(i => read(inbPath(i.id) + "/hosts"))),
+    Promise.all(picked.map(n => read(`/api/nodes/${n.id}/metadata`).catch(() => null))),
+    read("/api/nodes/pending").catch(() => []),
   ]);
-  INB_PENDING = new Set((pend || []).map(p => p.node_id));
   const nodes = picked.map((n, k) => ({ ...n, region: metas[k]?.region || "", city: metas[k]?.city || "" }));
-  INB_TOTAL = all.length;
-  INB_CACHE = { inbounds, nodes, all };
-  INB_HOSTS = Object.fromEntries(inbounds.map((i, k) => [i.id, hosts[k]]));
-  return { inbounds, nodes, hosts: INB_HOSTS, total: all.length };
+  return { inbounds, nodes, hosts: Object.fromEntries(inbounds.map((i, k) => [i.id, hosts[k]])), total: all.length, all, pending: (pend || []).map(p => p.node_id) };
 }
 
 function connGroupEmpty(n, opts) {
@@ -246,7 +249,14 @@ function connGroups(d, opts = {}) {
   return H`<div class="ngs" data-conn-groups>${nodes.map(n => inbGroup(n, byNode.get(n.id) || []))}${orphan.length ? H`<section class="ng"><div class="ng-h"><b class="ng-n">未知节点</b><span class="ng-c">${orphan.length} 个连接</span></div><div class="cx-list">${orphan.map(i => inbRow(i, hosts[i.id] || [], { address: "", id: i.node_id }))}</div></section>` : ""}</div>`;
 }
 
-const CONN = { load: connLoad, groups: connGroups, pending: connPending, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
+// 只有实际采用该页结果时才更新编辑器的数据；缓存首帧也走同一入口，迟到读取不写全局。
+function useConnections(d) {
+  INB_CACHE = { inbounds: d.inbounds, nodes: d.nodes, all: d.all };
+  INB_HOSTS = d.hosts;
+  INB_TOTAL = d.total;
+  INB_PENDING = new Set(d.pending);
+}
+const CONN = { load: connLoad, use: useConnections, groups: connGroups, pending: connPending, count: () => INB_TOTAL ?? STATUS?.counts?.inbounds ?? "" };
 window.CONN = CONN;
 
 /* ---------- 入站字段:完整编辑器与「高级」共用 ---------- */
@@ -319,7 +329,9 @@ function applyMode(form, probe, verb) {
 }
 async function inboundEditor(id, presetNode) {
   let v = null, nodes = [];
-  try { [v, nodes] = await Promise.all([id ? api(inbPath(id)) : null, api("/api/nodes")]); } catch (e) { toast(e.message, true); return; }
+  const packet = await readDrawer(id ? "编辑连接方式" : "添加连接方式", () => Promise.all([id ? api(inbPath(id)) : null, api("/api/nodes")]), () => inboundEditor(id, presetNode));
+  if (!packet) return;
+  [v, nodes] = packet.value;
   const isNew = !v;
   const base = v ? asModelInbound(v) : { node_id: presetNode || nodes[0]?.id, protocol: "vless", port: 0, network: "tcp", security: "none", wg_mtu: 1420 };
   openDrawer(H`<form id="inb-form" novalidate><div class="dh"><h2>${isNew ? "添加连接方式" : "编辑连接方式 " + inbTitle(v, nodes.find(n => n.id === v.node_id))}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div>
@@ -353,7 +365,7 @@ async function inboundEditor(id, presetNode) {
         done = `已更新连接方式 ${inbTitle(updated, nodes.find(n => n.id === updated.node_id))}`;
       }
       if (st.need && now) await applyAfterWrite(st.node, done);
-      else toast(st.need ? `${done}；${plainNodeName(st.node)} 显示「有改动未应用」，随时可以应用` : done);
+      else if (st.need) pendingToast(done, st.node); else toast(done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -362,11 +374,9 @@ async function inboundEditor(id, presetNode) {
 /* ---------- 编辑连接:名称、地址在顶上,入站细节收进「高级」 ---------- */
 async function connectionEditor(inbID) {
   let inb, hosts, nodes;
-  const seq = ++CONN_OPEN_SEQ;
-  try {
-    [inb, hosts, nodes] = await Promise.all([api(inbPath(inbID)), api(inbPath(inbID) + "/hosts"), api("/api/nodes")]);
-  } catch (e) { toast(e.message, true); return; }
-  if (seq !== CONN_OPEN_SEQ) return;
+  const packet = await readDrawer(inbTitleById(inbID), () => Promise.all([api(inbPath(inbID)), api(inbPath(inbID) + "/hosts"), api("/api/nodes")]), () => connectionEditor(inbID));
+  if (!packet) return;
+  [inb, hosts, nodes] = packet.value;
   const n = nodes.find(x => x.id === inb.node_id) || { address: "", id: inb.node_id };
   const h = firstHost(hosts), base = asModelInbound(inb);
   const defName = nameOfHost(inb, h, n);
@@ -421,7 +431,7 @@ async function connectionEditor(inbID) {
       }
       const st = mode.state(), done = msgs.length ? msgs.join("；") : "已保存";
       if (st.need && mode.now()) await applyAfterWrite(n, done);
-      else toast(st.need ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，随时可以应用` : done);
+      else if (st.need) pendingToast(done, n); else toast(done);
       closeOverlays(); load(true, true);
     } catch (e2) { $("#i-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -480,7 +490,7 @@ function drawAddConnection() {
       const created = await write("POST", "/api/inbounds", body);
       const done = `已添加 ${inbTitle(created, node)}`;
       if (mode.now()) await applyAfterWrite(node, done);
-      else toast(`${done}；${plainNodeName(node)} 显示「有改动未应用」，随时可以应用`);
+      else pendingToast(done, node);
       closeOverlays(); load(true, true);
     } catch (e2) { err.textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
@@ -489,12 +499,15 @@ function drawAddConnection() {
 /* ---------- 入口(host)编辑器 ---------- */
 // 抽屉要先拉数据再打开:连点两下或在一个抽屉里打开另一个时,只让最后一次打开的生效,
 // 先发出去的那个请求回来后不再把抽屉换掉。
-let CONN_OPEN_SEQ = 0;
 async function hostEditor(inbID, hostID) {
   let hosts = [];
-  const seq = ++CONN_OPEN_SEQ;
-  try { hosts = await api(inbPath(inbID) + "/hosts"); } catch (e) { toast(e.message, true); return; }
-  if (seq !== CONN_OPEN_SEQ) return;
+  const packet = await readDrawer(hostID ? "编辑对外地址" : "添加对外地址", async () => {
+    const rows = await api(inbPath(inbID) + "/hosts");
+    if (hostID && !rows.some(h => h.id === hostID)) throw new Error(`连接方式 ${inbID} 上没有 id 为 ${hostID} 的对外地址`);
+    return rows;
+  }, () => hostEditor(inbID, hostID));
+  if (!packet) return;
+  hosts = packet.value;
   const found = hostID ? hosts.find(h => h.id === hostID) : null;
   if (hostID && !found) { toast(`连接方式 ${inbID} 上没有 id 为 ${hostID} 的对外地址`, true); return; }
   const isNew = !found, h = found ? asModelHost(found) : { inbound_id: inbID, remark: "", address: "", port: 0 };
@@ -587,7 +600,7 @@ const CONN_ACTS = {
     const del = async now => {
       await write("DELETE", inbPath(d.id));
       if (n && now) await applyAfterWrite(n, done);
-      else toast(n ? `${done}；${plainNodeName(n)} 显示「有改动未应用」，应用后节点才停止监听` : done);
+      else if (n) pendingToast(done, n, "应用后节点才停止监听"); else toast(done);
       closeOverlays(); load(true, true);
     };
     confirmBox({ title: `删除连接「${title}」？`, text: H`不可恢复：挂在它上面的对外地址一起删掉，用它的客户端下次刷新订阅后就没了这个对外地址。${n ? H`<br><span class="sub">${restartNote(n)}</span>` : ""}`,

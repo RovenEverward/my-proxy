@@ -10,9 +10,11 @@ import (
 
 // nodeColumns 是 nodes 表的列顺序,扫描时按同一顺序取值。
 //
-// 后两列是批 3b 加的下发基准:deployed_at 可空,没下发过就是 NULL。
+// 中间三列是下发基准:deployed_hash / deployed_template_hash 空串表示从没下发
+// 过,deployed_at 可空,没下发过就是 NULL。它们都不在 UpdateNode 的 SET 里 ——
+// 整体 PUT 带进来的零值不能把基准抹掉。
 const nodeColumns = `id, name, address, ssh_port, ssh_user, api_port, config_path, service_name,
-	deployed_hash, deployed_at, draining, outbound_ip`
+	deployed_hash, deployed_at, deployed_template_hash, draining, outbound_ip`
 
 func scanNode(sc rowScanner) (*model.Node, error) {
 	var (
@@ -21,8 +23,8 @@ func scanNode(sc rowScanner) (*model.Node, error) {
 		draining   int
 	)
 	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.SSHPort, &n.SSHUser,
-		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt, &draining,
-		&n.OutboundIP); err != nil {
+		&n.APIPort, &n.ConfigPath, &n.ServiceName, &n.DeployedHash, &deployedAt,
+		&n.DeployedTemplateHash, &draining, &n.OutboundIP); err != nil {
 		return nil, err
 	}
 	if deployedAt.Valid {
@@ -82,6 +84,10 @@ func (s *Store) ListNodes() ([]model.Node, error) {
 }
 
 // UpdateNode 按 n.ID 整体覆盖一条节点记录。id 不存在时返回 ErrNotFound。
+//
+// 刻意不写 deployed_hash / deployed_at / deployed_template_hash:那是下发基准,
+// 只由 SetNodeDeployed / SetNodeTemplateHash 在两处写,整体 PUT 带来的零值
+// 不能把它清掉。
 func (s *Store) UpdateNode(n *model.Node) error {
 	res, err := s.db.Exec(
 		`UPDATE nodes

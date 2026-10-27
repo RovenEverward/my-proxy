@@ -15,6 +15,11 @@ async function open(page, hash = "sub") {
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
 }
 const save = page => page.locator("[data-act=s5-save]").click();
+// 订阅名是 contenteditable 的编辑框,{USERNAME} 在里面是一块「用户名」标签;直接改写里面的文字。
+const setTitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+// 读编辑框的值按页面保存时用的那套算(页面自己的 b5TokVal:{USERNAME} ↔ 「用户名」标签),不看 textContent。
+const titleValue = page => page.locator("#f-title").evaluate(el => b5TokVal(el));
+const linkOf = (page, expected) => expect(page.locator(".r-url")).toHaveText(expected);
 test.beforeAll(async () => {
   env = await startEnv();
   await env.seed("user", "add", "alice", "--limit", "100GB", "--expire", "2027-01-01");
@@ -23,15 +28,16 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
-test("一页三段，高级默认折叠，展开才取底稿正文", async ({ page }) => {
+test("一页四段，高级默认折叠，展开才取底稿正文", async ({ page }) => {
   const requests = [];
   page.on("request", r => { if (r.url().includes("/api/settings/templates/")) requests.push(r.url()); });
   await open(page);
-  for (const id of ["sec-addr", "sec-clients", "sec-adv"]) await expect(page.locator("#" + id)).toHaveCount(1);
+  for (const id of ["sec-link", "sec-info", "sec-clients", "sec-adv"]) await expect(page.locator("#" + id)).toHaveCount(1);
+  await expect(page.locator("#sec-look, #pv, [data-act=s5-pv]")).toHaveCount(0);
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".zr-tpl")).toHaveCount(0);
   expect(requests).toEqual([]);
-  await expect(page.locator("#sec-clients .zr").nth(1)).toContainText("Clash Verge、Mihomo Party、FlClash、Stash");
+  await expect(page.locator("#sec-clients .b5-tr").filter({ hasText: "Clash Verge" })).toContainText("Clash Verge、Mihomo Party、FlClash、Stash");
   await page.click("[data-act=s5-adv]");
   await expect(page.locator(".zr-tpl")).toHaveCount(3);
   await expect(page.locator(".zr-tpl").first()).toContainText(/\d+ 行/);
@@ -42,28 +48,58 @@ test("一页三段，高级默认折叠，展开才取底稿正文", async ({ pa
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "true");
 });
 
-test("改订阅名即时预览，输入焦点保留，保存条列出一处改动", async ({ page }) => {
+test("改订阅名输入焦点保留，保存条列出一处改动", async ({ page }) => {
   await open(page);
-  await page.fill("#f-title", "测试 {USERNAME}");
+  await page.locator("#f-title").click();
+  // 光标放到编辑框开头,接着打的字插在「用户名」标签前面;刷新不重画编辑框。
+  // 存进去的是「测试 {USERNAME}」。
+  // macOS 上 Control+Home 不生效,用 Meta+ArrowLeft(到行首);其它平台用 Control+Home。
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+ArrowLeft" : "Control+Home");
+  await page.keyboard.type("测试 ");
   await expect(page.locator("#f-title")).toBeFocused();
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await expect(page.locator("#sb")).toContainText("订阅名");
-  await expect(page.locator(".pv-t")).toHaveText("测试 alice");
+  await expect.poll(() => titleValue(page)).toBe("测试 {USERNAME}");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
+  expect((await settings()).profile_title).toBe("测试 {USERNAME}");
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
-test("前缀缺协议由控制面返回字段红字，刷新间隔仍校验非负整数", async ({ page }) => {
+// 订阅信息三栏仍走同一个保存条和 PUT /api/settings,只写改过的键。
+test("刷新间隔和帮助链接仍由保存条写进设置", async ({ page }) => {
+  await open(page);
+  const puts = [];
+  page.on("request", r => { if (r.method() === "PUT" && r.url().endsWith("/api/settings")) puts.push(r.postDataJSON()); });
+  await page.fill("#f-int", "6");
+  await page.fill("#f-help", "https://help.example.com");
+  await expect(page.locator("#sb")).toContainText("有 2 处改动");
+  await expect(page.locator("#sb")).toContainText("刷新间隔、帮助链接");
+  await save(page);
+  await expect(page.locator(".toast")).toContainText("已保存 2 处改动");
+  const stored = await settings();
+  expect(stored.update_interval).toBe(6);
+  expect(stored.support_link).toBe("https://help.example.com");
+  expect(puts[puts.length - 1].update_interval).toBe(6);
+  await expect(page.locator("#sb")).toBeEmpty();
+});
+
+test("链接开头缺协议由控制面返回字段红字，刷新间隔仍校验非负整数", async ({ page }) => {
   const puts = [];
   page.on("request", r => { if (r.method() === "PUT") puts.push(r); });
   await open(page);
   await page.fill("#f-prefix", "sub.example.com");
   await save(page);
+  // 页面把服务端原话里的「订阅地址」换成「链接开头」,保存条只说要改哪一栏。
+  await expect(page.locator("#pfx-err")).toContainText("链接开头");
+  await expect(page.locator("#pfx-err")).not.toContainText("订阅地址");
   await expect(page.locator("#pfx-err")).toContainText("http://");
-  await expect(page.locator("#sb [role=alert]")).toContainText("http://");
-  const colors = await page.locator("#pfx-err").evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#f-prefix")).color]);
-  expect(colors[0]).not.toBe(colors[1]);
+  await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
+  await expect(page.locator("#f-prefix")).toBeFocused();
+  // 红字用的是 --bad(浅色 #dc2626,深色 #f2555a),和输入框里正常文字的颜色不同。
+  const [errColor, inputColor, bad] = await page.locator("#pfx-err").evaluate(e => [getComputedStyle(e).color, getComputedStyle(document.querySelector("#f-prefix")).color, getComputedStyle(document.documentElement).getPropertyValue("--bad").trim()]);
+  expect(errColor).toBe("rgb(" + [1, 3, 5].map(i => parseInt(bad.slice(i, i + 2), 16)).join(", ") + ")");
+  expect(inputColor).not.toBe(errColor);
   await page.fill("#f-prefix", "https://sub.example.com");
   for (const value of ["-1", "1.5", "abc", ""]) {
     await page.fill("#f-int", value); await save(page);
@@ -86,62 +122,91 @@ test("前缀尾斜杠原样发送，由服务端规范化后读回", async ({ pa
 });
 
 test("服务端 400 的订阅地址原话显示在字段下，草稿保留并可重试", async ({ page }) => {
-  const message = "订阅地址要以 http:// 或 https:// 开头，比如 https://sub.example.com";
+  const message = "链接开头要以 http:// 或 https:// 开头，例如 https://sub.example.com";
   await open(page);
+  // 旧控制面不报字段名:页面按原话里的「订阅地址」认,显示成「链接开头」。
   await page.route("**/api/settings", r => r.request().method() === "PUT" ? r.fulfill({ status: 400, json: { error: message } }) : r.continue());
   await page.fill("#f-prefix", "https://sub.example.com"); await save(page);
+  await expect(page.locator("#pfx-err")).toHaveText(message.replace("订阅地址", "链接开头"));
+  // 按字段名认出来的错误:保存条说的是「链接开头」的格式不对(别的错误才说「改动还在，可以再点一次保存。」)。
+  await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
+  await expect(page.locator("#sb")).not.toContainText("改动还在，可以再点一次保存。");
+
+  // 控制面报字段名(field):同一句原话照样落在这一栏下面,保存条也用「链接开头」的说法。
+  await page.unroute("**/api/settings");
+  await page.route("**/api/settings", r => r.request().method() === "PUT" ? r.fulfill({ status: 400, json: { error: message, field: "sub_url_prefix" } }) : r.continue());
+  await page.fill("#f-prefix", "https://sub.example.org"); await save(page);
   await expect(page.locator("#pfx-err")).toHaveText(message);
-  await expect(page.locator("#sb")).toContainText("改动还在，可以再点一次保存。");
-  await expect(page.locator("#f-prefix")).toHaveValue("https://sub.example.com");
-  await page.unroute("**/api/settings"); await save(page);
+  await expect(page.locator("#sb [role=alert]")).toHaveText("没保存上：链接开头的格式不对，改好再保存。");
+  await expect(page.locator("#f-prefix")).toHaveValue("https://sub.example.org");
+  await page.unroute("**/api/settings");
+  await page.fill("#f-prefix", "https://sub.example.com");
+  // 草稿再改过,这一栏下面的红字自己消失。
+  await expect(page.locator("#pfx-err")).toHaveText("");
+  await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
 });
 
-test("最近拉过订阅的用户默认入选，下拉切换链接和用量到期", async ({ page }) => {
+test("最近拉过订阅的用户默认入选，下拉切换链接", async ({ page }) => {
   const links = await (await cp("/api/users/bob/links")).json();
   const pulled = await cpFetch(links.auto.replace(/^https?:\/\/[^/]+/, env.cpURL), { headers: { "User-Agent": "clash-verge/v2.0.0" } });
   expect(pulled.ok).toBe(true);
   await expect.poll(async () => (await (await cp("/api/sub-pulls")).json()).some(p => p.username === "bob")).toBe(true);
   await open(page);
   await expect(page.locator("#pv-user")).toHaveValue("bob");
-  await expect(page.locator(".pv-t")).toHaveText("bob");
-  await expect(page.locator(".pv-m")).toContainText("2028-01-01");
   const uiBob = await (await page.request.get(env.origin + "/api/users/bob/links")).json();
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
   await page.selectOption("#pv-user", "alice");
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
-  await expect(page.locator(".pv-t")).toHaveText("alice");
-  await expect(page.locator(".pv-m")).toContainText("2027-01-01");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await page.fill("#f-prefix", "https://new.example.com");
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
+  await linkOf(page, "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
+});
+
+// 订阅页不再画客户端预览,不取节点、入站和套餐。
+test("订阅页不请求节点、入站和套餐", async ({ page }) => {
+  await open(page);
+  // 整页重载,直接落在 #sub 上:登录时落地页(总览)发出的请求不算进来。
+  const hits = [];
+  page.on("request", r => { const p = new URL(r.url()).pathname; if (/^\/api\/(nodes|inbounds|plans)$/.test(p)) hits.push(p); });
+  await page.reload();
+  await expect(page.locator("#f-title")).toBeVisible();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  expect(hits).toEqual([]);
 });
 
 test("没有用户时标记示例", async ({ page }) => {
   await page.route("**/api/users?*", r => r.fulfill({ json: { users: [], total: 0 } }));
   await open(page);
-  await expect(page.locator(".pv-h .tag")).toHaveText("示例");
+  await expect(page.locator(".b5-pick .tag")).toHaveText("示例");
   await expect(page.locator("#pv-user")).toHaveCount(0);
+  await expect(page.locator(".r-link [data-act=copy]")).toBeDisabled();
 });
 
-test("客户端和底稿旧路由滚到对应段，底稿路由自动展开", async ({ page }) => {
+test("订阅信息、客户端和底稿路由滚到对应段，底稿路由自动展开", async ({ page }) => {
   await open(page, "sub/clients");
   await expect(page.locator("#sec-clients")).toBeInViewport();
+  // 旧的 #sub/look 和新的 #sub/info 都落到「订阅信息」。
+  for (const hash of ["sub/info", "sub/look"]) {
+    await page.goto(env.origin + "/#system");
+    await page.goto(env.origin + "/#" + hash);
+    await expect(page.locator("#sec-info")).toBeInViewport();
+  }
   await page.goto(env.origin + "/#sub/templates");
   await expect(page.locator("#sec-adv")).toBeInViewport();
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "true");
 });
 
-test("未填前缀的提示为中性灰，使用信息图标", async ({ page }) => {
+test("未填前缀的说明为中性灰，保留地址可见性提示", async ({ page }) => {
   await open(page);
-  const callout = page.locator("#pfx-warn");
-  await expect(callout).toHaveClass(/callout stone/);
-  const colors = await callout.evaluate(e => {
-    const c = getComputedStyle(e), svg = getComputedStyle(e.querySelector("svg"));
-    const probe = document.createElement("span"); probe.style.color = "var(--muted)"; probe.style.backgroundColor = "var(--stone)"; e.append(probe);
-    const p = getComputedStyle(probe), out = [c.backgroundColor, p.backgroundColor, svg.color, p.color]; probe.remove(); return out;
-  });
-  expect(colors[0]).toBe(colors[1]); expect(colors[2]).toBe(colors[3]);
+  const note = page.locator("#pfx-slot .h");
+  await expect(note).toContainText("没填，链接用服务器 IP");
+  await expect(note).toContainText("拿到链接的人都能看到。");
+  expect(await note.evaluate(e => getComputedStyle(e).color)).toBe(await page.locator("html").evaluate(e => {
+    const p = document.createElement("span"); p.style.color = "var(--muted)"; e.append(p);
+    const c = getComputedStyle(p).color; p.remove(); return c;
+  }));
 });
 
 
@@ -151,17 +216,18 @@ test("只读角色的字段只读，不出现写入口和保存条", async ({ pa
     await r.fulfill({ response, json: { ...meta, allow: ["GET /api"] } });
   });
   await open(page);
-  for (const id of ["f-prefix", "f-title", "f-int", "f-help"]) await expect(page.locator("#" + id)).toHaveAttribute("readonly", "");
-  await expect(page.getByRole("button", { name: "插入用户名" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "自定义规则", exact: true })).toHaveCount(0);
-  await page.locator("#sec-clients .zr").first().click();
-  await expect(page.locator("#drawer.open")).toHaveCount(0);
+  for (const id of ["f-prefix", "f-int", "f-help"]) await expect(page.locator("#" + id)).toHaveAttribute("readonly", "");
+  // 订阅名的编辑框也不能改,「+ 用户名」不出现。
+  await expect(page.locator("#f-title")).toHaveAttribute("contenteditable", "false");
+  await expect(page.getByRole("button", { name: "用户名" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "识别规则", exact: true })).toHaveCount(0);
+  await expect(page.locator("#sec-clients .b5-tr").first()).toBeVisible();
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
 test("保存先读最新设置，只覆盖改过的键和规则", async ({ page }) => {
   await open(page);
-  await page.fill("#f-title", "新名字 {USERNAME}");
+  await setTitle(page, "新名字 {USERNAME}");
   // 页面打开后，另一个操作者改前缀、刷新间隔、规则和通知。
   const rules = [{ pattern: "(?i)^other/", result: "sing-box" }];
   await putSettings({ sub_url_prefix: "https://other.example.com", update_interval: 48, rules, notify_days_left: 7 });
@@ -175,36 +241,9 @@ test("保存先读最新设置，只覆盖改过的键和规则", async ({ page 
   expect(stored.notify_days_left).toBe(7);
 });
 
-test("用户可用节点按套餐和额外授权合并，排除排水与满员节点", async ({ page }) => {
-  const users = [
-    { username: "alice", status: "active", plan_id: 1, inbound_ids: [3], used_traffic: 1024, data_limit: 2048 },
-    { username: "bob", status: "active", plan_id: 2 },
-  ];
-  const nodes = [
-    { id: 1, name: "full", display: "已满 A" }, { id: 2, name: "draining", display: "排水 A", draining: true },
-    { id: 3, name: "extra", display: "🇯🇵 东京 A" }, { id: 4, name: "other", display: "其他 A" },
-  ];
-  const inbounds = [1, 2, 3, 4].map(id => ({ id, node_id: id, protocol: "vless", security: "reality", max_users: id === 1 ? 2 : 0 }));
-  await page.route("**/api/users?*", r => r.fulfill({ json: { users, total: users.length } }));
-  await page.route("**/api/sub-pulls", r => r.fulfill({ json: [] }));
-  await page.route("**/api/nodes", r => r.fulfill({ json: nodes }));
-  await page.route("**/api/inbounds", r => r.fulfill({ json: inbounds }));
-  await page.route("**/api/plans", r => r.fulfill({ json: [{ id: 1, node_ids: [1, 2] }, { id: 2, node_ids: [1, 4] }] }));
-  await open(page);
-  await expect(page.locator(".pv-node")).toContainText("东京 A");
-  await expect(page.locator(".pv-node")).toContainText("VLESS");
-  // 节点名里的地区旗帜走 .flag-w/.flag 的矩形 SVG,节点名旁边没有自绘的地区点。
-  await expect(page.locator(".pv-node .flag-w img.flag")).toHaveAttribute("src", "/flags/jp.svg");
-  await expect(page.locator(".pv-node .dot")).toHaveCount(0);
-  expect(await page.evaluate(() => document.querySelector(".pv-node").innerText)).not.toMatch(/[\u{1F1E6}-\u{1F1FF}]{2}/u);
-  await expect(page.locator(".pv-m")).toContainText("1.0 KB / 2.0 KB");
-  await page.selectOption("#pv-user", "bob");
-  await expect(page.locator(".pv-node")).toContainText("其他 A");
-});
-
 test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) => {
   await open(page);
-  await page.fill("#f-title", "改过的名字 {USERNAME}");
+  await setTitle(page, "改过的名字 {USERNAME}");
   await page.fill("#f-int", "48");
   await expect(page.locator("#sb")).toContainText("有 2 处改动");
   const items = await page.locator("#sb .s5-bar-t .sub").textContent();
@@ -216,7 +255,8 @@ test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) 
   await page.locator(".toast .toast-act").click();
   await expect(page.locator("#sb")).toContainText("有 2 处改动");
   await expect(page.locator("#sb .s5-bar-t .sub")).toHaveText(items);
-  await expect(page.locator("#f-title")).toHaveValue("改过的名字 {USERNAME}");
+  await expect.poll(() => titleValue(page)).toBe("改过的名字 {USERNAME}");
+  await expect(page.locator("#f-title .tk")).toHaveText("用户名");
   await expect(page.locator("#f-int")).toHaveValue("48");
 });
 
@@ -226,7 +266,7 @@ test("有改动离开订阅页弹应用内对话框，可留下、不保存、�
   const puts = [];
   page.on("request", r => { if (r.method() === "PUT" && r.url().endsWith("/api/settings")) puts.push(r.postDataJSON()); });
   await open(page);
-  await page.fill("#f-title", "别丢了 {USERNAME}");
+  await setTitle(page, "别丢了 {USERNAME}");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
 
   // 点侧栏「节点」:地址被拦回 #sub,弹应用内对话框,不是原生弹窗。
@@ -241,7 +281,7 @@ test("有改动离开订阅页弹应用内对话框，可留下、不保存、�
   await expect(page.locator("#modal.open")).toHaveCount(0);
   await expect(page).toHaveURL(/#sub$/);
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
-  await expect(page.locator("#f-title")).toHaveValue("别丢了 {USERNAME}");
+  await expect.poll(() => titleValue(page)).toBe("别丢了 {USERNAME}");
 
   // 不保存:丢掉草稿到节点页;回到订阅页没有保存条。
   await page.click('.side a.nav[href="#nodes"]');
@@ -253,7 +293,7 @@ test("有改动离开订阅页弹应用内对话框，可留下、不保存、�
   await expect(page.locator("#sb")).toBeEmpty();
 
   // 保存并离开:发出 PUT,到达目标页,控制面已保存。
-  await page.fill("#f-title", "这次保存 {USERNAME}");
+  await setTitle(page, "这次保存 {USERNAME}");
   await page.click('.side a.nav[href="#nodes"]');
   await expect(page.locator("#modal.open h2")).toContainText("有 1 处改动还没保存");
   await page.getByRole("button", { name: "保存并离开" }).click();
@@ -268,7 +308,7 @@ test("同页锚点 #sub/clients 不算离开，不弹对话框", async ({ page }
   const native = [];
   page.on("dialog", d => { native.push(d.type()); d.dismiss().catch(() => {}); });
   await open(page);
-  await page.fill("#f-title", "保持 {USERNAME}");
+  await setTitle(page, "保持 {USERNAME}");
   await page.evaluate(() => { location.hash = "sub/clients"; });
   await expect(page).toHaveURL(/#sub\/clients$/);
   await expect(page.locator("#modal.open")).toHaveCount(0);
@@ -284,9 +324,11 @@ test("规则抽屉 UA 试用提示与黑白焦点环", async ({ page }) => {
   await page.fill("#rd-ua", "clash-verge/v2.0.3");
   await expect(page.locator("#rd-ruling")).toHaveText("实际以控制面判断为准");
   await page.focus("#rd-ua");
-  const ring = await page.locator("#rd-ua").evaluate(e => { const s = getComputedStyle(e); return [s.outlineColor, s.boxShadow]; });
+  // 抽屉里的试框是 2px 墨色描边(浅色 #111),不用 box-shadow 光圈。
+  const ring = await page.locator("#rd-ua").evaluate(e => { const s = getComputedStyle(e); return [s.outlineColor, s.boxShadow, s.outlineWidth]; });
   expect(ring[0]).toBe("rgb(17, 17, 17)");
   expect(ring[1]).toBe("none");
+  expect(ring[2]).toBe("2px");
 });
 
 test("底稿抽屉「语法正确」用墨色不是绿色", async ({ page }) => {
@@ -303,13 +345,13 @@ test("底稿抽屉「语法正确」用墨色不是绿色", async ({ page }) => 
 
 test("放弃后后台刷新，撤销只恢复原先改过的键", async ({ page }) => {
   await open(page);
-  await page.fill("#f-title", "撤销的标题");
+  await setTitle(page, "撤销的标题");
   await page.click("[data-act=s5-discard]");
   await putSettings({ sub_url_prefix: "https://fresh.example.com", update_interval: 72 });
   await page.evaluate(() => load(true));
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await page.locator(".toast .toast-act").click();
-  await expect(page.locator("#f-title")).toHaveValue("撤销的标题");
+  await expect.poll(() => titleValue(page)).toBe("撤销的标题");
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await expect(page.locator("#f-int")).toHaveValue("72");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
@@ -323,7 +365,7 @@ test("旧前缀未改时可保存标题，PUT 保留原前缀", async ({ page })
     return r.fulfill({ json: stored });
   });
   await open(page);
-  await page.fill("#f-title", "旧前缀标题");
+  await setTitle(page, "旧前缀标题");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
   expect(puts).toHaveLength(1);
@@ -337,10 +379,12 @@ test("未编辑前缀的预览和复制逐字保留控制面的旧链接", async
   await page.route("**/api/settings", r => r.fulfill({ json: stored }));
   await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto } }));
   await open(page);
-  await expect(page.locator(".pv-link code")).toHaveText(auto);
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", auto);
-  await page.fill("#f-title", "只改标题");
-  await expect(page.locator(".pv-link code")).toHaveText(auto);
+  // 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」两段显示。
+  await linkOf(page, auto);
+  await expect(page.locator(".lk-pre")).toHaveText("https://old.example.com/sub//");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", auto);
+  await setTitle(page, "只改标题");
+  await linkOf(page, auto);
 });
 
 test("编辑前缀时取最后一段订阅令牌并去掉全部尾斜杠", async ({ page }) => {
@@ -348,8 +392,10 @@ test("编辑前缀时取最后一段订阅令牌并去掉全部尾斜杠", async
   await open(page);
   await page.fill("#f-prefix", "https://new.example.com/sub///");
   const expected = "https://new.example.com/sub/sub/token-last";
-  await expect(page.locator(".pv-link code")).toHaveText(expected);
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", expected);
+  await linkOf(page, expected);
+  await expect(page.locator(".lk-pre")).toHaveText("https://new.example.com/sub");
+  await expect(page.locator(".lk-tail")).toHaveText("/sub/token-last");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", expected);
 });
 
 test("Go 正则允许完成，浏览器不支持的规则提示交由控制面检查", async ({ page }) => {
@@ -360,7 +406,14 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
     await page.fill('[data-rp="0"]', pattern);
     await page.locator('[data-rp="0"]').press("Tab");
     await page.fill("#rd-ua", "CLASH");
-    if (pattern.includes("is")) await expect(page.locator("#rd-hit")).toContainText("命中第 1 条");
+    // 试框的说法是「会拿到 … 这条」,并对上的那行标 hit。对上的不一定是第 0 条:
+    // 内置的前几条(如 karing)可能先接住这个标识,标准的是唯一一行 hit 和它说的是同一条。
+    if (pattern.includes("is")) {
+      await expect(page.locator("#rd-hit")).toContainText("会拿到");
+      const row = page.locator(".rd-row.hit");
+      await expect(row).toHaveCount(1);
+      await expect(page.locator("#rd-hit .b5-res")).toContainText(`对上的是「客户端标识里含 ${await row.locator("[data-rp]").inputValue()}」这条`);
+    }
     await expect(page.locator("#rd-done")).toBeEnabled();
   }
   await page.fill('[data-rp="0"]', "(?i:clash)");
@@ -371,7 +424,7 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
   // Go 命名组在 JS 中无法编译，仍可完成并由控制面保存。
   await page.fill('[data-rp="0"]', "(?P<client>clash)");
   await page.locator('[data-rp="0"]').press("Tab");
-  await expect(page.locator('.rd-row[data-i="0"] .h')).toHaveText("浏览器没法预览这条，保存时由控制面检查");
+  await expect(page.locator('.rd-row[data-i="0"] .h')).toHaveText("这条按正则写的，保存时由控制面检查");
   await page.fill("#rd-ua", "clash");
   await expect(page.locator('.rd-row[data-i="0"]')).not.toHaveClass(/hit/);
   await expect(page.locator("#rd-done")).toBeEnabled();
@@ -392,23 +445,34 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
     { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
   ] }));
   await page.route("**/local/profiles/use", r => { calls.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/devices", r => r.fulfill({ json: [{ name: "e2e-本机", current: true }] }));
   await open(page);
   const choose = async () => {
     if (await page.locator(".profile[data-act=cp-toggle]").getAttribute("aria-expanded") !== "true") await page.click(".profile[data-act=cp-toggle]");
+    // 展开面板时顺手查一次本机设备名,回来后面板要重画一遍、多一行人再排一次。等这行出来
+    // 面板就不再变形了,否则点击可能落到重画后的另一块上(按钮被换掉,点一直落不下去)。
+    await expect(page.locator(".cp-pop")).toContainText("e2e-本机");
     await page.click(".cp-pop [data-act=cp-switch]");
     await page.click('.pfitem[data-name="other"]');
     await expect(page.locator("#modal.open h2")).toContainText("还没保存");
   };
-  await page.fill("#f-title", "切换前草稿");
+  await setTitle(page, "切换前草稿");
   await choose();
   await page.getByRole("button", { name: "留下", exact: true }).click();
   await expect(page.locator("#modal.open")).toHaveCount(0);
   expect(calls).toEqual([]);
-  await expect(page.locator("#f-title")).toHaveValue("切换前草稿");
-  await choose(); await page.getByRole("button", { name: "不保存", exact: true }).click();
+  await expect.poll(() => titleValue(page)).toBe("切换前草稿");
+  await choose();
+  const reloaded = page.waitForEvent("load");
+  await page.getByRole("button", { name: "不保存", exact: true }).click();
   await expect.poll(() => calls.length).toBe(1);
-  await expect(page.locator("#f-title")).toHaveValue("{USERNAME}");
-  await page.fill("#f-title", "切换前保存");
+  await reloaded;
+  // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
+  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
+  // 切换成功会整页刷新。等新页面把数据取完再往下点:刷新途中还会重画一次侧栏,
+  // 正好撞上时那个按钮会被换掉,点击就卡在那儿了。
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await setTitle(page, "切换前保存");
   await choose(); await page.getByRole("button", { name: "保存并离开", exact: true }).click();
   await expect.poll(() => calls.length).toBe(2);
   expect((await settings()).profile_title).toBe("切换前保存");
@@ -416,7 +480,7 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
 
 test("离页对话框声明名称，Tab 循环限制在内部并在关闭时还原焦点", async ({ page }) => {
   await open(page);
-  await page.fill("#f-title", "焦点测试");
+  await setTitle(page, "焦点测试");
   const nav = page.locator('.side a.nav[href="#nodes"]');
   await nav.click();
   const dialog = page.getByRole("dialog", { name: "有 1 处改动还没保存" });
@@ -453,11 +517,12 @@ test("保存新订阅地址后，重载回来前预览就换成新链接", async
   page.on("request", r => { if (r.method() === "PUT" && /\/api\/settings$/.test(r.url())) saved = true; });
   await page.route("**/api/settings/builtin-rules", async r => { if (saved) await held; await r.continue(); });
   await open(page);
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", "http://127.0.0.1:1/sub/tok-1");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "http://127.0.0.1:1/sub/tok-1");
   await page.fill("#f-prefix", "https://sub.example.com");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
-  await expect(page.locator(".pv-link [data-act=copy]")).toHaveAttribute("data-text", "https://sub.example.com/sub/tok-1");
+  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "https://sub.example.com/sub/tok-1");
+  await linkOf(page, "https://sub.example.com/sub/tok-1");
   hold();
 });
 
@@ -468,29 +533,36 @@ test("切换控制面选不保存但切换失败：页面已画回保存的值",
   ] }));
   await page.route("**/local/profiles/use", r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "连不上" }) }));
   await open(page);
-  await page.fill("#f-title", "要丢掉的草稿");
+  await setTitle(page, "要丢掉的草稿");
   await page.click(".profile[data-act=cp-toggle]");
   await page.click(".cp-pop [data-act=cp-switch]");
   await page.click('.pfitem[data-name="other"]');
   await page.getByRole("button", { name: "不保存", exact: true }).click();
-  await expect(page.locator("#f-title")).toHaveValue("{USERNAME}");
+  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
 // 离页对话框开着时,慢回来的「切换控制面」弹窗换掉它,要先收掉它的焦点陷阱;再点「添加控制面」后 Tab 不被拦回弹窗。
-test("弹窗被换掉时先收掉离页对话框的焦点陷阱", async ({ page }) => {
+test("关闭列表后旧响应不覆盖离页确认，重新打开时清理焦点陷阱", async ({ page }) => {
   let release;
   const held = new Promise(r => { release = r; });
   await page.route("**/local/profiles", async r => { await held; await r.fulfill({ json: [
     { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
   ] }); });
   await open(page);
-  await page.fill("#f-title", "陷阱测试");
+  await setTitle(page, "陷阱测试");
   await page.click(".profile[data-act=cp-toggle]");
   await page.click(".cp-pop [data-act=cp-switch]");
+  await expect(page.locator("#modal.open [aria-busy=true]")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.locator('.side a.nav[href="#nodes"]').click();
   await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
-  release();
+  const returned = page.waitForResponse(r => new URL(r.url()).pathname === "/local/profiles");
+  release(); await returned;
+  await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
+  await page.getByRole("button", { name: "留下", exact: true }).click();
+  await page.click(".cp-pop [data-act=cp-switch]");
+  await expect(page.locator(".pfitem")).toHaveCount(2);
   await expect(page.locator("#modal.open h2")).toHaveText("切换控制面");
   await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
   await expect(page.locator("#modal")).toHaveAttribute("role", "alertdialog");

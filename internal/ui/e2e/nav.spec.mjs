@@ -32,7 +32,7 @@ for (const [from, to] of [
     await expect(page).toHaveURL(new RegExp("#" + to.replace("/", "\\/") + "$"));
     if (to.startsWith("sub")) {
       await expect(page.locator(".tabs")).toHaveCount(0);
-      await expect(page.locator(to.endsWith("clients") ? "#sec-clients" : to.endsWith("templates") ? "#sec-adv.open" : "#sec-addr")).toBeInViewport();
+      await expect(page.locator(to.endsWith("clients") ? "#sec-clients" : to.endsWith("templates") ? "#sec-adv.open" : "#sec-link")).toBeInViewport();
     } else await expect(page.locator(".tabs a.on")).toHaveCount(1);
   });
 }
@@ -137,6 +137,9 @@ test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", a
   await page.setViewportSize({ width: 1280, height: 800 });
   await login(page, env);
   await expect(page.locator("html.tb-right")).toHaveCount(1);
+  // 量尺寸前先等壳子画出来:登录后到数据回来之间会整页重画,那一刻取 boundingBox 是 null。
+  await expect(page.locator(".top")).toBeVisible();
+  await expect(page.locator(".card").first()).toBeVisible();
   const vw = 1280;
   const top = await page.locator(".top").boundingBox();
   expect(top.y).toBe(0);
@@ -145,9 +148,12 @@ test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", a
   const theme = await page.locator(".top [data-act=theme]").boundingBox();
   expect(theme.x + theme.width).toBeLessThanOrEqual(vw - 138);
   expect(Math.abs(theme.y + theme.height / 2 - 26)).toBeLessThanOrEqual(1);
-  // 内容卡片从标题栏下面开始:右上角那块 138×52 里没有卡片。
+  // 内容卡片从标题栏下面开始:右上角那块 138×52 里没有卡片。顶栏就是主内容区的第一行(.top 是
+  // main 里的吸顶行),所以卡片要在顶栏底边以下,不是只在 52px 以下。
   const main = await page.locator("main").boundingBox();
   expect(main.y).toBeGreaterThanOrEqual(52);
+  const card = await page.locator(".card").first().boundingBox();
+  expect(card.y).toBeGreaterThanOrEqual(top.y + top.height);
 });
 
 // 外层(html/body)不滚:WebView2 在外层出滚动条时是整页高的系统浅色条,压在窗口按钮下面。
@@ -155,6 +161,10 @@ test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", a
 for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? " · Windows 标题栏" : ""}`, async ({ page }) => {
   if (tb) await page.addInitScript(() => {
     document.addEventListener("DOMContentLoaded", () => { const r = document.documentElement.style; r.setProperty("--mygo-titlebar-inset-right", "138px"); r.setProperty("--mygo-titlebar-height", "52px"); });
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
   });
   await page.setViewportSize({ width: 1100, height: 420 });
   await login(page, env);
@@ -182,4 +192,83 @@ for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? "
   await page.click("[data-act=reload]");
   await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
   expect(await page.evaluate(() => document.querySelector("main").scrollTop)).toBeGreaterThan(0);
+});
+
+for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲和悬停内容时隐藏，滚动时显示，宽度不变 · ${theme}`, async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
+  });
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
+  await page.mouse.move(1, 1);
+  const main = page.locator("main");
+  const measure = () => main.evaluate(m => {
+    const thumb = getComputedStyle(m, "::-webkit-scrollbar-thumb");
+    return { width: m.clientWidth, content: m.querySelector("#page").getBoundingClientRect().width,
+      bar: getComputedStyle(m, "::-webkit-scrollbar").width, color: thumb.backgroundColor,
+      track: getComputedStyle(m, "::-webkit-scrollbar-track").backgroundColor };
+  });
+  const idle = await measure();
+  expect(idle.bar).toBe("8px");
+  expect(idle.color).toBe("rgba(0, 0, 0, 0)");
+  expect(idle.track).toBe("rgba(0, 0, 0, 0)");
+  await main.hover({ position: { x: 80, y: 100 } });
+  const hover = await measure();
+  expect(hover.color).toBe(idle.color);
+  expect([hover.width, hover.content]).toEqual([idle.width, idle.content]);
+  await page.mouse.move(1, 1);
+  await main.evaluate(m => { m.scrollTop = m.scrollHeight; });
+  await expect(main).toHaveClass(/scrolling/);
+  const scrolling = await measure();
+  expect(scrolling.color).not.toBe(idle.color);
+  expect([scrolling.width, scrolling.content]).toEqual([idle.width, idle.content]);
+  expect(await main.evaluate(m => Math.abs(m.scrollHeight - m.clientHeight - m.scrollTop))).toBeLessThanOrEqual(1);
+  await expect(main).not.toHaveClass(/scrolling/);
+  expect((await measure()).color).toBe(idle.color);
+  expect([(await measure()).width, (await measure()).content]).toEqual([idle.width, idle.content]);
+  // 离开后旧 main 不得重新排出隐藏计时器。
+  await page.goto(env.origin + "/#nodes");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  expect(await page.evaluate(() => mainScrollTimer)).toBe(0);
+});
+
+test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "MacIntel" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "macOS" } });
+  });
+  await page.setViewportSize({ width: 1100, height: 420 });
+  await login(page, env);
+  await page.goto(env.origin + "/#overview");
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  await expect(page.locator("html")).toHaveClass(/os-mac/);
+  const main = page.locator("main");
+  const measure = () => main.evaluate(m => [m.clientWidth, m.querySelector("#page").getBoundingClientRect().width]);
+  expect(await main.evaluate(m => getComputedStyle(m, "::-webkit-scrollbar").width)).not.toBe("8px");
+  const idle = await measure();
+  await main.evaluate(m => { m.scrollTop = m.scrollHeight; });
+  expect(await main.evaluate(m => m.scrollTop)).toBeGreaterThan(0);
+  expect(await main.evaluate(m => Math.abs(m.scrollHeight - m.clientHeight - m.scrollTop))).toBeLessThanOrEqual(1);
+  expect(await measure()).toEqual(idle);
+  await expect(main).not.toHaveClass(/scrolling/);
+  expect(await measure()).toEqual(idle);
+});
+
+test("Windows 窄屏收起的抽屉完全位于视口之外", async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 900 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { value: "Win32" });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
+    document.addEventListener("DOMContentLoaded", () => {
+      document.documentElement.style.setProperty("--mygo-titlebar-inset-right", "138px");
+      document.documentElement.style.setProperty("--mygo-titlebar-height", "52px");
+    });
+  });
+  await login(page, env);
+  await expect(page.locator("html")).toHaveClass(/tb-right/);
+  await expect.poll(() => page.locator("#drawer").evaluate(e => e.getBoundingClientRect().top >= innerHeight)).toBe(true);
 });

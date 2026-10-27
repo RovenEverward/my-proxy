@@ -17,11 +17,20 @@ const TOKEN = "e2e-token";
 const freePort = () => new Promise(res => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// binFor:整套测试共用的那份 mpx 由 global-setup.mjs 编一次,路径放在 MPX_E2E_BIN;
+// 单独跑这个文件(没有 globalSetup)时自己编一份。binDir 只用来放自己编的那份。
+const binFor = async binDir => {
+  if (process.env.MPX_E2E_BIN) return process.env.MPX_E2E_BIN;
+  const bin = path.join(binDir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
+  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
+  return bin;
+};
+
 export async function startEnv() {
   const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-"));
-  const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
-  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
-  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "" };
+  const bin = await binFor(dir);
+  // MPX_API_BURST:同一文件里几十条用例连着打同一个服务、同一个 IP,桶按产品默认的 60 不够用。
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "", MPX_API_BURST: "1000" };
   const cpPort = await freePort();
   const procs = [];
   const serve = spawn(bin, ["serve", "--addr", `127.0.0.1:${cpPort}`, "--db", path.join(dir, "mpx.db"), "--auto-locate=false"] /* 不出网:自动识别另有 Go 测试 */, { env, stdio: ["ignore", "pipe", "pipe"] });
@@ -121,8 +130,7 @@ export function normalize(reqs, names, opt = {}) {
 // 于是页面进入 setup 模式、显示向导。从 stdout 抓带一次性 key 的登录链接。
 export async function startSetupEnv() {
   const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-setup-"));
-  const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
-  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
+  const bin = await binFor(dir);
   const env = {
     ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir,
     MPX_SERVER: "", MPX_TOKEN: "", MPX_PROFILE: "",
@@ -146,9 +154,8 @@ export async function startSetupEnv() {
 // 成功切到正常模式都不影响别的用例。返回的 u 兼容 login(page, u) 的形状。
 export async function startConnectEnv() {
   const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-cp-"));
-  const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
-  await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });
-  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "" };
+  const bin = await binFor(dir);
+  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "", MPX_API_BURST: "1000" };
   const cpPort = await freePort();
   const procs = [];
   const uiDirs = [];
@@ -217,6 +224,7 @@ export function httpsJSON(port, method, p, body, headers = {}) {
 // 登录:用一次性链接换 cookie。
 // 链接里的 key 只能换一次会话;之后的用例复用第一次拿到的 cookie。
 export async function login(page, env) {
+  if (process.env.MPX_INTERACTION_AUDIT) await (await import("./interaction-audit.mjs")).auditInteractions(page);
   if (env.cookies) {
     await page.context().addCookies(env.cookies);
     await page.goto(env.origin + "/");

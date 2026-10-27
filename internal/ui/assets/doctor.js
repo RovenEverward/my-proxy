@@ -50,7 +50,7 @@ function doctorApplyDetail(detail) {
 function doctorPage() {
   const head = H`<div class="ph"><div><h1>体检</h1><p>控制面、每台节点、六种订阅格式、采样表</p></div><div class="sp"></div>
     ${DOC_RUNNING ? H`<button class="btn pri busy" disabled>开始体检</button>` : H`<button class="btn pri" data-act="doc-run">${ic("check")}开始体检</button>`}</div>`;
-  if (DOC_RUNNING) return H`${head}<div class="card pad16"><div class="callout stone">${ic("refresh")}<div>正在体检：会逐台连上节点现场查一次，可能要几十秒。期间别关这个页面。</div></div></div>`;
+  if (DOC_RUNNING) return H`${head}<div class="card pad16"><div class="callout stone">${ic("refresh")}<div>正在体检：会逐台连上节点现场查一次，可能要几十秒。只读不改，关掉这个页面就不查了，回来再点一次就行。</div></div></div>`;
   if (DOC_ERR) return H`${head}<div class="card pad16"><div class="callout bad" role="alert">${ic("warn", "ico-bad")}<div><b>体检没有跑成</b><div class="mono mt2" data-doc-err>${DOC_ERR}</div></div></div>
     <p class="sub mt">控制面原话在上面。处理完再点一次「开始体检」。</p></div>`;
   if (!DOC) return H`${head}<div class="card pad16">
@@ -58,12 +58,14 @@ function doctorPage() {
     <p class="sub mt6 mb14">检查控制面的库能不能读、后台任务还在不在跳;每一台节点现场问一次(服务在不在跑、配置有没有漂移、证书还剩几天);六种订阅格式各渲染一次;采样表有多少行。体检只报告，不动任何东西 —— 发现的问题要不要处置由你决定。</p>
     <p class="sub mb8">它会对每台节点 SSH 一次，<b class="c-ink">要几十秒到几分钟</b>，所以进页面不自动跑。点右上角「开始体检」即可。</p></div>`;
   const checks = DOC.checks || [];
+  // 控制面给的说法里还有旧叫法;界面上统一换成现在的说法(控制面接口不改)。
+  const docPlain = s => String(s || "").replace(/下发配置/g, "应用到节点").replace(/下发/g, "应用到节点").replace(/排水/g, "暂停分配").replace(/入站/g, "连接方式").replace(/入口/g, "对外地址").replace(/巡检/g, "体检").replace(/核心/g, "代理程序");
   const rows = checks.map(c => {
     const [cls, text] = DOC_ST[c.status] || ["", c.status];
     // 控制面按内部名给检查项起名(「节点 la-1」);界面上换成显示名,data-check 保留原名。
     const nm = /^节点 (.+)$/.exec(c.name)?.[1], lb = nm ? labelOfName(nm) : "";
     // 控制面给的提示里还是旧按钮名;界面上已改叫「应用到节点」「暂停分配」(控制面接口不改)。
-    const hint = (c.ui_hint || c.hint || "").replace(/下发配置/g, "应用到节点").replace(/下发/g, "应用到节点").replace(/排水/g, "暂停分配").replace(/入站/g, "连接方式").replace(/入口/g, "对外地址").replace(/巡检/g, "体检").replace(/核心/g, "代理程序");
+    const hint = docPlain(c.ui_hint || c.hint);
     const shown = nm && lb !== nm ? hint.split(`打开 ${nm}`).join(`打开 ${lb}`) : hint;
     // 漂移警告:文案换成界面说法,后面跟一个行内「应用到节点」按钮。按钮本身不在这里
     // 下发,只是跳到节点详情并记下要自动触发的节点(nodes.js 画好后打开确认弹窗)。
@@ -73,7 +75,7 @@ function doctorPage() {
     const detail = apply ? doctorApplyDetail(c.detail) : c.detail;
     // 建议里讲的就是「应用到节点」时按钮已经说明白了,不再重复一行。
     const advice = applyBtn && shown.includes("应用到节点") ? "" : shown;
-    return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : c.name}</b></td><td>${stBadge(cls, text)}</td>
+    return H`<tr data-check="${c.name}"><td><b class="bold">${nm ? "节点 " + lb : docPlain(c.name)}</b></td><td>${stBadge(cls, text)}</td>
       <td class="doc-d"><div>${detail}${applyBtn}</div>${advice ? H`<div class="sub">建议：${advice}</div>` : ""}</td></tr>`;
   });
   return H`${head}

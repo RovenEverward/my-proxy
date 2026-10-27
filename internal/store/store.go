@@ -175,9 +175,9 @@ var schema = []string{
 	// 样",而这里只是"刚才问它,它这么回答"。检查失败也是一次回答(Reachable=0,
 	// error 里写着原因),所以它同样占用这一行。
 	//
-	// 刻意不放 deployed_hash:那是"我们最后一次推上去的是什么",属于节点自己的
-	// 属性,在 nodes 表上。放到这里的话,每次检查写状态都会把基准覆盖成观察值,
-	// 漂移就永远看不出来了。
+	// 刻意不放 deployed_hash / deployed_template_hash:那是"我们最后一次推上去
+	// 的是什么",属于节点自己的属性,在 nodes 表上。放到这里的话,每次检查写
+	// 状态都会把基准覆盖成观察值,漂移就永远看不出来了。
 	//
 	// node_id 是主键也是外键:一台节点一行,节点删掉时它的状态跟着走(不然删了
 	// 再加一台同 id 的会把旧状态捡回来)。certificates 存 JSON 文本,与 inbounds
@@ -311,6 +311,10 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_core ON traffic_samples(node_id, core, username, id)`); err != nil {
 		return err
 	}
+	// 按用户查采样(活跃段、用户详情的「最近连接」)顺着这张索引扫。
+	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_user ON traffic_samples(username, id)`); err != nil {
+		return err
+	}
 	if err := s.migrateCapabilities(); err != nil {
 		return err
 	}
@@ -318,6 +322,12 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.migrateRouting(); err != nil {
+		return err
+	}
+	// 一次性数据迁移的记号列:routing_state 由 migrateRouting 建好,行可能还是空的,
+	// 记号写进路由状态那一行(见 markMigrationDone)。
+	if err := s.addColumnIfMissing("routing_state", "migration_marks",
+		`ALTER TABLE routing_state ADD COLUMN migration_marks TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
 	}
 	// 删 purposes 表必须在 migrateRouting 之后:它要读 routing_state 的模式。
@@ -337,6 +347,12 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.migrateNodePending(); err != nil {
+		return err
+	}
+	if err := s.migrateActivity(); err != nil {
+		return err
+	}
+	if err := s.migrateJobs(); err != nil {
 		return err
 	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
@@ -397,21 +413,68 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE nodes ADD COLUMN draining INTEGER NOT NULL DEFAULT 0`},
 	{"nodes", "outbound_ip",
 		`ALTER TABLE nodes ADD COLUMN outbound_ip TEXT NOT NULL DEFAULT ''`},
+	// 模板哈希:下发时那份配置「不带用户」的 sha256。deployed_hash 含着用户名单,
+	// 比不出模板改没改;空串表示还没在这一版上下发过,所以不参与漂移判定。
+	{"nodes", "deployed_template_hash",
+		`ALTER TABLE nodes ADD COLUMN deployed_template_hash TEXT NOT NULL DEFAULT ''`},
+}
+
+// migrationDone 报告一个一次性数据迁移(doneKey,见 markMigrationDone)是否已经做过。
+//
+// 记号与分流迁移报告存在同一行(routing_state 的 migration_marks 列)。这一行不存在
+// 只说明库是新开的、还没做过任何迁移。migrateActivity 在 migrateRouting 之后跑,
+// routing_state 表在那之前已经建好。
+func (s *Store) migrationDone(doneKey string) (bool, error) {
+	var marks string
+	err := s.db.QueryRow(`SELECT COALESCE((SELECT migration_marks FROM routing_state WHERE id = 1), '')`).Scan(&marks)
+	if err != nil {
+		return false, fmt.Errorf("读取数据迁移记号: %w", err)
+	}
+	for _, m := range strings.Split(marks, ",") {
+		if m == doneKey {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// markMigrationDone 在 tx 里记下某个一次性数据迁移已经做完。调用方必须让记号与
+// 迁移本身在同一个事务里提交:半路失败时下次启动会整段重做。
+func markMigrationDone(tx *sql.Tx, doneKey string) error {
+	if _, err := tx.Exec(`INSERT INTO routing_state(id, mode, migration_marks) VALUES(1, 'template', ?)
+		ON CONFLICT(id) DO NOTHING`, doneKey); err != nil {
+		return fmt.Errorf("记录数据迁移记号 %s: %w", doneKey, err)
+	}
+	if _, err := tx.Exec(`UPDATE routing_state
+		SET migration_marks = CASE WHEN migration_marks = '' THEN ? ELSE migration_marks || ',' || ? END
+		WHERE id = 1 AND instr(',' || migration_marks || ',', ',' || ? || ',') = 0`,
+		doneKey, doneKey, doneKey); err != nil {
+		return fmt.Errorf("记录数据迁移记号 %s: %w", doneKey, err)
+	}
+	return nil
 }
 
 // addMissingColumns 把 addedColumns 里缺的列补上。
 func (s *Store) addMissingColumns() error {
 	for _, c := range addedColumns {
-		has, err := s.hasColumn(c.table, c.column)
-		if err != nil {
+		if err := s.addColumnIfMissing(c.table, c.column, c.ddl); err != nil {
 			return err
 		}
-		if has {
-			continue
-		}
-		if _, err := s.db.Exec(c.ddl); err != nil {
-			return fmt.Errorf("给 %s 补列 %s: %w", c.table, c.column, err)
-		}
+	}
+	return nil
+}
+
+// addColumnIfMissing 查一下列在不在,不在就执行 ddl 补上。表必须已经建好。
+func (s *Store) addColumnIfMissing(table, column, ddl string) error {
+	has, err := s.hasColumn(table, column)
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+	if _, err := s.db.Exec(ddl); err != nil {
+		return fmt.Errorf("给 %s 补列 %s: %w", table, column, err)
 	}
 	return nil
 }

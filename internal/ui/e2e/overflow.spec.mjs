@@ -6,7 +6,7 @@ import { startEnv, login } from "./env.mjs";
 let env;
 const LONG_USER = "zhang.san_" + "x".repeat(54); // 用户名只允许 [A-Za-z0-9_.-],最长 64;emoji 放在备注和节点名里
 const LONG_NODE = "hk-日本-🚀-very-long-node-name-for-overflow-check";
-const SERVERS = ["https://144.34.233.37:8080", "https://control-plane.my-very-long-subdomain.example-proxy.net:8443", "https://[2001:db8:85a3::8a2e:370:7334]:8080"];
+const SERVERS = ["https://203.0.113.37:8080", "https://control-plane.my-very-long-subdomain.example-proxy.net:8443", "https://[2001:db8:85a3::8a2e:370:7334]:8080"];
 
 test.beforeAll(async () => {
   env = await startEnv();

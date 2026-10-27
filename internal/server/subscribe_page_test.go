@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bytes"
+	"io"
+	"io/fs"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/ui"
 )
 
 // ---- 订阅页 ----
@@ -57,6 +61,86 @@ func TestSubscriptionPageServedToBrowsers(t *testing.T) {
 	// 页面是给人看的,不能把 vless:// 明文撒在 HTML 里。
 	if strings.Contains(html, "vless://") {
 		t.Fatalf("页面里不该有分享链接明文:\n%s", html)
+	}
+}
+
+// 订阅页用随程序带的字体:两个 @font-face 都指向 /sub/ 下的字体入口(只转发
+// /sub/ 的反向代理也取得到),--sans 第一个是 Mona Sans VF。
+func TestSubscriptionPageUsesBundledFonts(t *testing.T) {
+	e := newEnv(t)
+	_, path := e.createSubReadyUser("alice")
+
+	code, body := e.request("GET", path, nil, browserHeaders())
+	if code != http.StatusOK {
+		t.Fatalf("浏览器打开订阅应 200,实际 %d %s", code, body)
+	}
+	html := string(body)
+	for _, want := range []string{
+		`@font-face { font-family: "Mona Sans VF"; src: url(-/fonts/MonaSansVF.woff2) format("woff2"); font-weight: 200 900; font-display: swap; }`,
+		`@font-face { font-family: "Noto Sans SC"; src: url(-/fonts/NotoSansSC-subset.woff2) format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF; }`,
+		`--sans:"Mona Sans VF",-apple-system`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("订阅页里缺 %q:\n%s", want, html)
+		}
+	}
+
+	// 换了地址的那一次渲染落在 /sub/<token>/rotate 上,字体路径要多退一层。
+	code, body = e.request("POST", path+"/rotate", nil, browserHeaders())
+	if code != http.StatusOK {
+		t.Fatalf("换地址应 200,实际 %d %s", code, body)
+	}
+	if !strings.Contains(string(body), "url(../-/fonts/MonaSansVF.woff2)") {
+		t.Errorf("换地址后的页面里字体路径应相对到 /sub/-/fonts/:\n%s", body)
+	}
+}
+
+// 字体入口只发白名单里的两个字体文件,带着长缓存与 nosniff,不要登录。
+func TestSubscriptionFontRoute(t *testing.T) {
+	e := newEnv(t)
+
+	fonts := ui.Fonts()
+	for _, name := range []string{"MonaSansVF.woff2", "NotoSansSC-subset.woff2"} {
+		want, err := fs.ReadFile(fonts, name)
+		if err != nil {
+			t.Fatalf("读内嵌字体 %s: %v", name, err)
+		}
+		req, err := http.NewRequest("GET", e.srv.URL+"/sub/-/fonts/"+name, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("取字体 %s: %v", name, err)
+		}
+		got, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s 应 200,实际 %d", name, resp.StatusCode)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s 发出的字节与内嵌文件不一致", name)
+		}
+		for h, v := range map[string]string{
+			"Content-Type":           "font/woff2",
+			"Cache-Control":          "public, max-age=31536000, immutable",
+			"X-Content-Type-Options": "nosniff",
+		} {
+			if hv := resp.Header.Get(h); hv != v {
+				t.Errorf("%s 的 %s: %q,应为 %q", name, h, hv, v)
+			}
+		}
+	}
+
+	for _, name := range []string{"../ui.go", "OFL.txt", "OFL-NotoSansSC.txt", "NotoSansSC-subset.txt", "MonaSansMonoVF.woff2", "nope.woff2"} {
+		code, body := e.request("GET", "/sub/-/fonts/"+name, nil, nil)
+		if code != http.StatusNotFound {
+			t.Errorf("/sub/-/fonts/%s 应 404,实际 %d %s", name, code, body)
+		}
+	}
+	// 字体路由是四段路径,不能被三段式的 /sub/{token}/{format} 抢走。
+	if code, body := e.request("GET", "/sub/-/fonts", nil, nil); code == http.StatusOK {
+		t.Errorf("/sub/-/fonts 不该是字体入口,实际 200 %s", body)
 	}
 }
 

@@ -130,6 +130,7 @@ test("续期 30 天:与 mpx user renew --days 30 一致", async ({ page }) => {
   const fromCLI = normalize(env.takeLog(), names);
   await openUser(page, "ui-renew");
   await page.click("[data-act=user-menu]"); await page.click("[data-act=user-renew]");
+  await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("2027-06-09");
   expect(normalize(env.takeLog(), names)).toEqual(fromCLI);
 });
@@ -240,7 +241,7 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   // 二维码:暗色主题下也放在白底上,图由本机按用户名画。
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
   await expect(page.locator(".qr-tile")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /^\/local\/qr\.svg\?u=ui-fresh&v=/);
+  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /^\/local\/qr\.svg\?d=/);
   const ok = await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; });
   expect(ok).toBe(true);
   await expect(page.locator("#send [data-act=copy]").first()).toHaveText("复制订阅链接");

@@ -11,38 +11,50 @@ const finalPath = u => "/api/rules/final" + (u ? "?user=" + encodeURIComponent(u
 const groupPath = id => "/api/proxy-groups/" + id;
 const groupID = t => /^group:(\d+)$/.test(t || "") ? +t.slice(6) : 0;
 
+function rpBar(d) {
+  return H`<div class="rp-bar"><div class="seg">${[["rules", "规则", d ? d.rules.global.length + 1 : ""], ["groups", "策略组", d ? d.groups.length : ""]].map(([k, t, n]) => H`<button class="${RP.tab === k ? "on" : ""}" data-act="rp-tab" data-k="${k}">${t}<em>${n}</em></button>`)}</div><span class="sp"></span>
+      ${RP.tab === "rules" ? H`<span class="sub">作用于</span><select class="in w200" id="rp-scope" ${d ? "" : raw("disabled")}><option value="">全部用户(全局)</option>${(d?.users || RP.d?.users || []).map(u => H`<option value="${u}" ${raw(RP.scope === u ? "selected" : "")}>只改 ${u}</option>`)}</select>` : ""}</div>`;
+}
+
 PAGES.rules = {
+  prepare: r => { if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1]; },
+  readKey: () => RP.scope,
   title: "分流", closeTo: "rules",
   crumb: () => H`<b>分流规则</b>`,
-  async load(r) {
-    if (r[1] === "groups" || r[1] === "rules") RP.tab = r[1];
+  async load(r, read = api) {
     const [routing, rules, groups, catalog, users] = await Promise.all([
-      api("/api/routing"), api(rulesPath(RP.scope)), api("/api/proxy-groups"), api("/api/rule-catalog"), api("/api/users?limit=1000"),
+      read("/api/routing"), read(rulesPath(RP.scope)), read("/api/proxy-groups"), read("/api/rule-catalog"), read("/api/users?limit=1000"),
     ]);
-    let members = {};
+    let members = {}, previews = {};
     if (RP.tab === "groups" && groups.length) {
-      const pv = await Promise.all(groups.map(g => api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify(g), headers: { "Content-Type": "application/json" } }).catch(() => null)));
-      groups.forEach((g, i) => { members[g.id] = pv[i] ? pv[i].filter(e => e.admitted).map(e => e.name) : null; });
+      const pv = await Promise.all(groups.map(g => read("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify(g), headers: { "Content-Type": "application/json" } }).catch(() => null)));
+      groups.forEach((g, i) => { previews[g.id] = pv[i]; members[g.id] = pv[i] ? pv[i].filter(e => e.admitted).map(e => e.name) : null; });
     }
-    return { routing, rules, groups, catalog, members, users: (users.users || []).map(u => u.username) };
+    return { routing, rules, groups, catalog, members, previews, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
     const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。改完，客户端更新一次订阅就生效。</p></div></div>`;
-    if (!d) return H`${head}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
+    if (!d) return H`${head}${rpBar(null)}<div class="card"><table><tbody>${skRows(6, 4)}</tbody></table></div>`;
     RP.d = d;
     const R = d.rules, G = d.groups;
     if (!R.global.length && !G.length && !RP.scope) return H`${head}${modeBanner(d)}${rpEmpty(d)}`;
-    const tabs = H`<div class="rp-bar"><div class="seg">${[["rules", "规则", R.global.length + 1], ["groups", "策略组", G.length]].map(([k, t, n]) => H`<button class="${RP.tab === k ? "on" : ""}" data-act="rp-tab" data-k="${k}">${t}<em>${n}</em></button>`)}</div><span class="sp"></span>
-      ${RP.tab === "rules" ? H`<span class="sub">作用于</span><select class="in w200" id="rp-scope"><option value="">全部用户(全局)</option>${d.users.map(u => H`<option value="${u}" ${raw(RP.scope === u ? "selected" : "")}>只改 ${u}</option>`)}</select>` : ""}</div>`;
+    const tabs = rpBar(d);
     return H`${head}${modeBanner(d)}${tabs}<div class="rp-main"><div>${RP.tab === "rules" ? rpRulesCard(d) : rpGroupsCard(d)}</div>
       <div class="rp-side">${rpTestCard()}</div></div>`;
   },
   after(d) {
     if (!d) return;
-    $("#rp-scope")?.addEventListener("change", e => { RP.scope = e.target.value; RP.edit = null; RP.testRes = null; load(true, true); if (RP.test) rpRunTest(); });
+    $("#rp-scope")?.addEventListener("change", e => withFeedback(e.target, async () => {
+      const previous = RP.scope; RP.scope = e.target.value; RP.edit = null; RP.testRes = null;
+      const loading = load(true, true, true), seq = loadSeq;
+      await loading;
+      if (seq !== loadSeq) return;
+      if (current.error) { RP.scope = previous; paint(); }
+      else if (RP.test) rpRunTest();
+    }));
     const t = $("#rp-test");
     t?.addEventListener("input", () => { RP.test = t.value; clearTimeout(RP.tt); RP.tt = setTimeout(rpRunTest, 350); });
-    $("#rp-final")?.addEventListener("change", e => rpSetFinal(e.target.value));
+    $("#rp-final")?.addEventListener("change", e => withFeedback(e.target, () => rpSetFinal(e.target.value)));
     $("#re-type")?.addEventListener("change", e => { RP.edit.type = e.target.value; RP.edit.value = e.target.value === "set" ? (d.catalog[0]?.key || "") : e.target.value === "geoip" ? "CN" : ""; RP.edit.target = $("#re-to").value; paint(); });
     if (rpCanWrite()) document.querySelectorAll(".rp-list .rp-row[draggable]").forEach(el => {
       el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", el.dataset.i); el.classList.add("drag"); });
@@ -92,20 +104,20 @@ function modeBanner(d) {
 function rpEmpty(d) {
   const W = can("POST", "/api/routing/migrate");
   return H`<div class="card rp-empty"><div class="rp-flow"><div class="rp-fb"><b>你打开一个网站</b><span class="mono">netflix.com</span></div><span class="rp-arr">${ic("arrow")}</span>
-    <div class="rp-fb wide"><b>按规则从上往下对</b><span>广告 → 拦截</span><span>国内网站 → 直连</span><span class="on">流媒体 → 📺 流媒体</span><span>其他全部 → ⚡ 自动选择</span></div><span class="rp-arr">${ic("arrow")}</span>
+    <div class="rp-fb wide"><b>按规则从上往下匹配</b><span>广告${ic("arrow", "rp-fa")}拦截</span><span>国内网站${ic("arrow", "rp-fa")}直连</span><span class="on">流媒体${ic("arrow", "rp-fa")}📺 流媒体</span><span>其他全部${ic("arrow", "rp-fa")}⚡ 自动选择</span></div><span class="rp-arr">${ic("arrow")}</span>
     <div class="rp-fb"><b>走对应的出口</b><span>策略组挑出的节点</span></div></div>
     <h4>还没有分流规则</h4><p class="sub">先选一套起步方案，之后随时增删、拖动排序、改去向。</p>
     ${W ? H`<div class="rp-starts">
       <button class="rp-start rec" data-act="rp-migrate"><span class="pill on">推荐</span><b>沿用现在的分流</b><span>把现在的模板转换成规则表：国内直连、拦广告、各类网站走对应分组，其他自动选最快。</span><em>转换 ${ic("arrow")}</em></button>
       <button class="rp-start" data-act="rp-blank" data-k="all"><b>全部走代理</b><span>只建一个「自动选择」组，除了局域网，所有网站都走它。</span><em>用这套 ${ic("arrow")}</em></button>
-      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部 → 自动选择」，你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>` : ""}</div>`;
+      <button class="rp-start" data-act="rp-blank" data-k="blank"><b>从空白开始</b><span>只有一条「其他全部」走「自动选择」，你自己一条条加。</span><em>开始 ${ic("arrow")}</em></button></div>` : ""}</div>`;
 }
 
 function rpRow(r, i, own, editable) {
   if (editable && RP.edit && !RP.edit.isNew && RP.edit.i === i) return rpEditRow();
   const set = r.type === "set" ? rpSet(r.value) : null;
   return H`<div class="rp-row ${r.enabled ? "" : "off"} ${own && RP.scope ? "own" : ""}" ${raw(editable ? "draggable=\"true\"" : "")} data-i="${i}">
-    <span class="rp-grip" title="拖动排序">${editable ? "⋮⋮" : ""}</span><span class="rp-n">${i + 1}</span>
+    <span class="rp-grip" title="拖动排序">${editable ? ic("grip") : ""}</span><span class="rp-n">${i + 1}</span>
     <span class="rp-tyc"><span class="rp-ty">${RULE_TYPES[r.type] || r.type}</span></span><span class="rp-v ${r.type === "set" ? "" : "mono"}" title="${rpValText(r)}">${rpValText(r)}${set ? H` <span class="sub">${set.desc}</span>` : ""}${r.note ? H` <span class="sub">· ${r.note}</span>` : ""}</span>
     <span class="rp-a">${ic("arrow")}</span>${rpPill(r.target)}
     <span class="sp"></span>${own && RP.scope ? H`<span class="pill on">仅 ${RP.scope}</span>` : ""}
@@ -117,7 +129,7 @@ function rpEditRow() {
   const valIn = e.type === "set" ? H`<select class="in" id="re-val">${d.catalog.map(s => H`<option value="${s.key}" ${raw(s.key === e.value ? "selected" : "")}>${s.name} · ${s.desc}</option>`)}</select>`
     : e.type === "geoip" ? H`<select class="in" id="re-val">${Object.entries(RULE_REGIONS).map(([k, s]) => H`<option value="${k}" ${raw(k === e.value ? "selected" : "")}>${s}</option>`)}</select>`
     : H`<input class="in mono" id="re-val" value="${e.value}" autocomplete="off" spellcheck="false" placeholder="${{ suffix: "example.com(含子域名)", keyword: "google", cidr: "91.108.4.0/22" }[e.type]}">`;
-  return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : "✎"}</span>
+  return H`<div class="rp-row editing"><span class="rp-grip"></span><span class="rp-n">${e.isNew ? "新" : ic("edit")}</span>
     <select class="in w140" id="re-type" aria-label="类型">${Object.entries(RULE_TYPES).map(([k, t]) => H`<option value="${k}" ${raw(k === e.type ? "selected" : "")}>${t}</option>`)}</select>
     <div class="grow">${valIn}</div><span class="rp-a">${ic("arrow")}</span><select class="in w220" id="re-to" aria-label="去向">${rpTargetOptions(e.target)}</select>
     <button class="btn pri sm" data-act="rp-save">${e.isNew ? "添加" : "保存"}</button><button class="btn ghost sm" data-act="rp-cancel">取消</button>${e.isNew ? "" : H`<button class="ib sm" data-act="rp-del" title="删除" aria-label="删除这条">${ic("x")}</button>`}
@@ -132,7 +144,7 @@ function rpRulesCard(d) {
   const finalSel = sc ? R.user_final || "" : R.final;
   return H`<div class="card rp-card">${sc ? "" : H`<div class="ch">从上往下匹配，第一条对上的生效<span class="sp"></span>${W ? H`<button class="btn sm" data-act="rp-builtin">${ic("plus")}内置规则组</button><button class="btn pri sm" data-act="rp-add">${ic("plus")}添加规则</button>` : ""}</div>${RP.edit?.isNew ? rpEditRow() : ""}`}
     <div class="rp-list">${own}${R.global.map((r, i) => sc ? rpRow({ ...r }, base + i, false, false) : rpRow(r, i, true, W))}
-    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">∞</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">${ic("arrow")}</span>
+    <div class="rp-row final"><span class="rp-grip"></span><span class="rp-n">${ic("infinity")}</span><span class="rp-tyc"><span class="rp-ty">兜底</span></span><span class="rp-v"><b>其他全部</b> <span class="sub">上面都没对上的</span></span><span class="rp-a">${ic("arrow")}</span>
       ${W ? H`<select class="in w220" id="rp-final" aria-label="其他全部的去向">${rpTargetOptions(finalSel, d, sc ? `跟随全局(${rpTargetName(R.final)})` : null)}</select>` : rpPill(finalSel || R.final)}<span class="sp"></span></div></div></div>`;
 }
 
@@ -177,8 +189,9 @@ async function groupEditor(id) {
   const d = RP.d, g0 = d.groups.find(g => g.id === +id), W = can(g0 ? "PUT" : "POST", "/api/proxy-groups/x");
   const g = g0 ? JSON.parse(JSON.stringify(g0)) : { name: "", icon: "", mode: "auto", regions: [], protocols: [], capabilities: [], tags: [] };
   for (const k of ["regions", "protocols", "capabilities", "tags"]) g[k] ||= [];
-  let all = [];
-  try { all = await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ name: "preview", mode: "auto" }), headers: { "Content-Type": "application/json" } }); } catch {}
+  const packet = await readDrawer(g0 ? g0.name : "新建策略组", () => g0 && d.previews?.[g0.id] || api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }), () => groupEditor(id));
+  if (!packet) return;
+  const all = packet.value;
   const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有节点带这一项</span>`; };
   const regions = all.map(e => e.region).filter(Boolean), protos = all.map(e => e.protocol).filter(Boolean);
   openDrawer(H`<form id="gp-form" novalidate><div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">
@@ -199,12 +212,14 @@ async function groupEditor(id) {
     g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
   };
   let seq = 0;
-  const sync = async () => {
+  const sync = async initial => {
     read(); const my = ++seq;
+    $("#gp-pv").setAttribute("aria-busy", "true");
     let pv;
-    try { pv = await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
-    catch (e) { if (my === seq) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
-    if (my !== seq) return;
+    try { pv = Array.isArray(initial) ? initial : await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
+    catch (e) { if (my === seq && f.isConnected) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
+    if (my !== seq || !f.isConnected || (!$("#drawer.open") && !DRAWER_RAF)) return;
+    $("#gp-pv").removeAttribute("aria-busy");
     const n = pv.filter(x => x.admitted).length;
     $("#gp-cnt").textContent = `· ${n} / ${pv.length} 个节点`;
     $("#gp-pv").innerHTML = val(pv.length ? pv.map(x => H`<div class="row pp-pvr ${x.admitted ? "" : "miss"}"><span class="pp-mk ${x.admitted ? "ok" : ""}">${ic(x.admitted ? "check" : "x")}</span><span class="grow">${x.name}</span><span class="sub">${x.admitted ? (x.capabilities || []).map(c => RULE_CAPS[c] || c).join(" · ") : (x.reasons || []).join("、")}</span></div>`)
@@ -214,7 +229,7 @@ async function groupEditor(id) {
   // 「标签」条件界面上已经去掉;旧数据里的 tags 原样保留(API 兼容),只在这里给一个清掉的按钮。
   if ($("#gp-cleartags")) $("#gp-cleartags").addEventListener("click", () => { g.tags = []; $("#gp-oldtags").remove(); sync(); });
   $("#gp-mode").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; g.mode = b.dataset.m; f.querySelectorAll("#gp-mode button").forEach(x => x.classList.toggle("on", x === b)); read(); });
-  sync();
+  sync(all);
   f.addEventListener("submit", async e => {
     e.preventDefault(); read();
     const btn = $("#gp-save");
@@ -253,11 +268,16 @@ async function rpMove(from, to) {
   try { await rpPut(list, version, `已移到第 ${to + 1} 条`); } catch (e) { toast(e.message, true); }
 }
 async function rpSetFinal(v) {
-  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部 → ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { toast(e.message, true); }
+  const select = $("#rp-final"), previous = RP.scope ? RP.d.rules.user_final : RP.d.rules.final;
+  try { await write("PUT", finalPath(RP.scope), { target: v }, `其他全部改走 ${v ? rpTargetName(v) : "跟随全局"}`); } catch (e) { if (select?.isConnected) select.value = previous || ""; toast(e.message, true); }
 }
 
 Object.assign(ACTS, {
-  "rp-tab": d => { RP.tab = d.k; RP.edit = null; location.hash = "rules/" + d.k; },
+  "rp-tab": async d => {
+    RP.tab = d.k; RP.edit = null;
+    history.replaceState(null, "", "#rules/" + d.k); paint();
+    await load(true, true, true);
+  },
   "rp-try": d => { RP.test = d.d; const t = $("#rp-test"); if (t) t.value = d.d; rpRunTest(); },
   "rp-toggle": async (d, el) => { const { rules } = rpScopeList(), r = rules[+d.i]; el.disabled = true;
     try { await write("PATCH", "/api/rules/" + r.id, { enabled: !r.enabled }, r.enabled ? "已停用，客户端更新订阅后生效" : "已启用"); } catch (e) { toast(e.message, true); el.checked = r.enabled; el.disabled = false; } },
