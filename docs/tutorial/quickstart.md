@@ -6,11 +6,7 @@
 
 ## 1. 下载并安装 MPX
 
-<div class="cta">
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe">下载 Windows 版</a>
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg">下载 macOS 版</a>
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb">下载 Linux 版（.deb）</a>
-</div>
+<DownloadCta />
 
 - **Windows：** 双击安装，不需要管理员权限。
 - **macOS：** 打开下载的 `.dmg`，把 MPX 拖进「应用程序」。Intel 和 Apple 芯片用同一个文件。
