@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -56,6 +57,8 @@ func newNotifyTask(t *testing.T, sink *webhookSink) (*Task, *store.Store) {
 
 	srv := httptest.NewServer(sink)
 	t.Cleanup(srv.Close)
+	allowWebhookIP = func(ip net.IP) bool { return ip.IsLoopback() }
+	t.Cleanup(func() { allowWebhookIP = nil })
 
 	s, err := st.GetSettings()
 	if err != nil {

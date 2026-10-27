@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -51,6 +52,8 @@ func TestSaveSettingsValidatesNotifyFields(t *testing.T) {
 		{"地址不是 URL", model.Settings{WebhookURL: "http://%zz"}},
 		{"地址不是 http(s)", model.Settings{WebhookURL: "ftp://example.com/hook"}},
 		{"地址缺主机名", model.Settings{WebhookURL: "http://"}},
+		{"地址是回环", model.Settings{WebhookURL: "http://127.0.0.1/hook"}},
+		{"地址是内网", model.Settings{WebhookURL: "http://10.0.0.5/hook"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -93,6 +96,9 @@ func TestSaveSettingsValidatesNotifyFields(t *testing.T) {
 }
 
 func TestTestWebhookEndpoint(t *testing.T) {
+	control.SetAllowWebhookIPForTest(func(ip net.IP) bool { return ip.IsLoopback() })
+	t.Cleanup(func() { control.SetAllowWebhookIPForTest(nil) })
+
 	t.Run("没配地址就直说", func(t *testing.T) {
 		e := newEnv(t)
 		code, data := e.api("POST", "/api/settings/test-webhook", nil)

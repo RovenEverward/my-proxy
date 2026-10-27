@@ -42,7 +42,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if got != "" && subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1 {
+		if got != "" && tokenEqual(got, s.token) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -61,6 +61,14 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		writeErrorHint(w, http.StatusUnauthorized, "token 不正确或这台设备已被吊销;重新 mpx connect",
 			"这台设备的登录已失效或被吊销:请在 MPX 里重新「接入已有控制面」")
 	})
+}
+
+// tokenEqual 比较两枚 token 是否相同。先各自 SHA-256 再 ConstantTimeCompare,
+// 避免两侧长度不同时 Go 的 ConstantTimeCompare 立刻返回而泄露管理 token 长度。
+func tokenEqual(a, b string) bool {
+	ha := sha256.Sum256([]byte(a))
+	hb := sha256.Sum256([]byte(b))
+	return subtle.ConstantTimeCompare(ha[:], hb[:]) == 1
 }
 
 // hashToken 是设备 token 在库里的样子。

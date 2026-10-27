@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -1220,28 +1219,12 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// validateWebhookURL 检查通知地址是不是一个能 POST 的 http(s) 地址。
+// validateWebhookURL 检查通知地址(委托 control.ValidateWebhookTarget)。
 //
-// 空串合法,表示不通知。只认 http/https:这个地址是我们主动发出去的,别的 scheme
-// (file://、javascript:)在这里没有任何意义,放行只会把一个配置错误推迟成运行时的
-// 怪错误 —— 那时候人已经忘了自己配过什么。
-//
-// 校验放在写入口而不是发送时:发的时候才发现地址不对,那条通知已经错过了。
+// 空串合法;只认 http/https;本机/内网/链路本地等保留地址一律拒绝,避免认证后
+// 的 SSRF。详细规则与拨号侧二次校验见 control 包。
 func validateWebhookURL(raw string) error {
-	if raw == "" {
-		return nil
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("webhook 地址不是合法 URL: %s", raw)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("webhook 地址要以 http:// 或 https:// 开头: %s", raw)
-	}
-	if u.Host == "" {
-		return fmt.Errorf("webhook 地址缺少主机名: %s", raw)
-	}
-	return nil
+	return control.ValidateWebhookTarget(raw)
 }
 
 // handleTestWebhook 往当前设置里的地址发一条测试事件。
