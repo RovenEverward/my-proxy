@@ -8,11 +8,7 @@ title: MPX
 <p class="eyebrow">MPX · 给自己和朋友用的自建代理</p>
 <h1>在自己电脑上，<br>管好你那几台 <em>VPS</em></h1>
 <p class="lede">装在 VPS 上的面板，得先登上去装，再开浏览器连过去配。MPX 是装在你自己电脑上的程序：填上 VPS 的 IP 和密码，它替你装好。之后开账号、加服务器、升级，都在这个窗口里点。</p>
-<div class="cta">
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe">下载 Windows 版</a>
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg">下载 macOS 版</a>
-<a class="btn btn-lg" href="https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb">下载 Linux 版（.deb）</a>
-</div>
+<DownloadCta />
 <p class="dl-note">打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。ARM、其他 Linux 和命令行版见<a href="./tutorial/quickstart">快速开始</a>。安装包没有签名，第一次打开要放行一次，做法也在快速开始里。</p>
 </div>
 <figure class="tile hero-fig shot"><img class="only-light" src="/ui/setup-host.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码"><img class="only-dark" src="/ui/setup-host-dark.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码（深色）"><figcaption>首次安装：填 VPS<span>MPX 桌面窗口</span></figcaption></figure>
