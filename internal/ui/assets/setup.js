@@ -58,7 +58,7 @@ function bindInput(sel, key) {
 /* ---------- 屏 1:欢迎 ---------- */
 function renderWelcome() {
   S.step = 1;
-  setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-light.svg" alt=""><img class="mk-d" src="/mark-dark.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
+  setup(null, H`<div class="welcome"><div class="ill"><img class="mk-l" src="/mark-dot-globe.svg" alt=""><img class="mk-d" src="/mark-dot-globe.svg" alt=""></div><h2>在你的 VPS 上装好 MPX</h2>
   <p class="lead">一台机器同时当控制面和第一个节点，大约 5–10 分钟。</p>
   <ul><li>${ic("srv")}<span>装控制面，并在同一台机器上建第一个节点、连接方式和对外地址</span></li><li>${ic("users")}<span>建第一个用户，给你一条可以直接导入的订阅链接</span></li>
   <li>${ic("lock")}<span>设一个设备密码，以后别的电脑用它接入</span></li><li>${ic("term")}<span>这台电脑自动接入，装完直接进管理界面</span></li></ul>

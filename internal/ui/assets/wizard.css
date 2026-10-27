@@ -50,7 +50,7 @@
 .setup .wsteps{padding:16px 22px 18px}
 .setup h2{margin:0 0 4px;font-size:18px;font-weight:620}
 .setup .in{background:var(--stone)}
-.welcome{padding:30px 6px 8px}.welcome .ill{width:52px;height:52px;border-radius:var(--r-card);display:grid;place-items:center;background:var(--stone);margin-bottom:16px}.welcome .ill img{width:28px}
+.welcome{padding:30px 6px 8px}.welcome .ill{width:52px;height:52px;border-radius:var(--r-card);display:grid;place-items:center;background:var(--stone);margin-bottom:16px;color:var(--ink)}.welcome .ill img{width:28px;height:28px;display:block}.welcome .ill svg{width:28px;height:28px;display:block}
 .welcome h2{font-size:22px}.welcome ul{margin:14px 0 18px;padding:0;list-style:none;display:grid;gap:8px}.welcome li{display:flex;gap:10px;color:var(--ink2)}.welcome li svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--muted)}
 .probe{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 16px}.probe div{padding:10px 12px;border-radius:10px;background:var(--stone)}.probe span{display:block;font-size:11.5px;color:var(--muted)}.probe b{font:560 13px var(--mono)}
 .probe .no{background:var(--bad-bg)}.probe .no b{color:var(--bad)}
