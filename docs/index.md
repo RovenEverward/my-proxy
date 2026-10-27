@@ -5,9 +5,9 @@ title: MPX
 
 <section class="wrap hero">
 <div class="hero-text">
-<p class="eyebrow">MPX · 给自己和朋友用的自建代理</p>
-<h1>在自己电脑上，<br>管好你那几台 <em>VPS</em></h1>
-<p class="lede">装在 VPS 上的面板，得先登上去装，再开浏览器连过去配。MPX 是装在你自己电脑上的程序：填上 VPS 的 IP 和密码，它替你装好。之后开账号、加服务器、升级，都在这个窗口里点。</p>
+<p class="eyebrow">MPX · 桌面软件与 CLI</p>
+<h1>新一代<br>代理管理平台</h1>
+<p class="lede">MPX 是装在你电脑上的桌面软件，也提供 CLI。统一管理多台 VPS 及其上的代理通道。在其中选一台部署控制面，把代理通道转成订阅并分享。</p>
 <DownloadCta />
 <p class="dl-note">打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。ARM、其他 Linux 和命令行版见<a href="./tutorial/quickstart">快速开始</a>。安装包没有签名，第一次打开要放行一次，做法也在快速开始里。</p>
 </div>
@@ -18,7 +18,7 @@ title: MPX
 <div class="cards cards-4">
 <div><h3>不用登 VPS</h3><p>装机、加服务器、加人、升级，都在你电脑上的窗口里点。</p></div>
 <div><h3>几台机器，一个窗口</h3><p>加一台只填 IP 和密码，自动按所在地起名，例如「🇺🇸 洛杉矶 A」。哪台在线，节点页一眼就看到。</p></div>
-<div><h3>朋友自己看用量</h3><p>每人有自己的流量上限、到期日，可以按月重置。他打开自己的链接就能看到还剩多少；链接泄露了，他自己能换一条。</p></div>
+<div><h3>用户自助看用量</h3><p>为每位用户设置流量上限、到期日和每月重置。用户打开订阅链接就能查看剩余用量；链接泄露时，可以自行更换。</p></div>
 <div><h3>一条链接，常见客户端都能导入</h3><p>Clash Verge、sing-box、v2rayN、Shadowrocket 都认，复制链接或扫二维码即可。</p></div>
 </div>
 </section>
