@@ -21,7 +21,7 @@ export default defineConfig({
   appearance: false,
 
   themeConfig: {
-    logo: { light: '/mark-light.png', dark: '/mark-dark.png' },
+    logo: { light: '/mark-light.png', dark: '/mark-light.png' },
     siteTitle: 'MPX',
 
     nav: [
