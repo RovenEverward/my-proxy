@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -62,21 +64,26 @@ type WebhookEvent struct {
 // 判断成功只看 2xx:很多服务端(比如各种机器人)用 200 表示收到了,4xx/5xx 都
 // 意味着没送到。响应正文最多留 200 字节做错误提示,免得一个坏地址回一整页 HTML
 // 把日志撑满,也免得正文没读完导致连接不能复用。
-func PostWebhook(ctx context.Context, url string, ev WebhookEvent, logger *slog.Logger) error {
-	if url == "" {
+func PostWebhook(ctx context.Context, rawURL string, ev WebhookEvent, logger *slog.Logger) error {
+	if rawURL == "" {
 		return fmt.Errorf("没有配置 webhook 地址")
+	}
+	if err := ValidateWebhookTarget(rawURL); err != nil {
+		return err
 	}
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("序列化 webhook 事件: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("构造 webhook 请求: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: webhookTimeout}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = dialWebhook
+	client := &http.Client{Timeout: webhookTimeout, Transport: tr}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("发不出 webhook: %w", err)
@@ -227,4 +234,102 @@ func (f *FanoutAlerter) Resolve(key string, at time.Time) {
 	for _, a := range f.alerters {
 		a.Resolve(key, at)
 	}
+}
+
+// ValidateWebhookTarget 检查 webhook 地址能不能配 / 能不能发。
+//
+// 空串表示关闭,合法。只认 http/https。主机名若是字面 IP,当场拒绝本机与内网;
+// 若是域名,会解析一次,任一 A/AAAA 落在保留地址上也拒 —— 把明显的内网地址挡在
+// 写入设置时。真正发包时 dialWebhook 还会再判一次,防 DNS 重绑定。
+func ValidateWebhookTarget(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("webhook 地址不是合法 URL: %s", raw)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("webhook 地址要以 http:// 或 https:// 开头: %s", raw)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("webhook 地址缺少主机名: %s", raw)
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !webhookIPAllowed(ip) {
+			return fmt.Errorf("webhook 不能指向本机或内网地址: %s", host)
+		}
+		return nil
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		// 写入时 DNS 暂时失败不挡:真正发送时 dialWebhook 会再解析并强制校验。
+		return nil
+	}
+	for _, ip := range ips {
+		if !webhookIPAllowed(ip) {
+			return fmt.Errorf("webhook 不能指向本机或内网地址: %s (%s)", host, ip)
+		}
+	}
+	return nil
+}
+
+// cgnat is RFC 6598 shared address space (100.64.0.0/10); Go's IP.IsPrivate 不含它。
+var cgnat = func() *net.IPNet {
+	_, n, _ := net.ParseCIDR("100.64.0.0/10")
+	return n
+}()
+
+// allowWebhookIP 仅测试用:httptest 挂在回环上,生产路径保持 nil。
+var allowWebhookIP func(net.IP) bool
+
+// SetAllowWebhookIPForTest 让测试里的 httptest(回环) 能过校验与拨号;生产勿用。
+func SetAllowWebhookIPForTest(fn func(net.IP) bool) { allowWebhookIP = fn }
+
+func webhookIPAllowed(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if allowWebhookIP != nil && allowWebhookIP(ip) {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+		return false
+	}
+	if ip4 := ip.To4(); ip4 != nil && cgnat.Contains(ip4) {
+		return false
+	}
+	return true
+}
+
+// dialWebhook 在拨号前解析目标并拒绝保留地址;拨的是通过校验的具体 IP,
+// 避免「校验时是公网、连上时被重绑定到内网」。
+func dialWebhook(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	var last error
+	d := &net.Dialer{Timeout: webhookTimeout}
+	for _, ia := range ips {
+		if !webhookIPAllowed(ia.IP) {
+			last = fmt.Errorf("webhook 不能指向本机或内网地址: %s", ia.IP)
+			continue
+		}
+		c, err := d.DialContext(ctx, network, net.JoinHostPort(ia.IP.String(), port))
+		if err == nil {
+			return c, nil
+		}
+		last = err
+	}
+	if last == nil {
+		last = fmt.Errorf("webhook 地址没有可用的公网 IP: %s", host)
+	}
+	return nil, last
 }

@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,9 @@ func newWebhookServer(t *testing.T, sink *webhookSink) string {
 	t.Helper()
 	srv := httptest.NewServer(sink)
 	t.Cleanup(srv.Close)
+	// httptest 挂回环;生产会拒,测试放开。
+	allowWebhookIP = func(ip net.IP) bool { return ip.IsLoopback() }
+	t.Cleanup(func() { allowWebhookIP = nil })
 	return srv.URL
 }
 

@@ -43,24 +43,34 @@ func Clash(eps []Endpoint, meta bool, templateYAML []byte) ([]byte, error) {
 	}
 
 	if meta {
+		// meta 版的策略组来自可替换的底稿(templateYAML):模板自己用
+		// include-all-proxies / 手动切换覆盖节点,没有稳定的注入口。把 fallback
+		// 组硬塞进去会跟用户模板的组名和选择顺序打架,所以按 Host 顺序回退只
+		// 在最小集(meta=false)里生成。
 		return clashMeta(proxies, templateYAML)
 	}
 
+	// 同一入站挂了多条对外地址时,按 Host 顺序生成 fallback 组:客户端先试
+	// 第一条(V4),不通再试下一条(V6),不用依赖 Happy Eyeballs 去赌。
+	fallbacks, fallbackNames := clashFallbackGroups(eps, names)
+
 	// PROXY 是给用户手选的总入口,AUTO 是按延迟自动选。
-	selectProxies := append([]string{"AUTO", "DIRECT"}, names...)
+	selectProxies := append([]string{"AUTO", "DIRECT"}, fallbackNames...)
+	selectProxies = append(selectProxies, names...)
+
+	groups := []clashGroup{{Name: "PROXY", Type: "select", Proxies: selectProxies}}
+	groups = append(groups, fallbacks...)
+	groups = append(groups, clashGroup{
+		Name:     "AUTO",
+		Type:     "url-test",
+		Proxies:  names,
+		URL:      "http://www.gstatic.com/generate_204",
+		Interval: 300,
+	})
 
 	cfg := clashConfig{
-		Proxies: proxies,
-		ProxyGroups: []clashGroup{
-			{Name: "PROXY", Type: "select", Proxies: selectProxies},
-			{
-				Name:     "AUTO",
-				Type:     "url-test",
-				Proxies:  names,
-				URL:      "http://www.gstatic.com/generate_204",
-				Interval: 300,
-			},
-		},
+		Proxies:     proxies,
+		ProxyGroups: groups,
 		Rules: []string{
 			"GEOIP,LAN,DIRECT",
 			"GEOIP,CN,DIRECT",
@@ -69,6 +79,75 @@ func Clash(eps []Endpoint, meta bool, templateYAML []byte) ([]byte, error) {
 	}
 
 	return yaml.Marshal(cfg)
+}
+
+// clashFallbackGroups 给同一入站的多条对外地址(fallback 组)编组。
+//
+// 组按入站第一次出现的顺序排,组内按端点(也就是 Host)出现顺序排;两者都
+// 直接继承订阅里的顺序,不额外排序,同一份输入永远得到同一份输出。
+// 只有一个 Host 的入站不建组:单节点没必要多一层选择。
+func clashFallbackGroups(eps []Endpoint, names []string) ([]clashGroup, []string) {
+	order := make([]int64, 0)
+	byInbound := make(map[int64][]Endpoint)
+	for _, ep := range eps {
+		// InboundID 为 0 是直接构造 Endpoint 时的零值,不是真实入站,
+		// 不参与编组,免得把互不相关的测试端点并成一组。
+		if ep.InboundID == 0 {
+			continue
+		}
+		if _, ok := byInbound[ep.InboundID]; !ok {
+			order = append(order, ep.InboundID)
+		}
+		byInbound[ep.InboundID] = append(byInbound[ep.InboundID], ep)
+	}
+
+	// 组名不能和节点名或其他组名重复:Clash 用名字互相引用,撞名会让选择
+	// 指向意料之外的东西。
+	used := map[string]bool{"PROXY": true, "AUTO": true, "DIRECT": true}
+	for _, name := range names {
+		used[name] = true
+	}
+
+	var groups []clashGroup
+	var groupNames []string
+	for _, id := range order {
+		members := byInbound[id]
+		if len(members) < 2 {
+			continue
+		}
+		groupName := clashFallbackName(members[0].Remark, used)
+		proxies := make([]string, 0, len(members))
+		for _, ep := range members {
+			proxies = append(proxies, ep.Remark)
+		}
+		groups = append(groups, clashGroup{
+			Name:     groupName,
+			Type:     "fallback",
+			Proxies:  proxies,
+			URL:      "http://www.gstatic.com/generate_204",
+			Interval: 300,
+		})
+		groupNames = append(groupNames, groupName)
+	}
+	return groups, groupNames
+}
+
+// clashFallbackName 由组内第一条端点名生成可读的组名,并在 used 里登记。
+//
+// 端点名已经过 DedupeRemarks,通常可直接辨认;加「双入口」后缀是为了不和
+// 同名的单节点选项混淆。万一后缀也撞名,再追加序号。
+func clashFallbackName(remark string, used map[string]bool) string {
+	base := remark
+	if base == "" {
+		base = "节点"
+	}
+	base += " · 双入口"
+	name := base
+	for i := 2; used[name]; i++ {
+		name = fmt.Sprintf("%s %d", base, i)
+	}
+	used[name] = true
+	return name
 }
 
 // clashMeta 在完整底稿上注入 proxies 段,产出 meta 版订阅。
