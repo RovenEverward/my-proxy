@@ -100,6 +100,93 @@ func clashProxies(t *testing.T, eps []Endpoint, meta bool) []map[string]any {
 	return doc.Proxies
 }
 
+// TestClashFallbackForDualHostInbound 覆盖最小集里同一入站的多条对外地址:
+// 每个 Host 仍是一条 proxy,另加一个按 Host 顺序排列的 fallback 组,组名进 PROXY。
+func TestClashFallbackForDualHostInbound(t *testing.T) {
+	const (
+		v4Remark = "香港 V4"
+		v6Remark = "香港 V6"
+	)
+	eps := []Endpoint{
+		{
+			NodeID: 1, InboundID: 7, HostID: 11, Remark: v4Remark,
+			Address: "192.0.2.10", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+		{
+			NodeID: 1, InboundID: 7, HostID: 12, Remark: v6Remark,
+			Address: "2001:db8::1", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+		{
+			// 只有一个 Host 的入站不建 fallback 组。
+			NodeID: 2, InboundID: 8, HostID: 21, Remark: "日本",
+			Address: "198.51.100.20", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+	}
+
+	raw, err := Clash(eps, false, nil)
+	if err != nil {
+		t.Fatalf("Clash() 报错: %v", err)
+	}
+	var doc struct {
+		Proxies     []map[string]any `yaml:"proxies"`
+		ProxyGroups []map[string]any `yaml:"proxy-groups"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("yaml 解析失败: %v\n%s", err, raw)
+	}
+	if len(doc.Proxies) != len(eps) {
+		t.Fatalf("proxies 条数 = %d, want %d", len(doc.Proxies), len(eps))
+	}
+
+	groups := map[string]map[string]any{}
+	for _, g := range doc.ProxyGroups {
+		name, _ := g["name"].(string)
+		groups[name] = g
+	}
+	const groupName = v4Remark + " · 双入口"
+	group := groups[groupName]
+	if group == nil {
+		t.Fatalf("缺少 fallback 组 %q,实际组: %v", groupName, groups)
+	}
+	if group["type"] != "fallback" {
+		t.Errorf("组类型 = %v, want fallback", group["type"])
+	}
+	members, _ := group["proxies"].([]any)
+	wantMembers := []any{v4Remark, v6Remark}
+	if !reflect.DeepEqual(members, wantMembers) {
+		t.Errorf("fallback 成员 = %#v, want %#v", members, wantMembers)
+	}
+
+	// PROXY 的 select 列表要有这个组,同时保留 AUTO 与单节点。
+	proxy := groups["PROXY"]
+	selectNames, _ := proxy["proxies"].([]any)
+	wantSelect := []any{"AUTO", "DIRECT", groupName, v4Remark, v6Remark, "日本"}
+	if !reflect.DeepEqual(selectNames, wantSelect) {
+		t.Errorf("PROXY 成员 = %#v, want %#v", selectNames, wantSelect)
+	}
+
+	// AUTO 仍然只收单节点,不把组再套进 url-test。
+	auto := groups["AUTO"]
+	autoNames, _ := auto["proxies"].([]any)
+	wantAuto := []any{v4Remark, v6Remark, "日本"}
+	if !reflect.DeepEqual(autoNames, wantAuto) {
+		t.Errorf("AUTO 成员 = %#v, want %#v", autoNames, wantAuto)
+	}
+
+	// 组名不能和任一节点同名,否则 Clash 里引用会分不清。
+	for _, p := range doc.Proxies {
+		if p["name"] == groupName {
+			t.Errorf("fallback 组名 %q 与节点名重复", groupName)
+		}
+	}
+}
+
 // TestClashStructure 覆盖顶层结构:能被 yaml 解析,节点数与策略组、规则齐全。
 // meta=false 是原来的最小输出(2 组 3 规则);meta=true 走完整模板。
 func TestClashStructure(t *testing.T) {

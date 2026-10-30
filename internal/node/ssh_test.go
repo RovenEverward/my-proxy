@@ -71,6 +71,25 @@ func TestSSHArgsHonorsPortAndUser(t *testing.T) {
 	}
 }
 
+// 字面 IPv6 作为节点地址时,user@host 目标里的地址必须带方括号;IPv4 与域名
+// 保持不变由上面的默认参数和端口/用户测试锁定。
+func TestSSHTargetBracketsIPv6(t *testing.T) {
+	n := model.Node{Address: "2001:db8::1", SSHUser: "deploy"}
+	const want = "deploy@[2001:db8::1]"
+
+	keyArgs := sshArgs(n)
+	if got := keyArgs[len(keyArgs)-1]; got != want {
+		t.Errorf("sshArgs 目标 = %q, want %q", got, want)
+	}
+	passwordArgs := passwordSSHArgs(n)
+	if got := passwordArgs[len(passwordArgs)-1]; got != want {
+		t.Errorf("passwordSSHArgs 目标 = %q, want %q", got, want)
+	}
+	if got := sshTarget(n); got != want {
+		t.Errorf("sshTarget = %q, want %q", got, want)
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	cases := map[string]string{
 		"简单":         `'简单'`,

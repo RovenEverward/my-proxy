@@ -83,7 +83,7 @@ func passwordSSHArgs(n model.Node) []string {
 	if p := n.SSHPortOrDefault(); p != 22 {
 		args = append(args, "-p", strconv.Itoa(p))
 	}
-	return append(args, n.SSHUserOrDefault()+"@"+n.Address)
+	return append(args, sshTarget(n))
 }
 
 // runPasswordSSH 用密码认证跑一条 ssh 命令,返回它的 stdout。
@@ -188,7 +188,7 @@ func verifyKey(ctx context.Context, n model.Node, keyPath string) error {
 	if p := n.SSHPortOrDefault(); p != 22 {
 		args = append(args, "-p", strconv.Itoa(p))
 	}
-	args = append(args, n.SSHUserOrDefault()+"@"+n.Address, "echo MPX_KEY_OK")
+	args = append(args, sshTarget(n), "echo MPX_KEY_OK")
 
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	var stdout, stderr bytes.Buffer

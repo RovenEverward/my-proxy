@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/netutil"
 )
 
 // xrayDefaultTemplate 是没给底稿时用的内置客户端配置。
@@ -207,7 +208,7 @@ func xrayNode(ep Endpoint, tag string) (map[string]any, error) {
 			"address":   []string{ep.WGAddress},
 			"peers": []any{map[string]any{
 				"publicKey": ep.WGPublicKey,
-				"endpoint":  fmt.Sprintf("%s:%d", ep.Address, ep.Port),
+				"endpoint":  netutil.JoinHostPort(ep.Address, ep.Port),
 				"keepAlive": 25,
 			}},
 		}

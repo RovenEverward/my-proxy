@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -362,5 +363,40 @@ func TestXrayFragmentChainIsComplete(t *testing.T) {
 	settings, _ := frag["settings"].(map[string]any)
 	if _, ok := settings["fragment"]; !ok {
 		t.Fatalf("分片链尾 %q 没有 settings.fragment", dialer)
+	}
+}
+
+// TestXrayWireguardBracketsIPv6Endpoint 覆盖裸 IPv6 作为 wireguard 对端地址时,
+// endpoint 仍写成可直接 SplitHostPort 的 [IPv6]:port。
+func TestXrayWireguardBracketsIPv6Endpoint(t *testing.T) {
+	ep := Endpoint{
+		Remark: "wg v6", Address: "2001:db8::1", Port: 51820,
+		Protocol:     model.ProtocolWireguard,
+		WGPrivateKey: scWGTestPriv, WGPublicKey: scWGTestPub,
+		WGAddress: "10.0.0.7/32",
+	}
+	data, err := Xray([]Endpoint{ep}, nil)
+	if err != nil {
+		t.Fatalf("Xray: %v", err)
+	}
+	var configs []map[string]any
+	if err := json.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("产物不是 JSON 数组: %v", err)
+	}
+	outbounds, _ := configs[0]["outbounds"].([]any)
+	node, _ := outbounds[0].(map[string]any)
+	settings, _ := node["settings"].(map[string]any)
+	peers, _ := settings["peers"].([]any)
+	peer, _ := peers[0].(map[string]any)
+	endpoint, _ := peer["endpoint"].(string)
+	if endpoint != "[2001:db8::1]:51820" {
+		t.Fatalf("wireguard endpoint = %q, want [2001:db8::1]:51820", endpoint)
+	}
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		t.Fatalf("endpoint 无法拆成 host:port: %v", err)
+	}
+	if host != "2001:db8::1" || port != "51820" {
+		t.Errorf("拆出 (%q, %q), want (2001:db8::1, 51820)", host, port)
 	}
 }

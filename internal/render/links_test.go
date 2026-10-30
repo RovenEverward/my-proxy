@@ -2,6 +2,9 @@ package render
 
 import (
 	"encoding/base64"
+	"net"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -110,6 +113,41 @@ func TestLinksExact(t *testing.T) {
 				t.Errorf("Links() =\n  %q\nwant\n  %q", got[0], tc.want)
 			}
 		})
+	}
+}
+
+// TestLinksBracketIPv6 覆盖裸 IPv6 进 vless / trojan 链接后带方括号,
+// 并且 host:port 能被 net.SplitHostPort 拆回。IPv4 与域名不变由
+// TestLinksExact 的精确字符串锁定。
+func TestLinksBracketIPv6(t *testing.T) {
+	cases := []Endpoint{
+		{
+			Remark: "v6 vless", Address: "2001:db8::1", Port: 443,
+			Protocol: model.ProtocolVLESS, UUID: linkTestUUID,
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+		{
+			Remark: "v6 trojan", Address: "2001:db8::1", Port: 8443,
+			Protocol: model.ProtocolTrojan, Password: "pw",
+			Network: model.NetworkTCP, Security: model.SecurityNone,
+		},
+	}
+	for _, ep := range cases {
+		link := Links([]Endpoint{ep})[0]
+		if !strings.Contains(link, "@[2001:db8::1]:") {
+			t.Errorf("%s 链接里的 IPv6 没加方括号: %s", ep.Protocol, link)
+		}
+		u, err := url.Parse(link)
+		if err != nil {
+			t.Fatalf("%s 链接解析失败: %v", ep.Protocol, err)
+		}
+		host, port, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			t.Fatalf("%s 链接的 %q 无法拆成 host:port: %v", ep.Protocol, u.Host, err)
+		}
+		if host != "2001:db8::1" || port != strconv.Itoa(ep.Port) {
+			t.Errorf("%s 拆出 (%q, %q), want (2001:db8::1, %d)", ep.Protocol, host, port, ep.Port)
+		}
 	}
 }
 
