@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/netutil"
 )
 
 // Links 返回每个端点的分享链接,一行一条,顺序与输入一致。
@@ -133,8 +134,8 @@ func urlLink(ep Endpoint) string {
 	if ep.Protocol == model.ProtocolTrojan {
 		passphrase = escapeUserinfo(ep.Password)
 	}
-	return fmt.Sprintf("%s://%s@%s:%d?%s#%s",
-		ep.Protocol, passphrase, ep.Address, ep.Port, q.String(), escapeFragment(ep.Remark))
+	return fmt.Sprintf("%s://%s@%s?%s#%s",
+		ep.Protocol, passphrase, netutil.JoinHostPort(ep.Address, ep.Port), q.String(), escapeFragment(ep.Remark))
 }
 
 // vmessLink 渲染 vmess 分享链接:vmess:// 加 base64 后的 JSON。

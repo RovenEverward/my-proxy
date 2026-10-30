@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/netutil"
 )
 
 // Runner 在一台节点上执行命令。
@@ -191,7 +192,13 @@ func sshArgsWithIdentity(n model.Node, identity string) []string {
 	if p := n.SSHPortOrDefault(); p != 22 {
 		args = append(args, "-p", strconv.Itoa(p))
 	}
-	return append(args, n.SSHUserOrDefault()+"@"+n.Address)
+	return append(args, sshTarget(n))
+}
+
+// sshTarget 返回 ssh 的 user@host 目标。字面 IPv6 必须带方括号,否则 ssh 会把
+// 冒号后的部分当成端口或直接判成非法目标。端口仍由 -p 单独给。
+func sshTarget(n model.Node) string {
+	return n.SSHUserOrDefault() + "@" + netutil.BracketHost(n.Address)
 }
 
 // RunAs 用指定的认证方式在一台「还没纳管」的机器上跑一条命令。

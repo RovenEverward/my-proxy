@@ -3,12 +3,11 @@ package render
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/netutil"
 )
 
 // quicEndpoint 校验客户端共同的 QUIC 约束,留空时按原生 UDP/TLS 处理。
@@ -125,5 +124,5 @@ func quicLink(ep Endpoint) string {
 		q.Set("congestion_control", cc)
 	}
 	return (&url.URL{Scheme: string(ep.Protocol), User: auth,
-		Host: net.JoinHostPort(ep.Address, strconv.Itoa(ep.Port)), RawQuery: q.Encode(), Fragment: ep.Remark}).String()
+		Host: netutil.JoinHostPort(ep.Address, ep.Port), RawQuery: q.Encode(), Fragment: ep.Remark}).String()
 }
