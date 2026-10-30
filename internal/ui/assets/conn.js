@@ -519,7 +519,7 @@ async function hostEditor(inbID, hostID) {
   <div class="db">
     ${F.map(([k, , l, ph, hint]) => H`<div class="field"><label for="h-${k}">${l}</label><input class="in ${k === "remark" ? "" : "mono"}" id="h-${k}" name="${k}" value="${fv(k)}" placeholder="${ph}" autocomplete="off">${hint ? H`<span class="h">${hint}</span>` : ""}</div>`)}
     ${found ? H`<p class="sub">现在发出去的是 <code>${found.effective.address}:${found.effective.port}</code>。改地址或端口，用户下次刷新订阅就跟着变;不用应用到节点。</p>` : H`<p class="sub">对外地址只影响订阅里写什么，不用应用到节点。</p>`}
-    <p class="sub">可用第二条入口填 IPv6，订阅会出现两行；纯 V6 入站的 listen 勿留空，填 <code>::</code>。</p>
+    <p class="sub">可用第二条对外地址填 IPv6，订阅会出现两行；纯 V6 时监听地址勿留空，填 <code>::</code>。</p>
     <div class="err" id="h-err" role="alert"></div>
     ${found && can("DELETE", "/api/hosts/x") ? H`<div class="card mt"><div class="row"><div><b class="bold">删除对外地址</b><div class="sub">只影响订阅;删掉最后一个对外地址，订阅回落到连接方式自己的地址。</div></div><span class="sp"></span><button type="button" class="btn sm" data-act="conn-host-rm" data-id="${hostID}" data-remark="${hostName}">删除</button></div></div>` : ""}
   </div><div class="df"><button type="button" class="btn" data-act="close">取消</button><button type="submit" class="btn pri" id="h-save">${isNew ? "创建" : "保存"}</button></div></form>`);
