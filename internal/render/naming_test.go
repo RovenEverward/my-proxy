@@ -15,6 +15,11 @@ func TestResolveNamedRemarks(t *testing.T) {
 	hosts := map[int64][]model.Host{11: {{ID: 5, InboundID: 11, Remark: "{NODE_DISPLAY} 备用 / {NODE_NAME}"}}}
 
 	eps := ResolveNamed(node, "🇺🇸 洛杉矶 A", []model.Inbound{reality, ws, hy2}, hosts, user)
+	for _, ep := range eps {
+		if ep.Protocol == model.ProtocolHysteria2 && !ep.AllowInsecure {
+			t.Fatalf("hy2 AllowInsecure=false, want true for self-signed certs")
+		}
+	}
 	eps = DedupeRemarks(AddProtocolSuffix(eps))
 	got := map[int64]string{}
 	for _, ep := range eps {

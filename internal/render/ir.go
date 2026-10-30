@@ -205,6 +205,8 @@ func endpoint(node model.Node, display string, in model.Inbound, h model.Host, u
 		ep.Fingerprint = ""
 		ep.Mux, ep.Fragment = false, false
 		ep.CongestionControl = in.CongestionControl
+		// mpx 为 hy2/tuic 签发自签证书，客户端必须跳过校验，否则 Clash Meta 测速 503。
+		ep.AllowInsecure = true
 		if in.Protocol == model.ProtocolHysteria2 {
 			ep.UUID = ""
 		}
