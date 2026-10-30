@@ -2,6 +2,20 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.9.14 (2026-10-30)
+
+### 要点
+- 双对外地址更稳妥：分享链接（vless/trojan）、SSH 目标与 xray WireGuard endpoint 对裸 IPv6 自动加括号；同一入站挂多个 Host 时，Clash 最小订阅按 Host 顺序生成 fallback 组（先试前一个地址，不通再下一个）；面板对外地址抽屉补充 IPv6 / 监听地址提示。
+- 登录与配置安全加固：SSH 引导密码改走 0600 临时文件（不再进环境变量）；Webhook 拒绝回环 / 私网 / 链路本地 / CGNAT，并按校验后的 IP 拨号；管理 token 比较改为 SHA-256 后再恒定时间比对。
+- 文档站品牌标统一用浅色白底板 icon；品牌 mark / favicon / 桌面图标改为透明底 PNG（侧栏完整 lockup 仍沿用原图形过渡）。
+
+### 改进
+- 统一 `host:port` 文本 helper，避免 IPv6 地址在 URI、SSH、WireGuard 等处格式不一致。
+
+### 兼容性
+- **订阅内容可能变化**：同一入站配置了多个 Host 时，Clash 最小集会多出按 Host 顺序的 fallback 组；其他格式仍各自一条出站。分享 URI 对裸 IPv6 的写法修正（缺括号的旧行为不再出现）。未给同一入站加第二地址时，订阅形状与上一版一致。
+- 控制面 API 无破坏性变更。Webhook 若原先指向内网地址，升级后会被拒绝（需改成公网可达 URL）。
+
 ## v0.9.13 (2026-10-27)
 
 ### 要点
