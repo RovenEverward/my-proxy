@@ -934,7 +934,7 @@ proxy-groups:
     proxies: [全球代理, 手动切换, DIRECT]
   - name: 苹果
     type: select
-    proxies: [全球代理, 手动切换, DIRECT]
+    proxies: [DIRECT, 全球代理, 手动切换]
   - name: 微软
     type: select
     proxies: [全球代理, 手动切换, DIRECT]

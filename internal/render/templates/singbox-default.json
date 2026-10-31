@@ -114,11 +114,11 @@
       "type": "selector",
       "tag": "苹果",
       "outbounds": [
+        "direct",
         "全球代理",
-        "proxy",
-        "direct"
+        "proxy"
       ],
-      "default": "全球代理"
+      "default": "direct"
     },
     {
       "type": "selector",
