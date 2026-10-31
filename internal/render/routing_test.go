@@ -156,7 +156,7 @@ func TestDefaultManualRouting(t *testing.T) {
 				}
 				got := doc.terminal(g.Name)
 				if rawTemplate {
-					want := map[string]string{"广告拦截": "REJECT", "本地直连": "DIRECT", "国内媒体": "DIRECT"}[g.Name]
+					want := map[string]string{"广告拦截": "REJECT", "本地直连": "DIRECT", "国内媒体": "DIRECT", "苹果": "DIRECT"}[g.Name]
 					if want == "" {
 						want = "手动切换"
 					}
