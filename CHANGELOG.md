@@ -2,6 +2,17 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.9.15 (2026-11-05)
+
+### 要点
+- 入站 REALITY 放行 XHTTP / gRPC（仍拒绝 ws / httpupgrade）：可把原先 Vision+TCP 换成 XHTTP+Reality，减轻长 TCP 隧道行为特征；客户端需支持 XHTTP（较新 Xray / Clash Meta）。
+- 默认分流里 Apple 规则集改为 DIRECT，减少苹果服务被误送代理。
+- Clash / Clash Meta 导出 Hysteria2、TUIC 时，对自签证书默认写上 `skip-cert-verify`，避免测速与连通假阴性。
+
+### 兼容性
+- **订阅内容可能变化**：使用内置默认分流且未自定义 Apple 规则的用户，重新拉取后 Apple 走 DIRECT；Hy2/TUIC 自签节点在 Clash 系客户端会带 `skip-cert-verify`。REALITY 入站若仍用 tcp+Vision，行为与上一版相同；改成 xhttp 后订阅里 `network` 变为 xhttp，旧客户端可能不认。
+- 控制面 API 无破坏性变更；仅放宽入站校验允许的传输组合。
+
 ## v0.9.14 (2026-10-30)
 
 ### 要点
