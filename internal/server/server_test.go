@@ -837,6 +837,22 @@ func TestInboundValidation(t *testing.T) {
 				RealityPub: "pub", SNI: "www.microsoft.com"},
 			want: http.StatusCreated,
 		},
+		{
+			name: "xhttp + reality + vless 是合法的",
+			in: model.Inbound{NodeID: n.ID, Protocol: model.ProtocolVLESS, Port: 8443,
+				Network: model.NetworkXHTTP, Security: model.SecurityReality,
+				XHTTPPath: "/p", RealityDest: "www.microsoft.com:443", RealityPriv: "priv",
+				RealityPub: "pub", SNI: "www.microsoft.com"},
+			want: http.StatusCreated,
+		},
+		{
+			name: "grpc + reality + vless 是合法的",
+			in: model.Inbound{NodeID: n.ID, Protocol: model.ProtocolVLESS, Port: 8444,
+				Network: model.NetworkGRPC, Security: model.SecurityReality, GRPCService: "gun",
+				RealityDest: "www.microsoft.com:443", RealityPriv: "priv",
+				RealityPub: "pub", SNI: "www.microsoft.com"},
+			want: http.StatusCreated,
+		},
 	}
 
 	for _, tc := range cases {

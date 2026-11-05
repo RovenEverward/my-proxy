@@ -270,9 +270,13 @@ func validateInbound(i *model.Inbound) string {
 		if i.RealityDest == "" || i.SNI == "" {
 			return "REALITY 必须填 dest 与 SNI"
 		}
-		// REALITY 靠借用目标站点的 TLS 握手,承载不了 ws 的 HTTP Upgrade。
-		if i.Network != model.NetworkTCP {
-			return "REALITY 只支持 tcp 传输"
+		// REALITY 靠借用目标站点的 TLS 握手;ws / httpupgrade 的 HTTP Upgrade 搭不上。
+		// Xray 官方支持与 Reality 搭配的传输: RAW(tcp)、XHTTP、gRPC(含旧名 splithttp)。
+		switch i.Network {
+		case model.NetworkTCP, model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkGRPC:
+			// ok
+		default:
+			return "REALITY 只支持 tcp / xhttp / grpc 传输"
 		}
 	}
 	if i.Flow != "" && i.Protocol != model.ProtocolVLESS {

@@ -20,7 +20,7 @@ var inboundCmd = &cobra.Command{
 参数,所以"入站建好了"不等于"订阅里出现了":入站没有配对外入口时,订阅会直接
 用入站自己的地址与端口(见 mpx host --help)。
 
-几个约束是服务端强制、本地看不出来的:REALITY 只支持 tcp 传输且必须填 SNI 与
+几个约束是服务端强制、本地看不出来的:REALITY 支持 tcp / xhttp / grpc,必须填 SNI 与
 回落目标;TLS 必须给证书与私钥在节点上的路径;flow 只有 VLESS 支持;gRPC 传输
 必须给 serviceName。REALITY 的密钥对由控制面自己生成,不用你填。
 
