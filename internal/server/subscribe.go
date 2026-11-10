@@ -68,7 +68,7 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 	user *model.User, settings *model.Settings,
 	format model.ClientFormat, pathFormat, subToken string) {
 
-	key := subCacheKey{subToken: subToken, format: format, pathFormat: pathFormat, gzip: acceptsGzip(r)}
+	key := subCacheKey{subToken: subToken, format: format, pathFormat: pathFormat, gzip: acceptsGzip(r), generation: s.subCache.version()}
 	if e := s.subCache.get(key); e != nil && e.user.Status(time.Now()) == user.Status(time.Now()) && e.user.UsedTraffic == user.UsedTraffic && e.user.Enabled == user.Enabled && user.Status(time.Now()) == model.StatusActive {
 		if r.Header.Get("If-None-Match") == e.etag {
 			w.WriteHeader(http.StatusNotModified)
@@ -248,10 +248,11 @@ func subBaseURL(settings *model.Settings, r *http.Request) string {
 // renderSubscription 产出订阅正文。不可用的用户拿到的是一个占位节点而不是真
 // 配置:他们的凭证在节点上已经被摘掉了,给真配置只会让客户端连不上还不报错。
 func (s *Server) renderSubscription(user *model.User, format model.ClientFormat) ([]byte, error) {
-	eps, err := s.endpointsFor(user)
+	set, err := s.subscriptionEndpointsFor(user, format)
 	if err != nil {
 		return nil, err
 	}
+	eps := set.Endpoints
 
 	settings, err := s.store.GetSettings()
 	if err != nil {

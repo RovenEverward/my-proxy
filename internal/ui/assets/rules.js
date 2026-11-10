@@ -30,7 +30,10 @@ PAGES.rules = {
       const pv = await Promise.all(groups.map(g => read("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify(g), headers: { "Content-Type": "application/json" } }).catch(() => null)));
       groups.forEach((g, i) => { previews[g.id] = pv[i]; members[g.id] = pv[i] ? pv[i].filter(e => e.admitted).map(e => e.name) : null; });
     }
-    return { routing, rules, groups, catalog, members, previews, users: (users.users || []).map(u => u.username) };
+    const origins = {};
+    const sources = await read("/api/sources").catch(() => []);
+    if (RP.tab === "groups") await Promise.all(groups.map(async g => { const v = await read(groupPath(g.id) + "/sources").catch(() => ({ sources: [] })); origins[g.id] = v.sources; }));
+    return { routing, rules, groups, catalog, members, previews, sources, origins, users: (users.users || []).map(u => u.username) };
   },
   render(d) {
     const head = H`<div class="ph"><div><h1>分流</h1><p>决定每个网站怎么走：直连、走代理还是拦截。改完，客户端更新一次订阅就生效。</p></div></div>`;
@@ -78,7 +81,7 @@ function rpPill(t, d = RP.d) {
   // 指向一个已不存在的策略组才是错误,用红色;直连/拦截/正常策略组一律灰底。
   const gone = !!t && t !== "DIRECT" && t !== "REJECT" && !g;
   const k = gone ? "err" : t === "DIRECT" ? "dir" : t === "REJECT" ? "rej" : "grp";
-  const icon = k === "dir" ? "↗ " : k === "rej" ? "⦸ " : !gone && g?.icon ? g.icon + " " : "";
+  const icon = k === "dir" ? ic("direct") : k === "rej" ? ic("ban") : !gone && g?.icon ? g.icon + " " : "";
   return H`<span class="rp-to ${k}"${raw(gone ? ' title="这个策略组已不存在"' : "")}>${icon}${rpTargetName(t, d)}${gone ? H`<span class="vh">（已不存在）</span>` : ""}</span>`;
 }
 const rpSet = (k, d = RP.d) => d.catalog.find(s => s.key === k);
@@ -176,7 +179,7 @@ async function rpRunTest() {
 function rpGroupsCard(d) {
   const W = can("POST", "/api/proxy-groups");
   const used = id => d.rules.global.filter(r => r.target === "group:" + id).length + (d.rules.final === "group:" + id ? 1 : 0);
-  const cond = g => [...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags?.length ? ["旧标签条件(已不生效)"] : [])].join(" + ") || "全部节点";
+  const cond = g => [...(d.origins?.[g.id] || []).map(x => x === "managed" ? "自建节点" : d.sources?.find(s => "source:" + s.id === x)?.name || "来源已删除"), ...(g.regions || []).map(x => RULE_REGIONS[x] || x), ...(g.protocols || []), ...(g.capabilities || []).map(c => RULE_CAPS[c] || c), ...(g.tags?.length ? ["旧标签条件(已不生效)"] : [])].join(" + ") || "全部节点";
   return H`<div class="card"><div class="ch">策略组：按条件自动收节点，新加的节点符合条件会自己进来<span class="sp"></span>${W ? H`<button class="btn pri sm" data-act="gp-edit" data-id="">${ic("plus")}新建策略组</button>` : ""}</div>
   ${d.groups.length ? d.groups.map(g => { const e = d.members[g.id];
     return H`<div class="row rp-g" data-act="gp-edit" data-id="${g.id}" tabindex="0"><span class="rp-gi">${g.icon || "◎"}</span><div class="grow"><b class="bold">${g.name}</b> <span class="pill">${g.mode === "auto" ? "自动选最快" : "手动选"}</span>
@@ -192,16 +195,21 @@ async function groupEditor(id) {
   const packet = await readDrawer(g0 ? g0.name : "新建策略组", () => g0 && d.previews?.[g0.id] || api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }), () => groupEditor(id));
   if (!packet) return;
   const all = packet.value;
+  let origins = [...(d.origins?.[g0?.id] || [])], savedID = g0?.id || null;
+  const originalOrigins = JSON.stringify(origins);
+  const sourceChoices = [["managed", "自建节点"], ...(d.sources || []).map(s => ["source:" + s.id, s.name]), ...origins.filter(x => x !== "managed" && !(d.sources || []).some(s => "source:" + s.id === x)).map(x => [x, "来源已删除 · " + x])];
   const opts = (key, list, label) => { const set = [...new Set([...list, ...g[key]])]; return set.length ? H`<div class="chips" data-key="${key}">${set.map(k => H`<label class="chip"><input type="checkbox" value="${k}" ${raw(g[key].includes(k) ? "checked" : "")}>${label(k)}</label>`)}</div>` : H`<span class="sub">还没有节点带这一项</span>`; };
   const regions = all.map(e => e.region).filter(Boolean), protos = all.map(e => e.protocol).filter(Boolean);
   openDrawer(H`<form id="gp-form" novalidate><div class="dh"><h2>${g0 ? g0.name : "新建策略组"}</h2><span class="sp" style="flex:1"></span><button type="button" class="ib" data-act="close" aria-label="关闭">${ic("x")}</button></div><div class="db">
     <div class="field"><label for="gp-name">名字</label><div class="flex8"><input class="in" style="width:64px;flex:none;text-align:center" id="gp-icon" value="${g.icon}" placeholder="🌐" aria-label="图标"><input class="in" style="flex:1;min-width:0" id="gp-name" value="${g.name}" placeholder="比如 日本节点" autocomplete="off"></div></div>
     <div class="field"><label>收哪些节点 <span class="sub">· 各类之间要同时满足，不选就不限</span></label></div>
+    <div class="field"><label class="sub">来源（任一，不选表示全部）</label><div class="chips">${sourceChoices.map(([v, label]) => H`<label class="chip"><input type="checkbox" data-source-choice value="${v}" ${raw(origins.includes(v) ? "checked" : "")}>${label}</label>`)}</div></div>
     <div class="field"><label class="sub">地区(任一)</label>${opts("regions", regions, k => RULE_REGIONS[k] || k)}</div>
     <div class="field"><label class="sub">协议(任一)</label>${opts("protocols", protos, k => k)}</div>
     <div class="field"><label class="sub">能力检测(全部通过)</label>${opts("capabilities", Object.keys(RULE_CAPS), k => RULE_CAPS[k])}</div>
     ${g.tags.length ? H`<div class="callout rp-warn" id="gp-oldtags">${ic("warn", "ico-warn")}<div>这个策略组还留着旧的「标签」条件(${g.tags.join("、")})。从 v0.7.0 起节点不再带标签，这个条件什么都匹配不上，组里会一直是空的。<div class="mt6"><button type="button" class="btn sm" id="gp-cleartags">去掉旧的标签条件</button></div></div></div>` : ""}
     <div class="field"><label>怎么选</label><div class="seg" id="gp-mode"><button type="button" class="${g.mode === "auto" ? "on" : ""}" data-m="auto">自动选最快</button><button type="button" class="${g.mode === "manual" ? "on" : ""}" data-m="manual">我手动选</button></div><span class="h">自动：客户端定时测网页延迟，挑最快的。手动：用户在客户端里自己选。</span></div>
+    <div class="field"><label for="gp-user">预览用户</label><select class="in" id="gp-user"><option value="">全部自建节点</option>${d.users.map(u => H`<option value="${u}">${u}</option>`)}</select><span class="h">选择用户后，预览该用户已获授权的外部节点。</span></div>
     <div class="card mt"><div class="ch">现在会收进来<small id="gp-cnt"></small></div><div id="gp-pv"></div></div>
     <div class="err" id="gp-err" role="alert"></div>
     ${g0 && can("DELETE", "/api/proxy-groups/x") ? H`<div class="card mt22"><div class="row"><div><b class="bold">删除策略组</b><div class="sub">还有规则指向它时删不掉，先改掉那些规则。</div></div><span class="sp"></span><button type="button" class="btn sm" data-act="gp-rm" data-id="${g0.id}" data-name="${g0.name}">删除</button></div></div>` : ""}</div>
@@ -210,13 +218,15 @@ async function groupEditor(id) {
   const read = () => {
     for (const k of ["regions", "protocols", "capabilities"]) g[k] = [...f.querySelectorAll(`[data-key=${k}] input:checked`)].map(x => x.value);
     g.name = $("#gp-name").value.trim(); g.icon = $("#gp-icon").value.trim();
+    origins = [...f.querySelectorAll("input[data-source-choice]:checked")].map(x => x.value);
   };
   let seq = 0;
   const sync = async initial => {
     read(); const my = ++seq;
     $("#gp-pv").setAttribute("aria-busy", "true");
     let pv;
-    try { pv = Array.isArray(initial) ? initial : await api("/api/proxy-groups/preview", { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
+    try { const query = new URLSearchParams({ sources: origins.join(",") }); if ($("#gp-user").value) query.set("user", $("#gp-user").value);
+      pv = Array.isArray(initial) && !origins.length ? initial : await api("/api/proxy-groups/preview?" + query, { method: "POST", body: JSON.stringify({ ...g, name: g.name || "preview" }), headers: { "Content-Type": "application/json" } }); }
     catch (e) { if (my === seq && f.isConnected) $("#gp-pv").innerHTML = val(H`<div class="pad16 c-bad">${e.message}</div>`); return; }
     if (my !== seq || !f.isConnected || (!$("#drawer.open") && !DRAWER_RAF)) return;
     $("#gp-pv").removeAttribute("aria-busy");
@@ -236,9 +246,14 @@ async function groupEditor(id) {
     try {
       if (!g.name) throw new Error("名字不能为空");
       btn.disabled = true; btn.classList.add("busy");
-      const body = { ...g }; if (g0) body.id = g0.id;
-      await write(g0 ? "PUT" : "POST", g0 ? groupPath(g0.id) : "/api/proxy-groups", body, `策略组「${g.name}」已保存`);
-      closeOverlays();
+      const body = { ...g }; if (savedID) body.id = savedID;
+      const saved = await write(savedID ? "PUT" : "POST", savedID ? groupPath(savedID) : "/api/proxy-groups", body);
+      savedID = saved.id;
+      if (JSON.stringify(origins) !== originalOrigins) {
+        try { await write("PUT", groupPath(savedID) + "/sources", { sources: origins }); }
+        catch (err) { throw new Error("组配置已保存，来源条件未保存。重试只更新这个组：" + err.message); }
+      }
+      toast(`策略组「${g.name}」已保存`); closeOverlays();
     } catch (e2) { $("#gp-err").textContent = e2.message; btn.disabled = false; btn.classList.remove("busy"); }
   });
 }

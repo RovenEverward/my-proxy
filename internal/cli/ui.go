@@ -44,6 +44,11 @@ var uiAllow = []string{
 	"DELETE /api/inbounds",
 	"PUT /api/hosts",
 	"DELETE /api/hosts",
+	// 外部订阅:source add / edit / refresh / grant / revoke / disable / enable / delete
+	"POST /api/sources",
+	"PATCH /api/sources",
+	"PUT /api/sources",
+	"DELETE /api/sources",
 	// 设置:settings set / rules add|rm|move|reset(都是整体 PUT)、template set / del、test
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -46,15 +47,28 @@ func shareLink(ep Endpoint) (string, bool) {
 	}
 	switch ep.Protocol {
 	case model.ProtocolVLESS, model.ProtocolVMess, model.ProtocolTrojan:
+	case model.ProtocolShadowsocks:
+		// ss:// 只给外部 classic-method 端点:SSMethod 为空的托管 ss-2022
+		// 维持原行为不出链接(见 TestLinksSkipsUnsupported)。
+		if ep.SSMethod == "" || effectiveNetwork(ep) != model.NetworkTCP || ep.Password == "" {
+			return "", false
+		}
+		return ssLink(ep), true
 	default:
-		// ss-2022 有 ss:// URI 但格式复杂(要嵌入 SIP-022 的 16B key),
-		// wireguard 没有 URI;这两个协议只能靠配置文件订阅,链接先跳过。
+		// wireguard 没有 URI;只能靠配置文件订阅,链接先跳过。
 		return "", false
 	}
 	if ep.Protocol == model.ProtocolVMess {
 		return vmessLink(ep), true
 	}
 	return urlLink(ep), true
+}
+
+// ssLink 渲染 SIP002 ss:// 链接:userinfo 是 method:password 的 RawURL base64。
+func ssLink(ep Endpoint) string {
+	cred := base64.RawURLEncoding.EncodeToString([]byte(ssMethod(ep) + ":" + ep.Password))
+	return fmt.Sprintf("ss://%s@%s#%s", cred,
+		netutil.JoinHostPort(ep.Address, ep.Port), escapeFragment(ep.Remark))
 }
 
 // effectiveNetwork 把留空的传输当作 tcp。
@@ -148,14 +162,14 @@ func vmessLink(ep Endpoint) string {
 
 	payload := map[string]any{
 		"add":  ep.Address,
-		"aid":  "0",
+		"aid":  strconv.Itoa(ep.VMessAlterID),
 		"host": ep.Host,
 		"id":   ep.UUID,
 		"net":  string(effectiveNetwork(ep)),
 		"path": ep.Path,
 		"port": ep.Port,
 		"ps":   ep.Remark,
-		"scy":  "auto",
+		"scy":  vmessSecurity(ep),
 		"tls":  string(sec),
 		"type": "none",
 		"v":    "2",

@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/, internal/store/, internal/model/, internal/backup/]
-verified: 2026-10-17 @ 626beea
+verified: 2026-11-09 @ 0cdf26e + UC-03 working tree
 ---
 # 控制面与数据
 
@@ -33,7 +33,8 @@ sequenceDiagram
 2. 路由集中在 [internal/server/server.go](../../internal/server/server.go)。管理接口只增不破：新字段可以加，旧字段和旧路径不能改语义。
 3. 持久化在 [internal/store](../../internal/store/)：SQLite 单连接加 WAL，写入串行；级联删除靠外键；迁移在启动时跑，只能往前加。
 4. 领域对象在 [internal/model](../../internal/model/)，字段与状态判定的语义写在 [数据模型与语义](../internal/model.md)，接口的确切形状写在 [对外契约](../internal/contracts.md)。
-5. 备份含库和控制面的 SSH 私钥，不含管理 token；恢复是「暂存，重启时换入」（[internal/backup](../../internal/backup/)，decisions 第 16 条）。
+5. 备份含库和控制面的 SSH 私钥，不含管理 token；恢复是「暂存，重启时换入」（[internal/backup](../../internal/backup/)，decisions 第 16 条）。外部订阅地址、节点快照、授权及来源条件属于库内敏感内容，随备份恢复。
+6. 外部订阅的配置、快照、用户授权和策略组来源条件分别持久化，见 [source.go](../../internal/store/source.go)。授权与来源条件仅由新增专用接口写入，旧用户和策略组 PUT 不覆盖这些关系。来源删除级联移除快照与授权，组条件保留失效来源 ID。
 
 ## 为什么这样设计
 

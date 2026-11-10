@@ -26,6 +26,7 @@ type subCacheKey struct {
 	format     model.ClientFormat
 	pathFormat string
 	gzip       bool
+	generation uint64
 }
 
 type subCacheEntry struct {
@@ -38,8 +39,15 @@ type subCacheEntry struct {
 }
 
 type subCache struct {
-	mu    sync.RWMutex
-	items map[subCacheKey]*subCacheEntry
+	mu         sync.RWMutex
+	items      map[subCacheKey]*subCacheEntry
+	generation uint64
+}
+
+func (c *subCache) version() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.generation
 }
 
 func (c *subCache) get(k subCacheKey) *subCacheEntry {
@@ -51,6 +59,9 @@ func (c *subCache) get(k subCacheKey) *subCacheEntry {
 func (c *subCache) put(k subCacheKey, e *subCacheEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if k.generation != c.generation {
+		return
+	}
 	if c.items == nil {
 		c.items = make(map[subCacheKey]*subCacheEntry)
 	}
@@ -67,6 +78,7 @@ func (c *subCache) invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.items = nil
+	c.generation++
 }
 
 // invalidateSubCache 是写路径末尾的统一钩子。调用方把它放在「写库成功」之后、

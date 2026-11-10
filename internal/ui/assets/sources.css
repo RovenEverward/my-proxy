@@ -1,0 +1,14 @@
+/* Source screens inherit product tokens and shared controls. */
+.drawer > .source-drawer-frame { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.source-drawer-frame > .db { min-height: 0; flex: 1; overflow: auto; }
+.source-name { min-width: 0; overflow-wrap: anywhere; }
+.source-name > .lnk { text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: var(--ui-font-size-body); }
+.source-preview-row { align-items: start; }
+.source-user-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+.source-row > .st { white-space: nowrap; }
+#source-preview[aria-busy="true"] { opacity: .6; }
+@media (max-width: 600px) {
+ .source-row { flex-wrap: wrap; }
+ .source-row > .source-name { flex-basis: 65%; }
+ .source-preview-row { flex-direction: column; }
+}
