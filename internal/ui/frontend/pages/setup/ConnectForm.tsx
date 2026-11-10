@@ -68,12 +68,12 @@ export function ConnectForm({ mode, onBack }: ConnectFormProps) {
     {certificate && <Button id="s-cp-go" variant="primary" loading={connecting} disabled={!confirmed || !password} onClick={() => void connect()}>接入</Button>}
   </>}>
     <h2>{add ? "添加控制面" : "接入已有控制面"}</h2><p className="lead">{add ? "把另一套控制面接进来，记下来并切过去；先取回证书指纹核对，再输入设备密码。" : "把这台电脑接进已经在跑的控制面：先取回证书指纹核对，再输入设备密码。"}</p>
-    <div className="two"><Field label="控制面地址" htmlFor="s-cp-addr" hint="IP 或域名，端口默认 8080" error={errors.addr}><Input id="s-cp-addr" className={"in mono " + (errors.addr ? "bad" : "")} placeholder="203.0.113.10:8080" autoComplete="off" value={addr} disabled={connecting} onChange={event => {
+    <Field label="控制面地址" htmlFor="s-cp-addr" hint="IP 或域名，端口默认 8080" error={errors.addr}><Input id="s-cp-addr" className={"in mono " + (errors.addr ? "bad" : "")} placeholder="203.0.113.10:8080" autoComplete="off" value={addr} disabled={connecting} onChange={event => {
       setAddr(event.target.value); setErrors({}); setCertificate(null); setFingerprintError(""); setConfirmed(false);
       request.current.generation++; request.current.probing = false; setProbing(false);
     }} {...fieldDescription("s-cp-addr", errors.addr, true)} /></Field>
-      <Field label="设备名" htmlFor="s-cp-name" hint="这台电脑在设备列表里叫什么；留空用主机名"><Input id="s-cp-name" className="in mono" autoComplete="off" value={name} onChange={event => setName(event.target.value)} disabled={connecting} {...fieldDescription("s-cp-name", undefined, true)} /></Field></div>
-    {add && <Field label="名称" htmlFor="s-cp-profile" hint="只能用字母、数字、- 和 _，1–32 个字符；名字已存在会提示换一个" error={errors.profile}><Input id="s-cp-profile" className={"in mono " + (errors.profile ? "bad" : "")} placeholder="work" autoComplete="off" value={profile} disabled={connecting} onChange={event => { setProfile(event.target.value); setErrors({}); }} {...fieldDescription("s-cp-profile", errors.profile, true)} /></Field>}
+    {add && <Field label="控制面名称" htmlFor="s-cp-profile" hint="本机用来记住并切换这套控制面的短标识。只能用字母、数字、- 和 _，1–32 个字符；已存在会提示换一个。" error={errors.profile}><Input id="s-cp-profile" className={"in mono " + (errors.profile ? "bad" : "")} placeholder="work" autoComplete="off" value={profile} disabled={connecting} onChange={event => { setProfile(event.target.value); setErrors({}); }} {...fieldDescription("s-cp-profile", errors.profile, true)} /></Field>}
+    <details className="adv"><summary>可选设置</summary><Field label="设备名" htmlFor="s-cp-name" hint="这台电脑在控制面设备列表里的显示名；留空用主机名"><Input id="s-cp-name" className="in mono" placeholder="留空用主机名" autoComplete="off" value={name} onChange={event => setName(event.target.value)} disabled={connecting} {...fieldDescription("s-cp-name", undefined, true)} /></Field></details>
     {error && <Callout tone="bad" title="接入失败"><div className="raw">{error}</div></Callout>}
     {fingerprintError && <Callout tone="bad" title="取指纹失败"><div className="raw">{fingerprintError}</div></Callout>}
     {probing && <ol className="plist" aria-busy="true"><ProgressRow state="run" title="连上控制面，取回证书指纹" /></ol>}
