@@ -172,8 +172,11 @@ test("N9 有改动时滚到底，保存条不压住最后一行底稿(Xray)", as
   await expect(page.locator(".zr-tpl")).toHaveCount(3);
   await retitle(page, "改一下");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
-  await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
-  await expect.poll(async () => { const r = await page.evaluate(() => ({ last: document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom, sb: document.querySelector("#sb").getBoundingClientRect().top })); return r.last - r.sb; }).toBeLessThanOrEqual(0);
+  // 异步正文会改变页面高度。每次在实际页底检查保存条是否遮挡。
+  await expect.poll(() => page.locator("main").evaluate(m => {
+    m.scrollTop = m.scrollHeight;
+    return document.querySelectorAll(".zr-tpl")[2].getBoundingClientRect().bottom - document.querySelector("#sb").getBoundingClientRect().top;
+  })).toBeLessThanOrEqual(0);
 });
 
 test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {

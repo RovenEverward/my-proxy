@@ -50,8 +50,8 @@ async function dimensions(page) {
 async function aligned(page, mode, version = VERSION, display = DISPLAY_VERSION) {
   const el = page.locator('.brand small');
   await expect(el).toHaveText(display);
-  await expect(el).toHaveCSS('font-size', '11px');
-  await expect(el).toHaveCSS('margin-top', '7.5px');
+  await expect(el).toHaveCSS('font-size', '11.5px');
+  await expect(el).toHaveCSS('margin-top', '6.5px');
   const style = await el.evaluate(e => {
     const s = getComputedStyle(e);
     return { family: s.fontFamily, faint: getComputedStyle(document.querySelector('.nav.on .ct')).color, overflow: s.textOverflow };

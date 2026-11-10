@@ -59,7 +59,7 @@ async function overview(page, platform, theme, extreme = false) {
 }
 
 for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
-  for (const [width, height] of [[900, 720], [1024, 768], [1024, 600], [640, 720]]) {
+  for (const [width, height] of [[900, 720], [1024, 768], [1024, 600], [640, 720], [1440, 900], [390, 844]]) {
     test(`${platform} ${theme} 总览 ${width}×${height}`, async ({ page }) => {
       await page.setViewportSize({ width, height });
       await overview(page, platform, theme);
@@ -72,7 +72,10 @@ for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
       const bounds = await main.evaluate(m => ({ x: m.scrollWidth - m.clientWidth, y: m.scrollHeight - m.clientHeight }));
       expect(bounds.x).toBeLessThanOrEqual(0);
       if (width >= 861 && height >= 720) expect(bounds.y).toBeLessThanOrEqual(0);
-      if (width < 861) expect(await page.locator(".ov-main").evaluate(e => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(1);
+      if (width < 861) {
+        expect(await page.locator(".ov-main").evaluate(e => getComputedStyle(e).gridTemplateColumns.split(" ").length)).toBe(1);
+        await expect(page.getByRole("link", { name: "查看节点" })).toBeInViewport({ ratio: 1 });
+      }
       if (height < 720) {
         expect(bounds.y).toBeGreaterThan(0);
         await main.evaluate(m => { m.scrollTop = m.scrollHeight; });

@@ -24,7 +24,7 @@ for (const scheme of ["light", "dark"]) {
     expect(await shown.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
     const svg = await (await page.request.get(await shown.evaluate(i => i.src))).text();
     expect(svg).toContain(`stroke="${scheme === "light" ? "#2F3033" : "#DDDEE0"}"`);
-    await expect(page.locator("body")).toHaveCSS("color", scheme === "light" ? "rgb(47, 48, 51)" : "rgb(221, 222, 224)");
+    await expect(page.locator("body")).toHaveCSS("color", scheme === "light" ? "rgb(28, 25, 23)" : "rgb(239, 237, 235)");
     const h = await shown.evaluate(i => i.getBoundingClientRect().height);
     expect(h).toBeGreaterThanOrEqual(20);
     if (process.env.SHOT_DIR) await page.locator("aside.side").screenshot({ path: `${process.env.SHOT_DIR}/sidebar-${scheme}.png` });

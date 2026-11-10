@@ -78,7 +78,7 @@ function rpPill(t, d = RP.d) {
   // 指向一个已不存在的策略组才是错误,用红色;直连/拦截/正常策略组一律灰底。
   const gone = !!t && t !== "DIRECT" && t !== "REJECT" && !g;
   const k = gone ? "err" : t === "DIRECT" ? "dir" : t === "REJECT" ? "rej" : "grp";
-  const icon = k === "dir" ? "↗ " : k === "rej" ? "⦸ " : !gone && g?.icon ? g.icon + " " : "";
+  const icon = k === "dir" ? ic("direct") : k === "rej" ? ic("ban") : !gone && g?.icon ? g.icon + " " : "";
   return H`<span class="rp-to ${k}"${raw(gone ? ' title="这个策略组已不存在"' : "")}>${icon}${rpTargetName(t, d)}${gone ? H`<span class="vh">（已不存在）</span>` : ""}</span>`;
 }
 const rpSet = (k, d = RP.d) => d.catalog.find(s => s.key === k);

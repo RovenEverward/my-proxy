@@ -8,6 +8,9 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "test:ui": "playwright test -c internal/ui/e2e",
+    "ui:check": "node scripts/check-ui-system.mjs && node scripts/sync-ui-icons.mjs --check",
+    "ui:icons:check": "node scripts/sync-ui-icons.mjs --check",
+    "ui:components": "python3 -m http.server 5179 --bind 127.0.0.1 --directory internal/ui/assets",
     "docs:shots": "node scripts/docs-shots.mjs"
   },
   "devDependencies": {

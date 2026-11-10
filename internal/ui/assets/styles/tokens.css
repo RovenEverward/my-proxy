@@ -1,0 +1,306 @@
+/* MPX token authority. Values are maintained here, not in page CSS. */
+@import url("/styles/terminus/fonts.css");
+
+/* Shared desktop UI sizes, based on the approved Terminus specimen.
+   Set data-density on html. Standard is the default.
+   Keep type sizes independent from density. Styles may select their own fonts.
+   Load Noto Sans SC in the project for Chinese text. */
+
+:root {
+  --ui-font-mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace;
+  /* Terminus's seven type steps. Use display only for an opening heading. */
+  --ui-font-size-display: 21px;
+  --ui-font-size-title: 15px;
+  --ui-font-size-section: var(--ui-font-size-title);
+  --ui-font-size-body: 14.5px;
+  --ui-font-size-navigation: 13.5px;
+  --ui-font-size-control: 13.5px;
+  --ui-font-size-caption: 12.5px;
+  --ui-font-size-meta: 11.5px;
+  --ui-font-size-micro: 10.5px;
+  --ui-font-size-code: var(--ui-font-size-meta);
+  --ui-line-height-ui: 1.4;
+  --ui-line-height-body: 1.47;
+  --ui-font-weight-normal: 400;
+  --ui-font-weight-medium: 500;
+  --ui-font-weight-semibold: 600;
+
+  --ui-space-0-5: 2px;
+  --ui-space-1: 4px;
+  --ui-space-1-5: 6px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-6: 24px;
+  --ui-space-8: 32px;
+  --ui-space-10: 40px;
+  --ui-space-12: 48px;
+  --ui-icon-size: 16px;
+  --ui-focus-width: 2px;
+  --ui-focus-offset: 2px;
+
+  /* Heights include borders and padding. Use rows as minimum heights. */
+  --ui-control-height: 32px;
+  --ui-search-height: 32px;
+  --ui-field-height: 40px;
+  --ui-icon-button-size: 30px;
+  --ui-control-padding-inline: 12px;
+  --ui-control-gap: 8px;
+  --ui-search-header-gap: 10px;
+  --ui-row-height: 30px;
+  --ui-row-two-line-height: 48px;
+  --ui-row-padding-block: 4px;
+  --ui-section-gap: 16px;
+  --ui-nav-padding-inline: 9px;
+  --ui-nav-row-gap: 1px;
+  --ui-nav-section-gap: 16px;
+}
+
+:root[data-density="compact"] {
+  --ui-control-height: 28px;
+  --ui-search-height: 28px;
+  --ui-field-height: 36px;
+  --ui-icon-button-size: 28px;
+  --ui-control-padding-inline: 8px;
+  --ui-control-gap: 6px;
+  --ui-search-header-gap: 8px;
+  --ui-row-height: 26px;
+  --ui-row-two-line-height: 44px;
+  --ui-row-padding-block: 2px;
+  --ui-section-gap: 12px;
+  --ui-nav-padding-inline: 7px;
+  --ui-nav-row-gap: 1px;
+  --ui-nav-section-gap: 12px;
+}
+
+:root[data-density="comfortable"] {
+  --ui-control-height: 36px;
+  --ui-search-height: 36px;
+  --ui-field-height: 44px;
+  --ui-icon-button-size: 36px;
+  --ui-control-padding-inline: 16px;
+  --ui-control-gap: 12px;
+  --ui-search-header-gap: 12px;
+  --ui-row-height: 38px;
+  --ui-row-two-line-height: 56px;
+  --ui-row-padding-block: 8px;
+  --ui-section-gap: 24px;
+  --ui-nav-padding-inline: 12px;
+  --ui-nav-row-gap: 2px;
+  --ui-nav-section-gap: 24px;
+}
+
+:root {
+  color-scheme: light;
+  --ui-font-ui: "Inter", "Noto Sans SC", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+
+  /* Surfaces stay neutral. The frame glow is an optional outer material. */
+  --ui-bg-canvas: #f8f8f5;
+  --ui-bg-surface: #ffffff;
+  --ui-bg-raised: #ffffff;
+  --ui-bg-sidebar: #f0f1f2;
+  --ui-bg-control: #ffffff;
+  --ui-bg-control-hover: #fafaf9;
+  --ui-bg-control-pressed: #f2f1ee;
+  --ui-bg-field: rgba(28, 25, 23, 0.05);
+  --ui-bg-field-focus: #ffffff;
+  --ui-text-primary: #1c1917;
+  --ui-text-secondary: #57534e;
+  --ui-text-muted: #706963;
+  --ui-text-disabled: #a8a29e;
+  --ui-border-subtle: rgba(28, 25, 23, 0.10);
+  --ui-border-strong: rgba(28, 25, 23, 0.19);
+  --ui-hover-bg: rgba(28, 25, 23, 0.06);
+  --ui-pressed-bg: rgba(28, 25, 23, 0.09);
+  --ui-selected-bg: rgba(28, 25, 23, 0.09);
+  --ui-selected-text: var(--ui-text-primary);
+  --ui-scrim: rgba(28, 25, 23, 0.22);
+
+  /* Each action state has a paired readable label. */
+  --ui-action-bg: #2c6dbb;
+  --ui-action-hover: #2763aa;
+  --ui-action-pressed: #225793;
+  --ui-action-text: #ffffff;
+  --ui-action-gradient: linear-gradient(180deg, #3273bf, var(--ui-action-bg));
+  --ui-action-glow: rgba(44, 109, 187, 0.26);
+  --ui-link: #225e9f;
+  --ui-focus-ring: #2c6dbb;
+  --ui-focus-halo: rgba(44, 109, 187, 0.12);
+  --ui-text-selection-bg: rgba(44, 109, 187, 0.18);
+  /* Current navigation is distinct from selection of objects or options. */
+  --ui-nav-current-bg: rgba(44, 109, 187, 0.15);
+  --ui-nav-current-text: #1f5794;
+  --ui-success-text: #257b49;
+  --ui-success-bg: #edf7f0;
+  --ui-presence-dot: #2eae6b;
+  --ui-warning-text: #805704;
+  --ui-warning-bg: #fbf4df;
+  --ui-danger-text: #b9322b;
+  --ui-danger-bg: #fcefeb;
+  --ui-danger-action: #b9322b;
+  --ui-danger-action-hover: #a32a25;
+  --ui-danger-action-pressed: #8e241f;
+  --ui-danger-action-text: #ffffff;
+  --ui-toast-bg: rgba(28, 25, 23, 0.94);
+  --ui-toast-text: #fafaf9;
+
+  /* Glass belongs to floating chrome, menus and toolbars. */
+  --ui-glass-bg: rgba(255, 255, 255, 0.72);
+  --ui-glass-strong-bg: rgba(255, 255, 255, 0.90);
+  --ui-glass-filter: blur(22px) saturate(1.8);
+  --ui-glass-edge: inset 0 0 0 0.5px rgba(255, 255, 255, 0.60), inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 0.5px rgba(28, 25, 23, 0.10);
+  --ui-shine: inset 0 1px 0 rgba(255, 255, 255, 0.90);
+  --ui-shadow-control: 0 0 0 0.5px rgba(28, 25, 23, 0.09), 0 1px 2px rgba(28, 25, 23, 0.06);
+  --ui-shadow-popover: var(--ui-glass-edge), 0 1px 3px rgba(28, 25, 23, 0.05), 0 12px 32px -10px rgba(28, 25, 23, 0.20);
+  --ui-shadow-dialog: 0 2px 8px rgba(28, 25, 23, 0.06), 0 32px 80px -24px rgba(28, 25, 23, 0.34);
+  --ui-shadow-sheet: 0 0 0 0.5px rgba(28, 25, 23, 0.08), 0 1px 2px rgba(28, 25, 23, 0.04), 0 10px 28px -14px rgba(28, 25, 23, 0.12);
+  --ui-shadow-action: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 1px 2px rgba(28, 25, 23, 0.10), 0 4px 12px -4px var(--ui-action-glow);
+  --ui-shadow-inset: inset 0 1px 2px rgba(28, 25, 23, 0.08);
+
+  --ui-radius-xs: 6px;
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 14px;
+  --ui-radius-xl: 18px;
+  --ui-radius-dialog: 22px;
+  --ui-radius-pill: 999px;
+  --ui-radius-control: var(--ui-radius-pill);
+  --ui-radius-field: var(--ui-radius-md);
+  --ui-radius-row: var(--ui-radius-md);
+  --ui-radius-container: var(--ui-radius-lg);
+  --ui-font-display: "EB Garamond", Georgia, "Noto Serif SC", "Songti SC", serif;
+
+  --ui-duration-tap: 70ms;
+  --ui-duration-fast: 150ms;
+  --ui-duration-base: 240ms;
+  --ui-duration-slow: 360ms;
+  --ui-duration-spring: 280ms;
+  --ui-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --ui-ease-pop: cubic-bezier(0.16, 1, 0.3, 1);
+  --ui-ease-glide: cubic-bezier(0.2, 0, 0, 1);
+  --ui-ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ui-press-scale: 0.97;
+  --ui-enter-offset: 4px;
+}
+
+/* Theme choice is explicit. The OS setting does not change the default. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-bg-canvas: #0f0e0d;
+  --ui-bg-surface: #1a1817;
+  --ui-bg-raised: #252220;
+  --ui-bg-sidebar: #171717;
+  --ui-bg-control: #2f2b29;
+  --ui-bg-control-hover: #36322f;
+  --ui-bg-control-pressed: #2a2725;
+  --ui-bg-field: rgba(250, 249, 247, 0.06);
+  --ui-bg-field-focus: #1a1817;
+  --ui-text-primary: #efedeb;
+  --ui-text-secondary: #b8b1ab;
+  --ui-text-muted: #a59c95;
+  --ui-text-disabled: #706861;
+  --ui-border-subtle: rgba(250, 249, 247, 0.09);
+  --ui-border-strong: rgba(250, 249, 247, 0.18);
+  --ui-hover-bg: rgba(250, 249, 247, 0.075);
+  --ui-pressed-bg: rgba(250, 249, 247, 0.11);
+  --ui-selected-bg: rgba(250, 249, 247, 0.11);
+  --ui-scrim: rgba(0, 0, 0, 0.50);
+  --ui-link: #91bdf0;
+  --ui-focus-ring: #91bdf0;
+  --ui-focus-halo: rgba(145, 189, 240, 0.16);
+  --ui-text-selection-bg: rgba(145, 189, 240, 0.30);
+  --ui-nav-current-bg: var(--ui-selected-bg);
+  --ui-nav-current-text: var(--ui-text-primary);
+  --ui-success-text: #80d7a1;
+  --ui-success-bg: #1c3325;
+  --ui-presence-dot: #3fc77e;
+  --ui-warning-text: #ebc76d;
+  --ui-warning-bg: #352c17;
+  --ui-danger-text: #ff9d96;
+  --ui-danger-bg: #3b211e;
+  --ui-glass-bg: rgba(43, 40, 37, 0.76);
+  --ui-glass-strong-bg: rgba(43, 40, 37, 0.94);
+  --ui-glass-edge: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 0 0 0.5px rgba(0, 0, 0, 0.60);
+  --ui-shine: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --ui-shadow-control: 0 0 0 0.5px rgba(250, 249, 247, 0.07), 0 1px 2px rgba(0, 0, 0, 0.50);
+  --ui-shadow-popover: var(--ui-glass-edge), 0 1px 3px rgba(0, 0, 0, 0.40), 0 12px 32px -10px rgba(0, 0, 0, 0.70);
+  --ui-shadow-dialog: 0 2px 8px rgba(0, 0, 0, 0.40), 0 32px 80px -24px rgba(0, 0, 0, 0.85);
+  --ui-shadow-sheet: 0 0 0 0.5px rgba(250, 249, 247, 0.07), 0 1px 2px rgba(0, 0, 0, 0.50);
+  --ui-shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+/* Components must use these values and disable repeating motion as needed. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ui-duration-tap: 0ms;
+    --ui-duration-fast: 0ms;
+    --ui-duration-base: 0ms;
+    --ui-duration-slow: 0ms;
+    --ui-duration-spring: 0ms;
+    --ui-press-scale: 1;
+    --ui-enter-offset: 0px;
+  }
+}
+
+:root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#2F3033;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
+--lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--r-card:12px;--flag-edge:rgba(0,0,0,.14);
+--ok:#16a34a;--warn:#8F6B00;--warn-ico:#C99700;--good:#4F9468;--bar-bad:#D24B45;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#FDF8E1;
+--ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace}
+[data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#DDDEE0;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
+--lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;--flag-edge:rgba(255,255,255,.22);
+--ok:#3fb950;--warn:#D4A72C;--warn-ico:#D4A72C;--good:#5A9A6E;--bar-bad:#DE5F5C;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#221D0B}
+
+:root{--t-k:#0b57d0;--t-s:#067d4a;--t-n:#b4530a;--t-b:#8a3ffc;--t-c:#8b8d94}
+[data-theme=dark]{--t-k:#7cacf8;--t-s:#6dd39e;--t-n:#f0a868;--t-b:#c4a5ff;--t-c:#6b6e76}
+
+/* Compatibility bindings preserve existing pages during migration. */
+:root {
+  --font-body: var(--ui-font-size-body);
+  --line-body: var(--ui-line-height-body);
+  --font-control: var(--ui-font-size-control);
+  --font-control-sm: var(--ui-font-size-control);
+  --font-status: var(--ui-font-size-navigation);
+  --control-height: var(--ui-control-height);
+  --control-height-sm: 28px;
+  --control-radius: 8px;
+  --field-height: 34px;
+  --field-radius: 8px;
+  --icon-button-size: 32px;
+  --button-primary-bg: var(--ink);
+  --button-primary-text: var(--canvas);
+  --ui-icon-stroke: 1.75;
+}
+/* The route owns this profile. Overlays inherit it from the root. */
+:root[data-ui="workspace"] {
+  --base: var(--ui-bg-sidebar);
+  --canvas: var(--ui-bg-surface);
+  --panel: var(--ui-bg-canvas);
+  --stone: var(--ui-bg-field);
+  --hover: var(--ui-hover-bg);
+  --ink: var(--ui-text-primary);
+  --ink2: var(--ui-text-secondary);
+  --muted: var(--ui-text-muted);
+  --faint: var(--ui-text-disabled);
+  --ring: var(--ui-focus-ring);
+  --sans: var(--ui-font-ui);
+  --r-card: var(--ui-radius-container);
+  --lift: var(--ui-shadow-dialog);
+  --font-body: var(--ui-font-size-body);
+  --line-body: var(--ui-line-height-body);
+  --font-control: var(--ui-font-size-control);
+  --font-control-sm: var(--ui-font-size-control);
+  --font-status: var(--ui-font-size-navigation);
+  --control-height-sm: var(--ui-control-height);
+  --control-radius: var(--ui-radius-control);
+  --field-height: var(--ui-field-height);
+  --field-radius: var(--ui-radius-field);
+  --icon-button-size: var(--ui-icon-button-size);
+  --button-primary-bg: var(--ui-action-bg);
+  --button-primary-text: var(--ui-action-text);
+}
+:root[data-ui="workspace"][data-theme="dark"] {
+  --panel: var(--ui-bg-raised);
+  --stone: var(--ui-bg-control);
+  --warn-bg: var(--ui-warning-bg);
+  --warn: var(--ui-warning-text);
+}
