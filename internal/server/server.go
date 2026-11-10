@@ -16,6 +16,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
+	"github.com/RovenEverward/my-proxy/internal/source"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -68,8 +69,9 @@ type UpdateRefresher interface {
 
 // Server 持有控制面运行期需要的东西。
 type Server struct {
-	store *store.Store
-	token string
+	store   *store.Store
+	sources *source.Manager
+	token   string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
 	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
@@ -144,6 +146,7 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 	if s.dbPath != "" {
 		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
 	}
+	s.sources = source.NewManager(st, s.invalidateSubCache)
 	s.resolveXray = s.defaultResolveXray
 	s.upgradeXray = s.defaultUpgradeXray
 	s.routes()
@@ -188,6 +191,7 @@ func (s *Server) routes() {
 	s.metadataRoutes(api)
 	s.routingRoutes(api)
 	s.planRoutes(api)
+	s.sourceRoutes(api)
 	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
 	api.HandleFunc("GET /api/status", s.handleStatus)

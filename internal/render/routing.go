@@ -201,7 +201,7 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 	}
 	// 和 SingBox 一样重建节点 tag(含保留名与 WireGuard 端点)。
 	nodeUsed := map[string]struct{}{"proxy": {}, "auto": {}, "direct": {}, "block": {}}
-	tagOf := map[[3]int64]string{}
+	tagOf := map[EndpointKey]string{}
 	wgTag := map[string]bool{}
 	wg := 0
 	for _, ep := range eps {
@@ -213,7 +213,7 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 		} else {
 			t = uniqueTag(ep.Remark, ep.Address, nodeUsed)
 		}
-		tagOf[[3]int64{ep.NodeID, ep.InboundID, ep.HostID}] = t
+		tagOf[ep.Key()] = t
 	}
 	keep := []any{}
 	used := map[string]struct{}{}
@@ -237,7 +237,7 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 	for _, g := range p.Groups {
 		tags, measured := []string{}, []string{}
 		for _, ep := range g.Members {
-			t := tagOf[[3]int64{ep.NodeID, ep.InboundID, ep.HostID}]
+			t := tagOf[ep.Key()]
 			tags = append(tags, t)
 			if !wgTag[t] {
 				measured = append(measured, t)

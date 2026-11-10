@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs]
-verified: 2026-11-09 @ 0cdf26e + working tree
+verified: 2026-11-09 @ eca80b7 + UC-03
 ---
 # 本机入口：CLI、mpx ui、设备接入
 
@@ -36,6 +36,7 @@ flowchart LR
    路由按目标视图立即切换标题、面包屑和加载框架，`main` 的 `aria-busy` 随框架一起输出；切换视图归零滚动，同一视图刷新保留位置。失败留在目标页重试，过期响应丢弃；后台轮询失败只提示并保留数据，手动刷新失败保留页面错误与重试。分流加载框架保留标签和规则作用域，只将列表换为骨架。异步抽屉通过 `readDrawer` 先打开目标标题，100ms 后仍在读取才显示骨架；关闭、换页或换抽屉后不再提交旧结果。覆盖层关闭与路由变化分开处理，换页关闭旧抽屉不改写目标地址。订阅同页锚点保留草稿并立即定位，控制面切换先显示连接中，成功后重载。守卫见 `nav-loading.spec.mjs`。
    异步交互通过 `withFeedback` 立即显示进行中状态，原生控件值不冒充保存成功；失败恢复原选择并保留原页面错误提示。页面 `load` 的 `read` 只在明确的局部刷新中复用当前页面成功整页读取的快照，键包含完整接口路径、查询参数、方法和只读请求体；作用域与筛选不会串用。只有当前代次的完整读取可替换快照，局部读取返回副本且不回写。写开始、完成均失效相关资源；用户列表、计数和套餐人数一起失效。手动刷新、切页和每 30 秒轮询仍读远端，不复用旧请求快照；切页清空请求快照，展示缓存独立保留。`node scripts/ui-interaction-audit.mjs` 在现有 e2e 路径中加入 150–300ms 响应延迟，输出交互反馈、完成和接口耗时表；正式延迟守卫在 `interaction-latency.spec.mjs`。
    本机转发与 CLI 的连接池每主机保留最多 16 个空闲连接，证书钉住和 HTTP/1.1 不变；控制面仅对已鉴权管理 JSON 协商 gzip，大于等于 1KB 才压缩，解压字节保持原样。备份流和订阅不经过 JSON 压缩。相关守卫见 `data-reuse.spec.mjs`。
+   外部订阅从订阅页进入，页面通过新增来源接口管理配置、授权和刷新。对应命令为 `mpx source`。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
 3. 设备接入：控制面自签证书，CLI 记指纹（像 SSH 的 known_hosts）；`mpx connect` 用设备密码换一个设备 token，每台设备各自可吊销（[internal/pin](../../internal/pin/)，[设备接入方案](../internal/device-connect-rfc.md)）。
 4. 桌面程序（v0.9.0 起）用 MyGo 把 `mpx ui` 装进窗口，不扩权：桌面构建无参数启动就开窗，未接入时窗口里做首次安装或接入已有控制面，一键更新的本机一层升级桌面程序自己（[internal/cli/app.go](../../internal/cli/app.go)，[桌面程序方案](../internal/desktop-rfc.md)）。
 

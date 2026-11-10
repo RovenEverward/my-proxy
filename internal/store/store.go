@@ -324,6 +324,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateRouting(); err != nil {
 		return err
 	}
+	if err := s.migrateSources(); err != nil {
+		return err
+	}
 	// 一次性数据迁移的记号列:routing_state 由 migrateRouting 建好,行可能还是空的,
 	// 记号写进路由状态那一行(见 markMigrationDone)。
 	if err := s.addColumnIfMissing("routing_state", "migration_marks",

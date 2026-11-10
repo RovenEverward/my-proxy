@@ -370,7 +370,7 @@ button.warn:hover { background: var(--bad); color: #fff; }
 <p class="eyebrow">MPX 订阅</p>
 <div class="head"><h1>{{.Username}} 的订阅</h1><span class="badge {{.Status}}" aria-label="状态:{{.StatusText}}">{{.StatusText}}</span></div>
 <div class="stats">
-<div class="stat"><span class="k">流量</span><span class="v">{{.Usage}}</span>{{if .BarShow}}<span class="bar" title="{{.Percent}}%"><i style="width:{{.Percent}}%"></i></span>{{end}}</div>
+<div class="stat"><span class="k">流量（仅统计自建节点）</span><span class="v">{{.Usage}}</span>{{if .BarShow}}<span class="bar" title="{{.Percent}}%"><i style="width:{{.Percent}}%"></i></span>{{end}}</div>
 <div class="stat"><span class="k">到期</span><span class="v">{{.ExpireText}}</span></div>
 </div>
 </section>

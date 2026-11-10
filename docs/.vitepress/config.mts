@@ -52,6 +52,7 @@ export default defineConfig({
         items: [
           { text: '用套餐分配节点', link: '/guides/plans' },
           { text: '设置分流规则', link: '/guides/routing' },
+          { text: '混合外部订阅', link: '/guides/external-sources' },
           { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
           { text: '在多台设备上管理', link: '/guides/devices' },
           { text: '备份控制面', link: '/guides/backup' }

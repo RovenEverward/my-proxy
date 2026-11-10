@@ -74,7 +74,13 @@ type Endpoint struct {
 	NodeID    int64
 	InboundID int64
 	HostID    int64 // zero identifies the default inbound exposure
-	Remark    string
+	// 外部端点的身份(UC-03):SourceID>0 表示非托管节点,SourceKey 是连接
+	// 参数指纹,SourceRegion 是来源声明的地区(空表示未知)。托管端点三个
+	// 字段都是零值。
+	SourceID     int64
+	SourceKey    string
+	SourceRegion string
+	Remark       string
 	// AutoRemark 表示 Remark 是默认生成的(host 没写 remark),可以加协议后缀。
 	AutoRemark bool
 	Address    string
@@ -82,9 +88,16 @@ type Endpoint struct {
 
 	Protocol          model.Protocol
 	UUID              string // vless / vmess / tuic
-	Password          string // trojan / shadowsocks-2022 / hysteria2 / tuic 的用户密钥
+	Password          string // trojan / shadowsocks / hysteria2 / tuic 的用户密钥
 	CongestionControl string // TUIC:空表示 bbr
 	Flow              string // vless
+	// SSMethod 是 shadowsocks 的加密方式;空值回落自建默认
+	// 2022-blake3-aes-128-gcm。外部源可提供 classic method。
+	SSMethod string
+	// VMessSecurity 与 VMessAlterID 是 vmess 的用户加密与 alterId;
+	// 零值回落 auto / 0。
+	VMessSecurity string
+	VMessAlterID  int
 
 	// Wireguard 的字段单独放:它是 L3,不需要传输/安全层,复用 Path/Host 会让
 	// 渲染器分不清「该写哪个键」。

@@ -70,7 +70,7 @@ function devicesTab(head, d) {
     }
 
 function backupTab(head) {
-    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥，打包成一个归档。里面有全部用户的订阅 token，妥善保管。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
+    return H`${head}<div class="grid g2"><div class="card pad18"><b class="b6">下载备份</b><p class="sub mt6 mb14">一份数据库快照加控制面密钥，打包成一个归档。里面有用户订阅 token、外部订阅地址及节点凭证，妥善保管。</p><button class="btn pri" data-act="backup">${ic("dl")}下载备份</button></div>
       <div class="card pad18"><b class="b6">从备份恢复</b><p class="sub mt6 mb14">从备份恢复暂不支持在窗口里操作，见文档「备份控制面」。恢复会整库替换并重启控制面，务必先确认备份文件。</p></div></div>`;
 }
 
@@ -522,7 +522,7 @@ PAGES.sub = {
     return { settings, builtin, users, preview, tpl };
   },
   render(d) {
-    const head = sub => H`<div class="ph r-ph"><h1>订阅</h1><span class="sp"></span>${sub}</div>`;
+    const head = sub => H`<div class="ph r-ph"><h1>订阅</h1><span class="sp"></span><a class="btn" href="#sources">管理外部订阅</a>${sub}</div>`;
     if (!d) return H`${head("")}<div class="card"><table><tbody>${skRows(6, 2)}</tbody></table></div>`;
     if (SUB && !changes().length && !SUB.saving) { SUB.orig = clone(d.settings); SUB.draft = clone(d.settings); }
     if (!SUB) SUB = { orig: clone(d.settings), draft: clone(d.settings), err: "", fieldErrors: {}, saving: false, leaveTarget: null };

@@ -46,10 +46,14 @@ func (s *Server) routingPlan(user *model.User, eps []render.Endpoint) (render.Ro
 	if err != nil {
 		return p, err
 	}
+	origins, err := s.store.ListGroupSources()
+	if err != nil {
+		return p, err
+	}
 	for _, g := range groups {
 		rg := render.RoutingGroup{ProxyGroup: g}
 		for i, ep := range eps {
-			if g.Admits(cands[i]) {
+			if g.Admits(cands[i]) && model.OriginAllowed(origins[g.ID], ep.SourceID) {
 				rg.Members = append(rg.Members, ep)
 			}
 		}
@@ -101,6 +105,10 @@ func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGrou
 	}
 	out := make([]model.GroupCandidate, len(eps))
 	for i, ep := range eps {
+		if ep.SourceID > 0 {
+			out[i] = model.GroupCandidate{Region: ep.SourceRegion, Protocol: render.ProtocolShort(ep)}
+			continue
+		}
 		m := model.EffectiveLocationMetadata(nodeMeta[ep.NodeID], hostMeta[ep.HostID])
 		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep), Capabilities: caps[[2]int64{ep.InboundID, ep.HostID}]}
 	}

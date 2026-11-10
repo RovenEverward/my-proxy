@@ -189,13 +189,17 @@ func xrayNode(ep Endpoint, tag string) (map[string]any, error) {
 		server["users"] = []any{user}
 		out["settings"] = map[string]any{"vnext": []any{server}}
 	case model.ProtocolVMess:
-		server["users"] = []any{map[string]any{"id": ep.UUID, "security": "auto"}}
+		user := map[string]any{"id": ep.UUID, "security": vmessSecurity(ep)}
+		if ep.VMessAlterID != 0 {
+			user["alterId"] = ep.VMessAlterID
+		}
+		server["users"] = []any{user}
 		out["settings"] = map[string]any{"vnext": []any{server}}
 	case model.ProtocolTrojan:
 		server["password"] = ep.Password
 		out["settings"] = map[string]any{"servers": []any{server}}
 	case model.ProtocolShadowsocks:
-		server["method"] = "2022-blake3-aes-128-gcm"
+		server["method"] = ssMethod(ep)
 		server["password"] = ep.Password
 		out["settings"] = map[string]any{"servers": []any{server}}
 	case model.ProtocolWireguard:

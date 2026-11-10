@@ -326,9 +326,9 @@ func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
 	case model.ProtocolVMess:
 		p.Type = "vmess"
 		p.UUID = ep.UUID
-		alterID := 0
+		alterID := ep.VMessAlterID
 		p.AlterID = &alterID
-		p.Cipher = "auto"
+		p.Cipher = vmessSecurity(ep)
 		p.Network = string(transport)
 	case model.ProtocolTrojan:
 		p.Type = "trojan"
@@ -336,9 +336,10 @@ func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
 		p.Network = string(transport)
 	case model.ProtocolShadowsocks:
 		p.Type = "ss"
-		p.Cipher = "2022-blake3-aes-128-gcm"
+		p.Cipher = ssMethod(ep)
 		p.Password = ep.Password
-		p.Network = string(transport)
+		// ss 没有传输层:mihomo 在 ss 上不读 network,写了反而可能被认为
+		// 非法组合;只有 tcp,不写。
 	case model.ProtocolWireguard:
 		p.Type = "wireguard"
 		// xray 侧的密钥是无填充 RawURL base64,mihomo 只认带填充的标准 base64。

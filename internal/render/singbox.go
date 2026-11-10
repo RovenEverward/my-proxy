@@ -194,12 +194,12 @@ func singboxNode(ep Endpoint, tag string) (map[string]any, error) {
 		}
 	case model.ProtocolVMess:
 		node["uuid"] = ep.UUID
-		node["security"] = "auto"
-		node["alter_id"] = 0
+		node["security"] = vmessSecurity(ep)
+		node["alter_id"] = ep.VMessAlterID
 	case model.ProtocolTrojan:
 		node["password"] = ep.Password
 	case model.ProtocolShadowsocks:
-		node["method"] = "2022-blake3-aes-128-gcm"
+		node["method"] = ssMethod(ep)
 		node["password"] = ep.Password
 	}
 

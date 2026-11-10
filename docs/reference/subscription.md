@@ -37,4 +37,6 @@ Subscription-Userinfo: upload=0; download=0; total=107374182400; expire=17987327
 | `Profile-Title` | 设置 `profile_title`，变量替换后 |
 | `Profile-Update-Interval` | 设置 `update_interval`（小时） |
 | `Profile-Web-Page-Url` | 该用户的订阅页地址 |
-| `Subscription-Userinfo` | 上传、下载、总量（字节），到期时间（Unix 秒） |
+| `Subscription-Userinfo` | MPX 自建节点的上传、下载、总量（字节），以及 MPX 用户到期时间（Unix 秒） |
+
+混合外部来源后，原订阅地址保持不变。外部节点须按用户显式授权。流量头不包含外部来源的用量或额度，详见[混合外部订阅](../guides/external-sources)。

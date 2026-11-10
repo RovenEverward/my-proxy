@@ -15,7 +15,7 @@ let readSnapshot = { page: null, values: new Map() };
 let refreshTimer = 0, refreshQueued = false;
 const copyRead = value => value == null ? value : structuredClone(value);
 const resourceOf = path => new URL(path, location.origin).pathname.split('/')[2];
-const isReadRequest = (path, init) => !init.method || init.method === "GET" || /\/proxy-groups\/preview$|\/rules\/test$|\/settings\/test-webhook$|^\/local\/(profiles|setup\/check|relabel\/plan)$/.test(path);
+const isReadRequest = (path, init) => !init.method || init.method === "GET" || /\/proxy-groups\/preview(?:\?|$)|\/rules\/test$|\/settings\/test-webhook$|^\/local\/(profiles|setup\/check|relabel\/plan)$/.test(path);
 // 成功页的展示缓存与局部请求快照职责不同：前者用于返回先显示，后者用于原地免重读。
 // 只保留本会话最近 16 个完整读取，缓存取出与存入均复制，页面草稿不回写缓存。
 const viewCache = new Map();
@@ -38,7 +38,7 @@ function invalidateReads(path) {
     nodes: ["nodes", "inbounds", "hosts", "proxy-groups", "plans"],
     inbounds: ["inbounds", "hosts", "nodes", "plans", "users", "proxy-groups"],
     hosts: ["hosts", "inbounds", "nodes", "plans", "users", "proxy-groups"],
-    settings: ["settings", "users"], rules: ["rules"], "proxy-groups": ["proxy-groups", "routing"], devices: ["devices"], "device-password": ["devices"] };
+    settings: ["settings", "users"], sources: ["sources", "users", "proxy-groups", "routing"], rules: ["rules"], "proxy-groups": ["proxy-groups", "routing", "users"], devices: ["devices"], "device-password": ["devices"] };
   const affected = resource && dependencies[resource] ? new Set(dependencies[resource]) : null;
   const invalidPath = entryPath => {
     let invalid = !affected || affected.has(resourceOf(entryPath));

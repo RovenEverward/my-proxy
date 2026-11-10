@@ -73,6 +73,9 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	task := control.NewTask(ctrl, st, logger, opt.Interval)
 
 	srv := New(st, opt.Token, logger, opt.DBPath)
+	sourceDone := make(chan struct{})
+	go func() { defer close(sourceDone); srv.sources.Run(ctx) }()
+	defer func() { stopWorkers(); <-sourceDone; srv.sources.Close() }()
 	// 控制面连节点的密钥放在数据目录下:systemd 的 StateDirectory=mpx 保证它有、
 	// 权限对,而且备份/迁移时跟着库一起走,不会留在某个 home 里找不到。
 	srv.sshKeyPath = filepath.Join(filepath.Dir(opt.DBPath), ".ssh", "id_ed25519")

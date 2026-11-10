@@ -370,6 +370,7 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 type previewEntry struct {
 	NodeID       int64    `json:"node_id"`
+	SourceID     int64    `json:"source_id,omitempty"`
 	InboundID    int64    `json:"inbound_id"`
 	HostID       int64    `json:"host_id"`
 	Name         string   `json:"name"`
@@ -389,7 +390,27 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.Normalize()
-	eps, err := s.previewEndpointsFor(r.URL.Query().Get("plan"))
+	var eps []render.Endpoint
+	var err error
+	if name := strings.TrimSpace(r.URL.Query().Get("user")); name != "" {
+		if r.URL.Query().Get("plan") != "" {
+			writeError(w, http.StatusBadRequest, "用户与套餐预览不能同时指定")
+			return
+		}
+		u, getErr := s.store.GetUser(name)
+		if getErr != nil {
+			s.writeStoreError(w, getErr, "用户")
+			return
+		}
+		f, ok := previewFormat(w, r)
+		if !ok {
+			return
+		}
+		set, setErr := s.subscriptionEndpointsFor(u, f)
+		eps, err = set.Endpoints, setErr
+	} else {
+		eps, err = s.previewEndpointsFor(r.URL.Query().Get("plan"))
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, errInvalidPlanQuery):
@@ -409,10 +430,29 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "入口")
 		return
 	}
+	var origins []string
+	if r.URL.Query().Has("sources") {
+		if raw := r.URL.Query().Get("sources"); raw != "" {
+			origins = strings.Split(raw, ",")
+		}
+		if err := model.ValidateSourceOrigins(origins); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if g.ID > 0 {
+		origins, err = s.store.GetGroupSources(g.ID)
+		if err != nil {
+			s.writeStoreError(w, err, "策略组")
+			return
+		}
+	}
 	out := []previewEntry{}
 	for i, ep := range eps {
 		c := cands[i]
-		e := previewEntry{NodeID: ep.NodeID, InboundID: ep.InboundID, HostID: ep.HostID, Name: ep.Remark, Protocol: c.Protocol, Region: c.Region, Tags: c.Tags, Admitted: g.Admits(c)}
+		e := previewEntry{NodeID: ep.NodeID, SourceID: ep.SourceID, InboundID: ep.InboundID, HostID: ep.HostID, Name: ep.Remark, Protocol: c.Protocol, Region: c.Region, Tags: c.Tags, Admitted: g.Admits(c) && model.OriginAllowed(origins, ep.SourceID)}
+		if !model.OriginAllowed(origins, ep.SourceID) {
+			e.Reasons = append(e.Reasons, "来源不符")
+		}
 		for _, t := range model.CapabilityTargets {
 			if c.Capabilities[t] {
 				e.Capabilities = append(e.Capabilities, t)
