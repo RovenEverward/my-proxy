@@ -3,12 +3,17 @@ package ui
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 type seen struct {
@@ -197,7 +202,7 @@ func TestOriginCheck(t *testing.T) {
 func TestSecurityHeadersAndAssets(t *testing.T) {
 	s, _, _, c := rig(t)
 	w := do(s, "GET", "/", c)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "/app.js") {
+	if w.Code != http.StatusOK {
 		t.Fatalf("首页: %d", w.Code)
 	}
 	csp := w.Header().Get("Content-Security-Policy")
@@ -209,22 +214,117 @@ func TestSecurityHeadersAndAssets(t *testing.T) {
 	if strings.Contains(csp, "unsafe-eval") || strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
 		t.Error("CSP 不能放行行内脚本或 eval")
 	}
-	for _, p := range []string{"/app.js", "/app.css", "/boot.js", "/icons.js", "/components.js", "/components.html", "/styles/tokens.css", "/icons/lucide/house.svg", "/conn.js", "/doctor.js", "/fonts/MonaSansVF.woff2", "/flags/jp.svg"} {
-		if w := do(s, "GET", p, c); w.Code != 200 {
-			t.Errorf("%s: %d", p, w.Code)
+	checked := make(map[string]bool)
+	checkAsset := func(assetPath string) {
+		if checked[assetPath] {
+			return
+		}
+		checked[assetPath] = true
+		response := do(s, "GET", assetPath, c)
+		if response.Code != http.StatusOK {
+			t.Errorf("页面资产 %s: %d", assetPath, response.Code)
+			return
+		}
+		parsed, err := url.Parse(assetPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mediaType, _, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
+		if err != nil {
+			t.Errorf("%s 的 Content-Type 无效: %v", assetPath, err)
+			return
+		}
+		switch path.Ext(parsed.Path) {
+		case ".js", ".mjs":
+			if mediaType != "text/javascript" && mediaType != "application/javascript" {
+				t.Errorf("%s 要以 JavaScript 返回,实际 %s", assetPath, mediaType)
+			}
+		case ".css":
+			if mediaType != "text/css" {
+				t.Errorf("%s 要以 CSS 返回,实际 %s", assetPath, mediaType)
+			}
 		}
 	}
-	if w := do(s, "GET", "/nope", c); w.Code != 404 {
+	for _, entryPath := range []string{"/", "/components.html"} {
+		response := do(s, "GET", entryPath, c)
+		if response.Code != http.StatusOK {
+			t.Fatalf("页面 %s: %d", entryPath, response.Code)
+		}
+		base := &url.URL{Scheme: "http", Host: "127.0.0.1:7480", Path: entryPath}
+		tokens := html.NewTokenizer(strings.NewReader(response.Body.String()))
+		scripts, styles := 0, 0
+		for {
+			kind := tokens.Next()
+			if kind == html.ErrorToken {
+				if err := tokens.Err(); err != io.EOF {
+					t.Fatalf("读取 %s 的 HTML: %v", entryPath, err)
+				}
+				break
+			}
+			if kind != html.StartTagToken && kind != html.SelfClosingTagToken {
+				continue
+			}
+			tag := tokens.Token()
+			attributes := make(map[string]string)
+			for _, attribute := range tag.Attr {
+				attributes[attribute.Key] = attribute.Val
+				if strings.HasPrefix(attribute.Key, "on") {
+					t.Errorf("%s 的 %s 有行内事件 %s", entryPath, tag.Data, attribute.Key)
+				}
+			}
+			var reference string
+			switch tag.Data {
+			case "script":
+				scripts++
+				reference = attributes["src"]
+				if strings.TrimSpace(reference) == "" {
+					t.Errorf("%s 有行内脚本", entryPath)
+					continue
+				}
+			case "link":
+				reference = attributes["href"]
+				if attributes["rel"] == "stylesheet" {
+					styles++
+				}
+			default:
+				continue
+			}
+			if reference == "" {
+				continue
+			}
+			ref, err := url.Parse(reference)
+			if err != nil {
+				t.Errorf("%s 的资产引用 %q 无效: %v", entryPath, reference, err)
+				continue
+			}
+			resolved := base.ResolveReference(ref)
+			if resolved.Scheme != base.Scheme || resolved.Host != base.Host {
+				t.Errorf("%s 引用了非同源资产 %q", entryPath, reference)
+				continue
+			}
+			checkAsset(resolved.RequestURI())
+		}
+		if scripts == 0 || styles == 0 {
+			t.Errorf("%s 必须引用产品脚本和样式,实际 %d 个脚本、%d 份样式", entryPath, scripts, styles)
+		}
+	}
+	// Include split chunks, even when an entry uses a dynamic import.
+	if err := fs.WalkDir(assets, "assets", func(file string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && (path.Ext(file) == ".js" || path.Ext(file) == ".mjs" || path.Ext(file) == ".css") {
+			checkAsset(strings.TrimPrefix(file, "assets"))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, assetPath := range []string{"/styles/tokens.css", "/icons/lucide/house.svg", "/fonts/MonaSansVF.woff2", "/flags/jp.svg"} {
+		checkAsset(assetPath)
+	}
+	if w := do(s, "GET", "/nope", c); w.Code != http.StatusNotFound {
 		t.Errorf("不存在的路径应 404,得到 %d", w.Code)
-	}
-	// 页面里不能有行内脚本(CSP 会拦,写了也白写)
-	idx, _ := assets.ReadFile("assets/index.html")
-	if strings.Contains(string(idx), "<script>") || strings.Contains(string(idx), " onclick=") {
-		t.Error("index.html 里有行内脚本")
-	}
-	js, _ := assets.ReadFile("assets/app.js")
-	if strings.Contains(string(js), "onclick=") {
-		t.Error("app.js 生成了行内事件处理器")
 	}
 }
 

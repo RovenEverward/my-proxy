@@ -1,0 +1,70 @@
+/* Extracted verbatim from assets/app.css (rules unchanged). */
+.kbd{font:500 var(--ui-font-size-meta) var(--mono);padding:1px 5px;border-radius:5px;background:var(--stone);color:var(--muted)}
+.search{display:flex;align-items:center;gap:8px;height:32px;width:260px;padding:0 10px;border-radius:8px;background:var(--stone);color:var(--faint);font-size:var(--ui-font-size-body)}
+.search input{border:0;outline:0;background:none;flex:1;min-width:0;color:var(--ink)}
+.search:focus-within{box-shadow:0 0 0 3px var(--ring)}
+.ib{display:inline-grid;place-items:center;width:var(--icon-button-size);height:var(--icon-button-size);border:0;border-radius:var(--control-radius);background:none;color:var(--muted);cursor:pointer}.ib:hover{background:var(--hover);color:var(--ink)}.ib svg{width:16px;height:16px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:var(--control-height);padding:0 12px;border:0;border-radius:var(--control-radius);background:var(--stone);font-weight:520;font-size:var(--font-control);cursor:pointer;white-space:nowrap;transition:transform 140ms var(--ease),background 120ms}
+.btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}.btn svg{width:14px;height:14px}
+.btn.pri{background:var(--button-primary-bg);color:var(--button-primary-text)}.btn.pri:hover{opacity:.9}
+/* aria-disabled 的按钮仍可聚焦(读屏读得到),但不许再看起来能按:去掉悬停高亮和点击缩放,
+   悬停/键盘聚焦时用 data-tip 显示原因。 */
+.btn[aria-disabled=true]:hover{background:var(--stone)}
+[aria-disabled=true]:active{transform:none}
+[aria-disabled=true][data-tip]{position:relative}
+[aria-disabled=true][data-tip]:hover::after,[aria-disabled=true][data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);z-index:60;padding:5px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:var(--ui-font-size-caption);font-weight:400;line-height:1.4;white-space:nowrap;box-shadow:0 4px 14px #0003}
+.btn.danger{background:var(--bad);color:#fff}.btn.danger:hover,.btn.danger:focus-visible{background:var(--bad);color:#fff}.btn.ghost{background:none;color:var(--muted)}.btn.ghost:hover{background:var(--hover);color:var(--ink)}
+.btn.sm{height:var(--control-height-sm);padding:0 10px;font-size:var(--font-control-sm)}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--stone)}
+.seg button{height:26px;padding:0 10px;border:0;border-radius:6px;background:none;color:var(--muted);font-size:var(--ui-font-size-control);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.seg button.on{background:var(--canvas);color:var(--ink);font-weight:540}.seg em{font:normal 500 var(--ui-font-size-meta) var(--mono);color:var(--faint)}
+/* forms */
+.field{display:grid;gap:6px;margin-bottom:14px;align-content:start}.field label{font-size:var(--ui-font-size-control);font-weight:530}.field .h{font-size:var(--ui-font-size-caption);color:var(--muted)}
+.in{height:var(--field-height);padding:0 10px;border-radius:var(--field-radius);border:0;background:var(--stone);outline:0;width:100%;transition:box-shadow 120ms,background 120ms;font-size:var(--ui-font-size-body)}
+.in:focus{box-shadow:0 0 0 3px var(--ring);background:var(--canvas)}
+textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:var(--ui-font-size-body);line-height:1.6;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--stone);font-size:var(--ui-font-size-control);cursor:pointer}
+.chip.on{background:var(--ink);color:var(--canvas);font-weight:540}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three{display:grid;grid-template-columns:96px minmax(0,1fr) 120px;gap:8px}
+.drawer .db .btn{justify-content:center}code,.mono,.cmd,textarea.in{font-variant-ligatures:none;font-feature-settings:"liga" 0,"calt" 0}
+.ib svg.sm{width:13px;height:13px}.btn[disabled]{opacity:.45;cursor:default}
+/* 危险按钮禁用时是灰底浅灰字(不是淡红),可点时才变实心红。 */
+.btn.danger[disabled],.btn.danger[disabled]:hover{background:var(--stone);color:var(--faint);opacity:1}
+.btn.busy{position:relative;color:transparent}.btn.busy::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-color:var(--canvas) transparent var(--canvas) var(--canvas);animation:spin .7s linear infinite}
+.btn:not(.pri):not(.danger).busy::after{border-color:var(--ink) transparent var(--ink) var(--ink)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.chip input{position:absolute;opacity:0;pointer-events:none}.chip{position:relative;user-select:none;font-size:var(--ui-font-size-control)}
+.chip:has(input:checked){background:var(--ink);color:var(--canvas);font-weight:540}
+.chip:has(input:disabled){opacity:.45;cursor:default}
+.chip:has(input:focus-visible){outline:2px solid var(--ink);outline-offset:2px}
+.search input::-webkit-search-cancel-button{display:none}
+.in.bad{box-shadow:0 0 0 3px color-mix(in srgb,var(--bad) 30%,transparent)}
+[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+.search.in-card{width:220px;height:30px}
+.chk{display:flex;gap:8px;align-items:center;font-size:var(--ui-font-size-control);color:var(--ink2)}
+.btn:focus-visible,.ib:focus-visible,.seg button:focus-visible,.tabs a:focus-visible,.nav:focus-visible,.mnav a:focus-visible,.rp-start:focus-visible,.lnk:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.sw input:focus-visible+i{outline:2px solid var(--ink);outline-offset:2px}
+.ib.sm{width:24px;height:24px;flex:none}
+@media (max-width:860px){.search.in-card{display:flex;width:100%;margin-top:6px}.tb{flex-wrap:wrap}}
+.search svg{width:14px;height:14px;flex:none}
+select.in{appearance:none;-webkit-appearance:none;padding-right:30px;cursor:pointer}
+select.in:disabled{cursor:default;opacity:.7}
+.selmenu{position:fixed;z-index:60;max-height:300px;overflow:auto;padding:4px;border-radius:10px;background:var(--canvas);box-shadow:var(--lift)}
+/* 弹层比背景高一层:浅色是白底 + 阴影;深色在画布色上再提亮一档。不画 1px 边框。 */
+[data-theme=dark] .selmenu{background:color-mix(in srgb,var(--canvas) 90%,#fff)}
+/* 下拉的聚焦框:黑白 2px 外描边(浅色 #111,深色 #f2f2f2),不用蓝色。 */
+select.in:focus,select.in:focus-visible{outline:2px solid var(--ui-focus-strong-ring);outline-offset:0;box-shadow:none}
+.selopt{display:flex;align-items:center;gap:10px;width:100%;min-height:30px;padding:0 10px;border:0;border-radius:7px;background:none;text-align:left;cursor:pointer;white-space:nowrap;font-size:var(--ui-font-size-control)}
+.selopt span{flex:1}.selopt:hover,.selopt:focus-visible{background:var(--stone);outline:0}.selopt.on{font-weight:560}.selopt svg{width:14px;height:14px}.selopt:disabled{opacity:.45;cursor:default}
+.field[hidden],.chk[hidden]{display:none}
+.ib.sm:disabled{opacity:.35;cursor:default}
+.sw{position:relative;display:inline-block;width:30px;height:18px;flex:none}.sw input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:1}.sw i{position:absolute;inset:0;border-radius:99px;background:color-mix(in srgb,var(--ink) 16%,transparent);transition:background 140ms}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0003;transition:transform 160ms var(--ease)}.sw input:checked+i{background:var(--ink)}.sw input:checked+i::after{background:var(--canvas)}.sw input:checked+i::after{transform:translateX(12px)}
+
+/* 下拉的箭头:别处用 background 简写换底色时也要留着它。 */
+select.in{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 9px center!important;background-size:14px!important}
+/* 占位文字用浅灰,和已填的值分得开。 */
+.in::placeholder{color:var(--faint);opacity:1}
+.seg button{white-space:nowrap;font-size:var(--ui-font-size-control)}
+.in.mono,.search input{font-size:var(--ui-font-size-body)}

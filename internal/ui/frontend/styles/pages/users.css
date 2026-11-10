@@ -1,0 +1,124 @@
+/* Extracted verbatim from assets/app.css (rules unchanged). */
+/* ---- v0.9.8 发给他 / 用户详情 / 添加用户 / 开始使用(按 mpx-ux-proto) ---- */
+.send{padding:16px;border-radius:12px;background:var(--panel)}
+.send-h{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}.send-h h3{margin:0;font-size:var(--ui-font-size-title);font-weight:620}.send-h .sub{margin-left:auto}
+.send-b{display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px;align-items:start}
+/* 二维码永远白底(暗色也一样),四周留白,保证能扫 */
+.qr-tile{width:160px;height:160px;padding:6px;border-radius:10px;background:#fff}
+.qrs{display:block;width:100%;height:100%;image-rendering:pixelated}
+.send-r{display:grid;gap:8px;min-width:0}
+.send-r .btn{justify-content:center;width:100%}.send-copy{height:38px;font-size:var(--ui-font-size-control)}
+.send-link{padding:7px 10px;border-radius:8px;background:var(--stone);color:var(--ink2);font-size:var(--ui-font-size-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.send-hint{margin:2px 0 0;font-size:var(--ui-font-size-caption);line-height:1.55;color:var(--muted)}
+/* 提示句永远一行:放不下时「去设置」换到下一行,句子本身不折;连句子都放不下才省略 */
+.send-ip{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;margin-top:12px;padding:9px 12px;border-radius:8px;background:var(--stone);font-size:var(--ui-font-size-caption);color:var(--ink2)}
+.send-ip-t{flex:1 1 auto;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.send-ip-t svg{width:14px;height:14px;margin-right:8px;vertical-align:-2px}
+details.fmts{margin-top:12px}
+details.fmts>summary{list-style:none;display:flex;align-items:center;gap:8px;height:34px;padding:0 6px;border-radius:8px;cursor:pointer;font-weight:540;font-size:var(--ui-font-size-control);color:var(--ink2)}
+details.fmts>summary::-webkit-details-marker{display:none}
+details.fmts>summary:hover{background:var(--hover)}details.fmts>summary .sub{font-weight:400;margin-left:auto}
+details.fmts .car{width:13px;height:13px;color:var(--muted);transition:transform 160ms var(--ease,ease)}details.fmts[open] .car{transform:rotate(90deg)}
+.fmt-l{display:grid;gap:2px;margin-top:4px}
+.fmt{display:flex;align-items:center;gap:10px;padding:7px 6px 7px 12px;border-radius:8px;background:var(--canvas)}
+.fmt-t{flex:1;min-width:0;display:flex;gap:10px;align-items:baseline}.fmt-t b{font-weight:560;font-size:var(--ui-font-size-body);min-width:76px}.fmt-t .sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ud-h{gap:12px}.ud-h .av{width:34px;height:34px;font-size:var(--ui-font-size-control)}.ud-t{display:grid;gap:2px;min-width:0}.ud-t h2{line-height:1.2}
+.ud-b{display:grid;gap:16px;align-content:start}
+.created{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--stone);color:var(--ink2);font-size:var(--ui-font-size-caption)}.created b{color:var(--ink);font-weight:620}.created svg{width:15px;height:15px;flex:none}
+.ud-use{padding:14px 16px;border-radius:12px;background:var(--panel)}.ud-v{font-size:var(--ui-font-size-display);font-weight:620;letter-spacing:-.02em;margin:4px 0 10px}
+.ud-kv{padding:0 4px!important;grid-template-columns:76px 1fr!important}.ud-kv dt{color:var(--muted)}
+.plans{display:grid;gap:4px}
+.plan{position:relative;display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border-radius:10px;background:var(--panel);cursor:pointer}
+.plan:hover{background:var(--stone)}
+.plan input{position:absolute;opacity:0;pointer-events:none}
+.plan .rd{width:16px;height:16px;flex:none;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--faint)}
+.plan:has(input:checked){background:var(--stone)}.plan:has(input:checked) .rd{box-shadow:inset 0 0 0 5px var(--ink)}
+.plan:has(input:focus-visible){box-shadow:0 0 0 2px var(--ink)}
+.plan:has(input:disabled){opacity:.55;cursor:default}
+.plan-t{flex:1;min-width:0;display:grid;gap:1px}.plan-t b{font-weight:560;font-size:var(--ui-font-size-body)}
+.plan-n{font:500 var(--ui-font-size-control) var(--sans);color:var(--muted);white-space:nowrap}.plan-n.zero{font-family:var(--sans);color:var(--ink);font-weight:600}
+/* 套餐没有节点:中性灰色提示块,不是错误 */
+.block{display:flex;gap:10px;margin-top:8px;padding:12px 14px;border-radius:10px;background:var(--stone);font-size:var(--ui-font-size-caption)}
+.block>svg{width:16px;height:16px;flex:none;margin-top:1px}.block b{font-weight:600}.block p{margin:3px 0 10px;color:var(--ink2)}
+.block-a{display:flex;gap:6px;flex-wrap:wrap}.block .btn{background:var(--canvas)}.block .btn.ghost{background:none}
+@media (max-width:560px){.send-b{grid-template-columns:1fr}.qr-tile{margin:0 auto;width:200px;height:200px}}
+.more-b{display:grid;gap:14px;padding:12px 4px 2px}
+.block[hidden],.df-why[hidden],.created[hidden]{display:none}
+
+/* 用户页「最近在线」:在线这一列、可排序表头、工具栏右边的在线人数、节点连不上时的灰条、抽屉里的「最近连接」、悬停提示。 */
+/* 在线点:实心墨色 + 一圈淡晕,和「状态」列的实心点(正常)区分开 */
+.pdot{width:7px;height:7px;border-radius:50%;background:var(--ink);flex:none;display:inline-block;box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 13%,transparent)}
+.pdot.hollow{background:none;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.pres{display:grid;gap:1px;min-width:0;max-width:200px}
+.pres-l{display:inline-flex;align-items:center;gap:8px;font-size:var(--ui-font-size-control);color:var(--ink2);white-space:nowrap}
+.pres-l.on{color:var(--ink);font-weight:560}
+.pres-l.old{color:var(--muted)}
+.pres-l.never{color:var(--faint)}
+.pres .sub{font-size:var(--ui-font-size-caption);overflow:hidden;text-overflow:ellipsis}
+.td-pres{min-width:150px}
+
+/* 可排序的表头 */
+th.th-sort{padding-top:0;padding-bottom:0}
+th.th-sort button{display:inline-flex;align-items:center;gap:4px;height:34px;margin-left:-6px;padding:0 6px;border:0;border-radius:6px;background:none;color:var(--ink);font:inherit;font-weight:540;cursor:pointer}
+th.th-sort button:hover{background:var(--hover)}
+th.th-sort .srt{width:13px;height:13px}th.th-sort .srt.off{opacity:.35}
+th.th-sort[aria-sort=none] button{color:var(--muted);font-weight:500}
+
+/* 用户表斑马纹(无行线) */
+table.ut tbody tr:hover{background:var(--hover)}
+
+/* 工具栏右边的在线人数 */
+.pres-sum{display:inline-flex;align-items:center;gap:8px;margin-right:6px;font-size:var(--ui-font-size-control);color:var(--ink);white-space:nowrap;cursor:default}
+.pres-sum.stale-t{color:var(--muted)}.pres-sum svg{width:14px;height:14px}
+
+/* 有节点连不上时的说明:灰,不是红(不是用户做错了什么,只是数据旧了) */
+.pres-note{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:9px 12px;border-radius:8px;background:var(--stone);color:var(--ink2);font-size:var(--ui-font-size-caption)}
+.pres-note svg{width:15px;height:15px;color:var(--muted);flex:none}.pres-note .lnk{margin-left:auto;color:var(--ink);font-weight:540;white-space:nowrap}
+
+/* 抽屉 */
+.ud-pres{padding:14px 16px;border-radius:12px;background:var(--panel);display:grid;gap:10px}
+.udp-h{display:flex;align-items:baseline;gap:10px}.udp-h h3{margin:0;font-size:var(--ui-font-size-title);font-weight:620}.udp-h .sub{margin-left:auto;display:inline-flex;align-items:center;gap:5px}.udp-h .sub svg{width:13px;height:13px}
+.udp-now{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.udp-now .pres-l{font-size:var(--ui-font-size-control)}.udp-now .pres-l .pdot{align-self:center}
+.udp-list{display:grid;margin:0 -6px}
+.udp-r{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr) 72px;gap:10px;align-items:center;padding:7px 8px;border-radius:8px;font-size:var(--ui-font-size-body)}
+.udp-r:nth-child(odd){background:color-mix(in srgb,var(--canvas) 72%,transparent)}
+.udp-t{color:var(--ink2);white-space:nowrap;font-size:var(--ui-font-size-meta)}.udp-n{color:var(--muted)}.udp-b{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.udp-ips{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;font-size:var(--ui-font-size-caption)}.udp-ip{display:inline-flex;gap:6px;align-items:baseline}.udp-ip .mono{font-size:var(--ui-font-size-meta)}
+.udp-foot{margin:0;font-size:var(--ui-font-size-caption);line-height:1.55}
+.udp-hint{display:flex;gap:10px;padding:10px 12px;border-radius:10px;background:var(--canvas);font-size:var(--ui-font-size-caption);line-height:1.6;color:var(--ink2)}.udp-hint>svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--muted)}.udp-hint p{margin:0 0 8px}
+.udp-pull{display:flex;gap:10px;align-items:flex-start;margin:2px -16px -14px;padding:11px 16px 13px;border-radius:0 0 12px 12px;background:var(--stone)}
+.udp-pull>svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--muted)}.udp-pull>div{display:grid;gap:1px;font-size:var(--ui-font-size-caption)}.udp-pull b{font-weight:560}
+
+/* 1024 宽:「重置」列在 1180 以下隐藏,单元格边距收窄,搜索框可以缩,筛选文字不折行。 */
+@media (max-width:1180px){.hide-n{display:none}}
+@media (max-width:1180px){
+  .tb .search.in-card{width:auto;flex:0 1 200px;min-width:120px}.tb select.w180{width:132px;flex:none}
+  table.ut td,table.ut th{padding-left:10px;padding-right:10px}table.ut .bar{width:56px}table.ut .use{gap:8px}
+  .pres{max-width:150px}.td-pres{min-width:128px}
+}
+.udp-now .pres-l.never{color:var(--muted)}
+
+/* ---- 已过期用户:整行置灰(总览「需要处理的用户」和「用户」列表一致) ----
+   不新增色值:文字用 --muted,头像字母、状态圈和用量条填充用 --faint。红色只留给删除。 */
+tr.is-exp td,tr.is-exp .u b,tr.is-exp .sub,tr.is-exp .c-bad,tr.is-exp .c-warn,tr.is-exp .use span.c-bad,tr.is-exp .tag{color:var(--muted)}
+tr.is-exp .av{color:var(--faint)}
+tr.is-exp .dot.warn{box-shadow:inset 0 0 0 1.5px var(--faint)}
+tr.is-exp .bar i{background:var(--faint)}
+tr.is-exp .btn,tr.is-exp .menu button:not(.dg){color:var(--ink)}
+/* 「已过期」筛选下的多选与批量栏(深色主题下原生勾选框也走深色) */
+[data-theme=dark] .td-pick input,[data-theme=dark] .rn-reset input{color-scheme:dark}
+.td-pick{width:34px;padding-right:0!important}.td-pick input{width:15px;height:15px;margin:0;accent-color:var(--ink);vertical-align:middle;cursor:pointer}
+table.ut tbody tr.picked{background:color-mix(in srgb,var(--ink) 5%,transparent)}table.ut tbody tr.picked .tag{background:var(--canvas)}
+.bulk{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;min-height:44px;margin:0 12px 6px;padding:6px 8px 6px 14px;border-radius:10px;background:var(--canvas);font-size:var(--ui-font-size-control)}
+.bulk b{font-weight:560}.bulk .lnk{font-size:var(--ui-font-size-control)}.bulk .sp{flex:1}
+.btn.dg-t{background:var(--bad-bg);color:var(--bad)}.btn.dg-t:hover{background:color-mix(in srgb,var(--bad) 14%,var(--bad-bg))}.btn.dg-t svg{width:14px;height:14px}
+@media (max-width:860px){.bulk{margin:0 10px 6px;font-size:var(--ui-font-size-control)}}
+/* 续期框 */
+.rn{display:grid;gap:12px;margin-bottom:6px}.rn-seg{justify-self:start}.rn .field{margin-bottom:0}
+.rn-to{display:flex;align-items:baseline;gap:12px;padding:10px 12px;border-radius:10px;background:var(--panel)}.rn-to[hidden]{display:none}.rn-to b{font-size:var(--ui-font-size-body);font-weight:600;font-variant-numeric:tabular-nums}
+.chk.rn-reset{align-items:flex-start;line-height:1.5;color:var(--ink);font-weight:540}.rn-reset input{margin:3px 0 0;accent-color:var(--ink)}.rn-reset .sub{display:block;margin-top:2px;font-weight:400}
+/* 批量删除确认框里的名单 */
+.rm-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.rm-list .tag{font-family:var(--sans);font-size:var(--ui-font-size-body);height:22px}.rm-list .tag .sub{font-size:var(--ui-font-size-meta);margin-left:6px}
+/* 批删的错误名单可能很长，正文滚动，确认和重试按钮始终留在窗口内。 */
+.modal.open:has(.rm-list){max-height:calc(100dvh - var(--mygo-titlebar-height,0px) - 24px);display:flex;flex-direction:column}
+.modal:has(.rm-list) .mbody{min-height:0;overflow-y:auto;overflow-wrap:anywhere}
+.modal:has(.rm-list) .mf{flex-shrink:0}

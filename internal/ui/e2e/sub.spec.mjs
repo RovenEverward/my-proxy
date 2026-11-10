@@ -15,10 +15,14 @@ async function open(page, hash = "sub") {
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
 }
 const save = page => page.locator("[data-act=s5-save]").click();
-// 订阅名是 contenteditable 的编辑框,{USERNAME} 在里面是一块「用户名」标签;直接改写里面的文字。
-const setTitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
-// 读编辑框的值按页面保存时用的那套算(页面自己的 b5TokVal:{USERNAME} ↔ 「用户名」标签),不看 textContent。
-const titleValue = page => page.locator("#f-title").evaluate(el => b5TokVal(el));
+// Fill the real contenteditable field. React receives the native input event.
+const setTitle = (page, text) => page.locator("#f-title").fill(text);
+// Check what the user sees. Saved values are checked through requests or the API.
+const expectTitle = async (page, text) => {
+  const field = page.locator("#f-title");
+  await expect(field).toHaveText(text.replaceAll("{USERNAME}", "用户名"));
+  await expect(field.locator('[data-tok="USERNAME"]')).toHaveCount((text.match(/\{USERNAME\}/g) || []).length);
+};
 const linkOf = (page, expected) => expect(page.locator(".r-url")).toHaveText(expected);
 test.beforeAll(async () => {
   env = await startEnv();
@@ -59,7 +63,7 @@ test("改订阅名输入焦点保留，保存条列出一处改动", async ({ pa
   await expect(page.locator("#f-title")).toBeFocused();
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
   await expect(page.locator("#sb")).toContainText("订阅名");
-  await expect.poll(() => titleValue(page)).toBe("测试 {USERNAME}");
+  await expectTitle(page, "测试 {USERNAME}");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
   expect((await settings()).profile_title).toBe("测试 {USERNAME}");
@@ -255,7 +259,7 @@ test("放弃立即生效，toast 可撤销且改动项一致", async ({ page }) 
   await page.locator(".toast .toast-act").click();
   await expect(page.locator("#sb")).toContainText("有 2 处改动");
   await expect(page.locator("#sb .s5-bar-t .sub")).toHaveText(items);
-  await expect.poll(() => titleValue(page)).toBe("改过的名字 {USERNAME}");
+  await expectTitle(page, "改过的名字 {USERNAME}");
   await expect(page.locator("#f-title .tk")).toHaveText("用户名");
   await expect(page.locator("#f-int")).toHaveValue("48");
 });
@@ -281,7 +285,7 @@ test("有改动离开订阅页弹应用内对话框，可留下、不保存、�
   await expect(page.locator("#modal.open")).toHaveCount(0);
   await expect(page).toHaveURL(/#sub$/);
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
-  await expect.poll(() => titleValue(page)).toBe("别丢了 {USERNAME}");
+  await expectTitle(page, "别丢了 {USERNAME}");
 
   // 不保存:丢掉草稿到节点页;回到订阅页没有保存条。
   await page.click('.side a.nav[href="#nodes"]');
@@ -344,14 +348,19 @@ test("底稿抽屉「语法正确」用墨色不是绿色", async ({ page }) => 
 });
 
 test("放弃后后台刷新，撤销只恢复原先改过的键", async ({ page }) => {
+  await page.clock.install();
   await open(page);
+  // Keep the undo action alive while the real 30-second poll becomes due.
+  await page.clock.runFor(28_000);
   await setTitle(page, "撤销的标题");
   await page.click("[data-act=s5-discard]");
   await putSettings({ sub_url_prefix: "https://fresh.example.com", update_interval: 72 });
-  await page.evaluate(() => load(true));
+  const refreshed = page.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/settings");
+  await page.clock.runFor(3_000);
+  await refreshed;
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await page.locator(".toast .toast-act").click();
-  await expect.poll(() => titleValue(page)).toBe("撤销的标题");
+  await expectTitle(page, "撤销的标题");
   await expect(page.locator("#f-prefix")).toHaveValue("https://fresh.example.com");
   await expect(page.locator("#f-int")).toHaveValue("72");
   await expect(page.locator("#sb")).toContainText("有 1 处改动");
@@ -461,14 +470,14 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
   await page.getByRole("button", { name: "留下", exact: true }).click();
   await expect(page.locator("#modal.open")).toHaveCount(0);
   expect(calls).toEqual([]);
-  await expect.poll(() => titleValue(page)).toBe("切换前草稿");
+  await expectTitle(page, "切换前草稿");
   await choose();
   const reloaded = page.waitForEvent("load");
   await page.getByRole("button", { name: "不保存", exact: true }).click();
   await expect.poll(() => calls.length).toBe(1);
   await reloaded;
   // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
-  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
+  await expectTitle(page, "{USERNAME}");
   // 切换成功会整页刷新。等新页面把数据取完再往下点:刷新途中还会重画一次侧栏,
   // 正好撞上时那个按钮会被换掉,点击就卡在那儿了。
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
@@ -495,7 +504,7 @@ test("离页对话框声明名称，Tab 循环限制在内部并在关闭时还�
   }
   await page.getByRole("button", { name: "留下", exact: true }).click();
   await expect(nav).toBeFocused();
-  await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
+  await expect(page.locator('#modal.open[aria-labelledby~="sub-leave-title"]')).toHaveCount(0);
 });
 
 test("规则修改后 Tab 的目标格式控件保留焦点，格式修改也保留焦点", async ({ page }) => {
@@ -538,7 +547,7 @@ test("切换控制面选不保存但切换失败：页面已画回保存的值",
   await page.click(".cp-pop [data-act=cp-switch]");
   await page.click('.pfitem[data-name="other"]');
   await page.getByRole("button", { name: "不保存", exact: true }).click();
-  await expect.poll(() => titleValue(page)).toBe("{USERNAME}");
+  await expectTitle(page, "{USERNAME}");
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
@@ -564,13 +573,13 @@ test("关闭列表后旧响应不覆盖离页确认，重新打开时清理焦�
   await page.click(".cp-pop [data-act=cp-switch]");
   await expect(page.locator(".pfitem")).toHaveCount(2);
   await expect(page.locator("#modal.open h2")).toHaveText("切换控制面");
-  await expect(page.locator("#modal")).not.toHaveAttribute("aria-labelledby", "sub-leave-title");
-  await expect(page.locator("#modal")).toHaveAttribute("role", "alertdialog");
+  await expect(page.locator('#modal.open[aria-labelledby~="sub-leave-title"]')).toHaveCount(0);
+  await expect(page.locator("#modal")).toHaveAttribute("role", "dialog");
   const btn = page.locator("[data-act=profile-add]");
   if (await btn.count()) {
     await btn.click();
     await expect(page.locator("#modal.open")).toHaveCount(0);
     await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.getElementById("modal").contains(document.activeElement))).toBe(false);
+    expect(await page.evaluate(() => document.getElementById("modal")?.contains(document.activeElement) ?? false)).toBe(false);
   }
 });

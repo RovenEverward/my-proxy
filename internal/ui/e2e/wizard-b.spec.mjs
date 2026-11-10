@@ -202,6 +202,7 @@ test("d. 完整流程(接口用 page.route 模拟)", async ({ page }) => {
 // f. 空增量退避到 5s/10s;页面隐藏时不再取,恢复可见立刻补一次。
 test("f. 轮询退避与页面隐藏时暂停", async ({ page }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   let jobCalls = 0;
 
   await page.route("**/local/setup/check", route => route.fulfill({
@@ -229,22 +230,36 @@ test("f. 轮询退避与页面隐藏时暂停", async ({ page }) => {
   await page.locator("#s-username").fill("alice");
   await page.locator("#s-dpw").fill(DPW);
   await page.locator("#s-dpw2").fill(DPW);
+  const initial = page.waitForResponse(response => new URL(response.url()).pathname === "/local/setup/jobs/j2");
   await page.locator("#s-run").click();
+  await (await initial).finished();
   await expect.poll(() => jobCalls).toBe(1);
+  await page.clock.runFor(1);
 
-  // 手动驱动轮询:3 次空增量后退避到 5s,6 次后到 10s。
-  for (let i = 0; i < 2; i++) await page.evaluate(() => window.__setupPoll.poll());
-  expect(await page.evaluate(() => window.__setupPoll.delay)).toBe(5000);
-  for (let i = 0; i < 3; i++) await page.evaluate(() => window.__setupPoll.poll());
-  expect(await page.evaluate(() => window.__setupPoll.delay)).toBe(10000);
-  expect(await page.evaluate(() => window.__setupPoll.idle)).toBeGreaterThanOrEqual(6);
+  const nextPoll = async (delay, count) => {
+    const response = page.waitForResponse(response => new URL(response.url()).pathname === "/local/setup/jobs/j2");
+    await page.clock.runFor(delay);
+    await (await response).finished();
+    await expect.poll(() => jobCalls).toBe(count);
+    await page.clock.runFor(1);
+  };
+  // Observe real requests: two-second reads back off to five, then ten seconds.
+  await nextPoll(2_000, 2);
+  await nextPoll(2_000, 3);
+  await page.clock.runFor(4_000);
+  expect(jobCalls).toBe(3);
+  await nextPoll(1_000, 4);
+  await nextPoll(5_000, 5);
+  await nextPoll(5_000, 6);
+  await page.clock.runFor(9_000);
+  expect(jobCalls).toBe(6);
+  await nextPoll(1_000, 7);
 
-  // 隐藏页面:定时器被清掉,推进 30 秒也不再多发请求。
+  // 隐藏页面:推进 30 秒也不再多发请求。
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  expect(await page.evaluate(() => window.__setupPoll.timer)).toBeNull();
   const paused = jobCalls;
   await page.clock.runFor(30_000);
   expect(jobCalls).toBe(paused);

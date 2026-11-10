@@ -1,0 +1,30 @@
+/* Shared tokens, components, pages and shell bindings. Vite owns assembly. */
+
+@import "../../assets/styles/tokens.css";
+@import "./shadcn.css";
+
+@import "./base.css";
+@import "./components/controls.css";
+@import "./components/content.css";
+@import "./components/overlays.css";
+@import "./components/editor.css";
+@import "./components/connections.css";
+@import "./pages/overview.css";
+@import "./pages/users.css";
+@import "./pages/plans.css";
+@import "./pages/nodes.css";
+@import "./pages/sub.css";
+@import "./pages/rules.css";
+@import "./pages/doctor.css";
+
+/* Shell breakpoints apply after component defaults. */
+@import "./shell.css";
+
+/* Overview workspace bindings follow the shared shell. */
+@import "./pages/home-workspace.css";
+
+/* Node and setup wizards share their controls. */
+@import "./components/wizard.css";
+@import "./pages/setup.css";
+
+@import "./pages/sources.css";

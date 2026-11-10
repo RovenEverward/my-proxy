@@ -289,16 +289,16 @@ test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色
   }
 });
 
-// 规则列表的斑马纹与吸顶栏:吸顶栏必须实底、不模糊,且不盖住第一条规则。
-test("规则列表:斑马纹;吸顶栏实底不盖住第一条", async ({ page }) => {
+// 普通规则行使用同一底色；吸顶栏保持实底、不模糊，且不盖住第一条规则。
+test("规则列表:普通行同底;吸顶栏实底不盖住第一条", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#rules");
   await expect(page.locator(".rp-row").first()).toBeVisible();
 
-  // 相邻两条规则的背景色不同(斑马纹)。
+  // 按 UX 规范，普通列表不用斑马纹。
   const bgs = await page.locator(".rp-list .rp-row").evaluateAll(els => els.slice(0, 2).map(el => getComputedStyle(el).backgroundColor));
   expect(bgs).toHaveLength(2);
-  expect(bgs[0]).not.toBe(bgs[1]);
+  expect(bgs[0]).toBe(bgs[1]);
 
   // 列表上方的吸顶栏:实底(var(--canvas)),没有 backdrop-filter。
   const top = page.locator("main > .top");

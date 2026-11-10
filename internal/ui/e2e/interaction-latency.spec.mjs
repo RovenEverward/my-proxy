@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { appendFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { startEnv, login } from './env.mjs';
+import { startEnv, login, cpFetch } from './env.mjs';
 let env;
 test.beforeAll(async () => {
   env = await startEnv();
@@ -9,17 +8,11 @@ test.beforeAll(async () => {
   await env.seed('user', 'add', 'latency-user');
 });
 test.afterAll(async () => { await env?.stop(); });
-// 同一测试环境可重放改前脚本，计时方法和网络延迟与修后完全相同。
-test.beforeEach(async ({ page }) => {
+// Record each revision with its own complete build. Classic scripts cannot be
+// replayed inside the React module graph. Baseline=1 still records this build.
+test.beforeEach(async () => {
   const base = process.env.MPX_LATENCY_BASELINE;
-  if (!base || base === '1') return;
-  const names = new Set(['app.js','rules.js','users.js','plans.js','settings.js','nodes.js','conn.js']);
-  await page.route('**/*.js', route => {
-    const name = new URL(route.request().url()).pathname.split('/').pop();
-    if (!names.has(name)) return route.continue();
-    const body = execFileSync('git', ['show', `${base}:internal/ui/assets/${name}`], { encoding: 'utf8' });
-    return route.fulfill({ contentType: 'application/javascript', body });
-  });
+  test.skip(!!base && base !== '1', '原生 JS 与 React 构建不能按旧脚本逐文件重放；请分别运行各版本并比较 LATENCY 记录');
 });
 
 
@@ -152,20 +145,60 @@ test('单条规则写后只读取规则资源，兜底写失败恢复原值', as
 });
 
 test('进入页面时读取控制面列表不取消页面加载', async ({ page }) => {
-  await login(page, env);
+  await page.route('**/ui/meta', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), profiles: true } });
+  });
+  await page.route('**/local/profiles', route => route.fulfill({ json: [
+    { name: 'current', server: env.cpURL, current: true },
+    { name: 'other', server: 'https://other.example.com' },
+  ] }));
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
   await page.route('**/api/rules', async route => {
     const response = await route.fetch();
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await held;
     await route.fulfill({ response });
   });
-  await page.goto(env.origin + '/#rules');
-  await expect(page.locator('html[data-loading]')).toHaveCount(1);
-  await page.evaluate(() => api('/local/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {}));
-  await expect(page.locator('.rp-row').first()).toBeVisible();
-  await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  try {
+    await login(page, env);
+    await page.goto(env.origin + '/#rules');
+    await expect(page.locator('html[data-loading]')).toHaveCount(1);
+    const profiles = page.waitForResponse(response => new URL(response.url()).pathname === '/local/profiles');
+    await page.locator('[data-act=cp-toggle]').click();
+    await page.locator('[data-act=cp-switch]').click();
+    await profiles;
+    await expect(page.locator('.pfitem')).toHaveCount(2);
+    await expect(page.locator('html[data-loading]')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    release();
+    await expect(page.locator('.rp-row').first()).toBeVisible();
+    await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });
 
 test('连续切筛选与作用域不复用前一选择的在途请求', async ({ page }) => {
+  // This case also runs after a worker restart or without the earlier tests.
+  const headers = { Authorization: 'Bearer ' + env.token, 'Content-Type': 'application/json' };
+  const userURL = env.cpURL + '/api/users/fresh-after-poll';
+  let response = await cpFetch(userURL, { headers });
+  if (response.status === 404) {
+    response = await cpFetch(env.cpURL + '/api/users', { method: 'POST', headers,
+      body: JSON.stringify({ username: 'fresh-after-poll', enabled: false }) });
+    expect(response.status).toBe(201);
+  } else {
+    expect(response.status).toBe(200);
+  }
+  let user = await response.json();
+  if (user.enabled) {
+    response = await cpFetch(userURL, { method: 'PUT', headers, body: JSON.stringify({ ...user, enabled: false }) });
+    expect(response.status).toBe(200);
+    user = await response.json();
+  }
+  expect(user.enabled).toBe(false);
   await login(page, env);
   await page.goto(env.origin + '/#users');
   await expect(page.locator('html[data-loading]')).toHaveCount(0);

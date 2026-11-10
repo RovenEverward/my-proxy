@@ -6,7 +6,9 @@
 
 ```sh
 npm ci
-npm run ui:check
+npm run ui:check        # 结构检查 + 图标生成物核对，构建前可执行
+npm run ui:typecheck    # strict TypeScript
+npm run ui:build        # Vite 构建并打包到 assets/
 TZ=Asia/Shanghai npx playwright test -c internal/ui/e2e
 ```
 
@@ -18,14 +20,17 @@ TZ=Asia/Shanghai npx playwright test -c internal/ui/e2e
 
 [结构检查器](../../../scripts/check-ui-system.mjs) 检查以下关系：
 
-- 项目语义 Token 只在一份真源声明，引用均能解析。
+- 项目语义 Token 只在一份真源声明，`frontend` 与 `assets` 样式引用均能解析。
 - 页面字号使用七档语义角色，禁止另写近似像素值。
-- 页面不追加 SVG 几何路径或修改图标注册表。
-- 图标名称能够对应官方原件，生成物与来源一致。
-- 产品与组件目录加载同一共享原语。
-- 组件目录不加载业务启动代码。
+- React 源码不追加 SVG 几何路径，`lucide-react` 只经图标注册表与 shadcn 包装进入。
+- 字面图标别名都能在注册表找到；`lucide-react` 版本与 `icons.json` 一致。
+- 页面不用 `dangerouslySetInnerHTML`、`innerHTML` 赋值或旧 `H` 模板；React 负责转义。
+- `package.json`、`tsconfig` 与 `components.json` 锁定 React + TypeScript + Vite + shadcn 栈与 strict。
+- `index.html` 与 `components.html` 只保留挂载点与外部脚本；目录入口不启动业务应用。
+- 组件目录复用真实 primitives 与 shadcn 组件。
 - 文档四层入口与相对链接可达。
-- 文本插值继续转义；脚本遵守产品 CSP。
+
+检查器只读源码与配置，不读 `assets/build/` 生成物；生成资源的服务可达性由 Go 测试覆盖。
 
 该离线结构检查也接入 CI。它不需要控制面、浏览器或重新下载图标。
 

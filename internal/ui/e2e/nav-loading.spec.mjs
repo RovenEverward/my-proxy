@@ -50,17 +50,26 @@ async function delay(page) {
     try { await task; } finally { pending.delete(task); }
   });
 }
-// 从真实 click 起计时，目标标题、目标地址和 busy 必须在同一帧成立。
+// Measure the real click: title, URL, and a loading or ready target frame appear together.
 async function measure(page, selector, hash, title, overlay = false) {
   await page.locator(selector).first().evaluate((el, args) => {
     window.navTiming = new Promise(resolve => el.addEventListener('click', () => {
       const start = performance.now();
+      const readySelector = {
+        overview: '.ov .stat', system: '#set-form', 'system/devices': '#dpw-form',
+        'system/backup': '[data-act=backup]', 'system/update': '[data-act=update-open]',
+      }[args.hash];
+      const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility === 'visible';
       const check = () => {
         const root = document.querySelector(args.overlay === 'modal' ? '#modal.open' : args.overlay ? '#drawer.open' : '#page');
         const h = root?.querySelector(args.overlay ? 'h2' : 'h1');
         const rect = h?.getBoundingClientRect();
         const busy = args.overlay ? root?.querySelector('[aria-busy=true]') : document.querySelector('main[aria-busy=true]') || root?.querySelector('table,.rp-bar,.stats,.sys-tabs');
-        if (location.hash === '#' + args.hash && h?.textContent.includes(args.title) && rect?.top >= 0 && rect?.bottom <= innerHeight && busy) {
+        const ready = !args.overlay && readySelector && visible(root?.querySelector(readySelector));
+        // Doctor performs no inspection on entry. Its empty frame is ready now.
+        const doctorReady = !args.overlay && args.hash === 'doctor' && visible(root?.querySelector('[data-act=doc-run]'))
+          && [...(root?.querySelectorAll('.card b') || [])].some(element => element.textContent === '一次体检，只读不改' && visible(element));
+        if (location.hash === '#' + args.hash && h?.textContent.includes(args.title) && rect?.top >= 0 && rect?.bottom <= innerHeight && (busy || ready || doctorReady)) {
           resolve(performance.now() - start); observer.disconnect();
         }
       };
@@ -190,7 +199,12 @@ test('长列表进入详情归零滚动，返回列表不继承详情偏移', as
     const response = await r.fetch(), rows = await response.json();
     await r.fulfill({ response, json: Array.from({ length: 40 }, (_, i) => ({ ...rows[0], id: i + 1, name: 'nav-' + (i + 1) })) });
   });
-  await ready(page, 'nodes'); await delay(page);
+  await ready(page, 'nodes');
+  // Wait for the fixture before installing the broader request handler.
+  await expect(page.locator('tr[data-href^="#nodes/"]')).toHaveCount(40);
+  await expect(page.locator('tr[data-href="#nodes/40"]')).toHaveCount(1);
+  await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  await delay(page);
   await page.locator('main').evaluate(el => { el.scrollTop = el.scrollHeight; });
   await measure(page, 'tr[data-href="#nodes/40"]', 'nodes/40', 'nav-40');
   expect(await page.locator('main').evaluate(el => el.scrollTop)).toBe(0);
@@ -238,11 +252,25 @@ test('分流冷启动与标签切换的加载框架保留标签和规则作用�
   await expect(page.locator('.rp-g').first()).toBeVisible();
   await expect(page.locator('html[data-loading]')).toHaveCount(0);
 });
+test('控制面读取失败显示断连，成功刷新后恢复连接状态', async ({ page }) => {
+  await platform(page, 'mac'); await login(page, env); await ready(page, 'users');
+  await page.route('**/api/**', route => route.fulfill({ status: 503, json: { error: '控制面连接失败测试' } }));
+  await page.click('.top [data-act=reload]');
+  await expect(page.locator('#page [role=alert]')).toContainText('控制面连接失败测试');
+  await expect(page.locator('.profile .dot')).toHaveClass(/\bbad\b/);
+  await page.unroute('**/api/**');
+  await page.click('.top [data-act=reload]');
+  await expect(page.locator('#page [role=alert]')).toHaveCount(0);
+  await expect(page.locator('.profile .dot')).not.toHaveClass(/\bbad\b/);
+});
+
 test('后台轮询失败只提示，手动刷新失败才显示页面重试', async ({ page }) => {
+  await page.clock.install();
   await platform(page, 'mac'); await login(page, env); await ready(page, 'users');
   await page.route('**/api/users?**', r => r.fulfill({ status: 503, json: { error: '轮询失败测试' } }));
-  // 与 30s 轮询调用同一入口，不推进其他定时任务。
-  await page.evaluate(() => load(true));
+  const polled = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === '/api/users' && response.status() === 503);
+  await page.clock.runFor(30_000);
+  await polled;
   await expect(page.locator('tr[data-href="#users/nav-user"]')).toBeVisible();
   await expect(page.locator('#page [role=alert]')).toHaveCount(0);
   await expect(page.locator('.toast.bad')).toContainText('轮询失败测试');

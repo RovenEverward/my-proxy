@@ -224,7 +224,7 @@
     }
   },
   "generated": {
-    "file": "internal/ui/assets/icons.js",
-    "sha256": "c9213e6442f18a016f67a0c9d252fa3d18b5970f7ddaee17ed34edab03f6d6cc"
+    "file": "internal/ui/frontend/components/icon-map.ts",
+    "sha256": "602f3dcb67c44f00684ce5678e87f9c9c8a6e7dc987ddd2cee278c20e3a9638e"
   }
 }

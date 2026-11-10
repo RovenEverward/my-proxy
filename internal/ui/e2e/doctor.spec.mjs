@@ -160,10 +160,13 @@ test("漂移警告:一键跳到节点详情并弹出应用确认", async ({ page
   await expect(modal).toContainText("把配置应用到");
   // 从体检过来的应用确认要带上「可能是你自己改的」这句提醒(建议行被省掉了)。
   await expect(modal).toContainText("可能是你自己改的，也可能是别人改的");
-  // 取消:确认弹窗关掉,主动触发一次重绘(体检页 30 秒才轮询一次)也不再自己冒出来。
+  // Cancel, then use the real refresh action. The request must stay consumed.
   await page.click("#modal [data-act=modal-cancel]");
   await expect(page.locator("#modal.open")).toHaveCount(0);
-  await page.evaluate(() => load(true, true));
+  const refreshed = page.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === `/api/nodes/${driftNodeID}`);
+  await page.locator('.top [data-act="reload"]').click();
+  await refreshed;
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
   await expect(page.locator("#modal.open")).toHaveCount(0);
 });
 
@@ -190,25 +193,46 @@ test("漂移行一键应用:节点连不上时提示并聚焦刷新", async ({ p
   expect(await page.evaluate(() => document.activeElement?.dataset?.act)).toBe("node-check");
 });
 
-// 中途离开节点详情(哪怕标志刚写下)也要丢掉自动应用:LIST 页的 load 会清掉它,
-// 再回详情页不许突然弹确认。
+// Leave the real doctor-to-node flow while its detail read is still pending.
+// Returning through the list must not carry the previous apply request.
 test("中途离开后自动应用标志不再弹确认", async ({ page }) => {
   await login(page, env);
+  await page.route("**/api/doctor", route => route.fulfill({ json: { checks: [
+    { name: "节点 doc-drift", status: "warn", detail: "配置和下发的不一致(节点上被改过)", ui_action: "apply", node_id: driftNodeID },
+  ] } }));
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  let first = true;
   await page.route(`**/api/nodes/${driftNodeID}`, async route => {
     const response = await route.fetch();
     const n = await response.json();
     n.deployed_hash = "deployed";
     n.status = { ...(n.status || {}), node_id: driftNodeID, checked_at: new Date().toISOString(), reachable: true, error: "", observed_hash: "changed" };
+    if (first) { first = false; await held; }
     await route.fulfill({ response, json: n });
   });
-  await page.goto(env.origin + "/#doctor");
-  await page.evaluate(id => { window.AUTO_APPLY = { id, at: Date.now() }; location.hash = "#nodes"; }, driftNodeID);
-  await expect(page.locator(".ph h1")).toHaveText("节点");
-  await page.evaluate(id => { location.hash = "#nodes/" + id; }, driftNodeID);
-  await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  // mock 的详情是可点的:标志若没被丢掉,这里一定会弹。
-  await expect(page.locator(".ph [data-act=node-sync]")).not.toHaveAttribute("aria-disabled", "true");
-  await expect(page.locator("#modal.open")).toHaveCount(0);
+  try {
+    await page.goto(env.origin + "/#doctor");
+    await page.locator('[data-act="doc-run"]').click();
+    const requested = page.waitForRequest(request => new URL(request.url()).pathname === `/api/nodes/${driftNodeID}`);
+    const stale = page.waitForResponse(response => new URL(response.url()).pathname === `/api/nodes/${driftNodeID}`);
+    await page.locator('[data-act="doc-apply"]').click();
+    await requested;
+    await expect(page).toHaveURL(new RegExp(`#nodes/${driftNodeID}$`));
+    await page.locator('.side a[href="#nodes"]').click();
+    await expect(page.locator(".ph h1")).toHaveText("节点");
+    release();
+    await (await stale).finished();
+    await expect(page.locator("#modal.open")).toHaveCount(0);
+    await page.locator(`tr[data-href="#nodes/${driftNodeID}"]`).click();
+    await expect(page.locator("html[data-loading]")).toHaveCount(0);
+    // The mocked node allows applying, so a stale request would open a modal.
+    await expect(page.locator(".ph [data-act=node-sync]")).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator("#modal.open")).toHaveCount(0);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 // ui_action==="apply" 时 xray 的漂移一定是观测到的「不一致」;sing-box 那句两种

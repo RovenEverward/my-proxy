@@ -15,45 +15,70 @@ import (
 // 用户不喜欢微软雅黑,界面里不能再点它的名字。CSS 里也不能再有绕开这两个变量、
 // 自己写死字体的地方。
 func TestFontStacksHaveCJKFallback(t *testing.T) {
-	css, err := assets.ReadFile("assets/app.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokens, err := assets.ReadFile("assets/styles/tokens.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	css = append(css, tokens...)
-	for _, v := range []string{"--sans", "--mono"} {
-		m := regexp.MustCompile(v + `:([^;}]+)`).FindStringSubmatch(string(css))
-		if m == nil {
-			t.Fatalf("app.css 里没有 %s", v)
+	var css strings.Builder
+	styles := make(map[string]string)
+	for _, file := range uiSourceFiles(t, ".css") {
+		if !strings.HasPrefix(file, "frontend/styles/") && file != "assets/styles/tokens.css" {
+			continue
 		}
-		stack := m[1]
-		generic := "sans-serif"
-		if v == "--mono" {
-			generic = "monospace"
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if i, j := strings.Index(stack, `"Noto Sans SC"`), strings.LastIndex(stack, generic); i < 0 || j < i {
-			t.Errorf("%s 要在通用族名 %s 之前接上 \"Noto Sans SC\": %s", v, generic, stack)
+		styles[file] = string(data)
+		css.Write(data)
+		css.WriteByte('\n')
+	}
+	if len(styles) < 2 {
+		t.Fatal("需要前端样式真源和 styles/tokens.css")
+	}
+	text := css.String()
+	alias := regexp.MustCompile(`^var\((--[\w-]+)\)$`)
+	for _, variable := range []string{"--sans", "--mono"} {
+		declarations := regexp.MustCompile(regexp.QuoteMeta(variable)+`\s*:\s*([^;}]+)`).FindAllStringSubmatch(text, -1)
+		if len(declarations) == 0 {
+			t.Fatalf("产品 CSS 真源里没有 %s", variable)
+		}
+		for _, declaration := range declarations {
+			stack := strings.TrimSpace(declaration[1])
+			for depth := 0; depth < 10; depth++ {
+				reference := alias.FindStringSubmatch(stack)
+				if reference == nil {
+					break
+				}
+				value := regexp.MustCompile(regexp.QuoteMeta(reference[1]) + `\s*:\s*([^;}]+)`).FindStringSubmatch(text)
+				if value == nil {
+					t.Fatalf("%s 引用了不存在的字体变量 %s", variable, reference[1])
+				}
+				stack = strings.TrimSpace(value[1])
+			}
+			generic := "sans-serif"
+			if variable == "--mono" {
+				generic = "monospace"
+			}
+			if i, j := strings.Index(stack, `"Noto Sans SC"`), strings.LastIndex(stack, generic); i < 0 || j < i {
+				t.Errorf("%s 要在通用族名 %s 之前接上 \"Noto Sans SC\": %s", variable, generic, stack)
+			}
 		}
 	}
-	if !regexp.MustCompile(`@font-face\{font-family:"Noto Sans SC";src:url\(/fonts/NotoSansSC-subset\.woff2\)`).Match(css) {
-		t.Error(`app.css 里没有指向本地 /fonts/NotoSansSC-subset.woff2 的 "Noto Sans SC" @font-face`)
+	if !regexp.MustCompile(`@font-face\s*\{\s*font-family\s*:\s*"Noto Sans SC"\s*;\s*src\s*:\s*url\(/fonts/NotoSansSC-subset\.woff2\)`).MatchString(text) {
+		t.Error(`产品 CSS 真源里没有指向本地 /fonts/NotoSansSC-subset.woff2 的 "Noto Sans SC" @font-face`)
 	}
 	for _, f := range []string{"assets/fonts/MonaSansVF.woff2", "assets/fonts/MonaSansMonoVF.woff2", "assets/fonts/NotoSansSC-subset.woff2", "assets/fonts/OFL.txt", "assets/fonts/OFL-NotoSansSC.txt"} {
 		if _, err := assets.ReadFile(f); err != nil {
 			t.Errorf("没有随程序打包 %s: %v", f, err)
 		}
 	}
-	for _, f := range []string{"assets/app.css", "assets/wizard.css"} {
-		b, _ := assets.ReadFile(f)
-		for _, decl := range regexp.MustCompile(`font(-family)?:[^;}]+`).FindAllString(string(b), -1) {
-			if strings.Contains(decl, "var(--") || strings.Contains(decl, "inherit") || strings.HasPrefix(decl, "font-family:\"") {
+	for file, style := range styles {
+		// Font registrations name the font. Other rules use the shared stacks.
+		style = regexp.MustCompile(`(?s)@font-face\s*\{[^}]*\}`).ReplaceAllString(style, "")
+		for _, declaration := range regexp.MustCompile(`(?:^|[;{])\s*font(?:-family)?\s*:\s*([^;}]+)`).FindAllStringSubmatch(style, -1) {
+			value := declaration[1]
+			if strings.Contains(value, "var(--") || strings.Contains(value, "inherit") {
 				continue
 			}
-			if regexp.MustCompile(`(?i)serif|mono|sans|menlo|courier|arial|helvetica`).MatchString(decl) {
-				t.Errorf("%s 里写死了字体,没走 --sans / --mono: %s", f, decl)
+			if regexp.MustCompile(`(?i)serif|mono|sans|menlo|courier|arial|helvetica`).MatchString(value) {
+				t.Errorf("%s 里写死了字体,没走共享字体变量: %s", file, value)
 			}
 		}
 	}
@@ -62,12 +87,9 @@ func TestFontStacksHaveCJKFallback(t *testing.T) {
 // 界面会用到的源码里不能出现微软雅黑(英文名或中文名都不行)。
 func TestNoMicrosoftYaHei(t *testing.T) {
 	bad := regexp.MustCompile(`(?i)microsoft\s*yahei|\x{5FAE}\x{8F6F}\x{96C5}\x{9ED1}`) // 微软雅黑
-	files, _ := filepath.Glob("assets/*.*")
+	files := uiSourceFiles(t, ".js", ".mjs", ".ts", ".tsx", ".html", ".css", ".svg")
 	files = append(files, "ui.go", "../server/page.go")
 	for _, f := range files {
-		if strings.HasSuffix(f, ".woff2") {
-			continue
-		}
 		b, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -106,11 +128,7 @@ func TestCJKSubsetCoversUI(t *testing.T) {
 	for _, r := range lines[1] {
 		have[r] = true
 	}
-	files, _ := filepath.Glob("assets/*.js")
-	for _, pat := range []string{"assets/*.html", "assets/*.css"} {
-		more, _ := filepath.Glob(pat)
-		files = append(files, more...)
-	}
+	files := uiSourceFiles(t, ".js", ".mjs", ".ts", ".tsx", ".html", ".css", ".svg")
 	missing := map[rune]string{}
 	for _, f := range files {
 		b, err := os.ReadFile(f)

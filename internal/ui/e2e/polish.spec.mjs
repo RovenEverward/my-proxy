@@ -115,7 +115,7 @@ test("N3 分流页说明不重复卡片标题，用「匹配」，句末有「�
 });
 
 // 订阅名是 contenteditable 的编辑框,直接改写里面的文字就能标记改动。
-const retitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+const retitle = (page, text) => page.locator("#f-title").fill(text);
 
 test("N4 离开对话框文案带逗号", async ({ page }) => {
   await go(page, "sub");

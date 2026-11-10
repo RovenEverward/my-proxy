@@ -6,11 +6,12 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+	"unicode/utf8"
 )
 
-// copyPunctSource masks comments and regular-expression literals, preserving
-// newlines and offsets. Quotes (including nested template expressions) protect
-// URLs and comment-like text in visible copy from being treated as comments.
+// copyPunctSource masks comments, regex literals, and unquoted object keys.
+// It preserves newlines and offsets. Quotes (including nested templates) protect
+// visible copy from being treated as comments or object keys.
 func copyPunctSource(source string) string {
 	out := []byte(source)
 	mask := func(start, end int) {
@@ -41,6 +42,27 @@ func copyPunctSource(source string) string {
 	code = func(i int, templateExpr bool) int {
 		depth, prev := 0, byte(0)
 		for i < len(source) {
+			// Unquoted object keys are code, including Chinese identifiers.
+			// Scan them only here, so identical text inside strings stays checked.
+			if prev == '{' || prev == ',' {
+				end := i
+				for end < len(source) {
+					r, size := utf8.DecodeRuneInString(source[end:])
+					if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '$' {
+						break
+					}
+					end += size
+				}
+				after := end
+				for after < len(source) && strings.ContainsRune(" \t\r\n", rune(source[after])) {
+					after++
+				}
+				if end > i && after < len(source) && source[after] == ':' {
+					mask(i, end)
+					i, prev = end, 'x'
+					continue
+				}
+			}
 			c := source[i]
 			switch {
 			case strings.HasPrefix(source[i:], "//"):
@@ -203,14 +225,7 @@ func endsInterp(runes []rune, close int) bool {
 
 func TestCopyPunct(t *testing.T) {
 	t.Run("assets", func(t *testing.T) {
-		files, err := filepath.Glob("assets/*.js")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(files) == 0 {
-			t.Fatal("no JavaScript assets found")
-		}
-		files = append(files, "assets/index.html")
+		files := uiSourceFiles(t, ".js", ".mjs", ".ts", ".tsx", ".html", ".css")
 		for _, file := range files {
 			data, err := os.ReadFile(file)
 			if err != nil {
@@ -237,6 +252,9 @@ func TestCopyPunct(t *testing.T) {
 			{"fullwidth", `"不设的话，链接。换一条新链接？可选：继续"`, 0},
 			{"ternary", `a ? b : c`, 0},
 			{"object", `({ label: "中文", enabled: true })`, 0},
+			{"unquotedChineseKey", `const labels = { ping: "网络", 路由: "路由追踪" };`, 0},
+			{"copyAfterChineseKey", `const labels = { 路由: "路由:追踪" };`, 1},
+			{"jsxCopy", `<span>提示:继续</span>`, 1},
 			{"url", `"http://x"`, 0},
 			{"urlThenCopy", `const url = "http://x"; toast("提示,继续"); // 注释,忽略`, 1},
 			{"commentInsideString", `"中文 // 提示,继续"`, 1},
@@ -284,9 +302,7 @@ func TestCopyPunct(t *testing.T) {
 
 // 批量替换标点时曾把「？」写成了按 Latin-1 二次编码的「ï¼」。资产里不该出现这种乱码。
 func TestAssetsNoMojibake(t *testing.T) {
-	files, _ := filepath.Glob("assets/*.js")
-	css, _ := filepath.Glob("assets/*.css")
-	files = append(append(files, css...), "assets/index.html")
+	files := uiSourceFiles(t, ".js", ".mjs", ".ts", ".tsx", ".html", ".css")
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {
@@ -321,6 +337,17 @@ var copyBannedAllowed = map[string][]string{
 		"配置和下发的不一致(节点上被改过)",
 		"sing-box 配置未读取或与下发内容不一致",
 	},
+	"frontend/pages/doctor/report.ts": {
+		"配置和下发的不一致(节点上被改过)",
+		"sing-box 配置未读取或与下发内容不一致",
+	},
+	"frontend/components/connections/ConnectionEditor.tsx": {
+		"协议、端口、",
+		"订阅里每个入口一行",
+		"编辑这个入口",
+		"还没有入口 · 订阅会用入站自己的地址",
+		"个入口一起删掉",
+	},
 }
 
 // copyBannedLineOK 判断某一行是否整行放行:资产里可在原始行写 `// copy-ok: 原因`
@@ -340,18 +367,7 @@ func copyBannedLineOK(file, original, masked string) bool {
 // TestCopyBannedTerms 只看可见文案:先用 copyPunctSource 掩掉注释与正则,
 // 再逐行找旧词,和 TestCopyPunct 用同一套掩码。
 func TestCopyBannedTerms(t *testing.T) {
-	files, err := filepath.Glob("assets/*.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Fatal("no JavaScript assets found")
-	}
-	html, err := filepath.Glob("assets/*.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	files = append(files, html...)
+	files := uiSourceFiles(t, ".js", ".mjs", ".ts", ".tsx", ".html", ".css")
 	for _, file := range files {
 		data, err := os.ReadFile(file)
 		if err != nil {

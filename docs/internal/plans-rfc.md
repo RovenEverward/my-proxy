@@ -173,7 +173,7 @@ mpx user list --plan 全球
 
 ## 7. UI 需求（给原型设计）
 
-**风格基准：**产品静态资源在 `internal/ui/assets/`（app.css、app.js、users.js、rules.js）。沿用现有组件：卡片、表格、`.seg`、`.chip`、右侧抽屉、确认框、callout、空状态。示例数据用 4 个真实节点：🇺🇸 洛杉矶 A、🇺🇸 洛杉矶 B、🇯🇵 东京 A、🇸🇬 新加坡 A，每个节点 1–2 个入站（例如 Reality、Hysteria2）。
+**风格基准：**产品源码在 `internal/ui/frontend/`。共用组件位于 `components/`，页面位于 `pages/`，样式位于 `styles/`。构建产物由 `internal/ui/assets/` 内嵌。沿用现有组件：卡片、表格、`.seg`、`.chip`、右侧抽屉、确认框、callout、空状态。示例数据用 4 个真实节点：🇺🇸 洛杉矶 A、🇺🇸 洛杉矶 B、🇯🇵 东京 A、🇸🇬 新加坡 A，每个节点 1–2 个入站（例如 Reality、Hysteria2）。
 
 ### 7.1 导航
 

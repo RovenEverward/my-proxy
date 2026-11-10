@@ -16,8 +16,8 @@ async function open(page) {
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
 }
 const save = page => page.locator("[data-act=s5-save]").click();
-// 订阅名是 contenteditable 的编辑框,{USERNAME} 在里面是一块「用户名」标签;直接改写里面的文字。
-const setTitle = (page, text) => page.locator("#f-title").evaluate((el, t) => { el.textContent = t; el.dispatchEvent(new Event("input")); }, text);
+// Use real editing so the delegated React input handler receives the event.
+const setTitle = (page, text) => page.locator("#f-title").fill(text);
 const linkOf = (page, expected) => expect(page.locator(".r-url")).toHaveText(expected);
 
 test.beforeAll(async () => {
