@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -40,7 +41,11 @@ const liveToken = "smoke-admin-token"
 // buildMPX 把 ./cmd/mpx 编成一份真二进制。
 func buildMPX(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "mpx")
+	name := "mpx"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", bin, "./cmd/mpx")
 	cmd.Dir = "../.."
 	if out, err := cmd.CombinedOutput(); err != nil {
