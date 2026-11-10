@@ -14,7 +14,7 @@ test.afterAll(async () => { await env?.stop(); });
 test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有分组标题和页脚术语", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#overview");
-  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "分流", "体检", "系统"].map(t => new RegExp("^" + t)));
+  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "分流", "体检", "系统"]);
   await expect(page.locator(".side .nsep")).toHaveCount(1);
   await expect(page.locator(".side .navg")).toHaveCount(0);
   await expect(page.locator(".side")).not.toContainText("token 不出本进程");
@@ -44,7 +44,7 @@ test("用户页两个页签;套餐页签亮着「用户」", async ({ page }) =>
   await page.click(".tabs a:has-text('套餐')");
   await expect(page).toHaveURL(/#users\/plans$/);
   await expect(page.locator(".tabs a.on")).toHaveText("套餐");
-  await expect(page.locator(".side .nav.on")).toHaveText(/^用户/);
+  await expect(page.locator(".side .nav.on")).toHaveAccessibleName(/^用户/);
   await expect(page.locator("[data-act=pl-edit]").first()).toBeVisible();
 });
 
@@ -60,7 +60,7 @@ test("控制面卡片:点开是地址、4 位一组的指纹、复制和切换,�
   // 连上是墨色点,不是绿色。
   const dot = page.locator(".cpw .dot.ok");
   await expect(dot).toHaveCount(1);
-  const [bg, ink] = await dot.evaluate(e => [getComputedStyle(e).backgroundColor, getComputedStyle(document.body).color]);
+  const [bg, ink] = await dot.evaluate(e => [getComputedStyle(e).backgroundColor, getComputedStyle(e.closest(".app")).color]);
   expect(bg).toBe(ink);
   await page.click(".profile[data-act=cp-toggle]");
   const pop = page.locator(".cp-pop");
@@ -80,7 +80,7 @@ test("节点详情:连接方式卡片用连接组件,有「添加连接」", asy
   await expect(card.locator(".ch")).toContainText("连接方式");
   await expect(card.locator(".cx-row")).toHaveCount(1);
   await expect(card.locator("[data-act=conn-new]")).toHaveText("添加连接");
-  await expect(page.locator(".side .nav.on")).toHaveText(/^节点/);
+  await expect(page.locator(".side .nav.on")).toHaveAccessibleName(/^节点/);
 });
 
 test("订阅页只改订阅那几项,通知字段原样带回;系统页反过来", async ({ page }) => {

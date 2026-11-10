@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "package": "lucide-static",
+    "version": "1.70.0",
+    "packageUrl": "https://www.npmjs.com/package/lucide-static/v/1.70.0",
+    "tarballUrl": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.70.0.tgz",
+    "repositoryUrl": "https://github.com/lucide-icons/lucide",
+    "archiveSha256": "3d1f09df1c468abe512ee6d6596db0dc773fa46c61050e365f0c5fee5120f16a"
+  },
+  "configSha256": "5eec719eafa30d1b9c8247d8fb9cfc5f905410acc0e491d675ab1cccb95a43c9",
+  "files": {
+    "LICENSE": {
+      "archiveEntry": "package/LICENSE",
+      "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
+    },
+    "activity.svg": {
+      "archiveEntry": "package/icons/activity.svg",
+      "sha256": "fa3a90bcb0f0e73956fd4704c4ad2b4e013d6de93258fd8a5f563891d99b95b9"
+    },
+    "arrow-right-left.svg": {
+      "archiveEntry": "package/icons/arrow-right-left.svg",
+      "sha256": "c2f1ee6cd3453009bf9c43428c21d1efdafe0f15006e2d7ba094b0d84795d0b4"
+    },
+    "arrow-up-right.svg": {
+      "archiveEntry": "package/icons/arrow-up-right.svg",
+      "sha256": "1c647ffb1298c179ea1461bee9712a454c3394a6bcdfe0ac587e407b66dbce2b"
+    },
+    "arrow-up-to-line.svg": {
+      "archiveEntry": "package/icons/arrow-up-to-line.svg",
+      "sha256": "c4ef03c07ca4eecc5ee7ae2cd48d646c22abc608e7364387fa077e39929133c0"
+    },
+    "ban.svg": {
+      "archiveEntry": "package/icons/ban.svg",
+      "sha256": "11a855fd5413dbb0c5e85bc2576a54836c6a0a3edb74157a4152d173a5a92b81"
+    },
+    "bell.svg": {
+      "archiveEntry": "package/icons/bell.svg",
+      "sha256": "09e02e4e2732612f66ba3c602a459749ce3f3d6d616df06471edbbe36f37959d"
+    },
+    "check.svg": {
+      "archiveEntry": "package/icons/check.svg",
+      "sha256": "a0adbb843813a89f6f509155bb710a47de44c39e73f984e23cd89d3392828eaf"
+    },
+    "chevron-down.svg": {
+      "archiveEntry": "package/icons/chevron-down.svg",
+      "sha256": "ff32eb8d7f31b0e773f7618deaf4e212ac8cbb5c480b110a72823e975ccb86db"
+    },
+    "chevron-left.svg": {
+      "archiveEntry": "package/icons/chevron-left.svg",
+      "sha256": "4b44625e062328fadad5aaf649d71d4f6b72b49adde7193468bfc4d669cdc427"
+    },
+    "chevron-right.svg": {
+      "archiveEntry": "package/icons/chevron-right.svg",
+      "sha256": "bb612d70c6438fc1db7e3a1553ae6979a030f34f5a4486246eaef697b33395d4"
+    },
+    "chevron-up.svg": {
+      "archiveEntry": "package/icons/chevron-up.svg",
+      "sha256": "299b066c6cc40cc3482a0250b89758c5cb3d7bbe57c7e561aadfa94670c06436"
+    },
+    "circle-help.svg": {
+      "archiveEntry": "package/icons/circle-help.svg",
+      "sha256": "a3e43dce76ddb35cce16ca334fc72a6e74baa01bc975f9776bc780031f535775"
+    },
+    "clock.svg": {
+      "archiveEntry": "package/icons/clock.svg",
+      "sha256": "cbb462ccf75f94d5a3f6e3c7169a8ecadee4912b2a64f37ad2e4d9388fef88a1"
+    },
+    "copy.svg": {
+      "archiveEntry": "package/icons/copy.svg",
+      "sha256": "865d4712a410fef237c2fbbeda4b4efcad30f98f22bac6d7a1b4d35daf82019b"
+    },
+    "download.svg": {
+      "archiveEntry": "package/icons/download.svg",
+      "sha256": "ad2856652924190146d9a439a8f4540c666311a5c142e0d7d012a2a2f74bb01e"
+    },
+    "ellipsis.svg": {
+      "archiveEntry": "package/icons/ellipsis.svg",
+      "sha256": "a544da4f89679ee871b2d1e26fc0edd39e9af101c6d6fb4dcdd86e5622045b43"
+    },
+    "eye.svg": {
+      "archiveEntry": "package/icons/eye.svg",
+      "sha256": "a553811448adefa0d759ab108bc070baeb0f6bb57a69bee8d948068dcf1d51e6"
+    },
+    "eye-off.svg": {
+      "archiveEntry": "package/icons/eye-off.svg",
+      "sha256": "fa349d6d135417e5cd5d53bd6b8096c5e6b972ff85a261df64f4630b321ed330"
+    },
+    "file-text.svg": {
+      "archiveEntry": "package/icons/file-text.svg",
+      "sha256": "411f1e52b691e42cf958c14659a4305bcb9e15f5e5ffbb52987fbafa099d4f2c"
+    },
+    "flask-conical.svg": {
+      "archiveEntry": "package/icons/flask-conical.svg",
+      "sha256": "5169408e27ad80b9bb4f13b7194cd05405d219d742c18e3c23210f6e86746a35"
+    },
+    "globe.svg": {
+      "archiveEntry": "package/icons/globe.svg",
+      "sha256": "d471ab883af77c71783867995c23bcfbe2f33609d3d17913e9dcec39c214d2c0"
+    },
+    "grip-vertical.svg": {
+      "archiveEntry": "package/icons/grip-vertical.svg",
+      "sha256": "4185ecfb084cf30b692c56860424ffad3615764441c1e8f48c24275840d82470"
+    },
+    "house.svg": {
+      "archiveEntry": "package/icons/house.svg",
+      "sha256": "889e861a3344a8639ad77145bd112846a58a395e063667826584d7e532e4b1cd"
+    },
+    "infinity.svg": {
+      "archiveEntry": "package/icons/infinity.svg",
+      "sha256": "c3c95b59026e3415c9f09638e684fc3dbf81b586548ec6670182bfff2844e2fb"
+    },
+    "info.svg": {
+      "archiveEntry": "package/icons/info.svg",
+      "sha256": "37065a66e66850ec1a5f66ddec761ded798a953167ab02ea3a41bced8d4e4847"
+    },
+    "key-round.svg": {
+      "archiveEntry": "package/icons/key-round.svg",
+      "sha256": "5b8426e994cd52cad08b9434e1d3c718dd50e6a53761b2d4b38664d66e4c8074"
+    },
+    "layers.svg": {
+      "archiveEntry": "package/icons/layers.svg",
+      "sha256": "a34ad65a047e6568ba3f53a57d569aec2c67075357e6eb323c0ccbf0b59f8344"
+    },
+    "link.svg": {
+      "archiveEntry": "package/icons/link.svg",
+      "sha256": "7c7172c4cfcf6d1459650d545e2f61711b8aff864a271ee7d330664a30cc3043"
+    },
+    "lock-keyhole.svg": {
+      "archiveEntry": "package/icons/lock-keyhole.svg",
+      "sha256": "bb313d590d801e5b06a1a4eb5c7dcaae0110154db931a56d41e97c04f699811e"
+    },
+    "log-in.svg": {
+      "archiveEntry": "package/icons/log-in.svg",
+      "sha256": "63ac359b861743558512535f938db67c81b7a3f2338be530efd13418a8325978"
+    },
+    "minus.svg": {
+      "archiveEntry": "package/icons/minus.svg",
+      "sha256": "1650b3e7ae8580df89f2c886a231ef261e3449e64f67deee892243c580caa013"
+    },
+    "moon.svg": {
+      "archiveEntry": "package/icons/moon.svg",
+      "sha256": "d0750f5f544dd1989f0568de388090dee6bdb00b838e4004feacc418de000a24"
+    },
+    "pause.svg": {
+      "archiveEntry": "package/icons/pause.svg",
+      "sha256": "e6f380c5ccee8102f8f192e9a1019aa6c9c573ba93b0fe8958db9646004dcb98"
+    },
+    "pencil.svg": {
+      "archiveEntry": "package/icons/pencil.svg",
+      "sha256": "44506f2f956bcd2d0b7009046174d44d6a379bd58fe5539150d483db1e923f72"
+    },
+    "plus.svg": {
+      "archiveEntry": "package/icons/plus.svg",
+      "sha256": "6785279aad64300db83832507ef7909f5c4470334add79dcc0fa5b74564fd08e"
+    },
+    "qr-code.svg": {
+      "archiveEntry": "package/icons/qr-code.svg",
+      "sha256": "9813b0a6d4d52594cbc3ef089361cae40dc799a9eb32397387bb6901f19b8051"
+    },
+    "refresh-cw.svg": {
+      "archiveEntry": "package/icons/refresh-cw.svg",
+      "sha256": "d2da45f193b5a64eb08fe91da5aafec8a8c5fff57da852d124efaf3636f83389"
+    },
+    "rss.svg": {
+      "archiveEntry": "package/icons/rss.svg",
+      "sha256": "59748071f1a181c21354ca5ce013d8e3d8a8a6e94f2e2e2dce0765bb2c974b2c"
+    },
+    "search.svg": {
+      "archiveEntry": "package/icons/search.svg",
+      "sha256": "b395924bb54d8c436cb5bf6aa21899dfbf5f43a8a3b4252ed88d3391ec724aa5"
+    },
+    "server.svg": {
+      "archiveEntry": "package/icons/server.svg",
+      "sha256": "a9360713df211361ff9e3796f55e594cf75ff70a0f9b60d2f042c33a72689105"
+    },
+    "settings.svg": {
+      "archiveEntry": "package/icons/settings.svg",
+      "sha256": "c02c11ec0c28c77e3865bb8ba960c62e1752eef44f45f70821f669d983d2796a"
+    },
+    "sliders-horizontal.svg": {
+      "archiveEntry": "package/icons/sliders-horizontal.svg",
+      "sha256": "19bc958ca282ef044b9e43cfc6a22c6a252ff153919917c2b479c0e0c1202ada"
+    },
+    "split.svg": {
+      "archiveEntry": "package/icons/split.svg",
+      "sha256": "7982e4cf56d6be505a34a325bdd2fe181dd39794b81dc29e3b5aba22a40c3c0e"
+    },
+    "sun.svg": {
+      "archiveEntry": "package/icons/sun.svg",
+      "sha256": "4ad5dde14c5cb7a42d00298b5addd2ca529d8232be5bc415f2344619b93154e6"
+    },
+    "terminal.svg": {
+      "archiveEntry": "package/icons/terminal.svg",
+      "sha256": "56b73586d579d6d817770517425a8d2b4286bcdaee1e8f4e39bcbd52cf55ecc7"
+    },
+    "trash-2.svg": {
+      "archiveEntry": "package/icons/trash-2.svg",
+      "sha256": "a2a5e4e14af6c7a96d1598da379506dbd043913bfd7b82c77da105e594f5c7aa"
+    },
+    "triangle-alert.svg": {
+      "archiveEntry": "package/icons/triangle-alert.svg",
+      "sha256": "48d294096897d0d304c2572042b92e082374332bb7cb49ae5f356f80d3eac7d3"
+    },
+    "undo-2.svg": {
+      "archiveEntry": "package/icons/undo-2.svg",
+      "sha256": "856b729a8783942422f338dc51b173c431dd5fc73e987c23a2e299755e3421e1"
+    },
+    "upload.svg": {
+      "archiveEntry": "package/icons/upload.svg",
+      "sha256": "2c3e6955f1e553ebfbb51795fc9e08b6a7d2c000f35155eb3b4a80df64eeb8fe"
+    },
+    "user.svg": {
+      "archiveEntry": "package/icons/user.svg",
+      "sha256": "9e5d536e689d5f11ebd5dd0a5537b71635461cce8cc8910cffc51faccb727e48"
+    },
+    "users.svg": {
+      "archiveEntry": "package/icons/users.svg",
+      "sha256": "49394c230c3dc88165cf9c01243035ea8eaab140f0545d6dc3ac3069a5402795"
+    },
+    "x.svg": {
+      "archiveEntry": "package/icons/x.svg",
+      "sha256": "4fcd3eb7104ef5e1ae949ebc9f316b72e3839bd790766d9795ee5f8d1eace91e"
+    }
+  },
+  "generated": {
+    "file": "internal/ui/assets/icons.js",
+    "sha256": "c9213e6442f18a016f67a0c9d252fa3d18b5970f7ddaee17ed34edab03f6d6cc"
+  }
+}

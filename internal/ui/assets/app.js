@@ -8,12 +8,7 @@
 const RI = /[\u{1F1E6}-\u{1F1FF}]/u;
 const RI_PAIR = /([\u{1F1E6}-\u{1F1FF}])([\u{1F1E6}-\u{1F1FF}])/gu;
 const riCode = (a, b) => String.fromCharCode(97 + a.codePointAt(0) - 0x1F1E6, 97 + b.codePointAt(0) - 0x1F1E6);
-const $ = (s, el = document) => el.querySelector(s);
-class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
-const raw = s => new Raw(s);
-const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const val = v => v instanceof Raw ? v.s : Array.isArray(v) ? v.map(val).join("") : esc(v);
-function H(strings, ...vals) { let s = strings[0]; vals.forEach((v, i) => { s += val(v) + strings[i + 1]; }); return raw(s); }
+// Shared presentation primitives are loaded from components.js.
 
 let readEpoch = 0;
 let readSnapshot = { page: null, values: new Map() };
@@ -131,47 +126,6 @@ async function api(path, init = {}) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-const ICONS = {
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 2.2-2.4 3.7M12 17h.01"/>',
-  sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
-  flask: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>',
-  home: '<path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
-  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
-  nodes: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/>',
-  inb: '<path d="M4 12h10M10 8l4 4-4 4"/><path d="M14 4h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5"/>',
-  set: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
-  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>', up: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>', check: '<path d="m5 12 5 5 9-10"/>', search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
-  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>', x: '<path d="M6 6l12 12M18 6 6 18"/>',
-  upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M5 20h14"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
-  pause: '<rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/>', key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3"/>',
-  qr: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/>',
-  bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
-  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
-  warn: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
-  copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
-  dl: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>', term: '<path d="m4 17 6-5-6-5M12 19h8"/>',
-  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-  arrow: '<path d="M9 6l6 6-6 6"/>', chevup: '<path d="m6 15 6-6 6 6"/>', check: '<path d="M5 12.5 10 17 19 7"/>',
-  tpl: '<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
-  plan: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
-  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
-  ban: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
-  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
-  down: '<path d="m6 9 6 6 6-6"/>',
-  sub: '<path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4"/>',
-  split: '<path d="M6 3v6a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4M18 3v6a4 4 0 0 1-4 4"/><path d="m3 6 3-3 3 3M15 6l3-3 3 3"/>',
-  pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6H21"/>',
-  swap: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-  grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
-  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
-  infinity: '<path d="M12 12c-2-2.7-3.6-4-5.3-4a4 4 0 0 0 0 8c1.7 0 3.3-1.3 5.3-4zm0 0c2 2.7 3.6 4 5.3 4a4 4 0 0 0 0-8c-1.7 0-3.3 1.3-5.3 4z"/>',
-};
-const ic = (n, cls = "") => raw(`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`);
 
 /* ---------- 格式 ---------- */
 const GiB = 1 << 30, TiB = 2 ** 40;
@@ -201,7 +155,6 @@ function relTime(iso) {
 }
 
 const USER_ST = { active: ["ok", "正常"], disabled: ["", "已停用"], expired: ["warn", "已过期"], limited: ["warn", "已超限"] };
-const stBadge = (cls, text) => H`<span class="st"><span class="dot ${cls}"></span>${text}</span>`;
 const userSt = s => stBadge(...(USER_ST[s] || ["", s]));
 const RESET = { none: "不重置", daily: "每天", weekly: "每周", monthly: "每月" };
 const pct = u => u.data_limit ? Math.min(100, u.used_traffic / u.data_limit * 100) : 0;
@@ -224,7 +177,6 @@ function expireCell(u) {
   const d = daysLeft(u.expire_at), cls = d < 0 ? "c-bad" : d <= EXPIRE_SOON_DAYS ? "c-warn" : "";
   return H`${ymd(new Date(u.expire_at))}<div class="sub ${cls}">${d < 0 ? `已过 ${-d} 天` : d === 0 ? "今天到期" : `剩 ${d} 天`}</div>`;
 }
-const avatar = n => H`<span class="av">${[...String(n)][0]?.toUpperCase() || "?"}</span>`;
 function nodeSt(n) {
   if (!n.status) return n.draining ? stBadge("info", "已暂停分配") : stBadge("", "未体检");
   if (!n.status.reachable) return stBadge("bad", "连不上");
@@ -241,14 +193,6 @@ const expiredFor = u => u.status === "expired" && u.expire_at ? Math.max(0, -day
 const expiredStale = u => u.status === "expired" && expiredFor(u) > EXPIRED_KEEP_DAYS;
 
 /* ---------- 共享的块 ---------- */
-const skRows = (n, c) => raw(Array.from({ length: n }, () => `<tr>${Array.from({ length: c }, (_, i) => `<td><span class="sk" style="width:${[70, 50, 90, 40, 60][i % 5]}%"></span></td>`).join("")}</tr>`).join(""));
-function errorBox(what, e) {
-  const auth = e && e.status === 401;
-  return H`<div class="empty" role="alert"><div class="ill bad">${ic("warn")}</div><h4>读不到${what}</h4>
-  <p>${e ? e.message : ""}</p>${auth ? H`<p class="sub mt">登录状态已失效，请重新打开 MPX 并登录。</p>` : ""}
-  <div class="mt"><button class="btn sm" data-act="reload">${ic("refresh")}重试</button></div></div>`;
-}
-const emptyBox = (icon, title, text, cmd, btn = "") => H`<div class="empty"><div class="ill">${ic(icon)}</div><h4>${title}</h4><p>${text}</p>${btn}${cmd ? H`<div class="cmd mt">${cmd}</div>` : ""}</div>`;
 
 /* ---------- 页面注册 ---------- */
 // 每个页面:{ title, nav: [组, 图标, 排序], load(route) → data, render(data, route) → H }
@@ -404,7 +348,6 @@ function updAdjustDownloading(p) {
   b.disabled = true;
 }
 // dom 把 H 片段变成可以 replaceWith 的节点。
-function dom(html) { const t = document.createElement("template"); t.innerHTML = val(html).trim(); return t.content.firstElementChild; }
 // 一键更新:POST /local/update/all 启动编排,GET ?since= 增量拉进度直到
 // done / failed / restarting。409 表示已有一轮在跑,直接进轮询。
 let updAll = null;
@@ -532,18 +475,18 @@ function cpCard() {
     <p class="sub cp-note">只在这台电脑上能打开，别的设备需要单独接入。</p></div>` : ""}</div>`;
 }
 function shell(page, body, crumb) {
-  const dark = document.documentElement.dataset.theme === "dark", on = navKey();
+  const dark = document.documentElement.dataset.theme === "dark", on = navKey(), home = page === PAGES.overview;
   // 数字只给用户、节点;总览只在有节点连不上(退避中)时亮一个红点。
   const cnt = { users: PAGES.users?.count?.(), nodes: PAGES.nodes?.count?.() };
   const warn = { overview: !!STATUS?.backoffs?.length };
-  const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}">${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
+  const nav = NAV.filter(x => !x || PAGES[x[0]]).map(x => x ? H`<a class="nav ${on === x[0] ? "on" : ""}" href="#${x[0]}"${on === x[0] ? raw(' aria-current="page"') : ""}>${ic(x[2])}${x[1]}${warn[x[0]] ? H`<span class="ct"><i class="dot bad" aria-label="有节点连不上"></i></span>` : cnt[x[0]] ? H`<span class="ct">${cnt[x[0]]}</span>` : ""}</a>` : H`<div class="nsep"></div>`);
   const mob = [NAV[0], NAV[1], NAV[2], NAV[3]].filter(x => PAGES[x[0]]);
   const stale = current.at ? H`<span class="sub hide-m">更新于 ${hms(current.at)}</span>` : "";
   const version = shortVer(META.cli_version);
-  return H`<div class="app"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small title="${META.cli_version}">${version}</small></div>
+  return H`<div class="app${home ? " home-workspace" : ""}"><aside class="side"><div class="tb-drag"></div><div class="brand"><img class="lk lk-l" src="/lockup-light.svg" alt="MPX"><img class="lk lk-d" src="/lockup-dark.svg" alt="MPX"><small title="${META.cli_version}">${version}</small></div>
   ${cpCard()}
   ${nav}</aside>
-  <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${crumb}</div><div class="sp"></div>${stale}
+  <main${current.loading ? raw(' aria-busy="true"') : ""}><div class="top"><div class="crumb">${home ? ic("home") : ""}${crumb}</div><div class="sp"></div>${stale}
   <button type="button" id="upd-pill" class="upd-pill"${showUpdatePill(UPDATE) ? "" : raw(" hidden")} data-act="update-open">更新</button>
   <button class="ib" title="刷新" aria-label="刷新" data-act="reload">${ic("refresh")}</button>
   <button class="ib" title="切换主题" aria-label="切换主题" data-act="theme">${ic(dark ? "sun" : "moon")}</button></div>
@@ -601,7 +544,7 @@ const ovNodeRank = x => !x.status ? 3 : !x.status.reachable ? 0 : (x.status.cert
 // 统计格副行只列不为 0 的类别,第一项(正常 / 运行)总是列出。
 // 总览里运行时长只到最大的单位(3 天 / 5 小时 / 12 分钟),精确值在悬停提示里。
 const ovDur = v => { v = Math.floor(+v || 0); const d = Math.floor(v / 86400), h = Math.floor(v / 3600); return d ? `${d} 天` : h ? `${h} 小时` : `${Math.floor(v / 60)} 分钟`; };
-const ovParts = parts => parts.filter(([n], i) => i === 0 || n > 0).map(([n, t]) => `${n} ${t}`).join(" · ");
+const ovParts = parts => parts.filter(([n], i) => i === 0 || n > 0).map(([n, t]) => `${n}\u00a0${t}`).join(" · ");
 // 用量:条 + 百分比,完整数字放在悬停提示里。
 function ovUse(u) {
   if (!u.data_limit) return H`<span class="ov-use sub">${fmtBytes(u.used_traffic)} · 不限</span>`;
@@ -645,6 +588,7 @@ function ovUserRow(u, { soon, usageWarn, W, RM }) {
 const rowMenu = (name, items) => H`<span class="mw"><button type="button" class="ib sm" title="更多" aria-label="${name} 的更多操作" aria-haspopup="menu" aria-expanded="false" data-act="row-menu">${ic("more")}</button><div class="menu" role="menu" hidden>${items.map(i => i[0])}</div></span>`;
 // 过期超过 30 天的不在卡片里,这里说一句它们去哪了,点了直接到「用户」页的「已过期」筛选。
 const ovStaleNote = n => H`<div class="ov-stale sub">另有 ${n} 个用户过期超过 ${EXPIRED_KEEP_DAYS} 天，不再列在这里。${PAGES.users ? H`<button type="button" class="lnk" data-act="go-expired">到「已过期」里清理</button>` : ""}</div>`;
+let OV_ENTERED = false;
 let STATUS = null;
 // 最近一次读控制面成没成:侧栏控制面圆点的颜色(未知时灰)。
 let CP_OK = null;
@@ -685,9 +629,9 @@ PAGES.overview = {
   const shown = nodes.map((x, i) => [x, i]).sort((a, b) => ovNodeRank(a[0]) - ovNodeRank(b[0]) || a[1] - b[1]).slice(0, OV_MAX).map(a => a[0]);
   const hook = settings.webhook_url;
   const backoffTitle = s.backoffs.map(b => `${labelOfName(b.node_name)}：连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。`).join(" ");
-  return H`<div class="ov"><div class="ph"><div><h1>总览</h1>${allDone ? "" : H`<p>欢迎用 MPX。跟着下面几步，把第一条订阅发出去。</p>`}</div><span class="sp"></span>${allDone ? ovDoneChip() : ""}</div>
+  return H`<div class="ov${!OV_ENTERED ? " home-enter" : ""}"><div class="ph"><div><h1>总览</h1>${allDone ? "" : H`<p>欢迎用 MPX。跟着下面几步，把第一条订阅发出去。</p>`}</div><span class="sp"></span>${allDone ? ovDoneChip() : ""}${can("POST", "/api/users") ? H`<button type="button" class="btn pri home-add" data-act="user-new">${ic("plus")}添加用户</button>` : ""}</div>
   ${startBlock(S, done, allDone)}
-  ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="u-link">查看节点</a>` : ""}</div></div>`)
+  ${s.backoffs.length === 1 ? s.backoffs.map(b => H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${labelOfName(b.node_name)} 在退避中</b><span class="ov-backoff-detail"> · 连续失败 ${b.failures} 次，${hm(new Date(b.skip_until))} 前跳过采样与收敛。</span></div>${PAGES.nodes ? H`<a href="#nodes/${b.node_id}" class="btn ghost sm ov-backoff-link">查看节点 ${ic("arrow")}</a>` : ""}</div>`)
     : s.backoffs.length ? H`<div class="callout mb" title="${backoffTitle}">${ic("warn", "ico-warn")}<div><b>${s.backoffs.length} 个节点在退避中</b> · ${s.backoffs.map(b => labelOfName(b.node_name)).join("、")}：连续失败，暂时跳过采样与收敛。</div></div>` : ""}
   <div class="grid g4">
     ${stat("用户", users.total, H`${ovParts([[n("active"), "正常"], [n("limited"), "超限"], [n("expired"), "过期"], [n("disabled"), "停用"]])}${partial ? H`<span class="stale">· 只统计了前 ${U.length} 个</span>` : ""}`)}
@@ -697,14 +641,14 @@ PAGES.overview = {
     ${stat("控制面", H`<span class="lead ell" title="${s.version}">${shortVer(s.version) || "未知版本"}</span>`, behind ? H`<span class="tag lab">有新版本 ${upd.latest}</span> · 运行 ${ovDur(s.uptime_seconds)}` : `${isDevVer(s.version) ? "开发版，不比较版本" : upd.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${ovDur(s.uptime_seconds)}`, "ink", H`${tick} · 已运行 ${fmtDur(s.uptime_seconds)}`)}
   </div>
   <div class="grid g2 ov-main">
+    <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
+    ${nodes.length ? shown.map(x => { const c = certWarn(x); return H`<a class="row ov-n" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><span class="ov-node-id"><b class="bold ell" title="${nodeLabel(x)}">${nodeLabel(x)}</b><span class="sub mono ov-addr">${x.address}</span></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
+      : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
     <div class="card"><div class="ch">需要处理的用户<small>${attention.length ? `· ${attention.length}` : ""}</small><span class="sp"></span>${PAGES.users ? H`<a class="btn ghost sm" href="#users">全部用户 ${ic("arrow")}</a>` : ""}</div>
     ${attention.length ? H`<table class="ov-t"><tbody>${attention.slice(0, OV_MAX).map(u => ovUserRow(u, { soon, usageWarn, W, RM }))}</tbody></table>${stale.length ? ovStaleNote(stale.length) : ""}`
       : stale.length ? H`${emptyBox("check", "没有要处理的用户", `没有超限、${EXPIRED_KEEP_DAYS} 天内过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}${ovStaleNote(stale.length)}`
       : !users.total ? emptyBox("users", "还没有用户", "加一个用户，他就有自己的订阅链接。")
       : emptyBox("check", "没有要处理的用户", `没有超限、过期、${EXPIRE_SOON_DAYS} 天内到期或用量过 ${usagePct}% 的用户。`)}</div>
-    <div class="card"><div class="ch">节点<small>${nodes.length ? `· ${nodes.length}` : ""}</small><span class="sp"></span>${PAGES.nodes ? H`<a class="btn ghost sm" href="#nodes">全部 ${ic("arrow")}</a>` : ""}</div>
-    ${nodes.length ? shown.map(x => { const c = certWarn(x); return H`<a class="row ov-n" ${PAGES.nodes ? raw(`href="#nodes/${x.id}"`) : ""}><b class="bold ell">${nodeLabel(x)}</b><span class="sub mono ov-addr">${x.address}</span><span class="sp"></span>${c ? H`<span class="tag ${c.days_left < 0 ? "c-bad" : "c-warn"}">证书${c.days_left < 0 ? "已过期" : `剩 ${c.days_left} 天`}</span>` : ""}${nodeSt(x)}</a>`; })
-      : emptyBox("nodes", "还没有节点", "登记一台能从控制面 SSH 上去的服务器。节点上不装任何 mpx 组件。到「节点」页点「添加节点」开始。")}</div>
   </div>
   <div class="ov-note" id="ov-notify"><span class="ov-note-h">${ic("bell")}通知</span>
     <span class="ov-kv"><span class="sub">Webhook</span>${hook ? H`<span class="mono ell" title="${hook}">${hook}</span>` : H`<span class="sub">未配置，不发通知</span>`}</span>
@@ -713,6 +657,7 @@ PAGES.overview = {
     <span class="sp"></span>${PAGES.system ? H`<a class="btn ghost sm" href="#system">设置 ${ic("arrow")}</a>` : ""}</div></div>`;
 
   },
+  after(d) { if (d) OV_ENTERED = true; },
 };
 
 // releaseNotesBody:发布说明里只留「这次改了什么」。v0.9.4 起正文开头是「我该下哪个」下载表和
@@ -998,6 +943,7 @@ function clearMainScroll() {
 addEventListener("pagehide", clearMainScroll);
 function paint(resetScroll = false) {
   const p = PAGES[route[0]] || PAGES.overview;
+  document.documentElement.dataset.ui = p === PAGES.overview ? "workspace" : "classic";
   const crumb = p.crumb ? p.crumb(route, current.data) : H`<b>${p.title}</b>`;
   let body;
   if (current.error && !current.data) body = H`<div class="ph"><h1>${p.loadingTitle?.(route) || p.title}</h1></div><div class="card">${errorBox(p.title + "数据", current.error)}</div>`;

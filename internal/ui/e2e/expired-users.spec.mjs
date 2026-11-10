@@ -51,7 +51,7 @@ test("30 天线、最近过期排序、只剩旧用户的空态与跳转", async
   await cp("/api/users/recent", "DELETE"); await cp("/api/users/thirty", "DELETE");
   await page.goto(env.origin + "/#overview");
   await expect(page.locator(".ov-t")).toHaveCount(0);
-  await expect(page.locator(".ov-main .card").first()).toContainText("没有超限、30 天内过期");
+  await expect(page.locator(".ov-main .card").filter({ hasText: "需要处理的用户" })).toContainText("没有超限、30 天内过期");
   await expect(page.locator(".ov-stale")).toContainText("另有 1 个用户");
 });
 
@@ -59,8 +59,8 @@ test("过期行的名字、用量和状态圈在深浅主题置灰", async ({ pa
   await open(page);
   for (const theme of ["light", "dark"]) {
     await page.evaluate(t => document.documentElement.dataset.theme = t, theme);
-    const muted = theme === "light" ? "rgb(113, 113, 122)" : "rgb(143, 143, 150)";
-    const faint = theme === "light" ? "rgb(161, 161, 170)" : "rgb(91, 93, 100)";
+    const muted = await page.locator(".ov-note .sub").first().evaluate(e => getComputedStyle(e).color);
+    const faint = await page.locator(".brand small").evaluate(e => getComputedStyle(e).color);
     await expect(row(page, "recent")).toHaveClass(/is-exp/);
     await expect(row(page, "recent").locator("b")).toHaveCSS("color", muted);
     await expect(row(page, "recent").locator(".st")).toHaveText("已过期 3 天");

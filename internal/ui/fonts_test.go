@@ -19,6 +19,11 @@ func TestFontStacksHaveCJKFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tokens, err := assets.ReadFile("assets/styles/tokens.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css = append(css, tokens...)
 	for _, v := range []string{"--sans", "--mono"} {
 		m := regexp.MustCompile(v + `:([^;}]+)`).FindStringSubmatch(string(css))
 		if m == nil {

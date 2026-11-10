@@ -319,7 +319,7 @@ test("总览控制面:有新版本是黑白灰底标签;开发版不比较", asy
   await expect(card.locator(".l .dot")).toHaveClass(/\bink\b/); // 圆点也是黑白的
   // 灰底标签:背景和 .tag 一样是 --stone,不是橙色。
   const bg = await card.locator(".tag.lab").evaluate(el => getComputedStyle(el).backgroundColor);
-  const stone = await page.evaluate(() => { const d = document.createElement("span"); d.className = "tag"; document.body.append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
+  const stone = await page.evaluate(() => { const d = document.createElement("span"); d.className = "tag"; document.querySelector(".app").append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
   expect(bg).toBe(stone);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

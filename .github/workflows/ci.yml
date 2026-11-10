@@ -7,6 +7,16 @@ on:
     branches: [main]
 
 jobs:
+  ui-system:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: UX tokens, shared components and official icons
+        run: npm run ui:check
+
   test:
     strategy:
       fail-fast: false

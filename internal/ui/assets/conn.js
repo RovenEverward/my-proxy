@@ -558,10 +558,6 @@ async function hostEditor(inbID, hostID) {
 }
 
 /* ---------- 动作 ---------- */
-Object.assign(ICONS, {
-  pen: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
-  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
-});
 
 // 组件自己的动作都用 conn-*。inb-new 是节点页的「添加入站」(完整入站表单),
 // 其余旧名字保留成别名,给 nodes 页和还没改过来的测试用。

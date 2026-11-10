@@ -34,7 +34,7 @@
 | 下发、收敛、巡检、核心安装（internal/control/*、internal/node/*、internal/render/xray.go） | [节点](docs/atlas/nodes.md) |
 | 用户、套餐、流量、重置（internal/model/plan.go、internal/store/user.go、internal/cli/user*.go） | [用户、套餐与计量](docs/atlas/users.md) |
 | 订阅、规则、策略组（internal/server/subscribe.go、internal/render/clash.go、singbox.go、routing*.go） | [订阅与分流](docs/atlas/subscription.md) |
-| CLI、`mpx ui`、设备接入（internal/cli/*、internal/ui/*、internal/pin/*） | [本机入口](docs/atlas/operator-entry.md) |
+| CLI、`mpx ui`、设备接入（internal/cli/*、internal/ui/*、internal/pin/*） | [本机入口](docs/atlas/operator-entry.md)；界面修改另读 [UX 规范](internal/ui/ux/README.md) |
 | 安装、升级、发版（internal/cli/init*.go、internal/cli/update*.go、internal/selfupdate/*、deploy/*） | [安装与升级](docs/atlas/install-update.md) |
 | 能力检测、体检、自检（internal/diagnostics/*、internal/fusion/*、internal/cli/doctor.go） | [体检与诊断](docs/atlas/diagnostics.md) |
 
