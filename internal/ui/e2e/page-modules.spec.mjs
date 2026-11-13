@@ -30,6 +30,7 @@ test.afterAll(async () => { await Promise.all([env?.stop(), setupEnv?.stop()]); 
 // Keep these exact cases in the report, so an unexpected 404 remains a failure.
 const optional404 = pathname => pathname === "/local/app/theme"
   || pathname === "/api/sources"
+  || pathname === "/api/reach/last"
   || /^\/api\/nodes\/\d+\/diagnostics$/.test(pathname);
 function observeHealth(page) {
   const scriptErrors = [], consoleErrors = [], resourceErrors = [], optionalResponses = [];
