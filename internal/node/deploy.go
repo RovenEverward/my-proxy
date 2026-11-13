@@ -80,8 +80,6 @@ func journalTail(ctx context.Context, r Runner, n model.Node) string {
 }
 
 func Restart(ctx context.Context, r Runner, n model.Node) error { return unit(ctx, r, n, "restart") }
-func Start(ctx context.Context, r Runner, n model.Node) error   { return unit(ctx, r, n, "start") }
-func Stop(ctx context.Context, r Runner, n model.Node) error    { return unit(ctx, r, n, "stop") }
 
 func unit(ctx context.Context, r Runner, n model.Node, action string) error {
 	_, err := r.Run(ctx, n, "systemctl "+action+" "+shellQuote(n.ServiceNameOrDefault()))

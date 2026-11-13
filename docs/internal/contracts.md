@@ -300,7 +300,7 @@ $ curl -H 'Authorization: Bearer demo-token' \
 
 `sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
 
-`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/model.go` 里的 `ControlStatus`。
+`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/status.go` 里的 `ControlStatus`。
 
 `status` 里的 `version` 是**这份控制面自己的版本**(编译期注入,拿不到时为空串),`update` 是后台每 6 小时问一次 GitHub 的结果:`current` / `latest` / `behind`(落后几次发布)/ `url`(发布页)/ `notes`(发布说明摘要,按 rune 截到 2000 字)/ `published_at` / `checked_at` / `error`。**它只报告,不下载不替换** —— 升级是显式动作,走 `POST /api/update/control` 与 `mpx update apply`,见 [安装与升级](../atlas/install-update.md) 和 [decisions.md](decisions.md) 第 39 条。检查失败时 `error` 有值而上次的结论仍然保留(`checked_at` 不变),因为断网不等于没有新版本;`checked_at` 为 `null` 表示还没查过。判断"有没有更新"只需看 `behind > 0`,`behind` 为 0 涵盖了「已是最新」「比不出来(伪版本)」「没装版本号」三种情形。
 

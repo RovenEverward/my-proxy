@@ -2,7 +2,6 @@ package source
 
 import (
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -141,21 +140,6 @@ func requireMap(m map[string]any, key string) (map[string]any, error) {
 	return sub, nil
 }
 
-// getMap 取子对象字段;非对象时返回 nil(用于宽松读取,调用方负责用
-// requireMap 校验关键字段)。
-func getMap(m map[string]any, keys ...string) map[string]any {
-	for _, k := range keys {
-		v, ok := m[k]
-		if !ok {
-			continue
-		}
-		if sub, ok := v.(map[string]any); ok {
-			return sub
-		}
-	}
-	return nil
-}
-
 // parsePort 校验端口;端口写成字符串、带空格、越界都算坏。
 func parsePort(v any) (int, error) {
 	switch t := v.(type) {
@@ -182,24 +166,6 @@ func checkPort(n int) (int, error) {
 		return 0, fmt.Errorf("端口 %d 越界", n)
 	}
 	return n, nil
-}
-
-// parseHostPort 从 "host:port" 拆出地址与端口。
-func parseHostPort(s string) (string, int, error) {
-	host, portStr, err := net.SplitHostPort(s)
-	if err != nil {
-		return "", 0, fmt.Errorf("地址端口格式无效")
-	}
-	port, err := checkPort(mustAtoi(portStr))
-	return host, port, err
-}
-
-func mustAtoi(s string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return -1
-	}
-	return n
 }
 
 // mapNetwork 把外部容器的传输名归一到 model.Network。归不了的返回

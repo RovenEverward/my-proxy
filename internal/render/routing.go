@@ -2,7 +2,6 @@ package render
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -350,9 +349,4 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 		}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
-}
-
-// RoutingSummary 是给日志与错误用的简短描述。
-func (p RoutingPlan) String() string {
-	return fmt.Sprintf("%d 条规则 · %d 个策略组 · 兜底 %s", len(p.Rules), len(p.Groups), p.Final)
 }

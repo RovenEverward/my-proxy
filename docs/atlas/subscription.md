@@ -1,8 +1,8 @@
 ---
 kind: part
 parent: README.md
-code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
-verified: 2026-11-12 @ 440dd5b + UC-05 working tree
+code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/server/settings.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/model/settings.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
+verified: 2026-11-12 @ cadd0fb + ISS-10 working tree
 ---
 # 订阅与分流
 

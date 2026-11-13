@@ -180,7 +180,7 @@ type Store interface {
 }
 
 // Manager 是唯一的规则集拉取执行者:定时刷新(RefreshDue)与手动刷新
-// (RefreshAll / StartRefresh)共用同一份单飞作业表,请求彼此合并、不重复拉取。
+// (StartRefresh)共用同一份单飞作业表,请求彼此合并、不重复拉取。
 //
 // 引用集合不在包里读库,由 refs 回调注入(控制面填 ListEnabledRules):
 // 「哪些文件该镜像」是订阅渲染侧的决定,拉取器只执行。
@@ -225,7 +225,7 @@ func New(st Store, client *http.Client, changed func(becameReady bool)) *Manager
 		ctx: ctx, cancel: cancel, jobs: map[string]chan struct{}{}}
 }
 
-// SetRefs 注入「当前启用中的全部规则」。必须在 Run/RefreshDue/RefreshAll 之前
+// SetRefs 注入「当前启用中的全部规则」。必须在 Run/RefreshDue 之前
 // 调用;没接时这几个方法什么都不做 —— 宁可不拉,也不把整个目录都拖回来。
 func (m *Manager) SetRefs(refs func() ([]model.RouteRule, error)) { m.refs = refs }
 
@@ -306,18 +306,6 @@ func (m *Manager) RefreshDue(now time.Time) {
 			_ = m.StartRefresh(f.Key)
 		}
 	}
-}
-
-// RefreshAll 对引用集合里全部文件各起一次刷新(异步,不等结果)。
-// 返回实际发起的数量,重复的 key 由 StartRefresh 的单飞合并掉。
-func (m *Manager) RefreshAll() int {
-	n := 0
-	for _, f := range m.referencedFiles() {
-		if err := m.StartRefresh(f.Key); err == nil {
-			n++
-		}
-	}
-	return n
 }
 
 // Run 是刷新循环:启动先补一轮到期的,之后每 30s 扫一遍引用集合。

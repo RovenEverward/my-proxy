@@ -211,8 +211,6 @@ func portFromString(s string) (int, error) {
 	return checkPort(n)
 }
 
-func atoi2(s string) int { n, _ := strconv.Atoi(s); return n }
-
 // joinUserInfo 把 userinfo 原样拼回:trojan 密码里可能有编码过的冒号,
 // url.User 已经按第一个冒号切好,拼回去即可。
 func joinUserInfo(u *url.URL) string {
