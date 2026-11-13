@@ -1,6 +1,6 @@
 # CI 用:在 Windows runner 上验证 setup.exe / 卸载 / install-cli.ps1 不会弄坏长的用户 PATH。
 # 只在一次性的 CI 机器上跑 —— 它会改当前用户的 PATH(最后会恢复原值)。
-param([Parameter(Mandatory)][string]$Setup, [Parameter(Mandatory)][string]$Exe)
+param([Parameter(Mandatory)][string]$Setup, [Parameter(Mandatory)][string]$Exe, [string]$ExeName = 'mpx.exe')
 $ErrorActionPreference = 'Stop'
 $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
 $opt = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
@@ -21,7 +21,7 @@ try {
 
   $dir = 'C:\mpx-path-test'
   Start-Process -FilePath $Setup -ArgumentList '/S', "/D=$dir" -Wait
-  if (-not (Test-Path "$dir\mpx.exe")) { throw 'setup.exe 没装上 mpx.exe' }
+  if (-not (Test-Path "$dir\$ExeName")) { throw "setup.exe 没装上 $ExeName" }
   Expect 'setup.exe /S 之后' "$long;$dir"
 
   Start-Process -FilePath "$dir\uninstall.exe" -ArgumentList '/S', "_?=$dir" -Wait

@@ -44,8 +44,8 @@
 
 | 你的电脑 | 下载 | 怎么装 |
 | :--- | :--- | :--- |
-| Windows（64 位） | [MPX-Windows-x64-setup.exe](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe) | 双击安装，不需要管理员 |
-| macOS（Intel 与 Apple 芯片） | [MPX-macOS.dmg](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg) | 打开后把 MPX 拖进「应用程序」 |
+| Windows（64 位） | [MPX-Windows-x64-setup.exe](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Windows-x64-setup.exe) | 双击安装，不需要管理员；或 `winget install RovenEverward.MPX`（同时装好 `mpx` 命令行） |
+| macOS（Intel 与 Apple 芯片） | [MPX-macOS.dmg](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-macOS.dmg) | 打开后把 MPX 拖进「应用程序」；或 `brew install --cask RovenEverward/mpx/mpx`（同时装好 `mpx` 命令行） |
 | Ubuntu / Debian（x86_64） | [MPX-Linux-amd64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-amd64.deb) | 双击安装 |
 | Ubuntu / Debian（ARM） | [MPX-Linux-arm64.deb](https://github.com/RovenEverward/my-proxy/releases/latest/download/MPX-Linux-arm64.deb) | 双击安装 |
 | 其他 Linux | [最新发布页](https://github.com/RovenEverward/my-proxy/releases/latest)的 `MPX-<版本>-Linux-amd64.tar.gz` | 解压后运行 `./install.sh` |

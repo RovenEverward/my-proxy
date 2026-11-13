@@ -1,12 +1,12 @@
 ---
 kind: part
 parent: README.md
-code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, scripts/dev-deploy.py, scripts/dev-deploy-remote.py, scripts/dev-subdiff/]
-verified: 2026-10-21 @ 439f2df
+code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/cli/console_windows.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, deploy/installers/, scripts/dev-deploy.py, scripts/dev-deploy-remote.py, scripts/dev-subdiff/]
+verified: 2026-11-12 @ e954ed7
 ---
 # 安装与升级
 
-> **30 秒版**：从一台能 root SSH 的裸 VPS 开始，`mpx init`（或 `mpx ui` 的首次安装向导）在你电脑上经 SSH 把控制面和第一个节点装好，最后打印订阅地址。之后升级也不用登录：`mpx update`（或 `mpx ui` 的「更新」入口）能升控制面、各节点核心和本机 CLI，失败自动回到上一版，本机也能手动回退。
+> **30 秒版**：从一台能 root SSH 的裸 VPS 开始，`mpx init`（或 `mpx ui` 的首次安装向导）在你电脑上经 SSH 把控制面和第一个节点装好，最后打印订阅地址。之后升级也不用登录：`mpx update`（或 `mpx ui` 的「更新」入口）能升控制面、各节点核心和本机 CLI，失败自动回到上一版，本机也能手动回退。macOS 和 Windows 上也能用包管理器装：Homebrew tap（cask 装 MPX.app 并把 app 内 mpx 软链进 brew bin）与 winget（桌面 setup.exe 把安装目录加进用户 PATH）——两个渠道只有「装」这一层，升级仍走自更新，见 [deploy/installers](../../deploy/installers/README.md)。
 
 ## 边界
 
@@ -38,3 +38,5 @@ verified: 2026-10-21 @ 439f2df
 - 节点连不上 GitHub → `apply nodes` 拉不动 xray 包 → 这台失败、整批停下；推送整包的 `mpx node install` 还在。
 - `mpx init` 至今只支持单机全包（控制面和节点同一台）；分开部署走手工步骤（[缺口与待定项](../internal/open-questions.md) 第 4 节）。
 - 发布件文件名是升级程序写死的 → 老版本按固定名字下载压缩包 → 改发布格式时压缩包必须继续保留。
+- Homebrew cask 装出的 MPX.app 直接带 `com.apple.quarantine` → 未签名的二进制一执行就 `Killed: 9`(app 和 bin 软链都中招) → cask 必须有 postflight 去隔离,签名落地后才删。
+- 桌面版 Windows 二进制是 `-H windowsgui` 的 GUI 进程,没有控制台 → 它通过 PATH 当 `mpx` 用时靠 `internal/cli/console_windows.go` 挂回父终端才有输出 → 别在 Execute 前面做依赖 stdout 可见性的逻辑。

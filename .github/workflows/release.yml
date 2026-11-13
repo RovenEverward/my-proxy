@@ -722,3 +722,78 @@ jobs:
           done
           echo "发布完成,附件清单:"
           gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'
+
+  # 发布完成后,把 Homebrew tap 的 cask 与 winget manifest 更新到这个版本。
+  # tap 是自家仓库(RovenEverward/homebrew-mpx),直接推;winget-pkgs 是微软的
+  # 仓库,走 fork + PR,需要 WINGET_GITHUB_TOKEN secret(带 public_repo 的 PAT)。
+  # 失败不阻塞已经完成的发布:安装渠道落后一版可以手工补,见 deploy/installers/。
+  bump-installers:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取版本号与 SHA256SUMS
+        id: sums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+          gh release download "$TAG" --repo "$REPO" --pattern SHA256SUMS --dir /tmp
+          DMG_SHA=$(grep "  MPX-macOS.dmg$" /tmp/SHA256SUMS | cut -d' ' -f1)
+          EXE_SHA=$(grep "  MPX-Windows-x64-setup.exe$" /tmp/SHA256SUMS | cut -d' ' -f1)
+          [ -n "$DMG_SHA" ] && [ -n "$EXE_SHA" ] || { echo "::error::SHA256SUMS 里没有 dmg 或 setup.exe"; exit 1; }
+          echo "dmg_sha=$DMG_SHA" >> "$GITHUB_OUTPUT"
+          echo "exe_sha=$EXE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: 更新 Homebrew tap 的 cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_REPO: RovenEverward/homebrew-mpx
+          TAG: ${{ github.ref_name }}
+          VER: ${{ steps.sums.outputs.ver }}
+          DMG_SHA: ${{ steps.sums.outputs.dmg_sha }}
+        run: |
+          set -eu
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          cd tap
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          sed -i -e "s/^  version \".*\"$/  version \"${VER}\"/" \
+                  -e "s/^  sha256 \".*\"$/  sha256 \"${DMG_SHA}\"/" Casks/mpx.rb
+          if git diff --quiet; then
+            echo "cask 已是最新,不动"
+          else
+            git add Casks/mpx.rb
+            git commit -m "cask: mpx ${VER}"
+            git push
+            echo "tap 已更新到 ${VER}"
+          fi
+
+      - name: 更新 winget manifest(wingetcreate)
+        env:
+          TAG: ${{ github.ref_name }}
+          VER: ${{ steps.sums.outputs.ver }}
+          EXE_SHA: ${{ steps.sums.outputs.exe_sha }}
+          REPO: ${{ github.repository }}
+          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${WINGET_TOKEN:-}" ]; then
+            echo "::warning::未配置 WINGET_GITHUB_TOKEN,跳过 winget 提交。首次提交流程见 deploy/installers/winget.md"
+            exit 0
+          fi
+          case "$(uname -m)" in
+            x86_64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) echo "未知架构"; exit 1 ;;
+          esac
+          dl="https://github.com/microsoft/winget-cli/releases/latest/download/WinGet.Client.${arch}.zip"
+          curl -fsSL "$dl" -o /tmp/winget.zip
+          unzip -q /tmp/winget.zip -d /tmp/winget
+          WINGET=$(find /tmp/winget -name wingetcreate -type f | head -1)
+          [ -x "$WINGET" ] || { echo "::error::找不到 wingetcreate"; exit 1; }
+          url="https://github.com/${REPO}/releases/download/${TAG}/MPX-${VER}-Windows-x64-setup.exe"
+          "$WINGET" update RovenEverward.MPX --version "$VER" --urls "$url|x64" \
+            --submit --token "$WINGET_TOKEN"
