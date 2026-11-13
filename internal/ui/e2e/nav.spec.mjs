@@ -230,10 +230,18 @@ for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲和�
   await expect(main).not.toHaveClass(/scrolling/);
   expect((await measure()).color).toBe(idle.color);
   expect([(await measure()).width, (await measure()).content]).toEqual([idle.width, idle.content]);
-  // 离开后旧 main 不得重新排出隐藏计时器。
-  await page.goto(env.origin + "/#nodes");
+  // Leave while the old page still shows its scrolling state.
+  await page.clock.install();
+  await main.evaluate(m => { m.scrollTop = 0; });
+  await expect(main).toHaveClass(/scrolling/);
+  await page.locator('.side a[href="#nodes"]').click();
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  expect(await page.evaluate(() => mainScrollTimer)).toBe(0);
+  await expect(main).not.toHaveClass(/scrolling/);
+  const nextPage = await measure();
+  await page.clock.runFor(1_000);
+  await expect(main).not.toHaveClass(/scrolling/);
+  expect((await measure()).color).toBe("rgba(0, 0, 0, 0)");
+  expect([(await measure()).width, (await measure()).content]).toEqual([nextPage.width, nextPage.content]);
 });
 
 test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", async ({ page }) => {
@@ -258,7 +266,7 @@ test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", asyn
   expect(await measure()).toEqual(idle);
 });
 
-test("Windows 窄屏收起的抽屉完全位于视口之外", async ({ page }) => {
+test("Windows 窄屏收起的抽屉无可见或可聚焦残留", async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 900 });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "platform", { value: "Win32" });
@@ -270,5 +278,14 @@ test("Windows 窄屏收起的抽屉完全位于视口之外", async ({ page }) =
   });
   await login(page, env);
   await expect(page.locator("html")).toHaveClass(/tb-right/);
-  await expect.poll(() => page.locator("#drawer").evaluate(e => e.getBoundingClientRect().top >= innerHeight)).toBe(true);
+  const drawer = page.locator("#drawer");
+  // Radix unmounts closed content. A retained drawer must stay off screen.
+  await expect.poll(() => drawer.evaluateAll(elements => elements.every(element => element.getBoundingClientRect().top >= innerHeight))).toBe(true);
+  expect(await drawer.evaluateAll(elements => elements.every(element => {
+    if (element.contains(document.activeElement)) return false;
+    return [...element.querySelectorAll('a[href],button,input:not([type="hidden"]),select,textarea,[tabindex],[contenteditable="true"]')].every(control => {
+      if (control.closest('[inert]') || control.matches(':disabled') || !control.getClientRects().length || getComputedStyle(control).visibility !== 'visible') return true;
+      return control.hasAttribute('tabindex') && control.tabIndex < 0;
+    });
+  }))).toBe(true);
 });

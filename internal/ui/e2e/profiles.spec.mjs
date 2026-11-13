@@ -3,6 +3,10 @@
 // 点别的会 POST /local/profiles/use 并整页刷新;
 // 弹窗里有「添加控制面…」入口,只有一个档时也弹(加新控制面就从这进)。
 import { test, expect } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+
+test.use({ deviceScaleFactor: 2 });
 import { startEnv, login } from "./env.mjs";
 
 let env;
@@ -68,8 +72,26 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   await expect(page.locator("#modal.open")).toBeHidden();
   await expect(page.locator(".setup")).toBeVisible();
   await expect(page.locator("#s-cp-addr")).toBeVisible();
-  await expect(page.locator("#s-cp-profile")).toBeVisible();
+  await expect(page.getByLabel("控制面名称", { exact: true })).toBeVisible();
+  await expect(page.locator("#s-cp-profile")).toHaveAttribute("aria-describedby", "s-cp-profile-hint");
+  await expect(page.locator("#s-cp-name")).toBeHidden();
+  await page.fill("#s-cp-profile", "work");
   await page.fill("#s-cp-addr", "203.0.113.10");
+  const shots = process.env.MPX_CONNECT_FORM_SHOTS;
+  if (shots) {
+    mkdirSync(shots, { recursive: true });
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: path.join(shots, "collapsed.png"), fullPage: true, animations: "disabled" });
+  }
+  const optional = page.getByText("可选设置", { exact: true });
+  await optional.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#s-cp-name")).toBeVisible();
+  if (shots) {
+    await optional.evaluate(el => el.blur());
+    await page.screenshot({ path: path.join(shots, "expanded.png"), fullPage: true, animations: "disabled" });
+  }
+  await optional.click();
   await page.click("#s-cp-probe");
   // 取到指纹进入下一步:指纹显示出来,设备密码输入框出现;界面里没有命令文案。
   await expect(page.locator(".setup")).toContainText(FP);
@@ -78,6 +100,36 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   // 指纹框不是命令,前面不能有 shell 提示符 `$`(以前 .cmd::before 会加一个)。
   const before = await page.locator(".setup .cmd").first().evaluate(el => getComputedStyle(el, "::before").content);
   expect(["none", "normal", ""]).toContain(before);
+
+  const calls = [];
+  await page.route("**/local/profiles/connect", r => {
+    calls.push(r.request().postDataJSON());
+    return r.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "控制面 work 已存在,请换一个名字" }) });
+  });
+  await expect(page.locator("#s-cp-go")).toBeDisabled();
+  await page.locator("#s-cp-ok").check();
+  await page.locator("#s-cp-pw").fill("Test-Device-445566");
+  for (const invalid of ["", "中文", "has space", "bad.name", "a".repeat(33)]) {
+    await page.locator("#s-cp-profile").fill(invalid);
+    await page.locator("#s-cp-go").click();
+    await expect(page.locator("#s-cp-profile")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator(".setup")).toContainText("只能用字母、数字、- 和 _，1–32 个字符");
+    expect(calls).toHaveLength(0);
+  }
+  for (const [index, profile] of ["a", "A0_-".repeat(8)].entries()) {
+    await page.locator("#s-cp-profile").fill(profile);
+    if (index) {
+      await optional.click();
+      await page.locator("#s-cp-name").fill("e2e-workstation");
+      await optional.click();
+    }
+    await page.locator("#s-cp-pw").fill("Test-Device-445566");
+    await page.locator("#s-cp-go").click();
+    await expect.poll(() => calls.length).toBe(index + 1);
+    await expect(page.locator(".callout.bad .raw")).toContainText("已存在,请换一个名字");
+    expect(calls[index]).toMatchObject({ profile, name: index ? "e2e-workstation" : "", fingerprint: FP });
+    await expect(page.locator("#s-cp-profile")).toHaveValue(profile);
+  }
 });
 
 test("只有一个控制面:也弹窗,好从这加新的", async ({ page }) => {

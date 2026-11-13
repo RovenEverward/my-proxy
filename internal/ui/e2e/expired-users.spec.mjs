@@ -115,20 +115,41 @@ test("超限续期可清零；清零失败重试不重复顺延", async ({ page 
 
 test("行菜单单开、外点和 Esc 收起，总览删除后不离页", async ({ page }) => {
   await open(page);
-  const menus = page.locator(".ov-act .menu:not([hidden])");
-  await row(page, "recent").locator('[data-act=row-menu]').click();
-  await row(page, "thirty").locator('[data-act=row-menu]').click(); await expect(menus).toHaveCount(1);
+  const menus = page.getByRole("menu");
+  const openMenu = async name => test.step(`打开 ${name} 的行菜单`, async () => {
+    const trigger = row(page, name).locator('[data-act=row-menu]');
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(trigger).toHaveAttribute("aria-controls", /\S+/);
+    const menuId = await trigger.getAttribute("aria-controls");
+    expect(menuId, `${name}: open trigger must retain its menu ID`).toEqual(expect.any(String));
+    expect(menuId).toMatch(/\S+/);
+    await expect(menus).toHaveCount(1);
+    await expect(menus).toHaveAttribute("id", menuId);
+    await expect(menus).toHaveAttribute("data-state", "open");
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(trigger).toHaveAttribute("aria-controls", menuId);
+    return menus;
+  });
+  await openMenu("recent");
+  await openMenu("thirty");
+  await expect(row(page, "recent").locator('[data-act=row-menu]')).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("Escape"); await expect(menus).toHaveCount(0);
-  await row(page, "recent").locator('[data-act=row-menu]').click(); await page.locator("h1").click(); await expect(menus).toHaveCount(0);
+  await openMenu("recent"); await page.locator("h1").click(); await expect(menus).toHaveCount(0);
   await page.setViewportSize({ width: 1280, height: 360 });
   const last = row(page, "thirty").locator('[data-act=row-menu]');
   await last.scrollIntoViewIfNeeded();
   await last.evaluate(e => { const main = document.querySelector("main"); main.scrollTop += e.getBoundingClientRect().bottom - innerHeight + 12; });
-  await last.click();
-  await expect(row(page, "thirty").locator(".menu")).toHaveClass(/up/);
-  expect(await row(page, "thirty").locator(".menu").evaluate(e => e.getBoundingClientRect().bottom <= innerHeight)).toBe(true);
-  await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1440, height: 900 });
-  await row(page, "recent").locator('[data-act=row-menu]').click(); await row(page, "recent").locator('[data-act=user-rm]').click();
+  const above = await openMenu("thirty");
+  await expect(above).toHaveAttribute("data-side", "top");
+  await expect.poll(() => above.evaluate(element => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.top >= 0 && bounds.left >= 0 && bounds.bottom <= innerHeight && bounds.right <= innerWidth;
+  })).toBe(true);
+  await page.keyboard.press("Escape"); await expect(menus).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const deleting = await openMenu("recent");
+  await deleting.getByRole("menuitem", { name: "删除用户", exact: true }).click();
   await expect(page.locator("#typed")).toHaveClass(/mono/);
   await expect(page.locator("#okb")).toBeDisabled(); await page.fill("#typed", "recent"); await page.click("#okb");
   await expect(row(page, "recent")).toHaveCount(0); await expect(page).toHaveURL(/#overview$/);
@@ -234,9 +255,14 @@ test("过期用户验收图：平台、主题、尺寸和处理状态", async ({
       const shot = async state => { await page.mouse.move(width - 6, height - 6); await page.screenshot({ path: `${out}/${state}-${width}x${height}-${platform}-${theme}@2x.png` }); };
       await shot("ov-expired");
       await row(page, "grace").locator('[data-act=row-menu]').click();
-      await expect(row(page, "grace").locator(".menu")).toBeVisible();
+      const menu = page.getByRole("menu");
+      await expect(menu).toBeVisible();
+      const menuId = await row(page, "grace").locator('[data-act=row-menu]').getAttribute("aria-controls");
+      expect(menuId).toEqual(expect.any(String));
+      expect(menuId).toMatch(/\S+/);
+      await expect(menu).toHaveAttribute("id", menuId);
       await shot("ov-menu");
-      await row(page, "grace").locator('[data-act=user-rm]').click();
+      await menu.getByRole("menuitem", { name: "删除用户", exact: true }).click();
       await expect(page.locator("#typed")).toBeVisible(); await shot("ov-delete");
       await page.click('[data-act=modal-cancel]');
       await row(page, "carol").locator('[data-act=user-renew]').click();

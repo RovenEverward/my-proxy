@@ -2,7 +2,7 @@
 """生成界面用的中文字体子集:internal/ui/assets/fonts/NotoSansSC-subset.woff2。
 
 字符集 = GB2312 一级和二级字(6763 个)
-       + 界面资产(internal/ui/assets 下 js/html/css)、Go 源码(界面会显示的
+       + 前端真源与静态文本(递归扫描 frontend 和 assets，跳过 assets/build)、Go 源码(界面会显示的
          ui_hint 等)和 CHANGELOG(更新弹窗里的发布说明)里出现的全部中文、全角标点
        + CJK 标点、全角符号两个整块。
 同时写出 NotoSansSC-subset.txt(子集里的字,按码位排序;第一行是 woff2 的 sha256),
@@ -23,6 +23,17 @@ LIST = OUT.with_suffix(".txt")
 def wide(ch):
     return ord(ch) >= 0x2E80 or 0x2010 <= ord(ch) <= 0x206F  # 中日韩各区 + 全角 + 常用标点(— … “ ” ·)
 
+def ui_sources():
+    extensions = {".js", ".mjs", ".ts", ".tsx", ".html", ".css", ".svg"}
+    for name in ("frontend", "assets"):
+        directory = ROOT / "internal/ui" / name
+        for file in sorted(directory.rglob("*")):
+            if name == "assets" and file.relative_to(directory).parts[0] == "build":
+                continue
+            if file.is_file() and file.suffix.lower() in extensions:
+                yield file
+
+
 def main(src):
     chars = set()
     for b1 in range(0xB0, 0xF8):  # GB2312 一级 + 二级:B0A1–D7F9、D8A1–F7FE
@@ -33,8 +44,7 @@ def main(src):
                 pass
     chars.update(chr(c) for c in range(0x3000, 0x3040))
     chars.update(chr(c) for c in range(0xFF01, 0xFF5F))
-    files = [*ROOT.glob("internal/ui/assets/*.js"), *ROOT.glob("internal/ui/assets/*.html"), *ROOT.glob("internal/ui/assets/*.css"),
-             *ROOT.glob("internal/**/*.go"), *ROOT.glob("cmd/**/*.go"), ROOT / "CHANGELOG.md"]
+    files = [*ui_sources(), *ROOT.glob("internal/**/*.go"), *ROOT.glob("cmd/**/*.go"), ROOT / "CHANGELOG.md"]
     for f in files:
         chars.update(c for c in f.read_text(encoding="utf-8") if wide(c))
     font = TTFont(src)

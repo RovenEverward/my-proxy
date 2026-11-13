@@ -105,31 +105,42 @@ test("名称与节点一致时不提醒", async ({ page }) => {
   await expect(group(page).locator(".cx-warn")).toHaveCount(0);
 });
 
-test("组件可单独渲染:CONN.load([1]) + CONN.groups(d,{node:1}) 只有节点 1 的连接行", async ({ page }) => {
-  await goto(page);
-  // 直接调组件拉数据、渲染一个节点的连接列表,验证节点详情的筛选边界。
-  const info = await page.evaluate(async () => {
-    const d = await CONN.load([1]);
-    const box = document.createElement("div");
-    box.id = "conn-only";
-    box.innerHTML = CONN.groups(d, { node: 1 }).toString();
-    document.body.append(box);
-    return {
-      nodes: d.nodes.map(n => n.id),
-      inbounds: d.inbounds.map(i => [i.id, i.node_id]),
-      rows: [...box.querySelectorAll(".cx-row")].map(r => +r.dataset.id),
-      hasGroupHead: !!box.querySelector(".ng-h"),
-    };
+test("真实节点详情隔离连接行、编辑上下文与按节点读取", async ({ page }) => {
+  await login(page, env);
+  await page.locator('.side a[href="#nodes"]').click();
+  await expect(page.locator('tr[data-href="#nodes/1"]')).toBeVisible();
+  await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  const hostReads = [], metadataReads = [];
+  page.on("request", request => {
+    if (request.method() !== "GET") return;
+    const path = new URL(request.url()).pathname;
+    const host = /^\/api\/inbounds\/(\d+)\/hosts$/.exec(path);
+    const metadata = /^\/api\/nodes\/(\d+)\/metadata$/.exec(path);
+    if (host) hostReads.push(Number(host[1]));
+    if (metadata) metadataReads.push(Number(metadata[1]));
   });
-  expect(info.nodes).toEqual([1]);
-  expect(info.inbounds.every(([, nid]) => nid === 1)).toBe(true);
-  // 东京 A 上两条连接(1 和 2),洛杉矶的那条不在。
-  expect(info.rows).toEqual([1, 2]);
-  expect(info.hasGroupHead).toBe(false);
-  const box = page.locator("#conn-only");
-  await expect(box.locator(".cx-row")).toHaveCount(2);
-  await expect(box).not.toContainText("🇺🇸 洛杉矶 A");
-  await expect(box.locator(".cx-row").first()).toHaveAttribute("data-act", "conn-edit");
+  for (const [id, rows, label] of [[1, [1, 2], "东京 A"], [2, [3], "洛杉矶 A"], [1, [1, 2], "东京 A"]]) {
+    hostReads.length = 0; metadataReads.length = 0;
+    const connectionsRead = page.waitForResponse(response => new URL(response.url()).pathname === `/api/inbounds/${rows.at(-1)}/hosts`);
+    await page.locator(`tr[data-href="#nodes/${id}"]`).click();
+    await connectionsRead;
+    await expect(page.locator(".ph h1")).toContainText(label);
+    await expect(page.locator("html[data-loading]")).toHaveCount(0);
+    const box = group(page);
+    await expect(box.locator(".cx-row")).toHaveCount(rows.length);
+    expect(await box.locator(".cx-row").evaluateAll(elements => elements.map(element => Number(element.dataset.id)))).toEqual(rows);
+    await expect(box.locator(".ng-h")).toHaveCount(0);
+    await expect(box.locator(".cx-row").first()).toHaveAttribute("data-act", "conn-edit");
+    // Only this node's connections need host and metadata reads.
+    expect(hostReads.slice().sort((a, b) => a - b)).toEqual(rows);
+    expect(metadataReads).toEqual([id]);
+    await box.locator(`.cx-row[data-id="${rows[0]}"] button[data-act=conn-edit]`).click();
+    await expect(page.locator("#conn-form")).toBeVisible();
+    await expect(page.locator("#conn-form").getByLabel("节点", { exact: true })).toHaveValue(String(id));
+    await page.locator('#drawer [data-act="close"]').last().click();
+    await page.locator('.crumb a[href="#nodes"]').click();
+    await expect(page.locator("html[data-loading]")).toHaveCount(0);
+  }
 });
 
 test("添加连接:Reality 端口 8443 已占用时顺延到 8444,预览跟着变", async ({ page }) => {

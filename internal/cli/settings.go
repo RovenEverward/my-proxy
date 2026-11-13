@@ -34,7 +34,8 @@ mpx settings rules list,它第一行就写着来源。`,
 }
 
 func init() {
-	settingsCmd.AddCommand(settingsShowCmd, settingsSetCmd, settingsTestCmd, settingsTemplateCmd, settingsRulesCmd)
+	settingsCmd.AddCommand(settingsShowCmd, settingsSetCmd, settingsTestCmd, settingsTemplateCmd, settingsRulesCmd,
+		rulesetModeCmd)
 	settingsSetCmd.Flags().StringVarP(&settingsSetFile, "file", "f", "", "设置 JSON 文件;- 表示从 stdin 读")
 	settingsTemplateCmd.AddCommand(settingsTemplateGetCmd, settingsTemplateSetCmd, settingsTemplateDelCmd)
 	settingsTemplateSetCmd.Flags().StringVarP(&settingsTemplateFile, "file", "f", "", "模板文件;- 表示从 stdin 读")

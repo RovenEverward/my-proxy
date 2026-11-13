@@ -363,3 +363,88 @@ func TestRoutingOfficialParsers(t *testing.T) {
 		}
 	}
 }
+
+// UC-05:RulesetURL 注入时 provider/rule_set 的 url 被改写,未注入时与旧行为
+// 逐字节一致。
+func TestRulesetURLRewrite(t *testing.T) {
+	eps := routingEndpoints()
+	plan := seedPlan(t, eps)
+	plan.Rules = append(plan.Rules,
+		model.RouteRule{Type: model.RuleGeoIP, Value: "CN", Target: model.TargetDirect, Enabled: true})
+
+	// nil 与「返回上游」的闭包产出同样的内容:注入本身不改变字节。
+	plain, err := ClashRouting(eps, plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan2 := plan
+	plan2.RulesetURL = func(f, n, up string) string { return up }
+	plain2, err := ClashRouting(eps, plan2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(plain) != string(plain2) {
+		t.Fatal("返回上游地址的闭包应与未注入逐字节一致")
+	}
+
+	// 私有化闭包:已知名字换成镜像,其余原样返回。
+	mirror := func(f, n, up string) string {
+		if f == "clash" && n == "openai" {
+			return "https://cp.example.com/sub/tok/ruleset/clash/openai"
+		}
+		if f == "singbox" && n == "openai" {
+			return "https://cp.example.com/sub/tok/ruleset/singbox/openai"
+		}
+		return up
+	}
+	plan.RulesetURL = mirror
+	out, err := ClashRouting(eps, plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc clashDoc
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatal(err)
+	}
+	openai, _ := doc.Providers["openai"].(map[string]any)
+	got, _ := openai["url"].(string)
+	if got != "https://cp.example.com/sub/tok/ruleset/clash/openai" {
+		t.Fatalf("openai provider 没被改写: %v", doc.Providers["openai"])
+	}
+	for name, p := range doc.Providers {
+		pm, _ := p.(map[string]any)
+		u, _ := pm["url"].(string)
+		if name != "openai" && strings.Contains(u, "cp.example.com") {
+			t.Fatalf("未就绪的 %s 不该被改写: %s", name, u)
+		}
+	}
+
+	// sing-box 路径:set 引用的 rule_set 与 geoip 合成文件共用 addSet 改写。
+	sbOut, err := SingBoxRouting(eps, plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Route struct {
+			RuleSet []map[string]any `json:"rule_set"`
+		} `json:"route"`
+	}
+	if err := json.Unmarshal(sbOut, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, s := range cfg.Route.RuleSet {
+		if s["tag"] == "openai" {
+			found = true
+			if s["url"] != "https://cp.example.com/sub/tok/ruleset/singbox/openai" {
+				t.Fatalf("singbox openai 没被改写: %v", s["url"])
+			}
+		}
+		if s["tag"] == "geoip-cn" && !strings.HasPrefix(s["url"].(string), "https://cdn.jsdelivr.net/") {
+			t.Fatalf("geoip 未换写时应保留上游: %v", s["url"])
+		}
+	}
+	if !found {
+		t.Fatal("sing-box 配置里没有 openai rule_set")
+	}
+}

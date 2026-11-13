@@ -130,6 +130,26 @@ func (s *Store) ListRules(userID int64) ([]model.RouteRule, error) {
 	return listRules(s.db, userID)
 }
 
+// ListEnabledRules 返回全部作用域里启用中的规则。规则集镜像要按「现在被哪些
+// 规则引用」决定要拉哪些文件,与作用域无关,所以这里不过滤 user_id。
+func (s *Store) ListEnabledRules() ([]model.RouteRule, error) {
+	rows, err := s.db.Query(`SELECT id, COALESCE(user_id, 0), position, type, value, target, enabled, note
+		FROM route_rules WHERE enabled = 1 ORDER BY position, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.RouteRule{}
+	for rows.Next() {
+		var r model.RouteRule
+		if err := rows.Scan(&r.ID, &r.UserID, &r.Position, &r.Type, &r.Value, &r.Target, &r.Enabled, &r.Note); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func listRules(q querier, userID int64) ([]model.RouteRule, error) {
 	rows, err := q.Query(`SELECT id, COALESCE(user_id, 0), position, type, value, target, enabled, note FROM route_rules
 		WHERE COALESCE(user_id, 0) = ? ORDER BY position, id`, userID)

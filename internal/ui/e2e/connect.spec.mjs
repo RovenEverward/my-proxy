@@ -39,15 +39,27 @@ async function probe(page) {
 }
 
 // a. 全程:指纹与控制面一致 → 核对 → 接入 → 进主界面,控制面落在临时配置目录。
-test("a. 接入成功:指纹一致,进主界面,配置写入 https 地址与指纹", async ({ page }) => {
+for (const customName of [false, true]) {
+test(`a. 接入成功:${customName ? "自定义设备名" : "默认设备名"},指纹一致,配置写入`, async ({ page }) => {
   const u = await openConnectForm(page);
   const fpBox = await probe(page);
   await expect(fpBox).toHaveText(env.fp);
   await expect(page.locator("#s-cp-ok")).toBeVisible();
   await page.locator("#s-cp-ok").check();
-  await page.locator("#s-cp-name").fill("e2e-box");
+  await expect(page.locator("#s-cp-profile")).toHaveCount(0);
+  await expect(page.locator("#s-cp-name")).toBeHidden();
+  if (customName) {
+    await page.getByText("可选设置", { exact: true }).click();
+    await page.locator("#s-cp-name").fill("e2e-box");
+    await page.getByText("可选设置", { exact: true }).click();
+  }
   await page.locator("#s-cp-pw").fill(env.pw);
+  const submitted = page.waitForRequest(r => r.url().endsWith("/local/setup/connect") && r.method() === "POST");
   await page.locator("#s-cp-go").click();
+
+  const body = (await submitted).postDataJSON();
+  expect(body.name).toBe(customName ? "e2e-box" : "");
+  expect(body).not.toHaveProperty("profile");
 
   // 接入成功后整页刷新,setup 遮罩拆掉,出现侧栏(正常模式的主界面)。
   await expect(page.locator("aside.side")).toBeVisible({ timeout: 30_000 });
@@ -65,20 +77,40 @@ test("a. 接入成功:指纹一致,进主界面,配置写入 https 地址与指�
   expect(p.fingerprint).toBe(env.fp);
   expect(p.token || "").not.toBe("");
 });
+}
 
 // b. 设备密码错:显示后端原话,仍停在接入表单。
 test("b. 设备密码错误:提示原话,停在表单", async ({ page }) => {
   await openConnectForm(page);
   await probe(page);
   await page.locator("#s-cp-ok").check();
+  await page.getByText("可选设置", { exact: true }).click();
   await page.locator("#s-cp-name").fill("e2e-box");
   await page.locator("#s-cp-pw").fill("Wrong-Password-1");
   await page.locator("#s-cp-go").click();
   await expect(page.locator(".callout.bad")).toContainText("接入失败");
   // .raw 是后端原话(控制面 401 的那句),不是前端编的。
   await expect(page.locator(".callout.bad .raw")).toContainText("设备密码不对");
+  await expect(page.locator("#s-cp-name")).toHaveValue("e2e-box");
   await expect(page.locator("#s-cp-addr")).toBeVisible();
   await expect(page.locator("aside.side")).toHaveCount(0);
+});
+
+test("取指纹失败:显示原话,不能接入,可以重试", async ({ page }) => {
+  await openConnectForm(page);
+  await page.route("**/local/setup/connect/probe", r => r.fulfill({
+    status: 502, contentType: "application/json", body: JSON.stringify({ error: "拨号超时" }),
+  }));
+  await page.locator("#s-cp-addr").fill("203.0.113.10:8080");
+  await page.locator("#s-cp-probe").click();
+  await expect(page.locator(".callout.bad")).toContainText("取指纹失败");
+  await expect(page.locator(".callout.bad .raw")).toHaveText("拨号超时");
+  await expect(page.locator("#s-cp-go")).toHaveCount(0);
+  await expect(page.locator("#s-cp-pw")).toHaveCount(0);
+  await page.unroute("**/local/setup/connect/probe");
+  await probe(page);
+  await expect(page.locator(".callout.bad")).toHaveCount(0);
+  await expect(page.locator("#s-cp-go")).toBeDisabled();
 });
 
 // c. 没勾「指纹核对无误」时接入按钮不可用;勾上(并填了密码)才可用。

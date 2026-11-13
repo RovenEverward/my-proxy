@@ -1210,6 +1210,12 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		writeErrorField(w, http.StatusBadRequest, err.Error(), "webhook_url")
 		return
 	}
+	// ruleset_mode 空串即 upstream(老客户端不带这个字段,零值兼容),
+	// 其余只认枚举值。
+	if !model.RulesetModeValid(v.RulesetMode) {
+		writeErrorField(w, http.StatusBadRequest, "不支持的规则集分发方式", "ruleset_mode")
+		return
+	}
 	if err := s.store.SaveSettings(&v); err != nil {
 		s.writeStoreError(w, err, "订阅设置")
 		return

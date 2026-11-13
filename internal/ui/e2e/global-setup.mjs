@@ -12,6 +12,7 @@ const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 export default async function globalSetup() {
+  await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "ui:build"], { cwd: ROOT });
   const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-bin-"));
   const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
   await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });

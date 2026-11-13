@@ -1,0 +1,83 @@
+/* Extracted verbatim from assets/app.css (rules unchanged). */
+/* 总览 ·「开始使用」 */
+.cl{padding:20px 20px 10px}
+.cl-h{display:flex;align-items:flex-start;gap:12px}.cl-h h3{margin:0;font-size:var(--ui-font-size-title);font-weight:640;letter-spacing:-.01em}.cl-h p{margin:4px 0 0}
+.cl-n{font:500 var(--ui-font-size-caption) var(--mono);color:var(--muted)}.cl-n b{color:var(--ink);font-weight:600;font-size:var(--ui-font-size-title)}
+.cl-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:14px 0 10px}.cl-bar i{height:4px;border-radius:9px;background:var(--stone)}.cl-bar i.on{background:var(--ink)}
+.cks{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.ck{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 12px;border-radius:10px}
+.ck-i{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--stone);color:var(--muted);font:600 var(--ui-font-size-meta) var(--mono)}
+.ck-i svg{width:13px;height:13px}
+.ck.done .ck-i{background:var(--ink);color:var(--canvas)}.ck.done .ck-t b{color:var(--muted);font-weight:500}
+.ck.cur{background:var(--canvas)}.ck.cur .ck-i{background:var(--ink);color:var(--canvas)}
+.ck-t{display:grid;gap:2px;min-width:0}.ck-t b{font-weight:580;font-size:var(--ui-font-size-body)}.ck-t .sub{overflow:hidden;text-overflow:ellipsis}
+.ck:not(.cur):not(.done) .ck-t b{color:var(--ink2);font-weight:520}
+.ck-a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.ck.opt{margin-top:6px}.ck.opt .ck-i{background:none;color:var(--faint)}.ck.opt .ck-t b{font-weight:520;color:var(--ink2)}
+.cl-done{display:flex;align-items:center;gap:10px;height:44px;padding:0 8px 0 14px;margin-bottom:14px;border-radius:10px;background:var(--panel);font-size:var(--ui-font-size-control);color:var(--ink2)}
+.cl-done>svg{width:15px;height:15px;color:var(--ink)}.cl-done b{color:var(--ink);font-weight:580}
+.cl-done .ib{width:30px;height:30px}
+@media (max-width:760px){.ck{grid-template-columns:28px minmax(0,1fr)}.ck-a{grid-column:2;justify-content:flex-start}}
+
+/* 总览：统计与最多六行主区在最小桌面窗口内排开。 */
+/* 页面底部:总览没有保存条,不留 80 的底边 */
+.page:has(>.ov){padding-top:24px;padding-bottom:24px}
+.ov>.ph{align-items:center;margin-bottom:16px;min-height:36px}
+.ov>.ph h1{font-size:var(--ui-font-size-title);line-height:36px}
+/* 开始使用(已完成):页头右侧一句,不占一行、不加底色 */
+.ov-done{display:flex;align-items:center;gap:8px;font-size:var(--ui-font-size-caption);color:var(--muted)}
+.ov-done>svg{width:14px;height:14px;color:var(--ink)}.ov-done b{color:var(--ink2);font-weight:560}
+.ov-done .btn{margin-left:4px}
+/* 统计格:紧一点,副行一行,超出省略 */
+.ov .g4{gap:12px}
+.ov .stat{padding:14px 16px}
+.ov .stat .v{margin-top:6px;font-size:var(--ui-font-size-display)}
+.ov .stat .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .stat .v .lead{font-size:var(--ui-font-size-display)}
+/* 主区:两张卡等高;空态不再撑出 64 的上下留白 */
+.ov-main{margin-top:12px;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px}
+.ov-main>.card{padding-bottom:6px}
+.ov-main .empty{padding:28px 20px}
+.ov-main .ch{padding:12px 16px}
+.ov-t td{padding:8px 12px}
+.ov-t td:first-child{padding-left:16px;max-width:140px}
+.ov-t .u{min-width:0}.ov-t .u b{min-width:0}
+.ov-use{display:inline-flex;align-items:center;gap:8px}.ov-use .bar{width:56px}.ov-use .sub{min-width:30px;font-size:var(--ui-font-size-control)}
+.ov-n{padding:9px 10px;gap:10px}
+.ov-n b{min-width:0;flex:0 1 auto}
+.ov-n .tag{flex:none;white-space:nowrap}
+.ov-addr{flex:none}
+@media (max-width:1180px){.ov-addr{display:none}}
+/* 通知:页底一行,和统计格同一种面 */
+.ov-note{display:flex;align-items:center;gap:20px;min-height:44px;margin-top:12px;padding:0 8px 0 16px;border-radius:var(--r-card);background:var(--panel);font-size:var(--ui-font-size-caption);min-width:0}
+.ov-note-h{display:inline-flex;align-items:center;gap:7px;font-weight:600;flex:none}.ov-note-h svg{width:14px;height:14px;color:var(--muted)}
+.ov-kv{display:inline-flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}
+.ov-kv:first-of-type{flex:0 1 auto;min-width:0}.ov-kv .mono{max-width:220px}
+.ov-note .sp{flex:1}
+@media (max-width:1180px){.ov-note{gap:18px}.ov-kv{gap:6px}.ov-kv .mono{max-width:140px}}
+@media (max-width:860px){.ov-note{flex-wrap:wrap;padding:10px 12px;gap:6px 14px}.ov-done-rest{display:none}}
+
+/* 窄窗(主区不到 ~700 宽):统计标签不折行;用量只留百分比,表格不横向溢出 */
+.ov .stat .l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov .stat .l .dot{flex:none}
+.ov-t{width:100%}
+@media (max-width:960px){.ov-use .bar{display:none}.ov-t td{padding:8px 8px}.ov-t td:first-child{padding-left:16px}.ov-t td:last-child{padding-right:16px}}
+
+/* 多节点退避仍占一行，完整节点与时间留在悬停提示。 */
+.ov>.callout>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:860px){.ov-main{grid-template-columns:minmax(0,1fr)}}
+/* 窄屏固定底部导航仍需留白，不能沿用桌面的 24px。 */
+@media (max-width:860px){.page:has(>.ov){padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}}
+/* 总览行尾操作格:「续期」(浅底按钮) + 「⋯」菜单 */
+td.ov-act{width:1%;white-space:nowrap;text-align:right;padding-left:0}tr.is-exp td.ov-act{padding-left:8px}
+.ov-act .btn{height:26px;padding:0 10px;font-size:var(--ui-font-size-control)}
+.ov-act .mw{display:inline-block;vertical-align:middle;margin-left:4px}
+.ov-act .menu{top:30px;text-align:left}.menu.up{top:auto;bottom:30px}
+.ov-t .av{flex:none}
+.ov-stale{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:8px 16px;font-size:var(--ui-font-size-caption)}.ov-stale .lnk{font-size:var(--ui-font-size-control)}
+/* 有了操作格,卡片窄时(1180 以下两栏并排,卡片约 330–420px)收紧内边距、名字列吃掉剩余宽度并省略;
+   名字比用量条要紧,条在 1180 以下就收起(原来是 960),只留「剩 N%」。 */
+@media (max-width:1180px){
+ .ov-t td{padding:8px 6px;white-space:nowrap}.ov-t td:first-child{width:100%;max-width:0;padding-left:14px}.ov-t td:last-child{padding-right:10px}
+ .ov-act .btn{padding:0 8px;font-size:var(--ui-font-size-control)}.ov-act .mw{margin-left:2px}tr.is-exp td.ov-act{padding-left:4px}.ov-use .bar{display:none}}
+@media (max-width:960px){.ov-t td{padding:8px 4px}.ov-t td:first-child{padding-left:14px}.ov-t .u{gap:8px}}

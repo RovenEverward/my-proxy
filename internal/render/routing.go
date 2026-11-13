@@ -28,6 +28,10 @@ type RoutingPlan struct {
 	Rules  []model.RouteRule
 	Final  string
 	Groups []RoutingGroup
+	// RulesetURL 可选:把上游规则集地址换成控制面镜像地址(UC-05 私有化)。
+	// 为 nil 时 provider/rule_set 的 url 原样写上游地址,与旧行为逐字节一致。
+	// 参数是 (fmt "clash"|"singbox", name, upstream),返回值就是要写进配置的 url。
+	RulesetURL func(fmt, name, upstream string) string
 }
 
 // FinalGroupName 是「其他全部」在客户端里的组名。
@@ -152,7 +156,11 @@ func ClashRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, error
 			}
 			groups = append(groups, map[string]any{"name": names.sets[i], "type": "select", "proxies": names.choices(p, r.Target, "DIRECT", "REJECT")})
 			for _, c := range rs.Clash {
-				providers[c.Name] = map[string]any{"type": "http", "behavior": c.Behavior, "format": "yaml", "interval": 86400, "url": c.URL, "path": "./ruleset/" + c.Name + ".yaml"}
+				url := c.URL
+				if p.RulesetURL != nil {
+					url = p.RulesetURL("clash", c.Name, c.URL)
+				}
+				providers[c.Name] = map[string]any{"type": "http", "behavior": c.Behavior, "format": "yaml", "interval": 86400, "url": url, "path": "./ruleset/" + c.Name + ".yaml"}
 				line := "RULE-SET," + c.Name + "," + names.sets[i]
 				if c.NoResolve {
 					line += ",no-resolve"
@@ -278,7 +286,11 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 	}
 	sets := []any{}
 	setSeen := map[string]bool{}
+	rsu := p.RulesetURL
 	addSet := func(tag, url string) {
+		if rsu != nil {
+			url = rsu("singbox", tag, url)
+		}
 		if !setSeen[tag] {
 			setSeen[tag] = true
 			sets = append(sets, map[string]any{"type": "remote", "tag": tag, "format": "binary", "url": url, "download_detour": "direct"})

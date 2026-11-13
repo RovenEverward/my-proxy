@@ -13,14 +13,28 @@ async function openCatalog(page) {
 }
 
 test("组件目录复用产品组件，并独立于业务请求", async ({ page }) => {
+  const loadedScripts = new Set();
+  page.on("request", request => { if (request.resourceType() === "script") loadedScripts.add(request.url()); });
   await login(page, env);
+  await expect(page.locator(".app")).toBeVisible();
+  const productEntries = await page.locator('script[type="module"][src]').evaluateAll(elements => elements.map(element => element.src));
+  const classicScripts = new Set(await page.locator('script:not([type="module"])[src]').evaluateAll(elements => elements.map(element => element.src)));
+  expect(productEntries.length).toBeGreaterThan(0);
+  const productScripts = new Set(loadedScripts);
+  await page.goto("about:blank");
+  loadedScripts.clear();
   const requests = [];
-  page.on("request", r => { if (/\/(api|ui)\//.test(new URL(r.url()).pathname)) requests.push(r.url()); });
+  page.on("request", request => { if (/^\/(api|ui|local)(?:\/|$)/.test(new URL(request.url()).pathname)) requests.push(request.url()); });
   await page.goto(env.origin + "/components.html");
   await expect(page.locator("[data-example=empty] h4")).toHaveText("还没有节点");
   await expect(page.locator("[data-example=error] [role=alert]")).toContainText("连接超时");
-  await expect(page.locator("script[src='/components.js']")).toHaveCount(1);
-  await expect(page.locator("script[src='/app.js']")).toHaveCount(0);
+  const catalogEntries = await page.locator('script[type="module"][src]').evaluateAll(elements => elements.map(element => element.src));
+  expect(catalogEntries.length).toBeGreaterThan(0);
+  expect(catalogEntries.some(entry => productEntries.includes(entry))).toBe(false);
+  // Compare actual loaded chunks. Build hashes and chunk names may change.
+  const shared = [...loadedScripts].filter(script => productScripts.has(script) && !classicScripts.has(script)
+    && !productEntries.includes(script) && !catalogEntries.includes(script));
+  expect(shared.length, "产品与目录必须加载同一份公共 React 组件 chunk").toBeGreaterThan(0);
   await expect(page.locator("[data-example=disabled] button")).toBeDisabled();
   expect(requests).toEqual([]);
 });
@@ -47,7 +61,14 @@ test("主题与密度独立切换，文字保持同一尺度", async ({ page }) 
 
 test("所有图标均能对应本地官方 SVG", async ({ page }) => {
   await openCatalog(page);
-  const names = await page.evaluate(() => [...new Set(Object.values(ICON_NAMES))]);
+  const icons = await page.locator("[data-icon-name]").evaluateAll(items => items.map(item => {
+    const svg = item.querySelector("svg[data-lucide]");
+    return { alias: item.dataset.iconName, name: svg?.getAttribute("data-lucide"), paths: svg?.children.length || 0 };
+  }));
+  expect(icons.length).toBeGreaterThan(30);
+  expect(icons.every(icon => icon.alias && icon.name && icon.paths > 0)).toBe(true);
+  expect(new Set(icons.map(icon => icon.alias)).size).toBe(icons.length);
+  const names = [...new Set(icons.map(icon => icon.name))];
   expect(names.length).toBeGreaterThan(30);
   for (const name of names) {
     const response = await page.request.get(env.origin + `/icons/lucide/${name}.svg`);
@@ -55,9 +76,7 @@ test("所有图标均能对应本地官方 SVG", async ({ page }) => {
     const svg = await response.text();
     expect(svg).toContain('viewBox="0 0 24 24"');
   }
-  expect(await page.locator("[data-icon-name]").evaluateAll(items => items.every(item => item.querySelector("svg[data-lucide]")?.children.length > 0))).toBe(true);
-  const output = await page.evaluate(() => { try { ic("missing-icon"); return "silent"; } catch { return "error"; } });
-  expect(output).toBe("error");
+  // Unknown aliases are rejected by the offline icon and type checks.
 });
 
 test("主页主题由根元素持有，抽屉继承相同字体与表面", async ({ page }) => {

@@ -1,0 +1,47 @@
+/* Extracted verbatim from assets/app.css (rules unchanged). */
+@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+@font-face{font-family:"Mona Sans Mono VF";src:url(/fonts/MonaSansMonoVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+/* 中文:随程序带的 Noto Sans SC 可变字重子集(SIL OFL 1.1,见 fonts/OFL-NotoSansSC.txt),不走系统字体、不连 CDN。
+   字表由 scripts/build-cjk-font.py 生成:GB2312 一级常用字 + 界面里出现的全部中文和全角标点。 */
+@font-face{font-family:"Noto Sans SC";src:url(/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF}
+h1,h2,h3,h4,h5,h6{font-size:var(--ui-font-size-title)}
+*{box-sizing:border-box}html,body,#root{height:100%}html,body{overflow:hidden}
+body{margin:0;background:var(--base);color:var(--ink);font:var(--font-body)/var(--line-body) var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"kern","tnum"}
+/* 国旗:app.js 把区域指示符 emoji 换成本地 /flags/<xx>.svg;高度跟着字号走。 */
+.flag-w{position:relative;display:inline-flex;vertical-align:-.1em;border-radius:2px;line-height:0}
+.flag-w::after{content:"";position:absolute;inset:0;border-radius:2px;box-shadow:inset 0 0 0 1px var(--flag-edge);pointer-events:none}
+.flag{height:.9em;width:auto;aspect-ratio:4/3;border-radius:2px;display:block}
+/* 字号缩到 .62 倍,高度和基线偏移按比例还原,与旗帜的 .9em / -.1em 一致。 */
+.flag-code{display:inline-flex;align-items:center;justify-content:center;height:1.451613em;vertical-align:-.16129em;padding:0 .3em;border-radius:2px;background:var(--stone);color:var(--ink2);font-size:.62em;font-weight:600;letter-spacing:.02em;line-height:1}
+button,input,select,textarea{font:inherit;color:inherit}a{color:inherit;text-decoration:none}
+code,.mono{font-family:var(--mono);font-size:var(--ui-font-size-code)}
+.stack{display:grid;gap:14px}.mt{margin-top:14px}.mb{margin-bottom:14px}.w100{width:100%}
+.bold{font-weight:540}.lead{font-size:var(--ui-font-size-display)}.f18{font-size:var(--ui-font-size-display)}.f16{font-size:var(--ui-font-size-title)}
+.c-bad{color:var(--bad)}.c-warn{color:var(--warn)}.c-faint{color:var(--faint)}
+.ell{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-ink{color:var(--ink)}
+.f22{font-size:var(--ui-font-size-display);font-weight:620;margin:4px 0 10px;letter-spacing:-.01em}.f22 .sub{font-size:var(--ui-font-size-caption)}
+.kv.flat{padding:0 0 14px;font-size:var(--ui-font-size-body)}.stack8{display:grid;gap:8px}.g8{gap:8px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* M2:节点、入站 */
+.hrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.mt2{margin-top:2px}.mb14{margin-bottom:14px}.b6{font-weight:600}.fw4{font-weight:400}
+/* M3:用途、设置 */
+.pad18{padding:18px}.pad16{padding:16px}.self-start{align-self:start}.flex8{display:flex;gap:8px;align-items:center}.flex6{display:flex;gap:6px}.end{justify-content:flex-end;margin-top:6px}
+.wrap8{flex-wrap:wrap;gap:8px}.grow{flex:1;min-width:0}.w18{width:18px}.w120{width:120px}.w160{width:160px}.ml-auto{margin-left:auto}.mt6{margin-top:6px}.mt12{margin-top:12px}.mb14{margin-bottom:14px}.b56{font-weight:560}.c-ink{color:var(--ink)}
+/* 模板页 + 代码编辑器 */
+.c-ok{color:var(--ok)}.mt4{margin-top:4px}.c-ok svg,.c-bad svg,.c-ink svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+/* ---- 分流规则 ---- */
+.mt0{margin-top:0}.w140{width:140px}.w180{width:180px}.w200{width:200px}.w220{width:220px}
+.lk-d,.mk-d{display:none}[data-theme=dark] .lk-l,[data-theme=dark] .mk-l{display:none}[data-theme=dark] .lk-d,[data-theme=dark] .mk-d{display:inline-block}
+
+/* Mac 的滚动条交给系统，其他平台保持透明轨道。 */
+html:not(.os-mac) ::-webkit-scrollbar{width:10px;height:10px}
+html:not(.os-mac) ::-webkit-scrollbar-track,html:not(.os-mac) ::-webkit-scrollbar-corner{background:transparent}
+html:not(.os-mac) ::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink) 22%,transparent);border:3px solid transparent;border-radius:8px;background-clip:padding-box}
+html:not(.os-mac) ::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
+html:not(.os-mac) ::-webkit-scrollbar-button{display:none;width:0;height:0}
+/* 中文段落避免末行只剩一两个字(不支持的引擎忽略);不拆开的词包 .nw。 */
+p,.sub,.h{text-wrap-style:pretty}
+.nw{white-space:nowrap}
+
+.icon{width:var(--ui-icon-size);height:var(--ui-icon-size);flex:none;stroke-width:var(--ui-icon-stroke)}

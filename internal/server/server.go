@@ -16,6 +16,7 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
+	"github.com/RovenEverward/my-proxy/internal/ruleset"
 	"github.com/RovenEverward/my-proxy/internal/source"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
@@ -71,7 +72,10 @@ type UpdateRefresher interface {
 type Server struct {
 	store   *store.Store
 	sources *source.Manager
-	token   string
+	// rulesets 是 UC-05 的规则集镜像拉取器;未接(测试/不接后台的用法)时
+	// 镜像下载接口一律 404,渲染也保持上游直连 —— 该功能不拖垮基础订阅。
+	rulesets *ruleset.Manager
+	token    string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
 	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
@@ -171,6 +175,15 @@ func (s *Server) SetUpdateSource(src UpdateSource) { s.updates = src }
 // 传空串等于禁用控制面升级接口。
 func (s *Server) SetUpdateDir(dir string) { s.updateDir = dir }
 
+// SetRulesets 接上规则集镜像拉取器(UC-05)。不接时 /sub/{token}/ruleset/* 一律
+// 404,订阅渲染保持上游直连 —— 见 renderSubscription 的 RulesetURL 注入条件。
+func (s *Server) SetRulesets(m *ruleset.Manager) { s.rulesets = m }
+
+// listEnabledRules 给规则集拉取器的引用集合回填:全部作用域里启用中的规则。
+func (s *Server) listEnabledRules() ([]model.RouteRule, error) {
+	return s.store.ListEnabledRules()
+}
+
 // Handler 返回可以直接交给 http.Server 的处理器。
 func (s *Server) Handler() http.Handler { return s.mux }
 
@@ -185,11 +198,15 @@ func (s *Server) routes() {
 	// 订阅页的内置字体。挂在 /sub/ 下、用四段路径,是为了让只转发 /sub/ 的
 	// 反向代理也能取到字体,而且永远不会撞上三段式的 /sub/{token}/{format}。
 	sub.HandleFunc("GET /sub/-/fonts/{name}", s.handleSubFont)
+	// UC-05:镜像出来的规则集文件。四段路径不会撞上 /sub/{token}/{format}
+	// ({format} 是单段);fmt/name 的白名单在处理器里校验。
+	sub.HandleFunc("GET /sub/{token}/ruleset/{fmt}/{name}", s.handleRulesetFile)
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
 
 	api := http.NewServeMux()
 	s.metadataRoutes(api)
 	s.routingRoutes(api)
+	s.rulesetRoutes(api)
 	s.planRoutes(api)
 	s.sourceRoutes(api)
 	s.diagnosticRoutes(api)

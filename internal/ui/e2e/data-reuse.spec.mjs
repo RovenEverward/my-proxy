@@ -54,18 +54,28 @@ test('用户详情局部补全，打开、换人、关闭和后退保留同一�
   await page.evaluate(() => {
     window.baseList = document.querySelector('#page tbody');
     document.querySelector('main').scrollTop = 140;
-    window.baseY = document.querySelector('main').scrollTop;
   });
+  expect(await page.locator('main').evaluate(element => element.scrollTop)).toBe(140);
   await lag(page);
   const paths = [];
   page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/')) paths.push(new URL(r.url()).pathname + new URL(r.url()).search); });
   await page.locator('tr[data-href="#users/reuse-a"]').evaluate(el => {
     window.openTime = new Promise(resolve => el.addEventListener('click', () => {
+      // Playwright scrolls the row into view before dispatching this click.
+      window.baseY = document.querySelector('main').scrollTop;
       const start = performance.now();
-      queueMicrotask(() => resolve(document.querySelector("#drawer.open .ud-t h2")?.textContent === "reuse-a" && document.querySelector("#drawer .ud-use") ? performance.now() - start : null));
+      const check = () => {
+        if (document.querySelector("#drawer.open .ud-t h2")?.textContent === "reuse-a" && document.querySelector("#drawer .ud-use")) {
+          observer.disconnect(); clearTimeout(timeout); resolve(performance.now() - start);
+        }
+      };
+      const observer = new MutationObserver(check);
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+      const timeout = setTimeout(() => { observer.disconnect(); resolve(null); }, 2000);
+      requestAnimationFrame(check);
     }, { once: true, capture: true }));
-    el.click();
   });
+  await page.locator('tr[data-href="#users/reuse-a"]').click();
   const feedback = await page.evaluate(() => window.openTime);
   expect(feedback).not.toBeNull(); expect(feedback).toBeLessThan(50);
   console.log("DATA_REUSE_FEEDBACK " + feedback);
@@ -78,7 +88,8 @@ test('用户详情局部补全，打开、换人、关闭和后退保留同一�
   await detailReady(page);
   expect(paths.sort()).toEqual(['/api/settings', '/api/users/reuse-a/activity', '/api/users/reuse-a/links']);
   paths.length = 0;
-  await page.evaluate(() => followRoute('#users/reuse-b'));
+  // Opening another user's shared URL keeps this document and its base list.
+  await page.goto(env.origin + '/#users/reuse-b');
   await expect(page.locator('.crumb')).toHaveText('用户/reuse-b'); await detailReady(page);
   await page.goBack(); await expect(page.locator('.crumb')).toHaveText('用户/reuse-a'); await detailReady(page);
   paths.length = 0;
@@ -95,7 +106,8 @@ test('详情乱序与局部失败只影响对应区域，关闭后旧响应不�
   await login(page, env); await ready(page);
   const release = await gate(page, '**/api/users/reuse-a/**');
   await page.click('tr[data-href="#users/reuse-a"]');
-  await page.evaluate(() => followRoute('#users/reuse-b'));
+  // Opening another user's shared URL keeps this document and its base list.
+  await page.goto(env.origin + '/#users/reuse-b');
   await expect(page.locator('#drawer h2')).toHaveText('reuse-b'); await detailReady(page);
   release();
   await expect(page.locator('#drawer h2')).toHaveText('reuse-b');
@@ -123,10 +135,10 @@ test('返回缓存立即显示，后台失败只提示，筛选与分流读取�
   await expect(page.locator('.toast.bad')).toContainText('后台读取失败测试');
   await expect(page.locator('#page [role=alert]')).toHaveCount(0);
   await page.unroute('**/api/users?**');
-  await page.evaluate(() => followRoute('#rules/rules')); await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  await page.locator('.side a[href="#rules"]').click(); await expect(page.locator('html[data-loading]')).toHaveCount(0);
   await page.click('.side a[href="#nodes"]'); await expect(page.locator('html[data-loading]')).toHaveCount(0);
   await lag(page);
-  await page.evaluate(() => followRoute('#rules/groups'));
+  await page.goto(env.origin + '/#rules/groups');
   await expect(page.locator('[data-act=rp-tab][data-k=groups].on')).toBeVisible();
   // rules/rules 的缓存不能冒充含 members 的 groups 页面。
   await expect(page.locator('main[aria-busy=true]')).toHaveCount(1);
@@ -147,7 +159,8 @@ test('缓存详情不在当前列表时仍补读用户，缓存链接失败保�
   const release = await gate(page, '**/api/users/reuse-a');
   await page.route('**/api/users/reuse-a/links', r => r.fulfill({ status: 503, json: { error: '缓存链接刷新失败测试' } }));
   const request = page.waitForRequest(r => new URL(r.url()).pathname === '/api/users/reuse-a');
-  await page.evaluate(() => followRoute('#users/reuse-a'));
+  // This shared URL targets a user outside the current search results.
+  await page.goto(env.origin + '/#users/reuse-a');
   await request;
   await expect(page.locator('#drawer .ud-use')).toBeVisible();
   await expect(page.locator('#send .send-link')).toBeVisible();
@@ -159,15 +172,41 @@ test('缓存详情不在当前列表时仍补读用户，缓存链接失败保�
 });
 
 test('列表后台读取在叠层期间完成不更换数据与 DOM，关闭也不补画', async ({ page }) => {
+  await page.clock.install();
   await login(page, env); await ready(page);
-  await page.evaluate(() => { window.baseList = document.querySelector('#page tbody'); window.baseData = current.data; });
+  const baseList = await page.locator('#page tbody').elementHandle();
+  const originalRows = await page.locator('#page tbody tr').allTextContents();
+  const marker = 'reuse-arrived-during-detail';
+  await page.route('**/api/users?**', async route => {
+    const response = await route.fetch(), data = await response.json();
+    await route.fulfill({ response, json: { ...data, users: [...data.users, { ...data.users[0], username: marker }], total: data.total + 1 } });
+  });
   const release = await gate(page, '**/api/users?**');
-  await page.evaluate(() => { window.pollDone = load(true); });
-  await page.click('tr[data-href="#users/reuse-a"]');
-  release(); await page.evaluate(() => window.pollDone); await detailReady(page);
-  expect(await page.evaluate(() => current.data === window.baseData && window.baseList === document.querySelector('#page tbody'))).toBe(true);
-  await page.click('#drawer [data-act=close]');
-  expect(await page.evaluate(() => window.baseList === document.querySelector('#page tbody'))).toBe(true);
+  const requested = page.waitForRequest(request => {
+    const url = new URL(request.url());
+    return url.pathname === '/api/users' && url.searchParams.has('offset');
+  });
+  const completed = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/users' && url.searchParams.has('offset');
+  });
+  await page.clock.runFor(30_000);
+  await requested;
+  await page.locator('tr[data-href="#users/reuse-a"]').click();
+  release();
+  await (await completed).finished();
+  await detailReady(page);
+  await page.clock.runFor(32);
+  expect(await baseList.evaluate(element => element === document.querySelector('#page tbody'))).toBe(true);
+  expect(await page.locator('#page tbody tr').allTextContents()).toEqual(originalRows);
+  await expect(page.locator(`tr[data-href="#users/${marker}"]`)).toHaveCount(0);
+  await page.locator('#drawer [data-act=close]').click();
+  expect(await baseList.evaluate(element => element === document.querySelector('#page tbody'))).toBe(true);
+  expect(await page.locator('#page tbody tr').allTextContents()).toEqual(originalRows);
+  await expect(page.locator(`tr[data-href="#users/${marker}"]`)).toHaveCount(0);
+  // A later explicit refresh must still adopt the new server data.
+  await page.locator('.top [data-act=reload]').click();
+  await expect(page.locator(`tr[data-href="#users/${marker}"]`)).toBeVisible();
 });
 
 test('续期并清零成功后详情的到期日和剩余用量一起更新', async ({ page }) => {
@@ -187,7 +226,10 @@ test('续期并清零成功后详情的到期日和剩余用量一起更新', as
   await expect(page.locator('#modal.open')).toHaveCount(0);
   await expect(page.locator('#drawer .ud-kv dt:has-text("到期") + dd')).toContainText(target);
   await expect(page.locator('#drawer .ud-v')).not.toContainText('超出');
-  await expect(page.locator('#drawer .bar i')).toHaveAttribute('style', 'width:100.0%');
+  const fill = page.locator('#drawer .bar i');
+  await expect.poll(() => fill.evaluate(element => element.style.width)).toBe('100%');
+  await expect(fill).toBeVisible();
+  await expect.poll(() => fill.evaluate(element => element.getBoundingClientRect().width / element.parentElement.getBoundingClientRect().width)).toBeCloseTo(1, 3);
 });
 
 test('写失败后详情仍可重试，不提交写前的补全响应', async ({ page }) => {
@@ -208,7 +250,7 @@ test('写失败后详情仍可重试，不提交写前的补全响应', async ({
 
 test('节点首帧的添加连接等待当前节点数据，不使用前一台缓存', async ({ page }) => {
   await login(page, env); await ready(page, 'nodes/1');
-  await page.evaluate(() => followRoute('#nodes')); await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  await page.locator('.crumb a[href="#nodes"]').click(); await expect(page.locator('html[data-loading]')).toHaveCount(0);
   const release = await gate(page, '**/api/nodes/2');
   await page.click('tr[data-href="#nodes/2"]');
   await expect(page.locator('#page h1')).toContainText('reuse-node-b');
@@ -223,7 +265,9 @@ test('节点首帧的添加连接等待当前节点数据，不使用前一台�
   await expect(page.locator('#a-node')).toHaveValue('2');
   await page.click('#drawer [data-act=close]');
   const releaseFirst = await gate(page, '**/api/nodes/1');
-  await page.evaluate(() => followRoute('#nodes/1'));
+  await page.locator('.crumb a[href="#nodes"]').click();
+  await expect(page.locator('html[data-loading]')).toHaveCount(0);
+  await page.locator('tr[data-href="#nodes/1"]').click();
   // 已访问详情的缓存也必须同步编辑器上下文，不能残留节点 2。
   await add.click(); await expect(page.locator('#a-node')).toHaveValue('1');
   await page.click('#drawer [data-act=close]');

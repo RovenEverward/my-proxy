@@ -1,0 +1,47 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@source "../**/*.{ts,tsx}";
+@custom-variant dark (&:is([data-theme=dark] *));
+
+/* shadcn roles read the MPX token authority. They do not own a second palette. */
+@theme inline {
+  --color-background: var(--ui-bg-canvas);
+  --color-foreground: var(--ui-text-primary);
+  --color-card: var(--ui-bg-surface);
+  --color-card-foreground: var(--ui-text-primary);
+  --color-popover: var(--ui-bg-raised);
+  --color-popover-foreground: var(--ui-text-primary);
+  --color-primary: var(--ui-action-bg);
+  --color-primary-foreground: var(--ui-action-text);
+  --color-secondary: var(--ui-bg-field);
+  --color-secondary-foreground: var(--ui-text-secondary);
+  --color-muted: var(--ui-bg-field);
+  --color-muted-foreground: var(--ui-text-muted);
+  --color-accent: var(--ui-hover-bg);
+  --color-accent-foreground: var(--ui-text-primary);
+  --color-destructive: var(--ui-danger-text);
+  --color-border: var(--ui-border-subtle);
+  --color-input: var(--ui-border-subtle);
+  --color-ring: var(--ui-focus-ring);
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius-control);
+  --radius-lg: var(--ui-radius-container);
+  --text-xs: var(--ui-font-size-caption);
+  --text-sm: var(--ui-font-size-control);
+  --text-base: var(--ui-font-size-body);
+  --text-lg: var(--ui-font-size-title);
+}
+
+.confirm-extra { border: 0; margin: 0; padding: 0; min-width: 0; }
+.confirm-text { margin: 0 0 14px; color: var(--muted); }
+.confirm-text > p { margin: 0; }
+.profile { width: 100%; border: 0; text-align: left; }
+.nav-entry { display: contents; }
+.ui-menu[data-slot] { position: relative; z-index: 50; top: auto; right: auto; border: 0; font-size: var(--ui-font-size-control); }
+.ui-menu [data-highlighted] { background: var(--hover); outline: none; }
+.ui-menu [data-disabled] { opacity: .45; }
+[data-slot=dialog-content].drawer { left: auto; translate: none; max-width: calc(100vw - 16px); padding: 0; gap: 0; border: 0; }
+[data-slot=dialog-content].modal { display: block; translate: none; padding: 0; gap: 0; border: 0; }
+@media(max-width:860px) { [data-slot=dialog-content].drawer { left: 0; max-width: none; } }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration: .01ms!important; animation-iteration-count: 1!important; transition-duration: .01ms!important; } }

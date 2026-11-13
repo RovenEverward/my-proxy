@@ -125,6 +125,7 @@
   --ui-action-glow: rgba(44, 109, 187, 0.26);
   --ui-link: #225e9f;
   --ui-focus-ring: #2c6dbb;
+  --ui-focus-strong-ring: #111111;
   --ui-focus-halo: rgba(44, 109, 187, 0.12);
   --ui-text-selection-bg: rgba(44, 109, 187, 0.18);
   /* Current navigation is distinct from selection of objects or options. */
@@ -207,6 +208,7 @@
   --ui-scrim: rgba(0, 0, 0, 0.50);
   --ui-link: #91bdf0;
   --ui-focus-ring: #91bdf0;
+  --ui-focus-strong-ring: #f2f2f2;
   --ui-focus-halo: rgba(145, 189, 240, 0.16);
   --ui-text-selection-bg: rgba(145, 189, 240, 0.30);
   --ui-nav-current-bg: var(--ui-selected-bg);

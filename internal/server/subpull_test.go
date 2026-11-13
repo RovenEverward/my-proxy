@@ -28,7 +28,7 @@ func TestSubPullRecordedAndBodyUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rendered, err := e.s.renderSubscription(full, model.FormatLinks)
+	rendered, err := e.s.renderSubscription(full, model.FormatLinks, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

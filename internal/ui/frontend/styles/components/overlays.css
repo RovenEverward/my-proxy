@@ -1,0 +1,49 @@
+/* Extracted verbatim from assets/app.css (rules unchanged). */
+.menu button[aria-disabled=true]:hover{background:none}
+/* drawer & modal */
+.scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.28);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity 180ms}
+[data-theme=dark] .scrim{background:rgba(0,0,0,.55)}
+.scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;z-index:31;top:8px;right:8px;bottom:8px;width:440px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;background:var(--canvas);border-radius:var(--r-card);box-shadow:var(--lift);transform:translateX(110%);transition:transform 260ms var(--ease)}
+.drawer.open{transform:none}.drawer .dh{display:flex;align-items:center;gap:10px;padding:16px 18px}.drawer .dh h2{margin:0;font-size:var(--ui-font-size-title);font-weight:620}
+.drawer .db{flex:1;overflow:auto;padding:18px}.drawer .df{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px}
+.modal{position:fixed;z-index:32;left:50%;top:50%;width:420px;max-width:calc(100vw - 32px);transform:translate(-50%,-46%) scale(.98);opacity:0;pointer-events:none;background:var(--canvas);border-radius:var(--r-card);box-shadow:var(--lift);transition:all 200ms var(--ease)}
+.modal.open{opacity:1;transform:translate(-50%,-50%);pointer-events:auto}
+.modal .mbody{padding:20px 20px 4px}.modal h2{margin:0 0 6px;font-size:var(--ui-font-size-title);font-weight:620;display:flex;gap:10px;align-items:center}
+.modal p{margin:0 0 14px;color:var(--muted)}.modal .mf{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;background:var(--panel);border-radius:0 0 var(--r-card) var(--r-card)}
+.toast{position:fixed;z-index:40;bottom:20px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:var(--ink);color:var(--canvas);font-size:var(--ui-font-size-caption);box-shadow:var(--lift)}
+@media (max-width:860px){
+ .drawer{top:auto;left:0;right:0;bottom:0;width:auto;max-width:none;max-height:88vh;border-radius:16px 16px 0 0;transform:translateY(105%)}
+ }
+.toast.bad{background:var(--bad);color:#fff}
+.toast-act{border:0;background:none;color:inherit;font:inherit;font-weight:600;text-decoration:underline;text-underline-offset:2px;cursor:pointer;padding:0}
+.toast-act:hover{opacity:.8}
+.toast svg{width:14px;height:14px}
+.drawer>form{display:flex;flex-direction:column;flex:1;min-height:0}
+.dh .pill{margin-left:6px}
+.drawer.wide{width:min(860px,calc(100vw - 16px))}
+@media (max-width:860px){.drawer.wide .df .sp{display:none}.drawer.wide .df>*{flex:1 1 auto}}
+/* 更多菜单 */
+.menu{position:absolute;z-index:20;top:34px;right:0;min-width:168px;padding:5px;border-radius:10px;background:var(--canvas);box-shadow:var(--lift);display:grid;gap:1px}
+[data-theme=dark] .menu{background:var(--stone)}
+.menu button{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border:0;border-radius:7px;background:none;text-align:left;font-size:var(--ui-font-size-control);cursor:pointer;white-space:nowrap}
+.menu button:hover{background:var(--hover)}.menu svg{width:15px;height:15px;color:var(--muted)}.menu .dg,.menu .dg svg{color:var(--bad)}
+.msep{height:6px}
+/* 抽屉:编辑连接、添加连接 */
+.drawer .dh{align-items:flex-start;padding:18px 18px 6px}.dt h2{margin:0;font-size:var(--ui-font-size-title);font-weight:620}.dt .sub{display:block;margin-top:2px}
+.drawer .db{padding:14px 18px 18px}
+.mw{position:relative}.mw .menu[hidden]{display:none}
+.menu .msep{height:1px;margin:5px 4px;background:var(--stone)}
+/* 菜单里只有「删除用户」是红的 */
+.menu .dg{color:var(--bad)}.menu .dg svg{color:var(--bad)}
+.df-why{display:inline-flex;gap:6px;align-items:center;margin-right:auto;font-size:var(--ui-font-size-caption);color:var(--muted)}.df-why svg{width:13px;height:13px}
+.df-why:empty{display:none}
+/* 弹窗标题:图标和文字之间才有间距,文字里的旗帜按正常空格排。 */
+.modal h2 .mt-t{display:inline;min-width:0}
+
+/* 悬停提示:users.js 把 data-tip 的文字放进挂在 body 上的 .ftip(固定定位,表格滚动区裁不掉)。
+   别的页 [aria-disabled=true][data-tip] 的 ::after 提示不变。 */
+.ftip{position:fixed;z-index:60;padding:6px 9px;border-radius:7px;background:var(--ink);color:var(--canvas);font-size:var(--ui-font-size-caption);line-height:1.4;white-space:nowrap;pointer-events:none;box-shadow:var(--lift)}
+
+/* 读取抽屉先显示标题与加载状态，不等滑入动画。 */
+.drawer:has([data-drawer-loading]),.drawer:has([aria-busy="true"]){transition:none}
