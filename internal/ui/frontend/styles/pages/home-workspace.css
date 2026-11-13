@@ -19,19 +19,6 @@
 .home-workspace .profile:hover { background: var(--hover); }
 .home-workspace .profile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .home-workspace .cp-pop { background: var(--panel); }
-.home-workspace .nav {
-  min-height: var(--ui-row-height);
-  height: var(--ui-row-height);
-  padding: 0 10px;
-  gap: 10px;
-  border-radius: var(--ui-radius-sm);
-  font-size: var(--ui-font-size-navigation);
-  font-weight: 400;
-}
-.home-workspace .nav.on { background: var(--ui-nav-current-bg); color: var(--ui-nav-current-text); font-weight: 600; }
-.home-workspace .nav.on .ct { color: inherit; }
-.home-workspace .nav svg { opacity: 1; }
-.home-workspace .nsep { height: 22px; }
 .home-workspace main { margin: 0; height: 100%; border-radius: 0; }
 .home-workspace .top {
   padding-left: 24px;
@@ -158,7 +145,6 @@
   .home-workspace .ov-note .ov-kv .mono { max-width: 210px; overflow-wrap: anywhere; }
 }
 .home-workspace + .mnav { background: color-mix(in srgb, var(--ui-bg-surface) 94%, transparent); font-family: var(--ui-font-ui); }
-.home-workspace + .mnav a.on { color: var(--ui-nav-current-text); }
 @media (prefers-reduced-motion: reduce) {
   .home-workspace *, .home-workspace *::before, .home-workspace *::after { animation: none !important; transition: none !important; }
 }
