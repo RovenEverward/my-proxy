@@ -1,8 +1,8 @@
 ---
 kind: part
 parent: README.md
-code: [internal/model/plan.go, internal/model/traffic.go, internal/model/reset.go, internal/store/user.go, internal/store/plan.go, internal/store/traffic.go, internal/cli/user.go, internal/cli/plan.go]
-verified: 2026-10-17 @ 626beea
+code: [internal/model/plan.go, internal/model/user.go, internal/model/traffic.go, internal/model/reset.go, internal/store/user.go, internal/store/plan.go, internal/store/plan_migration.go, internal/store/traffic.go, internal/cli/user.go, internal/cli/plan.go]
+verified: 2026-11-12 @ cadd0fb + ISS-10 working tree
 ---
 # 用户、套餐与计量
 

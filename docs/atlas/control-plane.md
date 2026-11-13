@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/, internal/store/, internal/model/, internal/backup/]
-verified: 2026-11-09 @ 0cdf26e + UC-03 working tree
+verified: 2026-11-12 @ cadd0fb + ISS-10 working tree
 ---
 # 控制面与数据
 

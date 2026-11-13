@@ -60,14 +60,6 @@ func toUserView(u model.User) userView {
 	}
 }
 
-func userViews(users []model.User) []userView {
-	out := make([]userView, 0, len(users))
-	for _, u := range users {
-		out = append(out, toUserView(u))
-	}
-	return out
-}
-
 // userRequest 是建用户与改用户的请求体。
 //
 // 比 model.User 只多两件事:Enabled 是 *bool,为了分得清「没说」和「说了

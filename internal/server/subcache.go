@@ -35,7 +35,7 @@ type subCacheEntry struct {
 	encoding string // "" 或 "gzip"
 	user     *model.User
 	settings *model.Settings
-	headers  map[string]string // 客户端认的那几个,见 setSubHeaders
+	headers  map[string]string // 客户端认的那几个,见 subHeadersFor
 }
 
 type subCache struct {

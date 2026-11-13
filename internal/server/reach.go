@@ -32,8 +32,8 @@ type reachProbeRequest struct {
 }
 
 type reachProbeResponse struct {
-	CheckedAt time.Time              `json:"checked_at"`
-	Targets   []reach.Target         `json:"targets"`
+	CheckedAt time.Time               `json:"checked_at"`
+	Targets   []reach.Target          `json:"targets"`
 	Results   map[int64]*reach.Result `json:"results"`
 }
 

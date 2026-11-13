@@ -22,13 +22,13 @@ type Row struct {
 
 // NodeCheck 是一台节点的一次触达检查:节点级判定 + 逐入站明细。
 type NodeCheck struct {
-	NodeID    int64     `json:"node_id"`
-	NodeName  string    `json:"node_name"`
-	CheckedAt time.Time `json:"checked_at"`
-	Verdict   string    `json:"verdict"`
+	NodeID    int64         `json:"node_id"`
+	NodeName  string        `json:"node_name"`
+	CheckedAt time.Time     `json:"checked_at"`
+	Verdict   string        `json:"verdict"`
 	Local     SourceSummary `json:"local"`
 	CP        SourceSummary `json:"cp"`
-	Rows      []Row     `json:"rows,omitempty"`
+	Rows      []Row         `json:"rows,omitempty"`
 }
 
 // Merge 把两来源的探测结果按入站合并成明细行,顺带算出节点级判定。

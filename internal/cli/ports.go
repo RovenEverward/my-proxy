@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -85,21 +84,6 @@ func portProbeFields(info map[string]string, api, inbound portCheck) {
 	}
 	put("api", api)
 	put("inbound", inbound)
-}
-
-// listenSummary 给日志看的一行:哪些端口在监听。
-func listenSummary(info map[string]string) string {
-	busy := parseListeners(info["ss"])
-	ports := make([]int, 0, len(busy))
-	for p := range busy {
-		ports = append(ports, p)
-	}
-	sort.Ints(ports)
-	s := make([]string, 0, len(ports))
-	for _, p := range ports {
-		s = append(s, strconv.Itoa(p))
-	}
-	return strings.Join(s, " ")
 }
 
 // apiPortBusyError:控制面端口被占时的中文说明,带上占用的进程和一个能用的端口。

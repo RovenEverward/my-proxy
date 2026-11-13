@@ -203,8 +203,8 @@ func writeSubEntry(w http.ResponseWriter, r *http.Request, e *subCacheEntry) {
 	_, _ = w.Write(e.body)
 }
 
-// subHeadersFor 把 setSubHeaders 的那些头收进一个 map,给缓存条目存。
-// 它和 setSubHeaders 是同一组头的两个出口:一个进缓存,一个写响应。
+// subHeadersFor 拼各家客户端认的那几个响应头,收成 map 给缓存条目存;
+// 命中缓存时按它逐个写回响应。
 func subHeadersFor(user *model.User, settings *model.Settings, contentType string) map[string]string {
 	h := map[string]string{
 		"Content-Type":          contentType,
@@ -406,21 +406,6 @@ func statusRemark(status model.Status) string {
 		return "订阅已超限"
 	default:
 		return "订阅不可用"
-	}
-}
-
-// setSubHeaders 写各家客户端认的那几个响应头。
-func (s *Server) setSubHeaders(w http.ResponseWriter, user *model.User, settings *model.Settings, contentType string) {
-	h := w.Header()
-	h.Set("Content-Type", contentType)
-	h.Set("Content-Disposition", "attachment; filename="+user.Username)
-	h.Set("Profile-Title", encodeTitle(expandUser(settings.ProfileTitle, user)))
-	h.Set("Subscription-Userinfo", userInfo(user))
-	if settings.SupportLink != "" {
-		h.Set("Support-Url", settings.SupportLink)
-	}
-	if settings.UpdateInterval > 0 {
-		h.Set("Profile-Update-Interval", strconv.Itoa(settings.UpdateInterval))
 	}
 }
 

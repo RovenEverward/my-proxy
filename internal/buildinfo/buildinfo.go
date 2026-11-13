@@ -47,9 +47,6 @@ func Version() string {
 	return fromBuildInfo
 }
 
-// Known 报告我们是否真的知道自己的版本。
-func Known() bool { return Version() != "" }
-
 // Desktop 报告这是不是桌面构建。发布流程用 -ldflags -X 注入 desktop=1;
 // 从源码直接编出来的是普通 CLI 构建。
 func Desktop() bool { return strings.TrimSpace(desktop) == "1" }

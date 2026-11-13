@@ -41,8 +41,8 @@ type Target struct {
 	InboundID int64  `json:"inbound_id"`
 	NodeID    int64  `json:"node_id"`
 	NodeName  string `json:"node_name"`
-	Label     string `json:"label"`    // 订阅里的名字或 tag
-	Address   string `json:"address"`  // 节点对外地址
+	Label     string `json:"label"`   // 订阅里的名字或 tag
+	Address   string `json:"address"` // 节点对外地址
 	Port      int    `json:"port"`
 	Protocol  string `json:"protocol"` // vless / hysteria2 / …
 	Network   string `json:"network"`  // tcp / udp / ws / …
@@ -71,9 +71,9 @@ func (t Target) udp() bool {
 
 // SourceSummary 是一个来源对一批入站的合并结论,供节点级判定。
 type SourceSummary struct {
-	Probed    bool `json:"probed"`              // 至少探过一个目标
-	Reachable bool `json:"reachable"`           // 至少一个目标探到
-	Failed    bool `json:"failed"`              // 探过、且确定不通(不是探不出来)
+	Probed    bool `json:"probed"`               // 至少探过一个目标
+	Reachable bool `json:"reachable"`            // 至少一个目标探到
+	Failed    bool `json:"failed"`               // 探过、且确定不通(不是探不出来)
 	LatencyMs int  `json:"latency_ms,omitempty"` // 最快一个可达的时延
 }
 
