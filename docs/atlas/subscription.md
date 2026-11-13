@@ -1,8 +1,8 @@
 ---
 kind: part
 parent: README.md
-code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go]
-verified: 2026-11-09 @ 0cdf26e + UC-03 working tree
+code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
+verified: 2026-11-12 @ 440dd5b + UC-05 working tree
 ---
 # 订阅与分流
 
@@ -23,6 +23,7 @@ verified: 2026-11-09 @ 0cdf26e + UC-03 working tree
 5. 外部订阅由 [来源服务](../../internal/source/) 单独拉取，不占用节点采样循环。默认 6 小时刷新，URL 与凭证仅留在库和授权输出中。拉取、解析或空结果失败时保留上次有效快照。配置版本检查与快照替换共用事务，旧地址响应不能覆盖新配置。
 6. [订阅组装器](../../internal/server/sources.go) 先判断用户状态，再合并自建入口与显式授权的来源快照。外部节点按目标格式筛选后参与策略组。来源条件独立保存，与地区、协议和能力条件取交集。删除来源保留组内的失效来源选择，避免扩大范围。
 7. 外部端点通过来源 ID 和连接指纹标识，不伪造托管节点 ID。sing-box 的 tag 映射使用统一端点键。共享凭证不能由 MPX 撤销，外部流量不进入 MPX 配额。浏览器订阅页只提供原格式链接，并注明仅统计自建流量。
+8. 规则集私有化分发（UC-05，`settings.ruleset_mode=privatized`）：[镜像服务](../../internal/ruleset/) 把引用到的上游规则集拉进 `ruleset_snapshots`（key 为 `clash/<名>` 或 `singbox/<tag>`），渲染层经 `RoutingPlan.RulesetURL` 闭包把就绪文件的 url 改写成 `/sub/{token}/ruleset/{fmt}/{name}`；未就绪的原样写上游，订阅不会出 404。镜像首次就绪（becameReady）才失效订阅缓存，错误重试不动缓存。镜像刷新无论开关状态都跑（侧栏状态展示用），拉取器与来源服务同构：单飞、24h 周期、失败留上次快照。管理面 `GET /api/rulesets` 按内置规则组聚合，`POST /api/rulesets/refresh` 手动刷新；CLI 是 `mpx ruleset` 与 `mpx settings ruleset-mode`。
 
 用户实际看到的格式和规则怎么配，写在用户文档站的 [客户端格式](../guides/client-format.md) 和 [订阅参考](../reference/subscription.md)。
 

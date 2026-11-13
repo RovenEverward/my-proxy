@@ -80,7 +80,7 @@ func (s *Server) serveSubBody(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	body, err := s.renderSubscription(user, format)
+	body, err := s.renderSubscription(user, format, r)
 	if err != nil {
 		s.logger.Error("渲染订阅失败", "username", user.Username, "format", format, "error", err)
 		writeError(w, http.StatusInternalServerError, "渲染订阅失败")
@@ -234,9 +234,15 @@ func acceptsGzip(r *http.Request) bool {
 // subBaseURL 是拼订阅地址用的前缀:设置里存了就用它(去掉尾部斜杠),没存就用
 // 这次请求的协议与主机。管理接口的 user links 与订阅页共用这一段,免得两处各
 // 拼一份、早晚不一致。
+//
+// r 允许为 nil(doctor 自检等无请求上下文的渲染):此时只能拿设置里的前缀,
+// 没配就返回空串 —— 调用方据此退化为「不改写规则集地址」。
 func subBaseURL(settings *model.Settings, r *http.Request) string {
 	if base := strings.TrimSuffix(settings.SubURLPrefix, "/"); base != "" {
 		return base
+	}
+	if r == nil {
+		return ""
 	}
 	scheme := "http"
 	if r.TLS != nil {
@@ -247,7 +253,10 @@ func subBaseURL(settings *model.Settings, r *http.Request) string {
 
 // renderSubscription 产出订阅正文。不可用的用户拿到的是一个占位节点而不是真
 // 配置:他们的凭证在节点上已经被摘掉了,给真配置只会让客户端连不上还不报错。
-func (s *Server) renderSubscription(user *model.User, format model.ClientFormat) ([]byte, error) {
+//
+// r 是触发这次渲染的请求,UC-05 私有化模式下拼镜像地址要用它兜底出控制面
+// 前缀;没有请求上下文的调用(doctor 自检)传 nil,效果同没配订阅前缀。
+func (s *Server) renderSubscription(user *model.User, format model.ClientFormat, r *http.Request) ([]byte, error) {
 	set, err := s.subscriptionEndpointsFor(user, format)
 	if err != nil {
 		return nil, err
@@ -266,6 +275,7 @@ func (s *Server) renderSubscription(user *model.User, format model.ClientFormat)
 		if err != nil {
 			return nil, err
 		}
+		s.renderPlanWithRulesetURL(&plan, user, settings, r)
 		if format == model.FormatClashMeta {
 			return render.ClashRouting(eps, plan, []byte(settings.TemplateFor(format)))
 		}

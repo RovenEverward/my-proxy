@@ -477,6 +477,19 @@ type Settings struct {
 	// Templates 是各格式的客户端模板,键是 ClientFormat 的字符串
 	// (clash-meta / sing-box / xray)。缺键或空串表示用内置默认模板。
 	Templates map[string]string `json:"templates"`
+
+	// RulesetMode 决定订阅里引用的上游规则集从哪下载:"" / "upstream" 由
+	// 客户端直连上游,"privatized" 由控制面镜像、客户端改从控制面取。
+	RulesetMode string `json:"ruleset_mode"`
+}
+
+// RulesetModePrivatized 是设置里「规则集由控制面镜像」的取值。
+const RulesetModePrivatized = "privatized"
+
+// RulesetModeValid 校验 ruleset_mode 的合法值:空串即上游直连(零值),
+// 其余只认 upstream / privatized。
+func RulesetModeValid(v string) bool {
+	return v == "" || v == "upstream" || v == RulesetModePrivatized
 }
 
 // 用户侧通知的默认阈值,写入设置里的缺省值。0 有特殊含义(见 DaysLeft 与

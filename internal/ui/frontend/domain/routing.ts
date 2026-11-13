@@ -11,6 +11,19 @@ export interface ProxyGroup { id?: number; name: string; icon?: string; mode: "a
 export interface SavedProxyGroup extends ProxyGroup { id: number }
 export interface GroupPreview { node_id: number; source_id?: number; inbound_id: number; host_id: number; name: string; protocol: string; region?: string; tags?: string[]; capabilities?: string[]; admitted: boolean; reasons?: string[] }
 export interface RuleCatalogEntry { key: string; name: string; desc: string; default: string }
+export interface RulesetFile { name: string; url: string; ready: boolean; last_error?: string }
+export interface RulesetGroupFiles { files: RulesetFile[]; ready: number; total: number }
+export interface RulesetGroup {
+  key: string; name: string;
+  clash: RulesetGroupFiles; sing_box: RulesetGroupFiles;
+  refreshing?: boolean;
+  last_error?: string; last_attempt_at?: number; // Unix 毫秒
+}
+export const rulesetCounts = (group: RulesetGroup) => ({ ready: group.clash.ready + group.sing_box.ready, total: group.clash.total + group.sing_box.total });
+export function rulesetStatus(group: RulesetGroup): "ready" | "refreshing" | "failed" | "partial" | "pending" {
+  const { ready, total } = rulesetCounts(group);
+  return group.refreshing ? "refreshing" : group.last_error ? "failed" : ready === total ? "ready" : ready > 0 ? "partial" : "pending";
+}
 export interface MigrationReport { status: string; unconvertible?: string[]; notes?: string[]; groups?: unknown[]; rules?: number }
 export interface RoutingState { mode: "template" | "rules"; migration?: MigrationReport; warnings?: string[]; group_members?: Record<string, number> }
 export interface RuleMatch { index: number; scope?: string; rule: RouteRule; reason?: string }
@@ -29,6 +42,7 @@ export interface RulesPageData {
   routing: RoutingState; rules: RulesSnapshot; groups: SavedProxyGroup[]; catalog: RuleCatalogEntry[];
   previews: Record<number, GroupPreview[] | null>; sources: SubscriptionSource[];
   origins: Record<number, string[]>; users: string[];
+  rulesets: RulesetGroup[]; rulesetMode: string;
 }
 export const rulesPath = (user = "") => "/api/rules" + (user ? "?user=" + encodeURIComponent(user) : "");
 export const finalPath = (user = "") => "/api/rules/final" + (user ? "?user=" + encodeURIComponent(user) : "");
@@ -46,9 +60,11 @@ export const stripRule = (rule: RouteRule): RouteRule => ({ type: rule.type, val
 export const previewInit = (group: ProxyGroup): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...group, name: group.name || "preview" }) });
 export interface RoutingReadSupport { sources: "unknown" | "supported" | "unsupported" }
 export async function readRulesPage(read: Read, scope: string, groupsTab: boolean, support: RoutingReadSupport): Promise<RulesPageData> {
-  const [routing, rules, groups, catalog, users] = await Promise.all([
+  const [routing, rules, groups, catalog, users, rulesets, settings] = await Promise.all([
     read<RoutingState>("/api/routing"), read<RulesSnapshot>(rulesPath(scope)), read<SavedProxyGroup[]>("/api/proxy-groups"),
     read<RuleCatalogEntry[]>("/api/rule-catalog"), read<UserList>("/api/users?limit=1000"),
+    read<RulesetGroup[]>("/api/rulesets").catch(() => []),
+    read<{ ruleset_mode?: string }>("/api/settings").catch((): { ruleset_mode?: string } => ({})),
   ]);
   const previews: RulesPageData["previews"] = {}, origins: RulesPageData["origins"] = {};
   // Endpoint support belongs to this control-plane visit, separate from read data.
@@ -66,7 +82,7 @@ export async function readRulesPage(read: Read, scope: string, groupsTab: boolea
     ]);
     previews[group.id] = preview; origins[group.id] = origin.sources;
   }));
-  return { routing, rules, groups, catalog, previews, origins, sources: await sourcesRequest, users: users.users.map(user => user.username) };
+  return { routing, rules, groups, catalog, previews, origins, sources: await sourcesRequest, users: users.users.map(user => user.username), rulesets, rulesetMode: settings.ruleset_mode || "" };
 }
 export async function readSubscriptionUsers(read: Read): Promise<User[]> {
   const users: User[] = [];

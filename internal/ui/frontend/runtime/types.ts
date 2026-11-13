@@ -82,6 +82,7 @@ export interface Plan {
 export interface Settings {
   sub_url_prefix: string; profile_title: string; support_link: string; update_interval: number;
   webhook_url: string; notify_days_left: number; notify_usage_percent: number;
+  ruleset_mode?: string;
   rules: ClientRule[] | null; templates: Record<string, boolean> | null;
 }
 export interface ClientRule { pattern: string; result: string; label?: string }

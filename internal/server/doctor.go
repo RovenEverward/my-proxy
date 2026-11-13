@@ -360,7 +360,7 @@ func (s *Server) checkSubscriptions(now time.Time) []model.DoctorCheck {
 			})
 			continue
 		}
-		out, err := s.renderSubscription(sample, format)
+		out, err := s.renderSubscription(sample, format, nil)
 		if err != nil {
 			checks = append(checks, model.DoctorCheck{
 				Name: "订阅 " + string(format), Status: model.DoctorFail,

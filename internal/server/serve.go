@@ -15,6 +15,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/control"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
+	"github.com/RovenEverward/my-proxy/internal/ruleset"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -76,6 +77,20 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	sourceDone := make(chan struct{})
 	go func() { defer close(sourceDone); srv.sources.Run(ctx) }()
 	defer func() { stopWorkers(); <-sourceDone; srv.sources.Close() }()
+
+	// UC-05 规则集镜像:任一文件首次就绪时订阅里的 url 从上游换成镜像地址,
+	// 那一刻缓存里的旧订阅就过期了,所以用 becameReady 钩失效;last_error 更新
+	// 不影响订阅内容,不失效。
+	rsMgr := ruleset.New(srv.store, nil, func(ready bool) {
+		if ready {
+			srv.invalidateSubCache()
+		}
+	})
+	rsMgr.SetRefs(srv.listEnabledRules)
+	srv.SetRulesets(rsMgr)
+	rulesetDone := make(chan struct{})
+	go func() { defer close(rulesetDone); rsMgr.Run(ctx) }()
+	defer func() { stopWorkers(); <-rulesetDone; rsMgr.Close() }()
 	// 控制面连节点的密钥放在数据目录下:systemd 的 StateDirectory=mpx 保证它有、
 	// 权限对,而且备份/迁移时跟着库一起走,不会留在某个 home 里找不到。
 	srv.sshKeyPath = filepath.Join(filepath.Dir(opt.DBPath), ".ssh", "id_ed25519")

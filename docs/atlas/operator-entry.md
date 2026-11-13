@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-10 @ 097ad97 + working tree
+verified: 2026-11-12 @ 097ad97 + UC-05 working tree
 ---
 # 本机入口：CLI、mpx ui、设备接入
 
@@ -37,6 +37,7 @@ flowchart LR
    异步交互通过 `Button loading` 与局部忙态立即显示进行中状态，原生控件值不冒充保存成功；失败恢复原选择并保留原页面错误提示。`usePageData` 加载器的 `read` 只在明确的局部刷新中复用当前页面成功整页读取的快照，键包含完整接口路径、查询参数、方法和只读请求体；作用域与筛选不会串用。只有当前代次的完整读取可替换快照，局部读取返回副本且不回写。写开始、完成均失效相关资源；用户列表、计数和套餐人数一起失效。手动刷新、切页和每 30 秒轮询仍读远端，不复用旧请求快照；切页重新读取，完整成功后更新请求快照；展示缓存先呈现。`node scripts/ui-interaction-audit.mjs` 在现有 e2e 路径中加入 150–300ms 响应延迟，输出交互反馈、完成和接口耗时表；正式延迟守卫在 `interaction-latency.spec.mjs`。
    本机转发与 CLI 的连接池每主机保留最多 16 个空闲连接，证书钉住和 HTTP/1.1 不变；控制面仅对已鉴权管理 JSON 协商 gzip，大于等于 1KB 才压缩，解压字节保持原样。备份流和订阅不经过 JSON 压缩。相关守卫见 `data-reuse.spec.mjs`。
    外部订阅从订阅页进入，页面通过新增来源接口管理配置、授权和刷新。对应命令为 `mpx source`。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
+   规则集私有化分发（UC-05）从分流页侧栏进入：第二张卡「规则集分发」带开关（经 `modifySettings` 写 `ruleset_mode`）、按规则组的镜像迷你状态与「管理镜像」抽屉；抽屉内列组级文件计数、失败原因和逐组刷新。对应命令为 `mpx ruleset status|refresh` 与 `mpx settings ruleset-mode`；`POST /api/rulesets/refresh` 已进 `uiAllow`。开关与刷新是乐观交互（先翻状态、失败翻回），与页数据的写后刷新并存。
 3. 设备接入：控制面自签证书，CLI 记指纹（像 SSH 的 known_hosts）；`mpx connect` 用设备密码换一个设备 token，每台设备各自可吊销（[internal/pin](../../internal/pin/)，[设备接入方案](../internal/device-connect-rfc.md)）。
 4. 桌面程序（v0.9.0 起）用 MyGo 把 `mpx ui` 装进窗口，不扩权：桌面构建无参数启动就开窗，未接入时窗口里做首次安装或接入已有控制面，一键更新的本机一层升级桌面程序自己（[internal/cli/app.go](../../internal/cli/app.go)，[桌面程序方案](../internal/desktop-rfc.md)）。
 

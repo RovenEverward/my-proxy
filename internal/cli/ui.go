@@ -66,6 +66,8 @@ var uiAllow = []string{
 	"PUT /api/proxy-groups",
 	"DELETE /api/proxy-groups",
 	"POST /api/routing/migrate",
+	// 规则集镜像手动刷新(UC-05,CLI 等价 ruleset refresh)
+	"POST /api/rulesets",
 }
 
 var uiFlags struct {

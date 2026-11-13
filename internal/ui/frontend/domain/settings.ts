@@ -10,7 +10,7 @@ export const TEMPLATE_META = {
 } as const;
 export function asModelSettings(value: Settings): Settings {
   return { sub_url_prefix: value.sub_url_prefix || "", profile_title: value.profile_title || "", support_link: value.support_link || "", update_interval: value.update_interval || 0,
-    webhook_url: value.webhook_url || "", notify_days_left: value.notify_days_left || 0, notify_usage_percent: value.notify_usage_percent || 0, rules: value.rules ?? null, templates: value.templates ?? null };
+    webhook_url: value.webhook_url || "", notify_days_left: value.notify_days_left || 0, notify_usage_percent: value.notify_usage_percent || 0, ruleset_mode: value.ruleset_mode || "", rules: value.rules ?? null, templates: value.templates ?? null };
 }
 export async function modifySettings(change: (settings: Settings) => void): Promise<unknown> {
   const settings = asModelSettings(await api<Settings>("/api/settings"));

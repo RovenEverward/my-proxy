@@ -201,7 +201,21 @@ var schema = []string{
 		support_link    TEXT    NOT NULL DEFAULT '',
 		update_interval INTEGER NOT NULL DEFAULT 24,
 		rules           TEXT    NOT NULL DEFAULT '[]',
-		templates       TEXT    NOT NULL DEFAULT '{}'
+		templates       TEXT    NOT NULL DEFAULT '{}',
+		ruleset_mode    TEXT    NOT NULL DEFAULT ''
+	)`,
+
+	// ruleset_snapshots 是控制面镜像的上游规则集:每个被引用文件一行,key 是
+	// "<fmt>/<name>"(如 clash/openai、singbox/geoip-cn)。body 只在一次成功
+	// 拉取后才有;fetched_at>0 即「已就绪」,失败刷新保留旧 body 不清掉。
+	`CREATE TABLE IF NOT EXISTS ruleset_snapshots (
+		key             TEXT PRIMARY KEY,
+		url             TEXT    NOT NULL,
+		body            BLOB,
+		content_type    TEXT    NOT NULL DEFAULT '',
+		fetched_at      INTEGER NOT NULL DEFAULT 0,
+		last_attempt_at INTEGER NOT NULL DEFAULT 0,
+		last_error      TEXT    NOT NULL DEFAULT ''
 	)`,
 
 	// sub_pulls 是每个用户最近一次订阅拉取的记录:一人一行,user_id 是主键也
@@ -391,6 +405,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN notify_days_left INTEGER NOT NULL DEFAULT 3`},
 	{"settings", "notify_usage_percent",
 		`ALTER TABLE settings ADD COLUMN notify_usage_percent INTEGER NOT NULL DEFAULT 80`},
+	// 规则集分发方式:""=上游直连(零值,老库升级上来就是它)/ upstream / privatized。
+	{"settings", "ruleset_mode",
+		`ALTER TABLE settings ADD COLUMN ruleset_mode TEXT NOT NULL DEFAULT ''`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

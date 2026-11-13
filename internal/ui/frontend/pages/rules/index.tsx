@@ -11,6 +11,7 @@ import { BuiltinEditor } from "./BuiltinEditor";
 import { GroupEditor } from "./GroupEditor";
 import { RuleWarning } from "./components";
 import { RuleList, type RuleDraft } from "./RuleList";
+import { RulesetCard } from "./RulesetCard";
 import { TestCard } from "./TestCard";
 
 let rememberedScope = "";
@@ -59,7 +60,7 @@ export function RulesPage({ route }: PageProps) {
     </div>}
     {page.error && !data ? <ErrorState title="分流规则" error={page.error} onRetry={() => void page.refresh()} /> : !data ? <LoadingTable rows={6} columns={4} /> : <>
       {page.error && <p className="c-bad" role="alert">读取分流规则失败：{page.error.message}<Button size="sm" data-act="reload" onClick={() => void page.refresh()}>重试</Button></p>}
-      {empty ? <RulesStart onMigrate={() => migrate()} /> : <div className="rp-main"><div>{tab === "rules" ? <RuleList key={scope} data={data} scope={scope} draft={draft} onDraft={setDraft} onSave={putRules} onBuiltin={() => app.openDrawer(<BuiltinEditor data={data} onSave={putRules} />, { key: "rule-builtins" })} /> : <GroupsCard data={data} onOpen={openGroup} />}</div><div className="rp-side"><TestCard data={data} scope={scope} /></div></div>}
+      {empty ? <RulesStart onMigrate={() => migrate()} /> : <div className="rp-main"><div>{tab === "rules" ? <RuleList key={scope} data={data} scope={scope} draft={draft} onDraft={setDraft} onSave={putRules} onBuiltin={() => app.openDrawer(<BuiltinEditor data={data} onSave={putRules} />, { key: "rule-builtins" })} /> : <GroupsCard data={data} onOpen={openGroup} />}</div><div className="rp-side"><TestCard data={data} scope={scope} /><RulesetCard data={data} /></div></div>}
     </>}
   </>;
 }
