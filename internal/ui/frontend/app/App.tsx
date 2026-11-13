@@ -101,7 +101,10 @@ export function App({ meta }: { meta: Meta }) {
     return () => { removeEventListener("hashchange", onHash); document.removeEventListener("click", onLink); };
   }, [navigate]);
   useLayoutEffect(() => {
-    document.documentElement.dataset.ui = meta.mode !== "setup" && !connecting && route[0] === "overview" ? "workspace" : "classic";
+    // workspace 是全应用的统一主题,不随路由切:总览之外也用它,否则 side/top/
+    // btn/page 外壳与面板底色会回到 classic 遗留值(ISS-11)。setup/connecting 仍走
+    // classic——向导页没迁到新体系。
+    document.documentElement.dataset.ui = meta.mode !== "setup" && !connecting ? "workspace" : "classic";
     if (canonicalKey(location.hash) !== location.hash.slice(1)) history.replaceState(null, "", "#" + key);
   }, [key, route, meta.mode, connecting]);
   useEffect(() => { reportTheme(document.documentElement.dataset.theme || "light"); }, []);

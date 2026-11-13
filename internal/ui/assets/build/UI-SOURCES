@@ -1,4 +1,4 @@
-ui-src 13647204c01f7f71f016afc1953236bdd3f47e2af3a44d3153a763daa99c7ef2
+ui-src 371d2707158cb3145fa2a4a5e1ce233536ea2f0e375bcf8101b4dd812c9da5eb
 78c3488077343d5e  internal/ui/assets/styles/terminus/fonts.css
 b921242b4a54e7db  internal/ui/assets/styles/terminus/fonts/LICENSE-EB-Garamond.txt
 5dd548d31a85f756  internal/ui/assets/styles/terminus/fonts/LICENSE-Inter.txt
@@ -6,7 +6,7 @@ b536adfa0f5746cf  internal/ui/assets/styles/terminus/fonts/garamond-600.ttf
 1b08e7fc267a5c7e  internal/ui/assets/styles/terminus/fonts/inter-400.ttf
 e7a1aaf7eda9f2fa  internal/ui/assets/styles/terminus/fonts/inter-600.ttf
 e91aa8d0d3d70cd7  internal/ui/assets/styles/tokens.css
-7f98a7aa650160a8  internal/ui/frontend/app/App.tsx
+5ce555f9ee100a32  internal/ui/frontend/app/App.tsx
 861655b149b2211f  internal/ui/frontend/app/AppShell.tsx
 b8e0c262b12160f0  internal/ui/frontend/boot.ts
 965faf7a28375598  internal/ui/frontend/catalog.tsx
