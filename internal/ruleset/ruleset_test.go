@@ -63,15 +63,23 @@ func (f *fakeStore) ListRulesetSnapshots() (map[string]*store.RulesetSnapshot, e
 	defer f.mu.Unlock()
 	out := map[string]*store.RulesetSnapshot{}
 	for k, v := range f.snaps {
-		out[k] = v
+		c := *v
+		out[k] = &c
 	}
 	return out, nil
 }
 
+// snapshot 返回副本而不是活指针:刷新 goroutine 持锁写字段,测试无锁读
+// 活指针会被 -race 抓到。
 func (f *fakeStore) snapshot(key string) *store.RulesetSnapshot {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.snaps[key]
+	v := f.snaps[key]
+	if v == nil {
+		return nil
+	}
+	c := *v
+	return &c
 }
 
 // toServer 把请求的 host 改写到 httptest 上游:Manager 里的上游地址全是真实
