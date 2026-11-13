@@ -34,7 +34,7 @@ var nodeCmd = &cobra.Command{
 
 func init() {
 	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
-		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd)
+		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd, nodeRetryCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
@@ -900,6 +900,41 @@ var nodeUndrainCmd = &cobra.Command{
 			return err
 		}
 		return report(raw, "节点 %d 已取消排水", id)
+	},
+}
+
+// nodeRetryCmd 人工重试一台退避中的节点。
+//
+// 不通的节点会被后台任务按退避节奏跳过:短期故障最坏 5 分钟一探,持续不通
+// 一小时后放缓到每小时一探(mpx status 里看得到「退避中的节点」)。操作者
+// 把节点修好之后不用再等窗口到点:这条命令立刻跑一轮采样与收敛 —— 通了
+// 节点就回来了,不通按原样记一次失败、继续退避。
+var nodeRetryCmd = &cobra.Command{
+	Use:   "retry <节点>",
+	Short: "清掉退避窗口,立刻重试一台节点",
+	Long: `清掉一台节点的失败退避,立刻跑一轮采样与收敛。
+
+节点连续连不上时,后台任务会按退避窗口跳过它(短期 5 分钟一探,持续不通
+一小时后每小时一探)。把节点修好之后不用再等窗口到点,这条命令当场试
+一轮:通了退避就清零,不通记一次失败、按原窗口继续退避。
+
+它和 node status 的分工:node status 只问节点状态(顺带也会清退避);
+retry 还会把该下的人员名单一并收敛一遍。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := resolveNodeID(args[0], true)
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.doWithin(nodeRetryTimeout, "POST", nodePath(id)+"/backoff/retry", nil)
+		if err != nil {
+			return err
+		}
+		return report(raw, "节点 %d 已重试成功,退避清零", id)
 	},
 }
 

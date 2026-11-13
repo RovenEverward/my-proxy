@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/control/, internal/node/, internal/render/xray.go, internal/render/serverconfig.go, internal/render/singbox_server.go, internal/xrayrelease/, internal/singboxbuild/]
-verified: 2026-10-17 @ 626beea
+verified: 2026-11-12 @ cadd0fb
 ---
 # 节点：下发、收敛与巡检
 
@@ -37,4 +37,4 @@ SSH 和核心安装在 [internal/node](../../internal/node/)；节点配置渲�
 - 读数比上次小 → 说明节点上的 xray 重启过 → 记异常日志，不当成负用量（decisions 第 9 条）。
 - ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短（decisions 第 34 条）。
 - 直连出口没设 `domainStrategy` → 双栈网站会优先走 IPv6，VPS 的 v6 段常被限流 → v0.7.3 起默认 `UseIPv4v6`，节点可用 `outbound_ip` 覆盖。
-- 节点不通 → 每轮重试会拖慢整轮 → 按退避跳过（decisions 第 18 条）。
+- 节点不通 → 每轮重试会拖慢整轮 → 按退避跳过（decisions 第 18 条）：短期 30s 起翻倍封顶 5 分钟；持续不通一小时后放缓到每小时一探。修好了想立刻回来 → `mpx node retry <节点>` 或 `POST /api/nodes/{id}/backoff/retry` 当场跑一轮采样与收敛；`GET /api/nodes/{id}?fresh=1` 现场确认可达也会清退避。

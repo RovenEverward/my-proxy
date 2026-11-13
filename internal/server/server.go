@@ -45,6 +45,15 @@ type StatusSource interface {
 	Snapshot(now time.Time) model.ControlStatus
 }
 
+// BackoffOps 是后台任务里退避状态的两个操作口:人工重试与确认可达后清退避。
+type BackoffOps interface {
+	// RetryNodeBackoff 不等退避窗口到点,立刻对一台节点跑一轮采样与收敛;
+	// 试通后顺带刷新节点状态与告警。返回的错误就是要原样给操作者看的原因。
+	RetryNodeBackoff(ctx context.Context, n model.Node) error
+	// ClearNodeBackoff 在「确认这台节点能通」的地方清掉它的退避,不发 SSH。
+	ClearNodeBackoff(nodeID int64)
+}
+
 // UpdateSource 是控制面查更新那条线的结论,GET /api/update 靠它回答。
 //
 // 单独一个接口而不是直接复用 StatusSource:两者只有版本信息这一小块重叠,
@@ -85,6 +94,7 @@ type Server struct {
 	mux           *http.ServeMux
 	nodeOps       NodeOps
 	status        StatusSource
+	backoff       BackoffOps
 	updates       UpdateSource
 	dbPath        string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
@@ -165,6 +175,10 @@ func (s *Server) SetNodeOps(o NodeOps) { s.nodeOps = o }
 // 但对象数量照给 —— CLI 的 status 不该因为后台任务没起就整个失败。
 func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
 
+// SetBackoffOps 接上退避的人工操作口。不接时 POST /api/nodes/{id}/backoff/retry
+// 返回 501,和没接下发通道时 sync 的做法一致。
+func (s *Server) SetBackoffOps(ops BackoffOps) { s.backoff = ops }
+
 // SetUpdateSource 接上控制面的更新检查结论,GET /api/update 靠它回答。
 //
 // 不接时那一行只有本机版本、说不了有没有新版 —— 这也是 /api/update 该有的
@@ -243,6 +257,8 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/nodes/{id}/ports", s.handleNodePorts)
 	api.HandleFunc("POST /api/nodes/{id}/drain", s.handleDrainNode)
 	api.HandleFunc("POST /api/nodes/{id}/undrain", s.handleUndrainNode)
+	// 人工重试退避中的节点:清掉跳过窗口,当场跑一轮采样与收敛。
+	api.HandleFunc("POST /api/nodes/{id}/backoff/retry", s.handleRetryNodeBackoff)
 	api.HandleFunc("GET /api/nodes/{id}/online", s.handleNodeOnline)
 	api.HandleFunc("GET /api/nodes/{id}/capabilities", s.handleGetCapabilities)
 	api.HandleFunc("PUT /api/nodes/{id}/capabilities", s.handlePutCapabilities)

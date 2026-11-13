@@ -110,6 +110,9 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	}
 	// 心跳也接上:GET /api/status 靠它回答「上一轮什么时候跑的、跑了多久」。
 	srv.SetStatusSource(task)
+	// 退避的人工重试与清零也接上:POST /api/nodes/{id}/backoff/retry 与 fresh=1
+	// 的可达确认都走同一个后台任务里的状态。
+	srv.SetBackoffOps(task)
 	// 更新结论也接上:GET /api/update 默认只转述后台任务问到的,自己不发起检查;
 	// 带 ?refresh=1 时经 UpdateRefresher 强制问一次(见 refreshControlUpdate)。
 	srv.SetUpdateSource(task)
