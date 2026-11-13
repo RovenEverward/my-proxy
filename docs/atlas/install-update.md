@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/cli/console_windows.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, deploy/installers/, scripts/dev-deploy.py, scripts/dev-deploy-remote.py, scripts/dev-subdiff/]
-verified: 2026-11-12 @ feat/convenient-install
+verified: 2026-11-12 @ e954ed7
 ---
 # 安装与升级
 
