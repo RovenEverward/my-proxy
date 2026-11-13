@@ -19,6 +19,7 @@
 
 /* Shell breakpoints apply after component defaults. */
 @import "./shell.css";
+@import "./workspace.css";
 
 /* Overview workspace bindings follow the shared shell. */
 @import "./pages/home-workspace.css";
