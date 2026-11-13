@@ -123,8 +123,8 @@ const reachHTTPTimeout = 140 * time.Second
 func (s *Server) runReachCheck(job *reachJob, upstream, token string, tr http.RoundTripper, nodeIDs []int64) {
 	counts, err := func() (map[string]int, error) {
 		probe, err := reachCall[struct {
-			CheckedAt time.Time              `json:"checked_at"`
-			Targets   []reach.Target         `json:"targets"`
+			CheckedAt time.Time               `json:"checked_at"`
+			Targets   []reach.Target          `json:"targets"`
 			Results   map[int64]*reach.Result `json:"results"`
 		}](tr, upstream, token, "POST", "/api/reach/probe", map[string]any{"node_ids": nodeIDs})
 		if err != nil {

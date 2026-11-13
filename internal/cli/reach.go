@@ -54,8 +54,8 @@ var nodeCheckCmd = &cobra.Command{
 			return err
 		}
 		var probe struct {
-			CheckedAt time.Time              `json:"checked_at"`
-			Targets   []reach.Target         `json:"targets"`
+			CheckedAt time.Time               `json:"checked_at"`
+			Targets   []reach.Target          `json:"targets"`
 			Results   map[int64]*reach.Result `json:"results"`
 		}
 		if err := json.Unmarshal(probeRaw, &probe); err != nil {
