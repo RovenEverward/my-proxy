@@ -79,7 +79,7 @@ Fusion 总流程预算为上游执行时限加 3 分钟，API 再加 30 秒，CL
 
 `fusion` 封装保存固定版本与来源、执行状态、起止时间、耗时、配置、清理后的原始文本 `output`、真实上游 JSON `data`、截断标志、警告和错误。文本最多 64 KiB，上游 JSON 最多 128 KiB；完整保存记录仍受 256 KiB 限制。上游 `-json=-` 输出是终端文本前缀加 `goecs.report/v1` JSON，不能把整个 stdout 当作 JSON。隐私模式下上游 `text` 可为空，前缀仍须作为可能含 IP 的证据处理。
 
-解析要求 `schema_version:goecs.report/v1` 与 `ecs_version:v0.2.12`，保留上游 `sections` 和类型化 `components`，不凭文本拼造模块数据。状态区分 done、partial、failed、timeout 和 canceled。缺失、截断、版本不符或模块未完成的 JSON 保留部分文本与具体警告；上游取消且返回 0 也不能判为完成。完整运行与清理的证据范围见 [体检验证记录](diagnostic-validation.md)。
+解析要求 `schema_version:goecs.report/v1` 与 `ecs_version:v0.2.12`，保留上游 `sections` 和类型化 `components`，不凭文本拼造模块数据。状态区分 done、partial、failed、timeout 和 canceled。缺失、截断、版本不符或模块未完成的 JSON 保留部分文本与具体警告；上游取消且返回 0 也不能判为完成。完整运行与清理的证据范围见 [体检验证记录]。
 
 light 可选的固定密钥环境变量仍为执行机器的 `MPX_ABUSEIPDB_KEY` 与 `MPX_IPAPI_IS_KEY`，不会经远程 API 接收或进入报告。
 
@@ -300,7 +300,7 @@ $ curl -H 'Authorization: Bearer demo-token' \
 
 `sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
 
-`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/status.go` 里的 `ControlStatus`。
+`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段
 
 `status` 里的 `version` 是**这份控制面自己的版本**(编译期注入,拿不到时为空串),`update` 是后台每 6 小时问一次 GitHub 的结果:`current` / `latest` / `behind`(落后几次发布)/ `url`(发布页)/ `notes`(发布说明摘要,按 rune 截到 2000 字)/ `published_at` / `checked_at` / `error`。**它只报告,不下载不替换** —— 升级是显式动作,走 `POST /api/update/control` 与 `mpx update apply`,见 [安装与升级](../atlas/install-update.md) 。检查失败时 `error` 有值而上次的结论仍然保留(`checked_at` 不变),因为断网不等于没有新版本;`checked_at` 为 `null` 表示还没查过。判断"有没有更新"只需看 `behind > 0`,`behind` 为 0 涵盖了「已是最新」「比不出来(伪版本)」「没装版本号」三种情形。
 

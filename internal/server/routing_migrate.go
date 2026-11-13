@@ -12,7 +12,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 一次性迁移:模板 → 规则表(docs/internal/routing-rules-rfc.md「迁移与兼容」)。
+// 一次性迁移:模板 → 规则表。
 // settings.templates 与节点/入口 metadata 一律不删。purposes 表在 v0.7.0 起已不再
 // 读取,它的删除由 store 的 dropPurposes 按分流模式处理。
 

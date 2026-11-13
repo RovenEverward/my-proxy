@@ -24,8 +24,8 @@ flowchart LR
   T["终端 mpx（internal/cli）"] -- "HTTPS + token" --> CP
 ```
 
-1. CLI 每条命令都能用 `curl` 等价做出来，不缓存数据，每次都问控制面（[internal/cli](../../internal/cli/)）。配置档写在 `~/.config/mpx`，能装多个控制面，写前原子替换（decisions 第 31 条）。
-2. `mpx ui` 使用 React + TypeScript + Vite + shadcn/ui。[界面源码](../../internal/ui/frontend/)按共用组件、运行时、领域与页面分组。执行 `npm run ui:build`（[编排脚本](../../scripts/ui-build.mjs)）后，Vite 先写唯一的 `assets/build.tmp-*/` 暂存目录，[打包脚本](../../scripts/package-ui.mjs)再写入源码指纹 `UI-SOURCES` 并原子替换成 `assets/build/`。产物仍由 Go 内嵌，生成物随源码提交，常规 Go 构建不需要 Node。`npm run ui` 一条命令完成 build+go build+启动；`scripts/check-ui-fresh.mjs` 用指纹核对源码与产物是否一致，`mpx ui fingerprint` 打印任一已编译二进制里嵌的指纹（隐藏命令）。`scripts/dev-run.py` 编译前自动补跑 ui:build。转发层只放行白名单里的接口（[internal/ui/ui.go](../../internal/ui/ui.go) 的 allow 规则）；需要在客户端机器上动手的事走 `/local/*` 本地接口。为什么是本机转发、怎么防跨站和 DNS rebinding，见 [管理 UI 方案](../internal/ui-rfc.md)。正常模式下页面也能接入另一套控制面（`/local/profiles/connect*`：同一套取指纹→核对→设备密码的手续，存成指名的新配置档再切过去，不覆盖已有档）；`/ui/meta` 带当前档的证书指纹（设置页「当前控制面」显示、配置档下拉摆前 16 位用）。
+1. CLI 每条命令都能用 `curl` 等价做出来，不缓存数据，每次都问控制面。
+2. `mpx ui` 使用 React + TypeScript + Vite + shadcn/ui。[界面源码]。
    连接方式只在节点详情的「连接方式」卡片管理；旧地址 `#inbounds`（含子路径）跳到节点列表。详情头部有未应用改动、配置不一致或从未应用时才出现「应用到节点」主按钮，其余时候它和刷新状态、暂停 / 恢复分配、编辑一起收在「⋯」菜单。体检页行内的「应用到<节点>」不直接下发：它只跳到节点详情并留一个 10 秒有效的标记，由详情页弹确认框（用户确认才下发）；节点连不上时详情头部的「应用到节点」带 `aria-disabled`，React 事件处理检查不可用状态，只提示先刷新状态。
    界面规范由[UX 入口](../../internal/ui/ux/README.md)连接设计意图、交互模式、组件与验收。`styles/tokens.css` 是唯一项目 Token 真源；根元素的 `data-ui` 选择总览工作区或旧页兼容绑定，浮层继承当前主题。[共用组件](../../internal/ui/frontend/components/primitives.tsx)与 shadcn 控件读取同一份 Token。图标注册表由固定版本官方 Lucide 素材生成，运行时使用 `lucide-react`。应用装配、外壳、更新和页面分别持有各自职责。本机 `/components.html` 复用真实基础组件且不启动业务读取；`npm run ui:check` 校验来源与结构。实际截图和审查见[React 界面验收](../../.visual-design/react-components/review.md)。
    总览已完成的开始清单收进页头，节点优先展示最需注意的六个，通知在页底横条中查看并跳到系统修改。首次使用默认为浅色，保存过的手动主题保持不变；Mac 使用系统滚动条，其他平台只在滚动或悬停滑块时显示细条。
@@ -37,13 +37,13 @@ flowchart LR
    异步交互通过 `Button loading` 与局部忙态立即显示进行中状态，原生控件值不冒充保存成功；失败恢复原选择并保留原页面错误提示。`usePageData` 加载器的 `read` 只在明确的局部刷新中复用当前页面成功整页读取的快照，键包含完整接口路径、查询参数、方法和只读请求体；作用域与筛选不会串用。只有当前代次的完整读取可替换快照，局部读取返回副本且不回写。写开始、完成均失效相关资源；用户列表、计数和套餐人数一起失效。手动刷新、切页和每 30 秒轮询仍读远端，不复用旧请求快照；切页重新读取，完整成功后更新请求快照；展示缓存先呈现。`node scripts/ui-interaction-audit.mjs` 在现有 e2e 路径中加入 150–300ms 响应延迟，输出交互反馈、完成和接口耗时表；正式延迟守卫在 `interaction-latency.spec.mjs`。
    本机转发与 CLI 的连接池每主机保留最多 16 个空闲连接，证书钉住和 HTTP/1.1 不变；控制面仅对已鉴权管理 JSON 协商 gzip，大于等于 1KB 才压缩，解压字节保持原样。备份流和订阅不经过 JSON 压缩。相关守卫见 `data-reuse.spec.mjs`。
    外部订阅从订阅页进入，页面通过新增来源接口管理配置、授权和刷新。对应命令为 `mpx source`。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
-3. 设备接入：控制面自签证书，CLI 记指纹（像 SSH 的 known_hosts）；`mpx connect` 用设备密码换一个设备 token，每台设备各自可吊销（[internal/pin](../../internal/pin/)，[设备接入方案](../internal/device-connect-rfc.md)）。
-4. 桌面程序（v0.9.0 起）用 MyGo 把 `mpx ui` 装进窗口，不扩权：桌面构建无参数启动就开窗，未接入时窗口里做首次安装或接入已有控制面，一键更新的本机一层升级桌面程序自己（[internal/cli/app.go](../../internal/cli/app.go)，[桌面程序方案](../internal/desktop-rfc.md)）。
+3. 设备接入：控制面自签证书，CLI 记指纹。
+4. 桌面程序。
 
 ## 坑
 
 - 给 UI 加功能时直接调一个新接口 → 不在转发白名单里会被拒绝 → 先确认 CLI 有对应能力，再加白名单。
-- UI 轮询远端任务（如向导）→ 容易拉大量数据 → 用增量轮询、小响应、空闲退避、页面隐藏时暂停（[向导方案](../internal/wizard-rfc.md) 的连接性能约束）。
+- UI 轮询远端任务。
 - 窗口里不出现命令行用语（v0.9.1 起）→ 本地报错按桌面 / 浏览器分开说；控制面原话带命令的错误和自检建议另给 `ui_hint`，页面优先显示，CLI 照旧用原话（[对外契约](../internal/contracts.md)）→ 新加报错时别把 `mpx …` 写进只会出现在窗口里的文字。
-- 撞上控制面限流 → CLI 自己等，不把 429 甩给使用者（decisions 第 33 条）。
-- `mpx login` 指向临时控制面 → 曾覆盖正在用的配置 → 现在按配置档区分，写前原子替换（[路线图](../internal/roadmap.md) 批 8）。
+- 撞上控制面限流 → CLI 自己等，不把 429 甩给使用者。
+- `mpx login` 指向临时控制面 → 曾覆盖正在用的配置 → 现在按配置档区分，写前原子替换。

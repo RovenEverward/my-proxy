@@ -135,7 +135,7 @@ func Resolve(node model.Node, inbounds []model.Inbound, hosts map[int64][]model.
 	return ResolveNamed(node, "", inbounds, hosts, user)
 }
 
-// ResolveNamed 同 Resolve,另带节点显示名(docs/internal/node-naming-rfc.md §5):
+// ResolveNamed 同 Resolve,另带节点显示名:
 // host 没写 remark 时用它当默认名字,空时退回 node.Name;也供 {NODE_DISPLAY} 展开。
 func ResolveNamed(node model.Node, display string, inbounds []model.Inbound, hosts map[int64][]model.Host, user *model.User) []Endpoint {
 	uuid := model.DeriveUUID(user.Key)

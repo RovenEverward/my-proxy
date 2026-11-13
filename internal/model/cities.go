@@ -4,7 +4,7 @@ import "strings"
 
 // cityZh 是常见 VPS 机房城市的英文名(ipwho.is 返回的写法)→ 中文名。
 // 手工维护,中文名取自中文维基百科对应条目的标题(简体)。表里没有的城市
-// 不做机器翻译,显示名退回国家中文名(docs/internal/node-naming-rfc.md §3)。
+// 不做机器翻译,显示名退回国家中文名。
 var cityZh = map[string]string{
 	// 北美
 	"los angeles":   "洛杉矶",

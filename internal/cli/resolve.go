@@ -11,7 +11,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// 用名字指定对象(docs/internal/node-naming-rfc.md §8)。
+// 用名字指定对象。
 //
 // 规则按顺序试,某一步恰好命中一个就停;命中多个就列出候选报错,绝不猜:
 //  1. 纯数字 → id(兼容旧写法与脚本)。想按名字找一个叫 "1" 的节点写 name:1。

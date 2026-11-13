@@ -8,7 +8,7 @@ verified: 2026-10-17 @ 626beea
 
 ## 愿景与思想
 
-> 待确认：本节由 Agent 从 [README](../../README.md)、[设计](../design.md)、[路线图](../internal/roadmap.md)、和各份 RFC 里提炼，没有加进仓库之外的说法。属于守护层，请主人逐段确认或改写。
+> 待确认：本节由 Agent 从 [README](../../README.md)、[设计](../design.md) 里提炼，没有加进仓库之外的说法。属于守护层，请主人逐段确认或改写。
 
 MPX 想做的是：一个人、没有团队也没人值班，也能把几台到几十台服务器、几百上千个用户管得清清楚楚，而且这件事不需要一直盯着。手工维护一台 xray 还行，机器和人一多就会出四种错：真相散在各台机器和表格里，改一处要重启断掉所有人，客户端手里的订阅悄悄过期，超限和到期没人去算。MPX 的回答是一个地方存唯一一份真相，由它算出每个节点上该是什么、每个人该拿到什么，再送过去。
 
@@ -18,7 +18,7 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 
 判断「做得好」的标准写在决策记录的口吻里：错了也看不出来的问题最优先（静默丢账先于一切）；一份坏配置、一条坏规则不能让整个订阅不可用；能拒绝自己的安装和升级才安全；不可用的用户要看得出来是停用、过期还是超限。
 
-现在做到了：一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流、远程升级与回滚、一键更新三层、桌面程序（三平台安装包、窗口内首次安装与接入、多控制面切换、自更新、三平台 CI 冒烟）。做过的批次和版本见 [路线图](../internal/roadmap.md)；下一步还没定。
+现在做到了：一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流、远程升级与回滚、一键更新三层、桌面程序（三平台安装包、窗口内首次安装与接入、多控制面切换、自更新、三平台 CI 冒烟）。
 
 ## 思想地图
 
@@ -53,7 +53,7 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 | 安装与升级 | 从一台裸 VPS 到可用，再到远程升级回滚 | 改 `mpx init`、`deploy/`、`mpx update`、发版 | [install-update.md](install-update.md) |
 | 体检与诊断 | 入口能力检测、一键体检、自检 | 改 `internal/diagnostics`、`internal/fusion`、`doctor` | [diagnostics.md](diagnostics.md) |
 
-桌面程序还在设计与穿刺阶段，代码不在 main 上，方案见 [桌面程序方案](../internal/desktop-rfc.md)。
+桌面程序已在 main 上。
 
 ## 怎么配合
 
@@ -96,19 +96,6 @@ flowchart LR
 | 运行时走查 | [docs/internal/index.md](../internal/index.md) | 开发者 | 活的 | 随代码 |
 | 数据模型与语义 | [docs/internal/model.md](../internal/model.md) | 开发者 | 活的 | 随代码 |
 | 对外契约（CLI、API、订阅、节点侧） | [docs/internal/contracts.md](../internal/contracts.md) | 开发者、写客户端的人 | 活的 | 随代码 |
-| 现状与验证程度 | [docs/internal/status.md](../internal/status.md) | 开发者 | 活的 | 随版本 |
-| 路线图 | [docs/internal/roadmap.md](../internal/roadmap.md) | 开发者、主人 | 活的 | 主人 |
-| 运维手册（发版、升级、补跑安装脚本） | [docs/internal/runbook.md](../internal/runbook.md) | 维护者 | 活的 | 随版本 |
-| 缺口与待定项 | [docs/internal/open-questions.md](../internal/open-questions.md) | 主人 | 活的 | 主人 |
-| RFC：管理 UI | [ui-rfc.md](../internal/ui-rfc.md) | 开发者 | 冻结（已采纳，已实现） | — |
-| RFC：设备接入 | [device-connect-rfc.md](../internal/device-connect-rfc.md) | 开发者 | 冻结（已实现） | — |
-| RFC：节点展示名 | [node-naming-rfc.md](../internal/node-naming-rfc.md) | 开发者 | 冻结（N1–N6 已实现） | — |
-| RFC：自动升级与 `mpx update` | [update-rfc.md](../internal/update-rfc.md) | 开发者 | 冻结（M1–M3、M6 已实现；节点核心与一键三层见 decisions 第 39 条，M5 自动策略不做） | — |
-| RFC：分流规则（替代用途） | [routing-rules-rfc.md](../internal/routing-rules-rfc.md) | 开发者 | 冻结（已实现，用途已于 v0.7.0 删除） | — |
-| RFC：套餐 | [plans-rfc.md](../internal/plans-rfc.md) | 开发者 | 冻结（P1–P3 已实现） | — |
-| RFC：两个向导 | [wizard-rfc.md](../internal/wizard-rfc.md) | 开发者 | 冻结（v0.6.4 已实现） | — |
-| RFC：桌面程序 | [desktop-rfc.md](../internal/desktop-rfc.md) | 开发者 | 冻结（D1–D3 已实现，v0.9.0） | — |
-| 验证记录：能力检测、一键体检、QUIC | [capability](../internal/capability-validation.md)、[diagnostic](../internal/diagnostic-validation.md)、[QUIC](../internal/quic-validation.md) | 开发者 | 冻结 | — |
 | 用户文档站（教程、指南、参考、原理） | [首页](../index.md)、[tutorial/](../tutorial/)、[guides/](../guides/)、[reference/](../reference/)、[concepts/](../concepts/)，线上 [RovenEverward.github.io/my-proxy](https://RovenEverward.github.io/my-proxy/) | 用户 | 活的 | 见 doc-user |
 | issue 与讨论 | [GitHub issues](https://github.com/RovenEverward/my-proxy/issues?q=is%3Aissue) | 开发者 | 讨论过程，结论进仓库 | — |
 | 审计脚本 | [scripts/atlas_audit.py](../../scripts/atlas_audit.py) | 维护者、Agent | 活的 | 从 doc-atlas 技能同步 |

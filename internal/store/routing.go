@@ -11,7 +11,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// 分流规则的存储(见 docs/internal/routing-rules-rfc.md)。
+// 分流规则的存储。
 //
 // 作用域用用户 id 表示,0 是全局。每个作用域有一个版本号:整表替换带上读到的版本,
 // 两台设备同时编辑时后写的拿到 ErrVersionConflict,而不是悄悄覆盖前一个人的改动。

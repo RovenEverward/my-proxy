@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// 分流规则(见 docs/internal/routing-rules-rfc.md)。一条规则 = 匹配类型 + 值 + 去向;
+// 分流规则。一条规则 = 匹配类型 + 值 + 去向;
 // 同一作用域内按 Position 从上往下匹配,第一条命中的生效,都没命中走兜底(RouteFinal)。
 
 // RoutingMode 决定订阅的分流部分从哪来:template 是旧路径(模板原样 + 用途),

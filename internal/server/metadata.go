@@ -86,7 +86,7 @@ func (s *Server) handlePutMetadata(w http.ResponseWriter, r *http.Request) {
 var metadataMu sync.Mutex
 
 // fillNodeLetter 补齐节点元数据里省略的 city / letter,并按 (地区, 城市) 分配字母
-// (docs/internal/node-naming-rfc.md):显式给的字母撞了就拒绝;沿用旧字母但换了分组
+// :显式给的字母撞了就拒绝;沿用旧字母但换了分组
 // 撞了就重新分配;没有字母就取该分组最小的空闲字母。删掉节点不让别人重排。
 func (s *Server) fillNodeLetter(id int64, m *model.LocationMetadata, citySet, letterSet bool) (int, string) {
 	all, err := s.store.ListLocationMetadata("nodes")

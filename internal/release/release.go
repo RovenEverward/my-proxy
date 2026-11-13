@@ -1,7 +1,7 @@
 // Package release 按发布里的 SHA256SUMS 核对 mpx 发布件。
 //
 // 只做哈希,不做签名:防的是下载损坏、截断和拿错包;来源可信靠 HTTPS 与 GitHub。
-// 决定与理由见 docs/internal/update-rfc.md。deploy/install.sh 与 install-cli.sh 里有
+// deploy/install.sh 与 install-cli.sh 里有
 // 同一套逻辑的 shell 版本(curl | bash 跑的脚本没法引用这个包)。
 package release
 

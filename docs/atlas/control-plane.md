@@ -33,16 +33,16 @@ sequenceDiagram
 2. 路由集中在 [internal/server/server.go](../../internal/server/server.go)。管理接口只增不破：新字段可以加，旧字段和旧路径不能改语义。
 3. 持久化在 [internal/store](../../internal/store/)：SQLite 单连接加 WAL，写入串行；级联删除靠外键；迁移在启动时跑，只能往前加。
 4. 领域对象在 [internal/model](../../internal/model/)，字段与状态判定的语义写在 [数据模型与语义](../internal/model.md)，接口的确切形状写在 [对外契约](../internal/contracts.md)。
-5. 备份含库和控制面的 SSH 私钥，不含管理 token；恢复是「暂存，重启时换入」（[internal/backup](../../internal/backup/)，decisions 第 16 条）。外部订阅地址、节点快照、授权及来源条件属于库内敏感内容，随备份恢复。
+5. 备份含库和控制面的 SSH 私钥，不含管理 token；恢复是「暂存，重启时换入」。外部订阅地址、节点快照、授权及来源条件属于库内敏感内容，随备份恢复。
 6. 外部订阅的配置、快照、用户授权和策略组来源条件分别持久化，见 [source.go](../../internal/store/source.go)。授权与来源条件仅由新增专用接口写入，旧用户和策略组 PUT 不覆盖这些关系。来源删除级联移除快照与授权，组条件保留失效来源 ID。
 
 ## 为什么这样设计
 
-单库单进程，是因为目标规模是一个人管几十台节点、上千用户：零依赖、备份就是拷一个文件，代价是规模上限在一台机器（decisions 第 10 条）。控制面启动时不下发配置（第 4 条），避免一次重启牵连所有节点。
+单库单进程，是因为目标规模是一个人管几十台节点、上千用户：零依赖、备份就是拷一个文件，代价是规模上限在一台机器，避免一次重启牵连所有节点。
 
 ## 坑
 
 - 想给接口改字段语义 → 旧 CLI、旧 `mpx ui` 会静默出错 → 只加新字段或新路径；确实要破坏兼容，先停下来问主人。
-- 建用户时不带 `enabled` → 零值会被当成停用 → 必须显式传（decisions 第 35 条）。
+- 建用户时不带 `enabled` → 零值会被当成停用 → 必须显式传。
 - 节点和入口的地区元数据（region / city / letter）在 `metadata.go`（server、store）和 `model/location.go`，类型叫 `LocationMetadata`；v0.9.2 前这些文件叫 `purpose.go`。代码里剩下的 `purposes` 字样只在迁移和兼容旧报告的地方（`dropPurposes`、`LegacyPurposeCount`、`PurposeOutcome`），「用途」本身已在 v0.7.0 删除。
 - 仍是 `template` 分流模式的老库 → v0.7.0 起控制面拒绝启动 → 先用 v0.6.6 跑 `mpx rule migrate`（见 [CHANGELOG](../../CHANGELOG.md) v0.7.0）。
