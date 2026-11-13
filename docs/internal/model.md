@@ -28,13 +28,13 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
 | `user_notices` | `user_id`、`kind`、`sent_at`(主键 `(user_id, kind)`) | 只是「这条用户提醒已经发过了」的流水账,不承载业务数据:整张表删掉用户、流量、订阅照常工作,只是下一轮可能重发。所以备份校验的必需表清单里**刻意没有它** |
 
-元数据另存两张表：`node_metadata(id REFERENCES nodes ON DELETE CASCADE, config JSON TEXT)`、`host_metadata(id REFERENCES hosts ON DELETE CASCADE, config JSON TEXT)`，字段只有 `region`、`city`、`letter`，host 非空字段覆盖 node 对应字段。`purposes` 表与元数据里的 `line`/`purposes` 字段已在 v0.7.0 删除：老库残留的 JSON 读出时自然丢弃，老客户端写入被忽略。分流改由规则表决定（见 [routing-rules-rfc.md](routing-rules-rfc.md)）。
+元数据另存两张表：`node_metadata。
 
 `diagnostic_reports(node_id REFERENCES nodes ON DELETE CASCADE, source, checked_at, report)` 主键为 `(node_id,source)`，source 仅 node/control。每节点最多两份最新报告，JSON 最多 256 KiB；删除节点级联清理。不积累诊断历史，不改变能力检测和用户配额。部分失败或取消保存已获得的证据，密钥不序列化。本地 `diagnose` 不落此表。
 
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
 
-`traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`(见 [decisions.md](decisions.md) 第 9 条)。
+`traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`。
 
 ## 多核心扩展
 
@@ -75,7 +75,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 证书那部分:到期时间读不到(文件不是证书、节点上没有 `openssl`)时 `not_after` 为空、`error` 有值;能读到就只留 `not_after`。这两件事不会同时成立。
 
-`node list` 显示的是这张缓存,不发 ssh;`?fresh=1` / `mpx node status` 才现场查。为什么基准和观察分两张表,见 [decisions.md](decisions.md) 第 20 条。
+`node list` 显示的是这张缓存,不发 ssh;`?fresh=1` / `mpx node status` 才现场查。为什么基准和观察分两张表,。
 
 ### 授权
 
@@ -125,7 +125,7 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 
 **子域的随机部分按用户名派生,不是随机数。** 否则客户端每次更新订阅都会看到新地址,节点列表里堆一串连不上的旧条目。
 
-`{USERNAME}` 在这里**被抹成空串**,只在订阅名 `settings.profile_title` 里展开成用户名。节点名会出现在客户端的节点列表里,截图和转发都会带出去,不该写账号名 —— 这是有意的,见 [open-questions.md](open-questions.md) 第 3 节。
+`{USERNAME}` 在这里**被抹成空串**,只在订阅名 `settings.profile_title` 里展开成用户名。节点名会出现在客户端的节点列表里,截图和转发都会带出去,不该写账号名 —— 这是有意的
 
 ### key 与 sub_token
 
@@ -135,7 +135,7 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 
 ### 重置策略
 
-`reset_strategy` ∈ `none | daily | weekly | monthly`,按 `traffic_reset_at` 滚动推进。**认不出的取值不参与轮转** —— 既不会推进,也不会卡住。这条有来历,见 [status.md](status.md) 的教训二。
+`reset_strategy` ∈ `none | daily | weekly | monthly`,按 `traffic_reset_at` 滚动推进。**认不出的取值不参与轮转** —— 既不会推进,也不会卡住。这条有来历
 
 ### 到期日的解释
 
@@ -151,4 +151,4 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 续费一年之后再次临近到期会正常提醒第二次。停用的用户不发。
 
 节点故障走的是另一条路:复用告警那条线(冷却 30 分钟、条件消失打「已恢复」),不记 `user_notices`。
-两边为什么这么分,见 [decisions.md](decisions.md) 第 27 条。
+两边为什么这么分,。

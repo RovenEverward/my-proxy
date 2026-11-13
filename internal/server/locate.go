@@ -117,7 +117,7 @@ func parseLocate(raw string) (LocateSuggestion, error) {
 	return sg, nil
 }
 
-// autoLocateNode 在新建节点后识别地区并写入显示名(docs/internal/node-naming-rfc.md):
+// autoLocateNode 在新建节点后识别地区并写入显示名:
 // 只在节点还没有地区时写,手动设过的不覆盖;地址是域名时不自动 SSH 探测(新节点
 // 未必已经能连),提示用 node locate。返回写入后的显示名,或给人看的提示。
 func (s *Server) autoLocateNode(ctx context.Context, n model.Node) (display, note, uiNote string) {

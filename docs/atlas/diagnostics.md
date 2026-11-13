@@ -16,9 +16,9 @@ verified: 2026-11-13 @ c4faa0e + working tree
 
 ## 怎么运转
 
-1. 能力检测在控制面起临时 SOCKS 客户端，经指定入站或入口发请求，检测流量计入那个用户的配额；检测器版本是证据指纹的一部分，升级后旧结果显示未知（[能力检测验证](../internal/capability-validation.md)）。
-2. 一键体检默认引擎是固定版本的官方 Go ECS 融合怪，经 SSH 在节点上跑，报告受传输预算约束（[一键体检验证](../internal/diagnostic-validation.md)）。
-3. 自检只有 fail 才让退出码非 0（固定为 3，warn 不算），可以直接当健康检查脚本用（decisions 第 23 条，[internal/cli/doctor.go](../../internal/cli/doctor.go)）。`mpx ui` 的「自检」页走本地接口，由操作机上的 `mpx` 执行。
+1. 能力检测在控制面起临时 SOCKS 客户端，经指定入站或入口发请求，检测流量计入那个用户的配额；检测器版本是证据指纹的一部分，升级后旧结果显示未知。
+2. 一键体检默认引擎是固定版本的官方 Go ECS 融合怪，经 SSH 在节点上跑，报告受传输预算约束。
+3. 自检只有 fail 才让退出码非 0。`mpx ui` 的「自检」页走本地接口，由操作机上的 `mpx` 执行。
 4. 控制面给有漂移的节点检查项带 `node_id` 与 `ui_action: "apply"`（只增，v0.9.10 起）。界面据此在体检页放行内「应用到<节点>」：点击只记一个 10 秒有效的标记并跳到节点详情，由详情页弹确认框，用户确认才真的下发；节点连不上时详情头部的「应用到节点」是 `aria-disabled`（仍可聚焦、读屏读得到原因，点击被界面统一拦下），提示先点「刷新状态」。
 5. 触达检查的探针只有一份（`internal/reach/`）：操作机（`mpx node check`、`mpx ui` 的 `/local/reach/check`）与控制面（`POST /api/reach/probe`）跑同一份 `Probe`，各探各的，操作机合并明细与判定再 `POST /api/reach/results` 回存（表 `reach_checks`，按节点存最近一次）。判定按入站自己的协议选格：TCP 系看 TCP 格，QUIC/UDP 系（wireguard、hysteria2、tuic、network=udp）看 UDP 格；另一协议的探测只进明细不参与判定——在 UDP 端口上探 TCP 必失败，混进判定会把「该协议本来就不该通」误读成「节点不通」。UDP 超时只记 unknown（服务端可以合法沉默），节点全 UDP 入站且全超时判「未知」不判「不通」。页面数据走 `GET /api/reach/last`（含逐入站明细）与 `GET /api/reach`（摘要），列表双列与筛选只在查过一轮后出现。
 

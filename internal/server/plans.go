@@ -13,7 +13,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 套餐(权限组)的管理接口,见 docs/internal/plans-rfc.md §3.6。
+// 套餐(权限组)的管理接口。
 //
 // 全部是新增路由,现有接口的字段与语义一个都不动。判定与授权集合的解释都在
 // store 层的 loadPlanAuth 那一处,这里只做请求解析、校验与错误翻译。

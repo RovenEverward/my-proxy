@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// shell 补全(docs/internal/node-naming-rfc.md §8)。
+// shell 补全。
 //
 // 按命令的 Use 认参数是什么:`<节点>`/`[节点]`、`<入站>`、`<username>`;--node 与
 // --inbound 两个 flag 也补。补进命令行的是 ASCII 的名字,展示名放在描述里(zsh/fish

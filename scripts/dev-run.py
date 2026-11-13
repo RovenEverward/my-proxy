@@ -53,6 +53,12 @@ def write_json(path, value):
 def compile_binary(wanted):
     module = next(line.split()[1] for line in (REPO / "go.mod").read_text().splitlines() if line.startswith("module "))
     print("mpx-dev：正在编译 " + wanted["version"], file=sys.stderr)
+    # 前端源码变了而 assets/build 还是旧指纹时先补一次 ui:build，避免把旧页面
+    # 编进新二进制（ISS-09）。check-ui-fresh.mjs 是唯一的指纹实现，两边不会漂。
+    if subprocess.run(["node", "scripts/check-ui-fresh.mjs"], cwd=REPO,
+                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE).returncode != 0:
+        print("mpx-dev：UI 源码变了，先重建页面产物。", file=sys.stderr)
+        subprocess.run(["npm", "run", "ui:build"], cwd=REPO, check=True)
     with tempfile.TemporaryDirectory(prefix="build-", dir=STATE) as folder:
         target = Path(folder) / "mpx-dev"
         subprocess.run(["go", "build", "-trimpath", "-ldflags",

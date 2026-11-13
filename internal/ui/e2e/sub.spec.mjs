@@ -32,11 +32,12 @@ test.beforeAll(async () => {
 test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
-test("一页四段，高级默认折叠，展开才取底稿正文", async ({ page }) => {
+test("设置清单三张卡，底稿默认折叠，展开才取正文", async ({ page }) => {
   const requests = [];
   page.on("request", r => { if (r.url().includes("/api/settings/templates/")) requests.push(r.url()); });
   await open(page);
   for (const id of ["sec-link", "sec-info", "sec-clients", "sec-adv"]) await expect(page.locator("#" + id)).toHaveCount(1);
+  await expect(page.locator(".r-page > .card")).toHaveCount(3);
   await expect(page.locator("#sec-look, #pv, [data-act=s5-pv]")).toHaveCount(0);
   await expect(page.locator("[data-act=s5-adv]")).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".zr-tpl")).toHaveCount(0);
@@ -159,12 +160,12 @@ test("最近拉过订阅的用户默认入选，下拉切换链接", async ({ pa
   await open(page);
   await expect(page.locator("#pv-user")).toHaveValue("bob");
   const uiBob = await (await page.request.get(env.origin + "/api/users/bob/links")).json();
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
   await page.selectOption("#pv-user", "alice");
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await page.fill("#f-prefix", "https://new.example.com");
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
   await linkOf(page, "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
 });
 
@@ -185,7 +186,7 @@ test("没有用户时标记示例", async ({ page }) => {
   await open(page);
   await expect(page.locator(".b5-pick .tag")).toHaveText("示例");
   await expect(page.locator("#pv-user")).toHaveCount(0);
-  await expect(page.locator(".r-link [data-act=copy]")).toBeDisabled();
+  await expect(page.locator(".r-li-link [data-act=copy]")).toBeDisabled();
 });
 
 test("订阅信息、客户端和底稿路由滚到对应段，底稿路由自动展开", async ({ page }) => {
@@ -391,7 +392,7 @@ test("未编辑前缀的预览和复制逐字保留控制面的旧链接", async
   // 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」两段显示。
   await linkOf(page, auto);
   await expect(page.locator(".lk-pre")).toHaveText("https://old.example.com/sub//");
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", auto);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", auto);
   await setTitle(page, "只改标题");
   await linkOf(page, auto);
 });
@@ -404,7 +405,7 @@ test("编辑前缀时取最后一段订阅令牌并去掉全部尾斜杠", async
   await linkOf(page, expected);
   await expect(page.locator(".lk-pre")).toHaveText("https://new.example.com/sub");
   await expect(page.locator(".lk-tail")).toHaveText("/sub/token-last");
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", expected);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", expected);
 });
 
 test("Go 正则允许完成，浏览器不支持的规则提示交由控制面检查", async ({ page }) => {
@@ -526,11 +527,11 @@ test("保存新订阅地址后，重载回来前预览就换成新链接", async
   page.on("request", r => { if (r.method() === "PUT" && /\/api\/settings$/.test(r.url())) saved = true; });
   await page.route("**/api/settings/builtin-rules", async r => { if (saved) await held; await r.continue(); });
   await open(page);
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "http://127.0.0.1:1/sub/tok-1");
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", "http://127.0.0.1:1/sub/tok-1");
   await page.fill("#f-prefix", "https://sub.example.com");
   await save(page);
   await expect(page.locator(".toast")).toContainText("已保存 1 处改动");
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", "https://sub.example.com/sub/tok-1");
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", "https://sub.example.com/sub/tok-1");
   await linkOf(page, "https://sub.example.com/sub/tok-1");
   hold();
 });

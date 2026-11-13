@@ -110,7 +110,7 @@ tr.is-exp .btn,tr.is-exp .menu button:not(.dg){color:var(--ink)}
 table.ut tbody tr.picked{background:color-mix(in srgb,var(--ink) 5%,transparent)}table.ut tbody tr.picked .tag{background:var(--canvas)}
 .bulk{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;min-height:44px;margin:0 12px 6px;padding:6px 8px 6px 14px;border-radius:10px;background:var(--canvas);font-size:var(--ui-font-size-control)}
 .bulk b{font-weight:560}.bulk .lnk{font-size:var(--ui-font-size-control)}.bulk .sp{flex:1}
-.btn.dg-t{background:var(--bad-bg);color:var(--bad)}.btn.dg-t:hover{background:color-mix(in srgb,var(--bad) 14%,var(--bad-bg))}.btn.dg-t svg{width:14px;height:14px}
+.p-users .btn.dg-t{background:var(--bad-bg);color:var(--bad)}.btn.dg-t:hover{background:color-mix(in srgb,var(--bad) 14%,var(--bad-bg))}.btn.dg-t svg{width:14px;height:14px}
 @media (max-width:860px){.bulk{margin:0 10px 6px;font-size:var(--ui-font-size-control)}}
 /* 续期框 */
 .rn{display:grid;gap:12px;margin-bottom:6px}.rn-seg{justify-self:start}.rn .field{margin-bottom:0}

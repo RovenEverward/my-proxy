@@ -45,7 +45,7 @@ MPX 是操作者本机使用的代理控制工具。用户进入主页后，应�
 
 界面源码位于 [frontend/](../frontend/)：React 18、TypeScript（strict）、Vite、shadcn/ui 与 radix。[icon-map.ts](../frontend/components/icon-map.ts) 由 `scripts/sync-ui-icons.mjs` 从官方素材生成。[components/ui/](../frontend/components/ui/) 是 vendored shadcn 包装。[primitives.tsx](../frontend/components/primitives.tsx) 提供无业务状态的展示原语。[app/App.tsx](../frontend/app/App.tsx) 持有路由、读取、浮层与反馈装配。页面与领域代码继续持有各自的表单和草稿。
 
-`npm run ui:build` 产出 `assets/index.html`、`assets/components.html`、`assets/boot.js` 与 `assets/build/`。它们是生成物，不手工编辑，由 Go 静态服务提供。旧页面脚本已删除。页面源码只在 `frontend/` 维护。
+`npm run ui:build` 产出 `assets/index.html`、`assets/components.html`、`assets/boot.js` 与 `assets/build/`(含 `UI-SOURCES` 源码指纹)。它们是生成物，不手工编辑，由 Go 静态服务提供。开发时 `npm run ui` 一条命令编译并启动页面。旧页面脚本已删除。页面源码只在 `frontend/` 维护。
 
 组件目录 `/components.html` 加载同一份 Token、产品 CSS 和真实 React 组件，不加载业务启动代码。复杂交互使用真实页面测试，避免复制第二套表单或菜单逻辑。
 

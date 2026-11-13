@@ -29,7 +29,7 @@ import (
 // (会出现在两端的 ps 与 shell 历史里);让 VPS 上的进程自己读,它一步都不用挪。
 //
 // 这条命令天然是「控制面存在之前」运行的,所以它不能是 /api 的纯客户端 —— 它必须
-// SSH。这是 CLI 边界上唯一一处刻意的例外,理由写在 docs/internal/decisions.md。
+// SSH。这是 CLI 边界上唯一一处刻意的例外。
 const (
 	initRepo = "RovenEverward/my-proxy"
 	initRef  = "main"

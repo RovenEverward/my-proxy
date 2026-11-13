@@ -111,3 +111,68 @@ html:not(.os-mac) main::-webkit-scrollbar-thumb:hover{background-color:color-mix
 @media (max-width:860px){html.tb-right .drawer{top:auto}}
 
 .crumb a{font-size:var(--ui-font-size-navigation)}
+
+/* App 外壳(token 值,全部页共用;原 workspace.css 并入,别再靠类区分页 */
+.side {
+  padding: max(0px, calc(16px - var(--mygo-titlebar-inset-left, 0px) * 1000)) 12px 16px;
+  gap: 2px;
+  border-right: 1px solid var(--ui-border-subtle);
+}
+
+.brand { margin: 4px 0 22px; padding: 0 10px; }
+
+.brand small { font-size: var(--ui-font-size-meta); }
+
+.cpw { margin-bottom: 20px; }
+
+.profile {
+  min-height: 48px;
+  padding: 6px 10px;
+  background: transparent;
+  border-radius: var(--ui-radius-md);
+  cursor: pointer;
+}
+
+.profile b { font-size: var(--ui-font-size-navigation); }
+
+.profile span:not(.dot) { margin-top: 2px; font-size: var(--ui-font-size-meta); }
+
+.profile:hover { background: var(--hover); }
+
+.profile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.cp-pop { background: var(--panel); }
+
+main { margin: 0; height: 100%; border-radius: 0; }
+
+.top {
+  padding-left: 24px;
+  padding-right: calc(20px + var(--mygo-titlebar-inset-right, 0px));
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  background: var(--canvas);
+}
+
+.crumb { gap: 8px; font-size: var(--ui-font-size-title); }
+
+.crumb > svg { width: 16px; height: 16px; color: var(--muted); }
+
+.top .sub { font-size: var(--ui-font-size-meta); }
+
+.ib { width: 30px; height: 30px; border-radius: 50%; }
+
+.ib.sm { width: 24px; height: 24px; }
+
+.page { max-width: 1240px; padding: 24px 24px 24px; }
+
+.btn { height: var(--ui-control-height); border-radius: var(--ui-radius-pill); font-size: var(--ui-font-size-control); font-weight: 400; }
+
+.btn.sm { height: var(--ui-control-height); font-size: var(--ui-font-size-control); }
+
+.btn.pri { background: var(--ui-action-bg); color: var(--ui-action-text); box-shadow: var(--ui-shadow-action); }
+
+.btn.pri:hover { background: var(--ui-action-hover); opacity: 1; }
+
+.btn.pri:active { background: var(--ui-action-pressed); }
+
+.cp-pop { animation: home-expand var(--ui-duration-fast) var(--ui-ease-out) both; transform-origin: top; }
