@@ -34,7 +34,8 @@ var uiAllow = []string{
 	"POST /api/plans",
 	"PUT /api/plans",
 	"DELETE /api/plans",
-	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose / locate;metadata set
+	// 节点:add / edit / rm / sync / install / drain / undrain / diagnose / locate /
+	// backoff/retry(等价 mpx node retry);metadata set
 	"POST /api/nodes",
 	"PUT /api/nodes",
 	"DELETE /api/nodes",

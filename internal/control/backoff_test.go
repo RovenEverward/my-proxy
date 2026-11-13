@@ -78,6 +78,10 @@ func (r *scriptedRunner) RunWithInput(_ context.Context, _ model.Node, script st
 	switch {
 	case strings.Contains(script, "statsquery"):
 		return trafficReply(), nil
+	case strings.Contains(script, "XRAY_BIN="):
+		// CheckNode 的脚本(采样命令里也带 XRAY_BIN=,所以排在 statsquery 之后):
+		// 给一份最小健康输出(可达、在跑)。
+		return "k=service:active\nk=version:26.3.27\nk=hash:" + strings.Repeat("ab", 32), nil
 	case strings.Contains(script, "inbounduser"):
 		return inbounduserReply(), nil
 	case strings.Contains(script, "api adu"), strings.Contains(script, "api rmu"):
@@ -260,7 +264,8 @@ func TestSnapshotReportsHeartbeat(t *testing.T) {
 	}
 }
 
-// 退避等待是 base * 2^(n-1),封顶 5 分钟。
+// 退避等待是 base * 2^(n-1),封顶 5 分钟;断线超过 backoffWarm 后改走
+// 每小时一探。
 func TestBackoffWaitDoublesAndCaps(t *testing.T) {
 	cases := map[int]time.Duration{
 		1:  30 * time.Second,
@@ -272,8 +277,79 @@ func TestBackoffWaitDoublesAndCaps(t *testing.T) {
 		20: 5 * time.Minute,
 	}
 	for failures, want := range cases {
-		if got := backoffWait(failures); got != want {
+		if got := backoffWait(failures, 0); got != want {
 			t.Errorf("第 %d 次失败该等 %s,实际 %s", failures, want, got)
 		}
 	}
+}
+
+// 断线超过一小时的节点走每小时一探,不再每 5 分钟敲一次;短期故障的节奏不变。
+func TestBackoffWaitSlowsDownForLongOutages(t *testing.T) {
+	for _, failures := range []int{1, 6, 20, 200} {
+		if got := backoffWait(failures, backoffWarm); got != backoffStale {
+			t.Errorf("不通 %s 后第 %d 次失败该等 %s,实际 %s", backoffWarm, failures, backoffStale, got)
+		}
+		if got := backoffWait(failures, 3*backoffWarm); got != backoffStale {
+			t.Errorf("不通 %s 后第 %d 次失败该等 %s,实际 %s", 3*backoffWarm, failures, backoffStale, got)
+		}
+	}
+	// 边界:不到一小时还按旧阶梯走。
+	if got := backoffWait(3, backoffWarm-time.Second); got != 2*time.Minute {
+		t.Errorf("不足一小时仍按旧阶梯:实际 %s", got)
+	}
+}
+
+// 人工重试:当场跑一轮采样与收敛。通了退避清零并刷新状态与告警;不通记一次
+// 失败、按原窗口继续退避。
+func TestRetryNodeBackoff(t *testing.T) {
+	t.Run("试通:退避清零、状态落库、告警解除", func(t *testing.T) {
+		r := &scriptedRunner{failOn: "statsquery"}
+		task, st, clk := taskWithClock(t, r, nil)
+		n := addNode(t, st, "hk", "node.example.com")
+
+		// 先让它失败一次进入退避。
+		task.Tick(context.Background())
+		if len(task.Snapshot(clk.Now()).Backoffs) != 1 {
+			t.Fatal("先失败一次进入退避")
+		}
+		r.calls = nil
+
+		// 节点修好(统计查询恢复),人工重试:该真去碰节点、成功后退避清零。
+		r.setFailOn("")
+		clk.advance(time.Second)
+		if err := task.RetryNodeBackoff(context.Background(), n); err != nil {
+			t.Fatalf("节点已通,重试该成功: %v", err)
+		}
+		if r.count("statsquery") != 1 {
+			t.Fatalf("重试该真去采一次: %v", r.calls)
+		}
+		if got := len(task.Snapshot(clk.Now()).Backoffs); got != 0 {
+			t.Fatalf("试通后退避该清零: %d", got)
+		}
+		// 试通后状态与告警该当场刷新,不等下一轮巡检。
+		if st2, err := st.GetNodeStatus(n.ID); err != nil || !st2.Reachable {
+			t.Fatalf("重试成功后节点状态该立刻变可达: %v %+v", err, st2)
+		}
+	})
+
+	t.Run("没试通:记一次失败、继续退避", func(t *testing.T) {
+		r := &scriptedRunner{failOn: "statsquery"}
+		task, st, clk := taskWithClock(t, r, nil)
+		n := addNode(t, st, "hk", "node.example.com")
+
+		task.Tick(context.Background())
+		r.calls = nil
+
+		err := task.RetryNodeBackoff(context.Background(), n)
+		if err == nil {
+			t.Fatal("节点仍不通,重试该报错")
+		}
+		snap := task.Snapshot(clk.Now())
+		if len(snap.Backoffs) != 1 || snap.Backoffs[0].Failures != 2 {
+			t.Fatalf("没试通该记成第 2 次连续失败: %+v", snap.Backoffs)
+		}
+		if !snap.Backoffs[0].SkipUntil.After(clk.Now()) {
+			t.Fatal("没试通该继续停在退避窗口里")
+		}
+	})
 }

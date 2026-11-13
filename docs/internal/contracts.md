@@ -264,6 +264,7 @@ GET|POST         /api/nodes          GET|PUT|DELETE  /api/nodes/{id}
 GET              /api/doctor                         自检:控制面、每台节点、六种订阅格式、采样表
 GET              /api/nodes/{id}/config              预览,不下发
 POST             /api/nodes/{id}/sync                下发 + 重启
+POST             /api/nodes/{id}/backoff/retry       人工重试:不等退避窗口,当场跑一轮采样+收敛(没接上后台任务 501)
 POST             /api/nodes/{id}/install             装核心 + 下发 + 启动(?version= 指定版本)
 
 GET|POST         /api/inbounds       GET|PUT|DELETE  /api/inbounds/{id}

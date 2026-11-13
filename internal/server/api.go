@@ -116,6 +116,10 @@ func (s *Server) freshNodeStatus(ctx context.Context, n model.Node, now time.Tim
 	if err := s.store.UpsertNodeStatus(st); err != nil {
 		return model.NodeStatus{}, err
 	}
+	// 现场确认可达就是「成功一次」:退避该清掉,别让它在旧窗口里继续被跳过。
+	if st.Reachable && s.backoff != nil {
+		s.backoff.ClearNodeBackoff(n.ID)
+	}
 	return st, nil
 }
 
@@ -340,6 +344,42 @@ func (s *Server) handleSyncNode(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("已下发节点", "node", n.Name, "address", n.Address)
 	s.clearNodePending(n.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "synced": true})
+}
+
+// retryBackoffBudget 是人工重试一台节点的上限:采样(20s)+ 收敛(60s)+
+// 刷新状态(30s)各按控制面预算取最坏,再加一点余量。客户端断连不该把已经
+// 开始的收敛杀掉,所以不和请求上下文绑在一起(同 handleSyncNode)。
+const retryBackoffBudget = 3 * time.Minute
+
+// handleRetryNodeBackoff 人工重试一台退避中的节点。
+//
+// 后台任务对不通的节点按退避节奏跳过多轮采样与收敛;操作者把节点修好之后
+// (比如欠费的恢复了),等下一个窗口到点可能还要一小时。这条接口立刻跑一轮:
+// 通了就把退避清零、顺手刷新节点状态,不通就按原样记一次失败继续退避。
+func (s *Server) handleRetryNodeBackoff(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.store.GetNode(id)
+	if err != nil {
+		s.writeStoreError(w, err, "节点")
+		return
+	}
+	if s.backoff == nil {
+		writeError(w, http.StatusNotImplemented, "控制面没有接上退避重试通道")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), retryBackoffBudget)
+	defer cancel()
+	if err := s.backoff.RetryNodeBackoff(ctx, *n); err != nil {
+		// 原因原样回给使用者(ssh 原话最有用),和 handleSyncNode 一个规矩。
+		s.logger.Warn("人工重试节点未通", "node", n.Name, "error", err)
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	s.logger.Info("人工重试节点成功", "node", n.Name)
+	writeJSON(w, http.StatusOK, map[string]any{"node": n.Name, "retried": true})
 }
 
 // handleInstallNode 在节点上装好 xray 核心并把它跑起来。

@@ -62,7 +62,11 @@ func printStatus(raw []byte, st model.ControlStatus) error {
 	for _, b := range st.Backoffs {
 		rows = append(rows, statusBackoffRow(b, now))
 	}
-	return writeTable(statusBackoffHeaders, rows)
+	if err := writeTable(statusBackoffHeaders, rows); err != nil {
+		return err
+	}
+	fmt.Println("节点修好后跑 mpx node retry <节点> 可以不等窗口、立刻重试。")
+	return nil
 }
 
 var statusBackoffHeaders = []string{"节点 ID", "名称", "连续失败", "再试时间"}

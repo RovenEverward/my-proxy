@@ -92,6 +92,10 @@ const (
 	// 控制面还在跑、结果也落了库,而使用者只看到一个超时 —— 他会以为没查成,
 	// 然后再查一次。留一倍余量,让控制面有机会说话。
 	nodeStatusTimeout = time.Minute
+	// nodeRetryTimeout 是人工重试退避节点的上限。它比控制面自己的
+	// retryBackoffBudget(3 分钟)多一点余量:真正在等的是控制面那边的
+	// 一轮采样+收敛,这边先断只会留下「结果其实成了但使用者看到超时」。
+	nodeRetryTimeout = 4 * time.Minute
 	// backupTimeout 是下载备份的上限。备份里主要是库快照,可能随流量采样增长;
 	// 给得比普通接口宽,但不必像装核心那么长。
 	backupTimeout = 5 * time.Minute

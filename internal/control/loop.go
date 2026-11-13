@@ -20,18 +20,28 @@ import (
 // 而每轮要对每个节点跑几条 ssh + xray api,间隔再短就只是给节点添负担。
 const DefaultInterval = 30 * time.Second
 
-// 节点连续失败后的退避:第一次等 backoffBase,之后每失败一次翻一倍,封顶 backoffMax。
+// 节点连续失败后的退避,分两段:
+//
+//   - 断线头一小时(backoffWarm):第一次等 backoffBase,之后每失败一次翻一倍,
+//     封顶 backoffMax。短期故障(重启、网络抖动)在这条阶梯上,恢复的探测延迟
+//     最坏 5 分钟,和过去的全部行为一致。
+//   - 断线超过一小时:固定 backoffStale 一探。封顶 5 分钟的阶梯对以天计的
+//     断线(欠费停机、机器下线)不合适 —— 它让节点每 5 分钟挨一次注定失败的
+//     ssh 超时,失败计数涨到几千、日志刷成噪音,而数字本身不再传达任何信息。
+//     一小时一探仍然能自愈:节点回来后最坏一小时内回到正常节奏,操作者想
+//     立刻恢复可以用人工重试(RetryNodeBackoff / mpx node retry)。
 //
 // base 取 30 秒正好是一个默认周期:一台不通的节点失败一次就跳过下一轮,不再每
-// 30 秒掏一个采样预算;继续不通就依次跳过 2、4、8 分钟(封顶 5 分钟),不去反复
-// 敲一扇已经关上的门。成功一次即清零,恢复的节点不会因为旧账被继续跳过。
+// 30 秒掏一个采样预算。成功一次即清零,恢复的节点不会因为旧账被继续跳过。
 //
 // 为什么跳过是安全的:批 1 之后采样读的是节点的累计值,跳过的几轮不会丢账 ——
 // 下次采到仍然从上次留下的基准往后算,少采只是把增量并到下一次;而节点本身不可达
 // 时收敛也做不了任何事,跳过不会让节点上的名单更不正确。
 const (
-	backoffBase = 30 * time.Second
-	backoffMax  = 5 * time.Minute
+	backoffBase  = 30 * time.Second
+	backoffMax   = 5 * time.Minute
+	backoffWarm  = time.Hour
+	backoffStale = time.Hour
 )
 
 // Task 是控制面的后台周期任务。
@@ -76,8 +86,12 @@ type tickRecord struct {
 
 // nodeBackoff 是一台节点当前的失败退避状态。
 type nodeBackoff struct {
-	name      string
-	failures  int
+	name     string
+	failures int
+	// since 是这段连续失败的开始时间:退避按「已经不通了多久」决定探测节奏
+	// (见 backoffWait),不看失败次数 —— 两者的差别在人工重试清空计数之前
+	// 积累下来的大数字上才看得出来。
+	since     time.Time
 	skipUntil time.Time
 	// skipLogged 标记这个退避窗口已经记过一条「跳过」日志:掉线几小时会跳过
 	// 十几轮,每轮刷一行同样的话只会把日志冲成噪音。
@@ -459,12 +473,12 @@ func (t *Task) recordFailure(n model.Node, now time.Time) {
 
 	b := t.nodeFail[n.ID]
 	if b == nil {
-		b = &nodeBackoff{}
+		b = &nodeBackoff{since: now}
 		t.nodeFail[n.ID] = b
 	}
 	b.name = n.Name
 	b.failures++
-	b.skipUntil = now.Add(backoffWait(b.failures))
+	b.skipUntil = now.Add(backoffWait(b.failures, now.Sub(b.since)))
 	// 新窗口要重新记一次日志:上一个窗口那行说的已经是旧时间了。
 	b.skipLogged = false
 
@@ -485,8 +499,15 @@ func (t *Task) recordSuccess(n model.Node) {
 	t.logger.Info("节点已恢复,退避清零", "node", n.Name)
 }
 
-// backoffWait 是第 failures 次连续失败后要等多久:backoffBase * 2^(n-1),封顶 backoffMax。
-func backoffWait(failures int) time.Duration {
+// backoffWait 是第 failures 次连续失败后要等多久。
+//
+// 已经不通超过 backoffWarm 的节点走固定 backoffStale:那时它坏的不是一两分钟,
+// 探测的唯一意义是「好了没有」,节奏自然放缓。仍在头一小时的按
+// backoffBase * 2^(n-1) 翻倍、封顶 backoffMax,保持过去的节奏。
+func backoffWait(failures int, downFor time.Duration) time.Duration {
+	if downFor >= backoffWarm {
+		return backoffStale
+	}
 	wait := backoffMax
 	// 2^10 * 30 秒已经远超封顶,再往上左移只会溢出成负数。
 	if shift := failures - 1; shift >= 0 && shift < 10 {
@@ -495,6 +516,72 @@ func backoffWait(failures int) time.Duration {
 		}
 	}
 	return wait
+}
+
+// probeNodeOnce 对一台节点跑一轮和 Tick 里一样的「先采样、后收敛」,供人工
+// 重试用。返回失败原因(采样失败记为 err,收敛失败同理);任一失败按一轮记
+// 一次退避,成功则清零 —— 与 Tick 的记数口径完全一致。
+//
+// 混合核心与 Tick 同规:一个核心失败仍让另一个核心跑收敛,只记一次失败。
+func (t *Task) probeNodeOnce(ctx context.Context, n model.Node, now time.Time) error {
+	mixed := t.control.hasMultipleCores(n)
+	var firstErr error
+	if err := t.control.SampleTraffic(ctx, n, now); err != nil {
+		t.logger.Warn("采样节点流量失败", "node", n.Name, "error", err)
+		firstErr = err
+		if !mixed {
+			t.recordFailure(n, now)
+			return firstErr
+		}
+	} else if err := t.store.MarkNodeSampled(n.ID, now); err != nil {
+		t.logger.Warn("记录采样时间失败", "node", n.Name, "error", err)
+	}
+	if err := t.control.ReconcileUsers(ctx, n, now); err != nil {
+		t.logger.Warn("同步节点用户失败", "node", n.Name, "error", err)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr != nil {
+		t.recordFailure(n, now)
+		return firstErr
+	}
+	t.recordSuccess(n)
+	return nil
+}
+
+// RetryNodeBackoff 人工重试一台节点:不等退避窗口到点,立刻跑一轮采样与收敛。
+// 给「节点已经修好、让它马上回来」一个入口;退避里的旧账不清零,没试通就按
+// 原样继续记数、继续退避。
+//
+// 试通后顺手把节点状态和告警刷一遍:退避期间巡检同样跳过它,库里的状态多半
+// 还停在最后一次的「不可达」,不刷就要再等一轮巡检才变回来。
+func (t *Task) RetryNodeBackoff(ctx context.Context, n model.Node) error {
+	now := t.now()
+	if err := t.probeNodeOnce(ctx, n, now); err != nil {
+		return err
+	}
+	st, err := t.control.CheckNode(ctx, n, now)
+	if err != nil {
+		// 采样与收敛已经成了,刷状态失败只是「显示还是旧的」,不算重试失败。
+		t.logger.Warn("重试成功但刷新节点状态失败", "node", n.Name, "error", err)
+		return nil
+	}
+	if err := t.store.UpsertNodeStatus(st); err != nil {
+		t.logger.Warn("写入节点状态失败", "node", n.Name, "error", err)
+	}
+	t.raiseNodeAlerts(n, st, now)
+	return nil
+}
+
+// ClearNodeBackoff 在「确认这台节点能通」的地方清掉它的退避。
+//
+// 调用方是 fresh=1 的节点状态查询:那次查询已经成功 ssh 上去了,它就是事实
+// 上的「成功一次」,没理由让节点在下一个窗口里继续被跳过。
+func (t *Task) ClearNodeBackoff(nodeID int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.nodeFail, nodeID)
 }
 
 // Snapshot 返回控制面此刻的自报状态,给 GET /api/status 用。

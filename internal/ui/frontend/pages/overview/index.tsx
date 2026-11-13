@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useApp, usePageTitle } from "@/runtime/app-context";
 import { usePageData } from "@/runtime/query";
+import { write } from "@/runtime/api";
 import type { PageProps, Settings, Status, SubPull } from "@/runtime/types";
-import { type NodeView, nodeLabel, nodeStateLabel, nodeStateTone } from "@/domain/nodes";
+import { type NodeView, nodeLabel, nodeStateLabel, nodeStateTone, errorMessage } from "@/domain/nodes";
 import { type User, type UserList, type PresenceSummary, daysLeft, expiredFor, remain, fmtBytes, clientLabel, EXPIRED_KEEP_DAYS, EXPIRE_SOON_DAYS, hm } from "@/domain/users";
 import { Button } from "@/components/ui/button";
 import { ActionMenu, Avatar, EmptyState, ErrorState, FlagText, Icon, PageHeader, StatusBadge } from "@/components/primitives";
@@ -32,6 +33,23 @@ export function OverviewPage(_props: PageProps) {
   const [animate] = useState(!entered);
   useEffect(() => { if (query.data) entered = true; }, [query.data]);
   const checklist = useChecklist(query.data);
+  const [retrying, setRetrying] = useState<number | null>(null);
+  // retryBackoff 人工重试一台退避中的节点:服务端当场跑一轮采样与收敛,
+  // 通了退避就清零;不通它照样记一次失败,错误原样说给操作者听。
+  const retryBackoff = async (backoff: { node_id: number; node_name: string }) => {
+    setRetrying(backoff.node_id);
+    const label = labels[backoff.node_name] || backoff.node_name;
+    try {
+      await write("POST", `/api/nodes/${backoff.node_id}/backoff/retry`);
+      app.toast(`${label} 重试成功，退避已清零`);
+    } catch (error) {
+      app.toast(`${label} 重试未通：${errorMessage(error)}`, true);
+    }
+    setRetrying(null);
+    // 退避状态在 /api/status 里,不走 nodes 的失效映射:这里要全量重读,
+    // 用(false)拿到的还是写前那份 status,banner 不会消。
+    await query.refresh();
+  };
   const addUser = () => app.openDrawer(<UserEditor onClose={app.closeOverlays} onSaved={async username => { app.closeOverlays(); app.navigate("users/" + encodeURIComponent(username)); }} />);
   if (!query.data) return <div className="ov"><PageHeader title="总览" />{query.error ? <ErrorState title="总览数据" error={query.error} onRetry={() => void query.refresh()} /> : <><div className="grid g4">{[0, 1, 2, 3].map(key => <Stat key={key} loading />)}</div><div className="grid g2 ov-main"><div className="card"><div className="ch">需要处理的用户</div><SkeletonRows /></div><div className="card"><div className="ch">节点</div><SkeletonRows /></div></div></>}</div>;
   const data = query.data, { status, nodes, users, settings, pulls } = data, list = users.users;
@@ -48,7 +66,7 @@ export function OverviewPage(_props: PageProps) {
   return <div className={"ov" + (animate ? " home-enter" : "")}>
     <PageHeader title="总览" description={!allDone ? "欢迎用 MPX。跟着下面几步，把第一条订阅发出去。" : undefined} actions={<>{allDone && !checklist.hidden && <div className="ov-done" id="start-done"><Icon name="check" /><span><b>开始使用</b><span className="ov-done-rest"> · 4 步都完成了</span></span><Button size="sm" variant="ghost" data-act="cl-open" onClick={checklist.toggle}>{checklist.open ? "收起" : "再看一眼"}</Button><Button size="icon-sm" title="不再显示" aria-label="不再显示" data-act="cl-hide" onClick={checklist.hide}><Icon name="x" /></Button></div>}{app.can("POST", "/api/users") && <Button variant="primary" className="home-add" data-act="user-new" onClick={addUser}><Icon name="plus" />添加用户</Button>}</>} />
     {(!allDone || checklist.open && !checklist.hidden) && <div className="mb"><StartChecklist steps={checklist.steps} onSkip={checklist.skip} onAddUser={addUser} /></div>}
-    {backs.length > 0 && <div className="callout mb" title={backoffTitle}><Icon name="warn" className="ico-warn" /><div>{backs.length === 1 ? <><b><FlagText>{labels[backs[0].node_name] || backs[0].node_name}</FlagText> 在退避中</b><span className="ov-backoff-detail"> · 连续失败 {backs[0].failures} 次，{hm(new Date(backs[0].skip_until))} 前跳过采样与收敛。</span></> : <><b>{backs.length} 个节点在退避中</b> · <FlagText>{backs.map(backoff => labels[backoff.node_name] || backoff.node_name).join("、")}</FlagText>：连续失败，暂时跳过采样与收敛。</>}</div>{backs.length === 1 && <a href={"#nodes/" + backs[0].node_id} className="btn ghost sm ov-backoff-link">查看节点 <Icon name="arrow" /></a>}</div>}
+    {backs.length > 0 && <div className="callout mb" title={backoffTitle}><Icon name="warn" className="ico-warn" /><div>{backs.length === 1 ? <><b><FlagText>{labels[backs[0].node_name] || backs[0].node_name}</FlagText> 在退避中</b><span className="ov-backoff-detail"> · 连续失败 {backs[0].failures} 次，{hm(new Date(backs[0].skip_until))} 前跳过采样与收敛。修好了可立即重试。</span></> : <><b>{backs.length} 个节点在退避中</b> · <FlagText>{backs.map(backoff => labels[backoff.node_name] || backoff.node_name).join("、")}</FlagText>：连续失败，暂时跳过采样与收敛。</>}</div>{backs.length === 1 && <span className="ov-backoff-link">{app.can("POST", "/api/nodes/x/backoff/retry") && <Button size="sm" variant="ghost" data-act="node-retry" loading={retrying === backs[0].node_id} disabled={retrying !== null} onClick={() => void retryBackoff(backs[0])}>立即重试</Button>}<a href={"#nodes/" + backs[0].node_id} className="btn ghost sm">查看节点 <Icon name="arrow" /></a></span>}</div>}
     <div className="grid g4"><Stat label="用户" value={users.total} description={<>{parts([[counts("active"), "正常"], [counts("limited"), "超限"], [counts("expired"), "过期"], [counts("disabled"), "停用"]])}{users.total > list.length && <span className="stale">· 只统计了前 {list.length} 个</span>}</>} /><Stat label="节点" value={status.counts.nodes} description={parts([[nodes.filter(node => node.status?.reachable && !node.draining).length, "运行"], [nodes.filter(node => node.draining).length, "暂停分配"], [nodes.filter(node => node.status && !node.status.reachable).length, "连不上"]])} />
       {data.presence ? <Stat label="近 24 小时在用" value={<>{data.presence.active_24h ?? 0}<small>人</small></>} description="按节点流量算" /> : pulls ? <Stat label="近 24 小时拉过订阅" value={<>{pulls.filter(pull => Date.now() - +new Date(pull.last_pulled_at) < 86400000).length}<small>人</small></>} description="客户端拉取过订阅" /> : <Stat label="连接方式" value={<>{status.counts.inbounds}<small>/ {status.counts.hosts}</small></>} description={`${status.counts.inbounds} 条连接 · ${status.counts.hosts} 个对外地址`} />}
       <Stat label="控制面" dot="ink" value={<span className="lead ell" title={status.version}>{shortVersion(status.version) || "未知版本"}</span>} description={(version.behind || 0) > 0 && !isDevelopment(status.version) ? <><span className="tag lab">有新版本 {version.latest}</span> · 运行 {duration(status.uptime_seconds)}</> : `${isDevelopment(status.version) ? "开发版，不比较版本" : version.latest ? "已是最新" : "没查到新版本信息"} · 运行 ${duration(status.uptime_seconds)}`} title={status.last_tick_at ? `上一轮 ${new Date(status.last_tick_at).toLocaleTimeString("zh-CN", { hour12: false })}，用时 ${(status.last_tick_seconds || 0).toFixed(2)} 秒` : "还没跑过一轮"} /></div>
