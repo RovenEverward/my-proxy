@@ -92,3 +92,20 @@ func TestFreshNodeStatusClearsBackoff(t *testing.T) {
 		t.Fatalf("可达确认该清一次退避: %v", ops.cleared)
 	}
 }
+
+// 删掉一台节点时,它攒下的退避条要一起清:不然 /api/status 会一直给一台不存
+// 在的节点报退避,直到控制面重启。
+func TestDeleteNodeClearsBackoff(t *testing.T) {
+	e := newEnvWith(t, &fakeNodeOps{})
+	ops := &fakeBackoffOps{}
+	e.s.SetBackoffOps(ops)
+	n := e.createNode("hk", "node.example.com")
+
+	code, _ := e.api("DELETE", fmt.Sprintf("/api/nodes/%d", n.ID), nil)
+	if code != 200 {
+		t.Fatalf("删节点该 200,实际 %d", code)
+	}
+	if len(ops.cleared) != 1 || ops.cleared[0] != n.ID {
+		t.Fatalf("删节点该清一次退避: %v", ops.cleared)
+	}
+}

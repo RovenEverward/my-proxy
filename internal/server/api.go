@@ -288,6 +288,11 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "节点")
 		return
 	}
+	// 节点没了,它攒下的退避条也跟着清:不然 /api/status 会一直给一台
+	// 已删除的节点报「在退避中」,直到控制面重启。
+	if s.backoff != nil {
+		s.backoff.ClearNodeBackoff(id)
+	}
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)
 }
