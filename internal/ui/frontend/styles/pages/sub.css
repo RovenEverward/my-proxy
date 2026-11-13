@@ -87,8 +87,8 @@
 /* 订阅页(step5b) */
 
 /* 色调按钮(次要):石色底,不描边 */
-.btn.ton{background:var(--stone);color:var(--ink)}.btn.ton:hover{background:color-mix(in srgb,var(--ink) 9%,var(--stone))}
-.btn.ton.on{background:var(--ink);color:var(--canvas)}
+.p-sub .btn.ton{background:var(--stone);color:var(--ink)}.btn.ton:hover{background:color-mix(in srgb,var(--ink) 9%,var(--stone))}
+.p-sub .btn.ton.on{background:var(--ink);color:var(--canvas)}
 
 /* 页头 */
 .b5-pick{display:inline-flex;align-items:center;gap:10px;height:40px;padding:0 6px 0 14px;border-radius:10px;background:var(--panel);flex:none}

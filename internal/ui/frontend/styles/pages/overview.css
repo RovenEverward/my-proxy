@@ -21,7 +21,7 @@
 
 /* 总览：统计与最多六行主区在最小桌面窗口内排开。 */
 /* 页面底部:总览没有保存条,不留 80 的底边 */
-.page:has(>.ov){padding-top:24px;padding-bottom:24px}
+.p-overview .page:has(>.ov){padding-top:24px;padding-bottom:24px}
 .ov>.ph{align-items:center;margin-bottom:16px;min-height:36px}
 .ov>.ph h1{font-size:var(--ui-font-size-title);line-height:36px}
 /* 开始使用(已完成):页头右侧一句,不占一行、不加底色 */

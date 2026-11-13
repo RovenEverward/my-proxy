@@ -1,0 +1,167 @@
+/* 总览页内容样式:全部挂 .p-ov(.p-overview)作用域,不碰全局。 */
+.p-ov .ov > .ph { min-height: 36px; gap: 12px; margin-bottom: 20px; }
+
+.p-ov .ov > .ph h1 { font-size: var(--ui-font-size-title); line-height: 1.4; font-weight: 600; letter-spacing: -.025em; }
+
+.p-ov .ov > .ph p { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-done { gap: 6px; font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-done-rest { display: none; }
+
+.p-ov .ov-done .btn { margin-left: 0; }
+
+.p-ov .ov > .g4 {
+  gap: 0;
+  padding: 14px 0;
+  border-radius: var(--ui-radius-container);
+  background: var(--panel);
+}
+
+.p-ov .ov .stat { padding: 0 18px; background: transparent; border-radius: 0; }
+
+.p-ov .ov .stat + .stat { border-left: 1px solid var(--ui-border-subtle); }
+
+.p-ov .ov .stat .l { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov .stat .v { margin-top: 8px; font-size:var(--ui-font-size-display); line-height: 1.1; font-weight: 600; letter-spacing: -.035em; }
+
+.p-ov .ov .stat .v small { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov .stat .v .lead { font-size: var(--ui-font-size-display); line-height: 1.36; }
+
+.p-ov .ov .stat .s { margin-top: 6px; font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 24px; margin-top: 20px; }
+
+.p-ov .ov-main > .card { padding: 0; background: transparent; border-radius: 0; }
+
+.p-ov .ov-main .ch {
+  min-height: 40px;
+  padding: 0 8px 10px;
+  margin-bottom: 4px;
+  gap: 6px;
+  border-bottom: 1px solid var(--ui-border-subtle);
+  font-size: var(--ui-font-size-title);
+  font-weight: 600;
+}
+
+.p-ov .ov-main .ch small { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-main .ch .btn { margin-right: -8px; }
+
+.p-ov .ov-n {
+  min-height: var(--ui-row-two-line-height);
+  margin: 0;
+  padding: 6px 8px;
+  gap: 8px;
+  border-radius: var(--ui-radius-row);
+}
+
+.p-ov .ov-node-id { display: grid; gap: 3px; flex: 1; min-width: 0; }
+
+.p-ov .ov-node-id b { font-size: var(--ui-font-size-body); font-weight: 400; }
+
+.p-ov .ov-node-id .ov-addr { font-size: var(--ui-font-size-meta); }
+
+.p-ov .ov-n .st { font-size: var(--ui-font-size-navigation); }
+
+.p-ov .ov-n .tag { font: 400 var(--ui-font-size-navigation) var(--sans); padding: 0 6px; background: transparent; }
+
+.p-ov .ov-t { border-collapse: separate; border-spacing: 0; }
+
+.p-ov .ov-t td { height: 48px; padding: 6px 8px; font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-t td:first-child { padding-left: 8px; }
+
+.p-ov .ov-t .u { gap: 8px; }
+
+.p-ov .ov-t .u b { font-size: var(--ui-font-size-body); font-weight: 400; }
+
+.p-ov .ov-t .av { width: 28px; height: 28px; font-size: var(--ui-font-size-meta); font-weight: 400; }
+
+.p-ov .ov-t .st { font-size: var(--ui-font-size-navigation); }
+
+.p-ov .ov-t .sub { font-size: var(--ui-font-size-navigation); }
+
+.p-ov .ov-act .btn { height: var(--ui-control-height); }
+
+.p-ov .ov-main .empty { padding: 36px 16px; }
+
+.p-ov .ov-main .empty .ill { width: 36px; height: 36px; border-radius: 50%; margin-bottom: 4px; }
+
+.p-ov .ov-main .empty .ill svg { width: 18px; height: 18px; }
+
+.p-ov .ov-main .empty h4 { font-size: var(--ui-font-size-title); font-weight: 600; }
+
+.p-ov .ov-main .empty p { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-note { min-height: 44px; margin-top: 20px; padding-left: 12px; background: var(--panel); font-size: var(--ui-font-size-caption); gap: 16px; }
+
+.p-ov .ov-note .sub { font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov-note .mono { font-size: var(--ui-font-size-meta); }
+
+.p-ov .ov-note-h { font-weight: 400; }
+
+.p-ov .ov > .callout { align-items: center; padding: 6px 12px; font-size: var(--ui-font-size-caption); }
+
+.p-ov .ov > .callout > div { flex: 1; }
+
+.p-ov .ov-backoff-link { flex: none; margin-left: auto; }
+
+.p-ov .cl { animation: home-expand var(--ui-duration-fast) var(--ui-ease-out) both; }
+
+.p-ov .ov.home-enter > .ph { animation: home-enter var(--ui-duration-base) var(--ui-ease-out) both; }
+
+.p-ov .ov.home-enter > .g4 { animation: home-enter var(--ui-duration-base) 40ms var(--ui-ease-out) both; }
+
+.p-ov .ov.home-enter > .ov-main { animation: home-enter var(--ui-duration-base) 80ms var(--ui-ease-out) both; }
+
+@keyframes home-enter { from { opacity: 0; transform: translateY(var(--ui-enter-offset)); } to { opacity: 1; transform: none; } }
+
+@keyframes home-expand { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+@media (min-width: 861px) and (max-width: 1180px) {
+  .page { padding: 20px; }
+  .p-ov .ov-main { gap: 16px; margin-top: 16px; }
+  .p-ov .ov .stat { padding: 0 12px; }
+  .p-ov .ov-n { min-height: 40px; }
+  .p-ov .ov-t td { height: 40px; padding: 6px 4px; }
+  .p-ov .ov-t td:first-child { padding-left: 8px; }
+  .p-ov .ov-t td:last-child { padding-right: 4px; }
+  .p-ov .ov-t .u { gap: 6px; }
+  .p-ov .ov-t .av { width: 24px; height: 24px; }
+  .p-ov .ov-n .tag { padding: 0; }
+  .p-ov .ov-note { gap: 12px; margin-top: 16px; }
+  .p-ov .ov-kv { gap: 4px; }
+  .p-ov .ov-kv .mono { max-width: 110px; }
+}
+
+@media (max-width: 860px) {
+  .top { padding-left: 16px; padding-right: calc(12px + var(--mygo-titlebar-inset-right, 0px)); }
+  .page { padding: 20px 16px calc(90px + env(safe-area-inset-bottom, 0px)); }
+  .p-ov .ov > .ph { flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .p-ov .ov > .ph > .sp { min-width: 0; }
+  .p-ov .ov-done > .btn { padding: 0 8px; }
+  .p-ov .ov-backoff-detail { display: none; }
+  .p-ov .home-add { margin-left: auto; }
+  .p-ov .ov > .g4 { row-gap: 16px; padding: 16px 0; }
+  .p-ov .ov .stat { padding: 0 16px; }
+  .p-ov .ov .stat:nth-child(3) { border-left: 0; }
+  .p-ov .ov-main { grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 20px; }
+  .p-ov .ov-n { min-height: 44px; }
+  .p-ov .ov-t td { height: 44px; padding: 6px 4px; }
+  .p-ov .ov-note { padding: 10px 12px; gap: 8px 16px; }
+  .p-ov .ov-note > .ov-note-h { width: 100%; }
+  .p-ov .ov-note .ov-kv { flex-wrap: wrap; white-space: normal; }
+  .p-ov .ov-note .ov-kv .mono { max-width: 210px; overflow-wrap: anywhere; }
+}
+
+.p-ov + .mnav { background: color-mix(in srgb, var(--ui-bg-surface) 94%, transparent); font-family: var(--ui-font-ui); }
+
+@media (prefers-reduced-motion: reduce) {
+  .p-ov *, .p-ov *::before, .p-ov *::after { animation: none !important; transition: none !important; }
+}
+
+.p-ov .ov .stat:nth-child(-n+2) .s{font-size:var(--ui-font-size-navigation);white-space:normal;word-break:keep-all}

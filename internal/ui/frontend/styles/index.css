@@ -19,10 +19,9 @@
 
 /* Shell breakpoints apply after component defaults. */
 @import "./shell.css";
-@import "./workspace.css";
 
-/* Overview workspace bindings follow the shared shell. */
-@import "./pages/home-workspace.css";
+/* 页面专属样式:每条选择器挂 .p-<page> 前缀,不写全局。 */
+@import "./pages/page-overview.css";
 
 /* Node and setup wizards share their controls. */
 @import "./components/wizard.css";

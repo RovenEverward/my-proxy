@@ -67,4 +67,4 @@ html.tb-right .rp-card>.ch{top:0} /* main 已经在标题栏下面,吸顶不用�
 .rs-gr{border-top:1px solid var(--stone);padding:12px 0}
 .rs-gr:first-of-type{border-top:0;padding-top:0}
 .rs-rr{margin-left:4px}
-.pill.warn{color:var(--ink);background:var(--warn-bg)}
+.p-rules .pill.warn{color:var(--ink);background:var(--warn-bg)}
