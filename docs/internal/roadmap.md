@@ -18,7 +18,7 @@
 
 **验证**:单测覆盖差值计算、重启检测、历史落表;live 测试改为累计语义;`go test ./... -race` 全绿。
 
-**结果**:已按上面做完。`traffic_samples` 里该用户在该节点的最近一行就是「上次值」;读数回退按 xray 重启处理(记日志,该次读数成为新基准)。见 [decisions.md](decisions.md) 第 9 条。
+**结果**:已按上面做完。`traffic_samples` 里该用户在该节点的最近一行就是「上次值」;读数回退按 xray 重启处理(记日志,该次读数成为新基准)。。
 
 ## 批 2:备份与恢复(已完成)
 
@@ -30,7 +30,7 @@
 
 **验证**:备份 → 删库 → 恢复 → 用户/节点/入站全在,订阅 token 不变,能出订阅。
 
-**结果**:已按上面做完。备份是 gzip 过的 tar(`manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**不含管理 token**,理由见 [decisions.md](decisions.md) 第 16 条);快照用 `VACUUM INTO`(实测 modernc.org/sqlite 支持,不锁写、不用停服务)。恢复走「校验 + 暂存」:`POST /api/restore` 只把校验过的库写成 `<db>.restore`,真正换入在 `Serve()` 打开库之前——旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,没有控制面也能恢复(手动把 `mpx.db` 改名成 `<db>.restore` 再启动)。验证:备份→删库→手动放 `.restore`→启动→节点/入站/用户全在、订阅 token 不变、能出订阅(见 `internal/server/backup_test.go` 的 `TestRestoreFlowOfflineSwap`)。
+**结果**:已按上面做完。备份是 gzip 过的 tar(`manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**不含管理 token**,理由);快照用 `VACUUM INTO`(实测 modernc.org/sqlite 支持,不锁写、不用停服务)。恢复走「校验 + 暂存」:`POST /api/restore` 只把校验过的库写成 `<db>.restore`,真正换入在 `Serve()` 打开库之前——旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,没有控制面也能恢复(手动把 `mpx.db` 改名成 `<db>.restore` 再启动)。验证:备份→删库→手动放 `.restore`→启动→节点/入站/用户全在、订阅 token 不变、能出订阅(见 `internal/server/backup_test.go` 的 `TestRestoreFlowOfflineSwap`)。
 
 ## 批 3:可观测性(已完成)
 
@@ -52,7 +52,7 @@
 - **状态可见**(3b):检查一台节点用**一条** ssh 脚本读全四样(服务在不在跑、核心版本、配置 sha256、每张证书的到期时间),结果进 `node_status` 表;下发成功才在 `nodes` 上记基准哈希,两者一比对出漂移。`GET /api/nodes` 与 `mpx node list` 读缓存(一次 ssh 都不发),`?fresh=1` 与 `mpx node status` 现场查。
 - **自检与告警**(3b):`GET /api/doctor` / `mpx doctor` 跑控制面、每台节点(走的就是 `?fresh=1` 那条路)、六种订阅格式、采样表,有 fail 时退出码 3;周期任务每 10 个 Tick 巡检一遍节点,`LogAlerter` 按 Key 冷却 30 分钟去重、条件消失打「已恢复」,Webhook 留批 4。
 
-验证为单测(含假时钟、假 `ssh` 脚本、`xray -test` 真二进制);**真机演练还没做** —— 控制面连节点的私钥只在控制面那台机器的 `/var/lib/mpx/.ssh/id_ed25519`,本机没有,要等下一次上真机时补(见 [status.md](status.md))。做法上有三处按复核结果改了子 agent 的实现:证书告警的 Key 以前对不上、永远销不掉;巡检第 1 个 Tick 不跑且整轮无上限;`doctor` 的结论会被检查顺序决定。理由见 [decisions.md](decisions.md) 第 20–23 条。
+验证为单测(含假时钟、假 `ssh` 脚本、`xray -test` 真二进制);**真机演练还没做** —— 控制面连节点的私钥只在控制面那台机器的 `/var/lib/mpx/.ssh/id_ed25519`,本机没有,要等下一次上真机时补(见 [status.md](status.md))。做法上有三处按复核结果改了子 agent 的实现:证书告警的 Key 以前对不上、永远销不掉;巡检第 1 个 Tick 不跑且整轮无上限;`doctor` 的结论会被检查顺序决定。理由。
 
 ## 批 4:规模化(已完成)
 
@@ -65,7 +65,7 @@
 - 通知:快到期、快超限、节点故障(至少邮件/Webhook 接口);
 - 自助:用户自己取链接、换 token。
 
-**结果(4a 已完成)**:列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应给筛选后的 `total`;筛选复用 `model` 里那份唯一的状态与授权判定,不翻写成 SQL,理由见 [decisions.md](decisions.md) 第 24 条);`rm` / `enable` / `disable` / `renew` / `links` 收多个用户名、逐个执行并汇总成败;`export` / `import` 走 CSV,逐行独立提交,理由见第 25 条。**4b(订阅页 + 自助换 token)已完成**:同一个订阅地址,浏览器打开是订阅页(状态、流量、到期、各格式分享链接、换地址按钮),客户端照旧拿配置 —— 页面只在「没人认领的默认」这一步且 `Accept` 点名 `text/html` 时出现,理由见第 26 条;`POST /sub/{token}/rotate` 换 token,旧地址当场 404。**4c(通知)已完成**:到期与超限提醒按用户 × 类别记账(`user_notices`)只发一次,发出去了才记、条件消失就销,阈值写 0 表示关,理由见 [decisions.md](decisions.md) 第 27 条;节点故障复用告警那条线(冷却 + 「已恢复」),与 `LogAlerter` 一起走 `FanoutAlerter`;`mpx settings show` 打出通知地址与两个阈值,`mpx settings test` 往配置好的 Webhook 发一条测试事件(`POST /api/settings/test-webhook`)。
+**结果(4a 已完成)**:列表分页与筛选(`?limit=&offset=&status=&search=&inbound_id=`,响应给筛选后的 `total`;筛选复用 `model` 里那份唯一的状态与授权判定,不翻写成 SQL,理由);`rm` / `enable` / `disable` / `renew` / `links` 收多个用户名、逐个执行并汇总成败;`export` / `import` 走 CSV,逐行独立提交,理由见第 25 条。**4b(订阅页 + 自助换 token)已完成**:同一个订阅地址,浏览器打开是订阅页(状态、流量、到期、各格式分享链接、换地址按钮),客户端照旧拿配置 —— 页面只在「没人认领的默认」这一步且 `Accept` 点名 `text/html` 时出现,理由见第 26 条;`POST /sub/{token}/rotate` 换 token,旧地址当场 404。**4c(通知)已完成**:到期与超限提醒按用户 × 类别记账(`user_notices`)只发一次,发出去了才记、条件消失就销,阈值写 0 表示关,理由;节点故障复用告警那条线(冷却 + 「已恢复」),与 `LogAlerter` 一起走 `FanoutAlerter`;`mpx settings show` 打出通知地址与两个阈值,`mpx settings test` 往配置好的 Webhook 发一条测试事件(`POST /api/settings/test-webhook`)。
 
 **验证**:1000 个用户的列表与批量操作耗时达标(宽松上限);订阅页与换地址真机验证过(浏览器拿页面、客户端拿配置、旧地址 404、新地址可用、`Profile-Web-Page-Url` 正确);通知全在单测里验(假 webhook 服务端):同一件事只发一次、续费/重置后能再发、发失败不记账且下一轮重试、没配地址不发也不记账、停用用户跳过、设置校验与测试接口的 200/400/502。
 
@@ -75,7 +75,7 @@
 
 **注意**:这是加性的,但要同时动四层 —— 模型枚举、四个渲染器、节点侧配置渲染、测试。是产品决策不是运维决策,单独成批,不混进上面任何一类。
 
-**结果**:加了 shadowsocks-2022 与 wireguard 两个协议、xhttp / splithttp / httpupgrade 三个传输、mux 与 fragment 两个客户端开关。hysteria2 与 tuic 不在 xray 26.3.27 的协议清单里,这一批不做(记 [open-questions.md](open-questions.md))。wireguard 的隧道地址按用户 key 哈希派生,服务器 peer 带 `allowedIPs`,理由见 [decisions.md](decisions.md) 第 29 条。
+**结果**:加了 shadowsocks-2022 与 wireguard 两个协议、xhttp / splithttp / httpupgrade 三个传输、mux 与 fragment 两个客户端开关。hysteria2 与 tuic 不在 xray 26.3.27 的协议清单里,这一批不做(记 [open-questions.md](open-questions.md))。wireguard 的隧道地址按用户 key 哈希派生,服务器 peer 带 `allowedIPs`,理由。
 
 **验证**:每种新协议 × 传输 × 安全层组合过 `xray -test`,客户端实测出网。
 
@@ -86,7 +86,7 @@
 **做了什么**:
 - 订阅缓存 + ETag / If-None-Match + gzip —— `internal/server/subcache.go`,gzip 是缓存时压好的、每次响应只换头;
 - `/api` 与 `/sub` 速率限制 —— `internal/server/ratelimit.go`,两个独立桶、`/sub` 松 `/api` 紧、按 RemoteAddr 分桶不解析 XFF;
-- `mpx node drain / undrain` —— 订阅层的开关,不动 xray;`inbound --max-users` 同理,见 [decisions.md](decisions.md) 第 30 条;
+- `mpx node drain / undrain` —— 订阅层的开关,不动 xray;`inbound --max-users` 同理;
 - SSH `ControlMaster` 复用 —— `sshArgs` 加 `ControlMaster=auto` + `ControlPath=<TMPDIR>/mpx-ssh-%C` + `ControlPersist=60s`,一轮巡检的几条远端命令共用一条 TCP;
 - `mpx node online` —— `xray api statsgetallonlineusers` 拿在线的人、`statsonlineiplist` 取 IP(要求节点配置开 `statsUserOnline`,v0.9.12 起默认开),不落库不缓存。
 
@@ -112,7 +112,7 @@
 
 **注意**:判断「这次改没改」用 `Flags().Changed()`,不是看值是不是零(空串和 0 都有含义)。`--profile` 必须注册成根命令的 persistent flag 且**只注册一次** —— 在同一层重复注册会被忽略,而且 `cmd.Flags().Changed("profile")` 恒为 false,得用 `InheritedFlags()` 查继承来的。
 
-**结果**:`internal/cli/config.go` 重写(多档 + 迁移旧格式 + 原子写),`login` 加了切换与回显语义,`--profile` 成为全局 flag。理由与两条被否掉的对策见 [decisions.md](decisions.md) 第 31 条。
+**结果**:`internal/cli/config.go` 重写(多档 + 迁移旧格式 + 原子写),`login` 加了切换与回显语义,`--profile` 成为全局 flag。理由与两条被否掉的对策。
 
 **验证**:`internal/cli/config_test.go`(9 个)+ `internal/cli/login_test.go`(6 个)。测试隔离必须用 `HOME` —— macOS 的 `os.UserConfigDir` 忽略 `XDG_CONFIG_HOME`。另外同一个测试进程里连跑多次命令时,cobra 的 `Changed` 标记和 persistent flag 的值会留到下一轮,调用前要显式清;真实使用是每次一个进程,不受影响。
 
@@ -135,12 +135,12 @@ mpx init --host <VPS IP> --ssh-password
 
 **注意**:
 
-- 这是 **CLI 里唯一一处会 SSH** 的地方,而第 5 条定过「只有控制面能 SSH」。它不是推翻那条边界,是被划出的精确例外 —— `init` 是**在控制面存在之前**运行的那条命令,装控制面的那一刻 `/api` 还不存在。理由与被否掉的两条替代路子(SSH 隧道映射 8080 回本机、纯 shell 版本)见 [decisions.md](decisions.md) 第 32 条。
+- 这是 **CLI 里唯一一处会 SSH** 的地方,而第 5 条定过「只有控制面能 SSH」。它不是推翻那条边界,是被划出的精确例外 —— `init` 是**在控制面存在之前**运行的那条命令,装控制面的那一刻 `/api` 还不存在。理由与被否掉的两条替代路子(SSH 隧道映射 8080 回本机、纯 shell 版本)。
 - 默认值里 `--sni` / `--reality-dest` 取 `www.cloudflare.com` 而不是微软,是批 3 那条真机经验的直接后果(见 [status.md](status.md) 的「没验过的」一段)。
 - **幂等是要求,不是附加**:重复跑要复用已有的节点/入站/入口/用户/订阅前缀,不能建出第二份。这条在实测里逐项验过。
 - 密码只用于**第一次**装公钥(askpass 占着 stdin,没法同时给远端喂标准输入),之后全程走密钥。
 
-**验证**:真容器端到端(Ubuntu 22.04 + systemd + sshd,从 macOS 连过去)跑完整条路径,并在节点侧与控制面侧分别复核(核心就位、服务 active、版本、配置里有 vless、`?fresh=1` 无漂移、订阅内容可用);重复跑验幂等。**这条路径上暴露了三个单测抓不到的真 bug**:macOS 的 `ControlPath` 超 unix socket 长度上限、`bootstrap` 的十几次请求撞掉 `/api` 限流桶、建用户因零值静默变成「停用」。三个的成因与修法见 [decisions.md](decisions.md) 第 33–35 条与 [status.md](status.md)。`gofmt` / `go vet` / `go test ./... -race` 全绿。
+**验证**:真容器端到端(Ubuntu 22.04 + systemd + sshd,从 macOS 连过去)跑完整条路径,并在节点侧与控制面侧分别复核(核心就位、服务 active、版本、配置里有 vless、`?fresh=1` 无漂移、订阅内容可用);重复跑验幂等。**这条路径上暴露了三个单测抓不到的真 bug**:macOS 的 `ControlPath` 超 unix socket 长度上限、`bootstrap` 的十几次请求撞掉 `/api` 限流桶、建用户因零值静默变成「停用」。三个的成因与修法与 [status.md](status.md)。`gofmt` / `go vet` / `go test ./... -race` 全绿。
 
 **没做的**:只在容器里跑过,没有在真正的公网 VPS 上跑过 —— 跨公网的 SSH 时延掉线、国内机器走 `--binary` 那条路、sshd 只允许密钥登录这三种情况还没有实测记录。分开部署与多节点仍然走手工步骤,没有为了「一键」把它们塞进同一条命令。
 

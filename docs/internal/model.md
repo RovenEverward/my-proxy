@@ -34,7 +34,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 时间一律存 Unix 秒,不用 SQLite 的日期文本 —— 免得时区与格式来回转换。
 
-`traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`(见 [decisions.md](decisions.md) 第 9 条)。
+`traffic_samples` 存的是**累计值快照,不是增量**:控制面每轮读一次 xray 的计数,与该用户在该节点上的最近一行相减,差值才累加进 `users.used_traffic` 与 `lifetime_used_traffic`。
 
 ## 多核心扩展
 
@@ -75,7 +75,7 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 
 证书那部分:到期时间读不到(文件不是证书、节点上没有 `openssl`)时 `not_after` 为空、`error` 有值;能读到就只留 `not_after`。这两件事不会同时成立。
 
-`node list` 显示的是这张缓存,不发 ssh;`?fresh=1` / `mpx node status` 才现场查。为什么基准和观察分两张表,见 [decisions.md](decisions.md) 第 20 条。
+`node list` 显示的是这张缓存,不发 ssh;`?fresh=1` / `mpx node status` 才现场查。为什么基准和观察分两张表,。
 
 ### 授权
 
@@ -151,4 +151,4 @@ address: *.example.com                  →  kbayy1jo.example.com   (alice)
 续费一年之后再次临近到期会正常提醒第二次。停用的用户不发。
 
 节点故障走的是另一条路:复用告警那条线(冷却 30 分钟、条件消失打「已恢复」),不记 `user_notices`。
-两边为什么这么分,见 [decisions.md](decisions.md) 第 27 条。
+两边为什么这么分,。

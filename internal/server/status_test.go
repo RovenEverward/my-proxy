@@ -72,7 +72,7 @@ func TestStatusReportsHeartbeatCountsAndBackoffs(t *testing.T) {
 		"last_tick_at", "last_tick_seconds", "counts", "backoffs",
 		"nodes", "inbounds", "hosts", "users",
 		"node_id", "node_name", "failures", "skip_until",
-		// 更新检查(见 decisions.md 第 37 条):"要不要升级"的全部信息来源,名字被
+		// 更新检查:"要不要升级"的全部信息来源,名字被
 		// 改掉或漏掉序列化时,调用方只会看到空值而不是报错。
 		//
 		// 除 behind 外都带 omitempty,所以先在上面的 StatusSource 里把它们填上 ——

@@ -8,7 +8,7 @@ verified: 2026-10-17 @ 626beea
 
 ## 愿景与思想
 
-> 待确认：本节由 Agent 从 [README](../../README.md)、[设计](../design.md)、[路线图](../internal/roadmap.md)、[关键决策与理由](../internal/decisions.md) 和各份 RFC 里提炼，没有加进仓库之外的说法。属于守护层，请主人逐段确认或改写。
+> 待确认：本节由 Agent 从 [README](../../README.md)、[设计](../design.md)、[路线图](../internal/roadmap.md)、和各份 RFC 里提炼，没有加进仓库之外的说法。属于守护层，请主人逐段确认或改写。
 
 MPX 想做的是：一个人、没有团队也没人值班，也能把几台到几十台服务器、几百上千个用户管得清清楚楚，而且这件事不需要一直盯着。手工维护一台 xray 还行，机器和人一多就会出四种错：真相散在各台机器和表格里，改一处要重启断掉所有人，客户端手里的订阅悄悄过期，超限和到期没人去算。MPX 的回答是一个地方存唯一一份真相，由它算出每个节点上该是什么、每个人该拿到什么，再送过去。
 
@@ -96,7 +96,6 @@ flowchart LR
 | 运行时走查 | [docs/internal/index.md](../internal/index.md) | 开发者 | 活的 | 随代码 |
 | 数据模型与语义 | [docs/internal/model.md](../internal/model.md) | 开发者 | 活的 | 随代码 |
 | 对外契约（CLI、API、订阅、节点侧） | [docs/internal/contracts.md](../internal/contracts.md) | 开发者、写客户端的人 | 活的 | 随代码 |
-| 关键决策与理由（决策日志） | [docs/internal/decisions.md](../internal/decisions.md) | 开发者、将来的主人 | 守护层，只追加 | 主人 |
 | 现状与验证程度 | [docs/internal/status.md](../internal/status.md) | 开发者 | 活的 | 随版本 |
 | 路线图 | [docs/internal/roadmap.md](../internal/roadmap.md) | 开发者、主人 | 活的 | 主人 |
 | 运维手册（发版、升级、补跑安装脚本） | [docs/internal/runbook.md](../internal/runbook.md) | 维护者 | 活的 | 随版本 |

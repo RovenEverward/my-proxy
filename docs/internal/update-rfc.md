@@ -1,7 +1,7 @@
 # RFC:三部分自动升级与 `mpx update`
 
 > 状态:已批准(2026-10-15,采纳全部推荐项,但签名一项后来改为不做,见 §1)· M0 已完成 · 起草时基于 main 6d163fb
-> 这份 RFC 推翻了 `internal/model/model.go`(`UpdateInfo` 注释)、`internal/updatecheck` 包注释、`docs/design.md`「不做的事:自动升级自己」和 `docs/internal/decisions.md` §37 里的同一条决定:「升级永远是一次显式的人工决定」。这条决定落地时要在这四处一起改(见 M5)。
+> 这份 RFC 推翻了 `internal/model/model.go`(`UpdateInfo` 注释)、`internal/updatecheck` 包注释、`docs/design.md`「不做的事:自动升级自己」里的同一条决定:「升级永远是一次显式的人工决定」。这条决定落地时要在这四处一起改(见 M5)。
 > 后续(decisions 第 39 条):M5 的定时自动升级不做了,升级是人在场的一键(`mpx ui`「更新」按钮,控制面 → 节点核心 → 本机);节点 xray 也改为节点自己从 GitHub 拉、按 `.dgst` 校验(本文 §4 写的是控制面推送),渲染端最低核心版本判断仍未做。
 
 ## 结论(先看这里)
@@ -246,7 +246,7 @@ $ mpx update apply control
 | **M2 CLI 手动升级与回退** | `apply cli` / `rollback cli`、`.prev`、`~/.config/mpx/update.json` | linux/darwin/windows 上从 vN 升到 vN+1 再回退的 e2e;用哈希不符的发布件测试时现有二进制不变 |
 | **M3 控制面手动升级与回退** | `mpx-update` service/timer/path 单元由 install.sh 安装;符号链接布局;库快照;健康检查加回退;state.json | 在 VM 上:正常升级成功;注入一个「起不来」的版本,60 秒内自动回退且库内容一致;升级中途 kill 后能自愈 |
 | **M4 节点核心升级与回退** | 钉死 xray 目标版本(等问题 2 拍板);`.prev`;健康检查;金丝雀加逐台;渲染端加最低核心版本判断;每节点最近状态 | 两台测试节点:正常升级;注入坏核心后自动回退且整批停下;混合版本期间两台都能拿到可用配置 |
-| **M5 自动策略** | 开关、窗口、48 小时冷却、`mpx update policy`;**同步改 model.go、updatecheck 包注释、design.md、decisions.md §37**,写明推翻的理由和新的兜底(SHA256SUMS、.prev、健康检查、冷却) | 时钟注入测试:窗口外不动、冷却期内不动、关闭后不动;文档里不再有「升级永远是人工决定」 |
+| **M5 自动策略** | 开关、窗口、48 小时冷却、`mpx update policy`;**同步改 model.go、updatecheck 包注释、design.md**,写明推翻的理由和新的兜底(SHA256SUMS、.prev、健康检查、冷却) | 时钟注入测试:窗口外不动、冷却期内不动、关闭后不动;文档里不再有「升级永远是人工决定」 |
 | **M6 UI** | 总览「版本」卡片加触发按钮(带确认和等价命令) | Playwright:状态展示和 `mpx update` 一致;触发发出的请求和 CLI 一致 |
 
 ## 已拍板(2026-10-15 全部采纳推荐)
