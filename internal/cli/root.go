@@ -91,6 +91,12 @@ func init() {
 // args 是进程参数(不含程序名),main 已先用 DesktopArgs 摊派过;不传时 cobra
 // 照旧自己读 os.Args[1:],测试与其他调用方两种用法都能走。
 func Execute(args ...string) int {
+	// 桌面构建的 Windows 二进制是 GUI 进程,没有控制台。用户带着子命令
+	// 把它当 CLI 用时(例如 setup.exe 把它加进 PATH 之后),先把输出挂回
+	// 父终端;无参数开窗口的路径(main 摊派成 app)不经过这个分支。
+	if buildinfo.Desktop() && (len(args) > 0 || len(os.Args) > 1) {
+		attachParentConsole()
+	}
 	configureDevelopment()
 	wireCompletion(rootCmd)
 	if len(args) > 0 {
