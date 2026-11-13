@@ -13,6 +13,9 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 
 export default async function globalSetup() {
   await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "ui:build"], { cwd: ROOT });
+  // 二重闸:构建产物已嵌进二进制的指纹必须等于当前源码,防止把别的分支的
+  // 旧二进制编出来的 stale UI 拿进测试(改源码后没重编就是这种状态)。
+  await run("node", ["scripts/check-ui-fresh.mjs"], { cwd: ROOT });
   const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-bin-"));
   const bin = path.join(dir, process.platform === "win32" ? "mpx-e2e.exe" : "mpx-e2e");
   await run("go", ["build", "-o", bin, "./cmd/mpx"], { cwd: ROOT });

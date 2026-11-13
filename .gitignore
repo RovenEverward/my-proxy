@@ -28,6 +28,14 @@
 .idea/
 .vscode/
 
+# 本机 gh 账号 pin(由 ~/.zshrc 的 gh 包装读取,不进仓库)
+.gh-user
+
 # Playwright 的输出
 /test-results/
 /playwright-report/
+
+# ui:build 的暂存目录与 npm run ui 的本地二进制
+/internal/ui/assets/build.tmp*/
+/internal/ui/assets/build.old-*/
+/.tmp/

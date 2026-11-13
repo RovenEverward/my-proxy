@@ -35,7 +35,7 @@ test("链接卡片给出完整链接;没填链接开头时用控制面地址开�
   // 页面请求的那条(经 mpx ui)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
   const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
   const cpAlice = await (await cp("/api/users/alice/links")).json();
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
   // 经 mpx ui 转发和直接问控制面拿到的主机不同(端口不同):控制面按请求的 Host 拼,转发过来的
   // 那一头不是控制面自己的地址。开头各是各的,每人自己的那一段(令牌)一样。
@@ -57,7 +57,7 @@ test("链接卡片给出完整链接;没填链接开头时用控制面地址开�
   const expected = "https://sub.example.com/sub/" + alice.auto.split("/sub/")[1];
   await linkOf(page, expected);
   await expect(page.locator(".lk-pre")).toHaveText("https://sub.example.com");
-  await expect(page.locator(".r-link [data-act=copy]")).toHaveAttribute("data-text", expected);
+  await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", expected);
 });
 
 // 编辑框里「用户名」是整块标签;存进去的仍然只有 {USERNAME},每个人看到自己的名字。
@@ -146,14 +146,17 @@ test.describe("订阅页定稿", () => {
       await r.fulfill({ response, json: { ...meta, server: "203.0.113.10:8080" } });
     });
     await open(page);
-    await expect(page.locator(".r-page > section h2")).toHaveText(["订阅链接", "订阅信息", "客户端格式", "高级"]);
-    expect(await page.locator(".r-page > section").evaluateAll(s => s.map(x => x.id))).toEqual(["sec-link", "sec-info", "sec-clients", "sec-adv"]);
-    await expect(page.locator(".r-page > .card, .r-page .nb, .lk-key, .b5-cap")).toHaveCount(0);
+    // 三张卡:第一张装订阅链接与订阅信息行,第二张客户端格式,第三张外部订阅与底稿。
+    await expect(page.locator(".r-page > .card")).toHaveCount(3);
+    await expect(page.locator(".r-page > .card >> nth=0 >> #sec-link")).toHaveCount(1);
+    await expect(page.locator(".r-page > .card >> nth=0 >> #sec-info")).toHaveCount(1);
+    await expect(page.locator(".r-page > .card >> nth=1")).toHaveId("sec-clients");
+    await expect(page.locator(".r-page > .card >> nth=2")).toHaveId("sec-adv");
     // 客户端预览、客户端切换和字段↔预览联动都不在了。
     await expect(page.locator("#pv, #pv-app, .pv-app, [data-act=s5-pv], [data-hl], #sec-look, .b5-f, [data-p]")).toHaveCount(0);
-    // 订阅信息三栏和「链接开头」同一种写法:左对齐、同宽。
+    // 四个字段右对齐一栏、同右缘。
     const boxes = await Promise.all(["#f-prefix", "#f-title", "#f-int", "#f-help"].map(id => page.locator(id).boundingBox()));
-    for (const b of boxes) { expect(b.x).toBe(boxes[0].x); expect(b.width).toBe(boxes[0].width); }
+    for (const b of boxes) { expect(b.x + b.width).toBeCloseTo(boxes[0].x + boxes[0].width, 1); }
     // 只有订阅名和刷新间隔带提示;帮助链接只有占位。
     await expect(page.locator('label[for="f-help"] .r-tip')).toHaveCount(0);
     await expect(page.locator("#f-help")).toHaveAttribute("placeholder", "例如 https://help.example.com");
@@ -165,7 +168,7 @@ test.describe("订阅页定稿", () => {
     await expect(link.locator(".lk-pre")).toHaveText("https://sub.example.com");
     await page.locator("#f-int").focus();
     const tips = page.locator(".r-tip"), refreshTip = page.locator('label[for="f-int"] .r-tip');
-    await expect(tips).toHaveCount(3);
+    await expect(tips).toHaveCount(2);
     await expect(refreshTip).toHaveAttribute("tabindex", "0");
     await expect(refreshTip).toHaveAttribute("aria-label", "客户端多久自动更新一次订阅，单位小时。填 0 由客户端决定。");
     await expect(page.locator('label[for="f-title"] .r-tip')).toHaveAttribute("aria-label", /^在客户端的订阅列表里显示的名字。/);
@@ -187,7 +190,7 @@ test.describe("订阅页定稿", () => {
     }
     await page.click("[data-act=s5-adv]");
     await expect(page.locator(".zr-tpl")).toHaveCount(3);
-    await expect(page.locator("#sec-adv .r-tip")).toHaveAttribute("aria-label", /分流规则、策略组和 DNS/);
+    await expect(page.locator("[data-act=s5-adv] .r-ll .sub")).toContainText("分流规则、策略组和 DNS");
     await page.mouse.move(1, 1);
     if (out) await page.screenshot({ path: `${out}/sub-advanced-dark.png`, fullPage: true });
     await refreshTip.hover();

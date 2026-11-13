@@ -142,53 +142,78 @@
 
 .b5-lbl{font-size:var(--ui-font-size-caption);color:var(--muted)}
 .b5-on.off{visibility:hidden}
-/* 订阅页：四段平级，说明按需展开。 */
-.r-ph{align-items:center;margin-bottom:28px}
-.r-page{display:grid;gap:44px}
-/* 区块:画布上的平级段落,没有底色;段标题是唯一的分隔 */
-.r-sec{scroll-margin-top:64px;min-width:0}
+/* 订阅页：行式清单。一张卡是一组设置,行间用细线分隔。 */
+.r-ph{align-items:center;margin-bottom:22px}
+.r-ph h1+p{margin:4px 0 0;color:var(--muted);font-size:var(--ui-font-size-caption)}
+.r-page{display:grid;gap:14px}
+.r-list{scroll-margin-top:64px}
+.r-li{display:flex;align-items:center;gap:16px;padding:13px 18px;min-width:0}
+.r-list>*+*{border-top:1px solid var(--stone)}
+.r-ll{flex:0 0 190px;min-width:0;display:grid;gap:2px}
+.r-ll b{font-weight:540}
+.r-ll label{display:flex;align-items:center;gap:4px}
+.r-ll .sub{font-size:var(--ui-font-size-caption);color:var(--muted);line-height:1.4}
+.r-lv{flex:1;min-width:0;display:grid;justify-items:end}
+.r-lv>.in,.r-lv>.b5-tok,.r-lv>.s5-unit{width:min(100%,360px)}
+.r-lv .s5-field-err{width:min(100%,360px);text-align:left}
+.r-lv>#title-tok{width:min(100%,360px);justify-self:end;text-align:left}
+.r-tok:empty{display:none}
+/* 第一行是订阅链接本体:中间直接给值,不套输入框 */
+.r-li-link{align-items:flex-start}
+.r-li-link .r-ll{flex-basis:170px}
+.r-li-link .r-lv{justify-items:start;margin-top:3px}
+.r-url{min-width:0;max-width:100%;font:500 var(--ui-font-size-body)/1.5 var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-url .lk-pre{border-radius:5px;transition:background 140ms}
+#lk.hl .lk-pre{background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 10%,transparent)}
+.r-copy{flex:none}
+#pfx-slot{width:min(100%,360px);text-align:left}
+#pfx-slot .h{font-size:var(--ui-font-size-caption);color:var(--muted)}
+.r-li-field .s5-field-err:not(:empty)+#pfx-slot{display:none}
+/* 卡内小节头:标题块 + 右侧操作 */
+.r-li-head .r-ll b{font-size:var(--ui-font-size-title)}
+.r-li-head .sp{flex:1}
+/* 客户端格式:行间细线,值列右对齐 */
+.r-tbl .b5-th{padding:10px 18px 6px}
+.r-tbl .b5-tb>.b5-tr{padding:11px 18px;border-radius:0}
+.r-tbl .b5-tb>.b5-tr:nth-child(odd){background:none}
+.r-tbl .b5-tb>.b5-tr+.b5-tr{border-top:1px solid var(--stone)}
+.r-tbl .b5-fmt{justify-content:flex-end;text-align:right}
+/* 行式入口:整行可点,右侧值与箭头 */
+a.r-li-row,button.r-li-row{display:flex;align-items:center;gap:16px;width:100%;padding:13px 18px;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;text-decoration:none}
+a.r-li-row:hover,button.r-li-row:hover{background:var(--hover)}
+.r-li-row .r-ll{flex:1}
+.r-rr-v{margin-left:auto;flex:none}
+.r-chv{width:16px;height:16px;color:var(--muted);flex:none}
+/* 底稿行:展开时内联列出三种底稿 */
+.r-adv.open .s5-car{transform:rotate(180deg)}
 .r-sh{display:flex;align-items:center;gap:6px;min-height:32px;margin-bottom:12px}
 .r-sh h2,.r-sum h2{margin:0;font-size:var(--ui-font-size-title);font-weight:620;letter-spacing:-.01em}
 .r-sh .sp{flex:1}
-.r-sh2{margin:14px 0 8px}.r-sh2 h3{margin:0;font-size:var(--ui-font-size-title);font-weight:600}
+.r-sh2{margin:14px 18px 8px}.r-sh2 h3{margin:0;font-size:var(--ui-font-size-title);font-weight:600}
 /* ⓘ */
 .r-tip{position:relative;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;color:var(--faint);cursor:help;outline:0;vertical-align:middle}
 .r-tip svg{width:14px;height:14px}
 .r-tip:hover,.r-tip:focus-visible{color:var(--ink);background:var(--hover)}
 .r-tip:hover::after,.r-tip:focus-visible::after{content:attr(data-tip);position:absolute;left:-6px;bottom:calc(100% + 6px);z-index:60;width:max-content;max-width:280px;padding:7px 10px;border-radius:8px;background:var(--ink);color:var(--canvas);font-size:var(--ui-font-size-caption);font-weight:400;line-height:1.5;box-shadow:0 4px 14px #0003;white-space:normal}
-/* 订阅链接:一条大链接放在唯一的一块底色上,复制在右 */
-.r-link{display:flex;align-items:center;gap:14px;padding:14px 14px 14px 18px;border-radius:12px;background:var(--panel)}
-.r-url{flex:1;min-width:0;font:500 var(--ui-font-size-body)/1.5 var(--mono);word-break:break-all}
-.r-url .lk-pre{text-decoration:none;font-weight:620;border-radius:5px;transition:background 140ms;box-decoration-break:clone;-webkit-box-decoration-break:clone}
-#lk.hl .lk-pre{background:color-mix(in srgb,var(--ink) 10%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 10%,transparent)}
-.r-copy{height:34px;flex:none}
-.r-pfx{margin:16px 0 0;max-width:520px}
-.r-pfx label{font-size:var(--ui-font-size-control)}
-/* 订阅信息:三栏和「链接开头」同一种写法(标签在上、宽 520),直接放在画布上 */
-.r-info{display:grid;gap:16px;max-width:520px}
-.r-info .field{margin:0}
-.r-info label{display:flex;align-items:center;gap:4px}
-.r-tok:empty{display:none}
-.r-pfx .h{font-size:var(--ui-font-size-caption);color:var(--muted)}
-.r-tok .tk-add{margin-left:0}
-/* 客户端格式:斑马表直接在画布上,奇数行用 panel */
-.r-tbl{margin:0}
-.r-tbl .b5-th{padding:0 12px 6px}
-.r-tbl .b5-tb>.b5-tr:nth-child(odd){background:var(--panel)}
-/* 高级:整行是开关,展开后是底稿列表 */
-.r-adv .r-sum{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;margin:0 -12px;padding:6px 12px;width:calc(100% + 24px);border:0;border-radius:10px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.r-adv .r-sum:hover{background:var(--hover)}
-.r-adv .r-sum .sub{font-size:var(--ui-font-size-caption)}
-.r-adv.open .s5-car{transform:rotate(180deg)}
+/* 底稿列表在卡片里:和列表其他行一样,行间细线,不用斑马底色 */
+.r-zebra{display:block;margin:0;padding:0}
+.r-zebra>.zr{padding:12px 18px;border-radius:0}
+.r-zebra>.zr+.zr{border-top:1px solid var(--stone)}
+.r-zebra>.zr:nth-child(odd),.r-zebra>.zr:nth-child(even){background:none}
 .r-zebra .zr-tpl{grid-template-columns:minmax(0,1fr) auto auto auto}
-.r-sum .sp{flex:1}
+.r-adv.open .r-li-row .sub{display:none}
 /* 预览用户:去掉外层底色,只留标签和一个下拉 */
 .r-ph .b5-pick{height:auto;padding:0;background:none;gap:8px}
 .r-ph .b5-pick select.in{background-color:var(--stone)}
-/* 链接开头报错时,红字代替下面那行灰字 */
-.r-pfx .s5-field-err:not(:empty)~#pfx-slot{display:none}
-/* 底稿列表在画布上:奇数行用 panel */
-.r-zebra>.zr:nth-child(odd){background:var(--panel)}.r-zebra>.zr:nth-child(even){background:none}
-.r-adv.open .r-sum .sub{display:none}
-.r-zebra{margin:0;padding:0}
+/* 窄屏:行折行,字段占满宽 */
+@media (max-width:860px){
+  .r-li{flex-wrap:wrap;gap:8px 12px;padding:12px 14px}
+  .r-ll{flex-basis:100%}
+  .r-lv{justify-items:start}
+  .r-lv>.in,.r-lv>.b5-tok,.r-lv>.s5-unit{width:100%}
+  .r-li-link .r-lv{order:2;flex-basis:100%}
+  .r-li-link .r-copy{order:3;margin-left:auto}
+  .r-tbl .b5-th,.r-tbl .b5-tb>.b5-tr{padding-left:14px;padding-right:14px}
+  .r-tbl .b5-fmt{justify-content:flex-start;text-align:left}
+}
 #tpl-ok,#tpl-dirty{font-size:var(--ui-font-size-navigation)}
