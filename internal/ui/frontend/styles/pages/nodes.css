@@ -5,3 +5,19 @@
 .sum-raw>summary{display:flex;align-items:center;gap:4px;list-style:none;font-size:var(--ui-font-size-control)}.sum-raw>summary::-webkit-details-marker{display:none}.sum-raw>summary svg{width:12px;height:12px;color:var(--muted);transition:transform 160ms var(--ease)}.sum-raw[open]>summary svg{transform:rotate(180deg)}
 .sum-raw .summary{color:var(--muted);font-size:var(--ui-font-size-code);word-break:break-all}
 pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:var(--ui-font-size-code)/1.55 var(--mono);color:var(--ink2);overflow:auto;max-height:calc(100vh - 160px);white-space:pre}
+
+/* 触达检查(UC-06):列表两列 + 行尾悬停「查看」 + 抽屉明细。 */
+.reach-col{white-space:nowrap}
+.reach-lat{font-size:var(--ui-font-size-meta);margin-top:1px}
+.row-btns{opacity:0;transition:opacity 100ms}
+tr:hover .row-btns,tr:focus-within .row-btns{opacity:1}
+.reach-src-head{display:flex;align-items:baseline;gap:10px;padding:14px 6px 6px;font-weight:560}
+.reach-src-head .sub{font-weight:400}
+.reach-row{display:flex;align-items:center;gap:14px;padding:8px 6px;border-radius:8px}
+.reach-row:hover{background:var(--hover)}
+.reach-row .inb{display:flex;align-items:center;gap:8px;min-width:0;width:170px;flex:none}
+.reach-row .inb b{font-weight:560;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ui-font-size-caption);color:var(--muted)}
+.reach-row .cx-port{color:var(--ink2);font-size:var(--ui-font-size-meta)}
+.reach-r{display:inline-flex;align-items:center;gap:6px;min-width:96px;flex:1;justify-content:flex-end}
+.reach-r .lat{font-family:var(--mono);font-size:var(--ui-font-size-meta);color:var(--muted)}
+.reach-legend{margin:14px 6px 0;padding-top:10px;border-top:1px solid var(--ui-border-subtle);font-size:var(--ui-font-size-caption);color:var(--muted);line-height:1.6}

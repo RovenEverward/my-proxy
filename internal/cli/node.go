@@ -34,7 +34,7 @@ var nodeCmd = &cobra.Command{
 
 func init() {
 	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
-		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd)
+		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
