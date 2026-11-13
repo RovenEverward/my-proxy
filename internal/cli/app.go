@@ -239,7 +239,7 @@ const appSmokeUpdateJS = `(() => {
     nodes: [{ name: "jp-1", display: "\u{1F1EF}\u{1F1F5} 东京 A", core: "xray", current: "26.3.27", target: "26.4.1", upgrade: true },
             { name: "us-1", display: "\u{1F1FA}\u{1F1F8} 洛杉矶 A", core: "xray", current: "26.4.1", target: "26.4.1", upgrade: false }],
     notes: "## 更新要点\n\n- 首次安装向导不再问内部的节点名\n- 总览的用时改成中文单位\n- 端口被占用时提前说清楚是哪个程序,并换一个空闲端口\n\n## 我该下哪个\n\n| a | b |\n| --- | --- |\n" };
-  openUpdateModal();
+  if (typeof window.__mpxSeedUpdate === "function") { window.__mpxSeedUpdate(UPDATE); } else { window.UPDATE = UPDATE; }
   return "";
 })()`
 
@@ -263,6 +263,13 @@ func smokeRoute(win *mygo.Window, route string, deadline time.Time) string {
 					return st
 				}
 				_, _ = win.Page().Eval(appSmokeUpdateJS)
+				// 注入完按真实路径开弹窗:等 pill 出现后点它(pill 要 updateAvailable 才现身)。
+				for time.Now().Before(deadline) {
+					if v, err := win.Page().Eval(`(() => { const b = document.querySelector("#upd-pill"); if (!b) return ""; b.click(); return "1"; })()`); err == nil && v == "1" {
+						break
+					}
+					time.Sleep(appSmokeEvery)
+				}
 				for time.Now().Before(deadline) {
 					if v, err := win.Page().Eval(`document.querySelector("#modal.open .upd-hl li") ? "1" : ""`); err == nil && v == "1" {
 						font, _ := win.Page().Eval(appSmokeFontJS)

@@ -41,6 +41,15 @@ export async function refreshUpdate(force = true): Promise<UpdateInfo | null> {
   return updateData;
 }
 // 「稍后」:把当前 latest 记进本会话,同版本不再出现;新版本再显示。
+// __mpxSeedUpdate 是桌面冒烟(MPX_APP_SMOKE_ROUTE=update)的钩子:注入示例
+// UpdateInfo 并点亮 pill,由冒烟脚本点击它打开弹窗。走与刷新同样的
+// updateData/emit 通道,不绕过真实渲染路径;非冒烟调用方得不到它。
+export function __mpxSeedUpdate(u: UpdateInfo) {
+  updateData = u;
+  updateAt = Date.now();
+  emit();
+}
+
 export function skipUpdate(u: UpdateInfo | null) {
   const v = updLatest(u);
   if (!v) return;
@@ -58,6 +67,13 @@ export function useUpdateState(enabled = true): { data: UpdateInfo | null; refre
     void refreshUpdate(false);
     const timer = setInterval(() => { if (!document.hidden) void refreshUpdate(true); }, POLL_MS);
     return () => clearInterval(timer);
+  }, [enabled]);
+  // 桌面冒烟用 window.__mpxSeedUpdate 注入示例数据;卸载时移除,别留在窗口上。
+  useEffect(() => {
+    if (!enabled) return;
+    const w = window as Window & { __mpxSeedUpdate?: typeof __mpxSeedUpdate };
+    w.__mpxSeedUpdate = __mpxSeedUpdate;
+    return () => { delete w.__mpxSeedUpdate; };
   }, [enabled]);
   // refresh 用节流档:打开 pill / App 挂载时拿的是 30 秒内已知结论,不立刻重取。
   // 强制取只走内部通道(interval、更新终态),与旧 refreshUpdatePill 语义一致。
