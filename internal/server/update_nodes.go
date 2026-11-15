@@ -162,8 +162,13 @@ func (s *Server) nodeUpdateProgress(since int64) model.UpdateNodesProgress {
 
 // runNodeUpdate 是任务主体:按节点 id 升序逐台、逐核心串行升级。
 //
-// 任何一台失败都立刻收工并把整轮标成 failed,后面的节点一个都不动 —— 一台节点
-// 升级失败往往说明网络、架构或权限有共性问题,继续推只会把更多机器推下水。
+// 一台失败不再拦后面:连通类错误(ssh:…、命令超时)只说明这台节点此刻连不上,
+// 与别台无关;升级逻辑错误(下载失败、校验不过、回滚)也只影响那一行。名单里
+// 起不来就预筛(skip 事件),报错就继续下一行;一轮结束按行级结果标整轮状态:
+// 有任何一条 failed/rolled_back 就是 failed,否则 done。
+//
+// 在名单外做预筛而不是在 updateNodes 里:那张名单回答"这台装了哪些核心、该
+// 升到哪版",连通与否不该改变这份名单本身;执行层才是放事件的地方。
 func (s *Server) runNodeUpdate() {
 	rows, err := s.updateNodes()
 	if err != nil {
@@ -175,20 +180,79 @@ func (s *Server) runNodeUpdate() {
 	// 保持 xray 在前、sing-box 在后的相对次序。
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].NodeID < rows[j].NodeID })
 
+	unreachable := s.unreachableNodeIDs()
 	ctx := context.Background()
+	failed := false
+	brokenNode := map[int64]bool{} // 该 NodeID 已判连通失败,后续核心跳过
 	for _, row := range rows {
+		if unreachable[row.NodeID] {
+			s.addNodeUpdateEvent(row, "skip", row.Current, row.Target, "节点不可达")
+			continue
+		}
+		if brokenNode[row.NodeID] {
+			s.addNodeUpdateEvent(row, "skip", row.Current, row.Target, "本节点连接失败,剩余核心跳过")
+			continue
+		}
 		n, err := s.store.GetNode(row.NodeID)
 		if err != nil {
 			s.addNodeUpdateEvent(row, "failed", row.Current, row.Target, "读节点失败: "+err.Error())
-			s.setNodeUpdateState(model.UpdateNodesFailed)
-			return
+			failed = true
+			continue
 		}
 		if err := s.upgradeNodeCore(ctx, *n, row); err != nil {
-			s.setNodeUpdateState(model.UpdateNodesFailed)
-			return
+			failed = true
+			if isConnErr(err) {
+				brokenNode[row.NodeID] = true
+			}
 		}
 	}
-	s.setNodeUpdateState(model.UpdateNodesDone)
+	if failed {
+		s.setNodeUpdateState(model.UpdateNodesFailed)
+	} else {
+		s.setNodeUpdateState(model.UpdateNodesDone)
+	}
+}
+
+// unreachableNodeIDs 收集此刻被判定为「不用试就知道连不上」的节点。
+//
+// 两个证据口:一是持久化 NodeStatus 的 Reachable=false(巡检/采样最近一次的
+// 结论);二是 StatusSource 里的 Backoffs(连续失败退避中,即便缓存里 Reachable
+// 还是 true,退避计数已说明这台在被反复拒绝)。没有状态记录的新节点不在这份
+// 名单里 —— 没探过就给它一次升级首发的机会。
+func (s *Server) unreachableNodeIDs() map[int64]bool {
+	out := map[int64]bool{}
+	statuses, err := s.store.ListNodeStatuses()
+	if err == nil {
+		for id, st := range statuses {
+			if !st.Reachable {
+				out[id] = true
+			}
+		}
+	}
+	if s.status != nil {
+		for _, b := range s.status.Snapshot(time.Now()).Backoffs {
+			out[b.NodeID] = true
+		}
+	}
+	return out
+}
+
+// isConnErr 判断一条升级失败是不是「这台连不上」这一类 —— 需要跳同节点剩余
+// 核心的理由是避免对死机/掉线的节点重复付 SSH 超时。
+//
+// 判据看错误文本而不是类型:r.Run 返回的连通错误统一是 ssh stderr 里
+// "ssh: connect to host … timed out/refused"这类字符串(见 internal/node/ssh.go
+// 的 sshErrText 路径),以及节点上读版本那条命令的超时包装(节点 %s: 命令超时)。
+// 同节点上升级里能报的其他错误(拉资产、校验、回滚)都不带 "ssh: " 前缀。
+func isConnErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "ssh: ") || strings.Contains(s, "命令超时")
 }
 
 // upgradeNodeCore 按核心类型分派。核心认不出来按失败处理,不假装跳过。
