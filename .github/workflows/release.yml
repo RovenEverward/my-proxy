@@ -317,6 +317,16 @@ jobs:
           pattern: dbin_darwin_*
           path: bin
 
+      # macos runner 镜像自带 Xcode/Sim 占去大半磁盘,装完 artifacts 后容易在
+      # hdiutil 临时目录或 dmg 卷里写不下 32MB 的通用二进制(2026-11 实测报
+      # "No space left on device")。先清掉与打包无关的大头再动手。
+      - name: 腾磁盘空间
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /Library/Developer/CoreSimulator/Volumes/*/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime \
+            ~/Library/Caches/Homebrew/downloads/* 2>/dev/null || true
+          df -h / | tail -1
+
       - name: 合成通用二进制并拼 MPX.app
         run: |
           set -eu
