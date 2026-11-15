@@ -67,7 +67,7 @@
 .ov>.callout>div{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:860px){.ov-main{grid-template-columns:minmax(0,1fr)}}
 /* 窄屏固定底部导航仍需留白，不能沿用桌面的 24px。 */
-@media (max-width:860px){.page:has(>.ov){padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}}
+@media (max-width:860px){.p-overview .page:has(>.ov){padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}}
 /* 总览行尾操作格:「续期」(浅底按钮) + 「⋯」菜单 */
 td.ov-act{width:1%;white-space:nowrap;text-align:right;padding-left:0}tr.is-exp td.ov-act{padding-left:8px}
 .ov-act .btn{height:26px;padding:0 10px;font-size:var(--ui-font-size-control)}

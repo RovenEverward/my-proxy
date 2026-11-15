@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MPX 控制面切换 UX 原型对比</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Noto Sans SC", "PingFang SC", sans-serif);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--foreground);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+
+  /* Outer element: transparent, no border/card/padding per host contract */
+  .proto-root {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Top variant selector */
+  .variant-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .vtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-foreground, var(--muted));
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .vtab:hover { color: var(--foreground); background: var(--secondary); }
+  .vtab.active {
+    background: var(--primary);
+    color: var(--primary-foreground, #fff);
+    border-color: var(--primary);
+  }
+  .vtab .badge {
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+  }
+
+  /* Brief context strip */
+  .summary-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .summary-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .summary-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  .summary-metric {
+    font-size: 11.5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+  }
+  .summary-desc {
+    font-size: 12.5px;
+    color: var(--muted-foreground, var(--muted));
+    margin: 0;
+  }
+
+  /* Interactive MPX Desktop Shell Mockup */
+  .mpx-window {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+    min-height: 416px;
+  }
+  @media (max-width: 600px) {
+    .mpx-window { grid-template-columns: 1fr; }
+    .mpx-main { display: none; }
+  }
+
+  /* Sidebar */
+  .mpx-side {
+    background: var(--secondary);
+    border-right: 1px solid var(--border);
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .traffic {
+    display: flex;
+    gap: 6px;
+    padding: 2px 6px 10px;
+  }
+  .traffic i {
+    width: 10px; height: 10px; border-radius: 50%; display: block;
+    background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 10px;
+  }
+  .brand-left {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.02em;
+  }
+  .brand-ver {
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+  }
+
+  /* Control plane trigger button */
+  .cp-wrap { position: relative; margin-bottom: 10px; }
+  .cp-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 9px;
+    text-align: left;
+    border: 1px solid transparent;
+    transition: background 120ms, border-color 120ms;
+  }
+  .cp-btn:hover {
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+  .cp-btn.open {
+    background: var(--card);
+    border-color: var(--border);
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--muted-foreground, var(--muted));
+  }
+  .dot.ok { background: var(--success, #16a34a); }
+  .dot.ink { background: var(--foreground); }
+  .dot.bad { background: var(--destructive, #dc2626); }
+  .cp-txt { flex: 1; min-width: 0; }
+  .cp-name {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cp-sub {
+    display: block;
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chev {
+    width: 14px; height: 14px; flex: none;
+    color: var(--muted-foreground, var(--muted));
+    transition: transform 140ms;
+  }
+  .chev.up { transform: rotate(180deg); }
+
+  /* Current inline accordion (pain point demo) */
+  .legacy-pop {
+    margin-top: 6px;
+    padding: 10px 10px 11px;
+    border-radius: 9px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .legacy-kv dt {
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+    margin-top: 6px;
+  }
+  .legacy-kv dt:first-child { margin-top: 0; }
+  .legacy-kv dd {
+    margin: 2px 0 0;
+    overflow-wrap: anywhere;
+    font-size: 11.5px;
+  }
+  .legacy-fp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px 5px;
+    line-height: 1.5;
+    color: var(--foreground);
+  }
+  .legacy-acts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .legacy-note {
+    margin: 8px 0 0;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--muted-foreground, var(--muted));
+  }
+
+  /* Nav list */
+  .nav-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-sep { height: 10px; }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 30px;
+    padding: 0 9px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    color: var(--muted-foreground, var(--muted));
+    text-align: left;
+  }
+  .nav-item:hover {
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    color: var(--foreground);
+  }
+  .nav-item.on {
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .nav-item svg { width: 15px; height: 15px; flex: none; opacity: 0.8; }
+  .nav-ct {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+  }
+
+  /* Bottom status capsule for Option C */
+  .side-foot {
+    margin-top: auto;
+    padding-top: 10px;
+    position: relative;
+  }
+  .conn-pill {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--muted-foreground, var(--muted));
+    text-align: left;
+  }
+  .conn-pill:hover { color: var(--foreground); background: var(--card); }
+  .conn-pill .ell {
+    flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Floating Popovers (Option A, B, C) */
+  .popover {
+    position: absolute;
+    z-index: 20;
+    background: var(--popover, var(--card));
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    box-shadow: 0 12px 30px -8px rgba(0,0,0,0.22);
+    padding: 8px;
+    width: 286px;
+  }
+  .pop-top { top: calc(100% + 6px); left: 0; }
+  .pop-foot { bottom: 40px; left: 0; width: 292px; }
+  .pop-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 6px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .pf-opt {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 9px;
+    border-radius: 8px;
+    text-align: left;
+  }
+  .pf-opt:hover { background: var(--secondary); }
+  .pf-opt.on { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+  .pf-opt-t { flex: 1; min-width: 0; }
+  .pf-opt-t b { display: block; font-size: 12.5px; font-weight: 600; }
+  .pf-opt-t span {
+    display: block; font-size: 11px; color: var(--muted-foreground, var(--muted));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pop-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 2px;
+  }
+  .pop-act {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    font-size: 12px;
+    color: var(--foreground);
+    text-align: left;
+  }
+  .pop-act:hover { background: var(--secondary); }
+  .pop-act .right {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .detail-pane { padding: 4px 6px; }
+  .detail-kv { display: grid; gap: 8px; margin-top: 6px; }
+  .detail-kv label {
+    display: block; font-size: 11px; color: var(--muted-foreground, var(--muted)); margin-bottom: 2px;
+  }
+  .fp-box {
+    padding: 6px 8px;
+    border-radius: 7px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+
+  /* Main content area */
+  .mpx-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--card);
+  }
+  .mpx-topbar {
+    height: 44px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mpx-topbar .meta-r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .mpx-body {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .page-h {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .page-h h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .page-h p { margin: 2px 0 0; font-size: 12px; color: var(--muted-foreground, var(--muted)); }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--card);
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--secondary); }
+  .btn.pri {
+    background: var(--primary);
+    color: var(--primary-foreground, #fff);
+    border-color: var(--primary);
+  }
+  .btn.sm { height: 25px; padding: 0 9px; font-size: 11.5px; }
+
+  .tbl {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .tbl-row {
+    display: grid;
+    grid-template-columns: 1.5fr 0.9fr 1fr;
+    align-items: center;
+    padding: 9px 12px;
+    font-size: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .tbl-row:first-child { border-top: 0; background: var(--secondary); font-size: 11.5px; color: var(--muted-foreground, var(--muted)); padding: 7px 12px; }
+  .sub-ip { font-size: 11px; color: var(--muted-foreground, var(--muted)); }
+
+  /* Devices page preview inside Option B */
+  .dev-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dev-card h4 { margin: 0; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 6px 10px;
+    font-size: 12px;
+    align-items: baseline;
+  }
+  .kv-grid .k { color: var(--muted-foreground, var(--muted)); font-size: 11.5px; }
+  .pill-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--primary) 14%, transparent);
+    color: var(--primary);
+    font-weight: 500;
+  }
+
+  /* Legacy Modal simulation */
+  .modal-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.34);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    padding: 16px;
+  }
+  .modal-box {
+    width: 100%;
+    max-width: 340px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  .modal-box h4 { margin: 0 0 4px; font-size: 14px; }
+  .modal-box p { margin: 0 0 10px; font-size: 12px; color: var(--muted-foreground, var(--muted)); }
+  .modal-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+  /* Callout / warning highlight in legacy */
+  .pain-tag {
+    display: inline-block;
+    font-size: 10.5px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--destructive, #dc2626) 14%, transparent);
+    color: var(--destructive, #dc2626);
+    margin-left: 4px;
+  }
+
+  /* Toast */
+  .toast {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    z-index: 40;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--foreground);
+    color: var(--background);
+    font-size: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  }
+</style>
+</head>
+<body>
+<div class="proto-root" id="app"></div>
+
+<script>
+const PROFILES = [
+  { id: "default", name: "主力自用", rawName: "default", server: "https://144.34.233.37:8080", addr: "144.34.233.37:8080", online: true, device: "liuzhengdongdeMac-Mini.local", fp: "1V1S RFMQ h9oI N48W X7qS N5eN UedF UhaG KZZx 7WoA zWw", nodes: ["🇺🇸 洛杉矶 A", "🇯🇵 东京 A", "🇸🇬 新加坡 A"] },
+  { id: "family", name: "family", rawName: "family", server: "https://203.0.113.10:8080", addr: "203.0.113.10:8080", online: true, device: "liuzhengdongdeMac-Mini.local", fp: "DU4S swBA 8LrU y6O0 MfhR RxLJ Z2p8 GPRE pV2Z fxtj 9Wg", nodes: ["🇭🇰 香港 B", "🇯🇵 大阪 A"] }
+];
+
+let state = {
+  tab: "optA",          // legacy | optA | optB | optC
+  currentId: "default",
+  legacyExpanded: true, // show pain point directly on load for legacy
+  legacyModal: false,
+  popOpen: true,        // open by default on interactive variants so user sees it immediately
+  popSubView: "list",   // list | detail | add
+  footPopOpen: false,
+  page: "nodes",        // nodes | devices
+  toast: ""
+};
+
+function setToast(msg) {
+  state.toast = msg;
+  render();
+  setTimeout(() => { state.toast = ""; render(); }, 1800);
+}
+
+function activeProfile() {
+  return PROFILES.find(p => p.id === state.currentId) || PROFILES[0];
+}
+
+function selectTab(tab) {
+  state.tab = tab;
+  state.legacyModal = false;
+  state.popSubView = "list";
+  if (tab === "legacy") {
+    state.legacyExpanded = true;
+    state.page = "nodes";
+  } else if (tab === "optA") {
+    state.popOpen = true;
+    state.footPopOpen = false;
+    state.page = "nodes";
+  } else if (tab === "optB") {
+    state.popOpen = false;
+    state.footPopOpen = false;
+    state.page = "devices";
+  } else if (tab === "optC") {
+    state.popOpen = false;
+    state.footPopOpen = true;
+    state.page = "nodes";
+  }
+  render();
+}
+
+function switchProfile(id) {
+  state.currentId = id;
+  state.popOpen = false;
+  state.legacyModal = false;
+  const p = activeProfile();
+  setToast("已切换到「" + (state.tab === "legacy" ? p.addr : p.name) + "」");
+}
+
+function navHTML(activePage, canOpenDevices) {
+  const items = [
+    { id: "overview", label: "总览", badge: "" },
+    { id: "nodes", label: "节点", badge: activeProfile().nodes.length },
+    { id: "users", label: "用户", badge: "3" },
+    { id: "sub", label: "订阅", badge: "" },
+    { id: "rules", label: "分流", badge: "" },
+    { sep: true },
+    { id: "doctor", label: "体检", badge: "" },
+    { id: "devices", label: "系统 · 设备与接入", badge: "" }
+  ];
+  return items.map(it => {
+    if (it.sep) return `<div class="nav-sep"></div>`;
+    const isOn = activePage === it.id;
+    const clickable = it.id === "nodes" || (canOpenDevices && it.id === "devices");
+    return `<button class="nav-item ${isOn ? "on" : ""}" ${clickable ? `onclick="state.page='${it.id}';render()"` : `onclick="setToast('原型演示聚焦控制面与设备页')"`}>
+      <span>${it.label}</span>
+      ${it.badge ? `<span class="nav-ct mono">${it.badge}</span>` : ""}
+    </button>`;
+  }).join("");
+}
+
+function renderSummary() {
+  const map = {
+    legacy: {
+      title: "现状拆解：3 层容器嵌套 + 信息主次倒置",
+      metric: "切换需 2 次点击 + 弹窗重载",
+      desc: "点击侧栏卡片会原地撑开手风琴，把「地址/4行指纹/设备名/神秘提示」全堆在主导航上方，把导航挤到窗口底部；真正常用的「切换控制面」反而被藏在第二层弹窗里，新增还要再跳全屏。"
+    },
+    optA: {
+      title: "方案 A：悬浮直切菜单 + 折叠连接详情（推荐 · 改动最平滑）",
+      metric: "切换只需 1 次点击 · 不挤占导航",
+      desc: "侧栏卡片永远保持两行紧凑。点击后向右/下浮出较宽的 Popover：第一屏直接列控制面并一键切换；地址不再折行；指纹、设备名收进二级「连接与安全详情」面板，各司其职。"
+    },
+    optB: {
+      title: "方案 B：极简环境切换器 + 详情归位「系统 → 设备与接入」",
+      metric: "心智模型最干净 · 彻底消除冗余提示",
+      desc: "侧栏顶部只保留纯粹的「工作区/控制面切换」；把「证书指纹、这台电脑、别的设备如何接入」整体归并到「系统 → 设备与接入」页面顶部，和吊销设备、设备密码形成完整闭环。"
+    },
+    optC: {
+      title: "方案 C：顶部切控制面 + 底部独立连接状态条（类似 VS Code / OrbStack）",
+      metric: "高频切换与全局验签互不打扰",
+      desc: "顶部卡片纯做控制面列表切换（不再塞任何安全字段）；左下角增加克制的「● TLS 已钉扎 · Mac-Mini」胶囊，随时可点开复制指纹和查看接入方式，不占主导航垂直空间。"
+    }
+  };
+  const info = map[state.tab];
+  return `<div class="summary-box">
+    <div class="summary-head">
+      <span class="summary-title">${info.title}</span>
+      <span class="summary-metric">${info.metric}</span>
+    </div>
+    <p class="summary-desc">${info.desc}</p>
+  </div>`;
+}
+
+function renderSidebarTop(p) {
+  if (state.tab === "legacy") {
+    const exp = state.legacyExpanded;
+    return `<div class="cp-wrap">
+      <button class="cp-btn ${exp ? "open" : ""}" onclick="state.legacyExpanded=!state.legacyExpanded;render()">
+        <span class="dot ink"></span>
+        <span class="cp-txt"><span class="cp-name mono">144.34.233.37:80…</span></span>
+        <svg class="chev ${exp ? "up" : ""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
+      </button>
+      ${exp ? `<div class="legacy-pop">
+        <dl class="legacy-kv">
+          <dt>地址 <span class="pain-tag">窄栏折行</span></dt>
+          <dd class="mono">${p.server}</dd>
+          <dt>证书指纹 <span class="pain-tag">占4行挤导航</span></dt>
+          <dd class="mono legacy-fp">${p.fp}</dd>
+          <dt>这台电脑</dt>
+          <dd>${p.device}</dd>
+        </dl>
+        <div class="legacy-acts">
+          <button class="btn sm" onclick="setToast('已复制指纹')">复制指纹</button>
+          <button class="btn sm" onclick="state.legacyModal=true;render()">切换控制面</button>
+        </div>
+        <p class="legacy-note">只在这台电脑上能打开，别的设备需要单独接入。<span class="pain-tag">易误解</span></p>
+      </div>` : ""}
+    </div>`;
+  }
+
+  // Options A, B, C compact trigger
+  const subText = state.tab === "optB" ? p.addr : (p.name === p.addr ? "已连接" : p.addr);
+  return `<div class="cp-wrap">
+    <button class="cp-btn ${state.popOpen ? "open" : ""}" onclick="state.popOpen=!state.popOpen;state.popSubView='list';state.footPopOpen=false;render()">
+      <span class="dot ok"></span>
+      <span class="cp-txt">
+        <span class="cp-name">${p.name}</span>
+        <span class="cp-sub mono">${subText}</span>
+      </span>
+      <svg class="chev ${state.popOpen ? "up" : ""}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
+    </button>
+    ${renderTopPopover(p)}
+  </div>`;
+}
+
+function renderTopPopover(p) {
+  if (state.tab === "legacy" || !state.popOpen) return "";
+
+  if (state.popSubView === "detail" && state.tab === "optA") {
+    return `<div class="popover pop-top">
+      <button class="pop-act" style="padding:4px 6px;font-weight:600" onclick="state.popSubView='list';render()">
+        <span>‹ 返回控制面列表</span>
+      </button>
+      <div class="pop-sep"></div>
+      <div class="detail-pane">
+        <div class="detail-kv">
+          <div><label>控制面完整地址</label><div class="mono" style="font-size:12px">${p.server}</div></div>
+          <div><label>本机登记设备名</label><div style="font-size:12px">${p.device}</div></div>
+          <div>
+            <label>TLS 证书指纹（新设备接入核对用）</label>
+            <div class="fp-box mono">${p.fp}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn sm pri" style="flex:1" onclick="setToast('已复制证书指纹')">复制指纹</button>
+          <button class="btn sm" onclick="state.popOpen=false;state.page='devices';render()">已接入设备 ›</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  if (state.popSubView === "add") {
+    return `<div class="popover pop-top">
+      <button class="pop-act" style="padding:4px 6px;font-weight:600" onclick="state.popSubView='list';render()">
+        <span>‹ 返回</span>
+      </button>
+      <div class="pop-sep"></div>
+      <div class="detail-pane" style="display:grid;gap:8px">
+        <div style="font-size:12px;font-weight:600">接入另一套控制面</div>
+        <input style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--card);font-size:12px" placeholder="地址，如 203.0.113.10:8080" />
+        <input style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:7px;background:var(--card);font-size:12px" placeholder="别名，如 work / family" />
+        <button class="btn sm pri" onclick="state.popSubView='list';setToast('演示：取指纹并验证设备密码后直接切换')">下一步：获取并核对指纹</button>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="popover pop-top">
+    <div class="pop-hdr">
+      <span>切换控制面（本机已接入）</span>
+      <button style="font-size:11px;color:var(--muted-foreground,var(--muted))" onclick="state.popOpen=false;render()">收起</button>
+    </div>
+    ${PROFILES.map(item => `
+      <button class="pf-opt ${item.id === p.id ? "on" : ""}" onclick="switchProfile('${item.id}')">
+        <span class="dot ${item.id === p.id ? "ok" : ""}"></span>
+        <span class="pf-opt-t">
+          <b>${item.name}</b>
+          <span class="mono">${item.addr}</span>
+        </span>
+        ${item.id === p.id ? `<span style="color:var(--primary);font-weight:600;font-size:12px">✓</span>` : ""}
+      </button>
+    `).join("")}
+    <div class="pop-sep"></div>
+    <button class="pop-act" onclick="state.popSubView='add';render()">
+      <span>+ 接入已有控制面…</span>
+    </button>
+    ${state.tab === "optA" ? `
+      <button class="pop-act" onclick="state.popSubView='detail';render()">
+        <span>连接与证书指纹</span>
+        <span class="right">›</span>
+      </button>
+    ` : ""}
+    ${state.tab === "optB" ? `
+      <button class="pop-act" onclick="state.popOpen=false;state.page='devices';render()">
+        <span>查看指纹与已接入设备</span>
+        <span class="right">系统 ›</span>
+      </button>
+    ` : ""}
+  </div>`;
+}
+
+function renderFooterStatus(p) {
+  if (state.tab !== "optC") return "";
+  return `<div class="side-foot">
+    <button class="conn-pill" onclick="state.footPopOpen=!state.footPopOpen;state.popOpen=false;render()">
+      <span class="dot ok"></span>
+      <span class="ell">TLS 已钉扎 · Mac-Mini</span>
+      <span style="font-size:11px">ⓘ</span>
+    </button>
+    ${state.footPopOpen ? `<div class="popover pop-foot">
+      <div class="pop-hdr">
+        <span>当前连接安全信息</span>
+        <button onclick="state.footPopOpen=false;render()">✕</button>
+      </div>
+      <div class="detail-pane">
+        <div class="detail-kv">
+          <div><label>控制面地址</label><div class="mono" style="font-size:12px">${p.server}</div></div>
+          <div><label>本机在控制面登记为</label><div style="font-size:12px">${p.device}</div></div>
+          <div><label>证书指纹</label><div class="fp-box mono">${p.fp}</div></div>
+        </div>
+        <p class="legacy-note">凭据仅存在这台电脑。要在另一台电脑管理，请在那边选「接入已有控制面」并核对上方指纹。</p>
+        <div style="display:flex;gap:6px;margin-top:9px">
+          <button class="btn sm pri" style="flex:1" onclick="setToast('已复制指纹')">复制指纹</button>
+          <button class="btn sm" onclick="state.footPopOpen=false;state.page='devices';render()">设备管理 ›</button>
+        </div>
+      </div>
+    </div>` : ""}
+  </div>`;
+}
+
+function renderMainContent(p) {
+  if (state.page === "devices") {
+    return `<div class="mpx-topbar">
+      <span>系统 / 设备与接入</span>
+      <span class="meta-r">${p.name} · ${p.addr}</span>
+    </div>
+    <div class="mpx-body">
+      <div class="page-h">
+        <div><h3>设备与接入</h3><p>查看当前控制面连接凭据、管理已接入电脑与设备密码</p></div>
+      </div>
+      <div class="dev-card">
+        <h4>当前控制面连接信息 <span class="pill-tag">已安全连接</span></h4>
+        <div class="kv-grid">
+          <span class="k">控制面地址</span><span class="mono">${p.server}</span>
+          <span class="k">证书指纹</span><span class="mono" style="font-size:11.5px;word-break:break-all">${p.fp} <button class="btn sm" style="margin-left:4px" onclick="setToast('已复制指纹')">复制</button></span>
+          <span class="k">这台电脑</span><span>${p.device} <span class="pill-tag">当前</span></span>
+        </div>
+        <p style="margin:2px 0 0;font-size:11.5px;color:var(--muted-foreground,var(--muted))">凭据保存在本机；要在别的电脑打开此控制面，请在新电脑安装 MPX 后输入上方地址、核对指纹并用设备密码接入。</p>
+      </div>
+      <div class="dev-card">
+        <h4>已接入的设备（2 台）</h4>
+        <div class="kv-grid">
+          <span class="k">1 · 当前</span><span>${p.device}</span>
+          <span class="k">2 · 3天前</span><span style="display:flex;justify-content:space-between;align-items:center"><span>MacBook-Pro.local</span><button class="btn sm" onclick="setToast('原型演示：吊销设备')">吊销</button></span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="mpx-topbar">
+    <span>节点</span>
+    <span class="meta-r">控制面：${p.name} · 更新于 17:17</span>
+  </div>
+  <div class="mpx-body">
+    <div class="page-h">
+      <div><h3>节点</h3><p>状态来自控制面（${p.addr}）的定时检查</p></div>
+      <div style="display:flex;gap:6px"><button class="btn sm">检查触达</button><button class="btn sm pri">+ 添加节点</button></div>
+    </div>
+    <div class="tbl">
+      <div class="tbl-row"><span>节点</span><span>状态</span><span>配置</span></div>
+      ${p.nodes.map((n, i) => `<div class="tbl-row">
+        <div><b>${n}</b><div class="sub-ip mono">144.34.233.${37 + i}</div></div>
+        <div><span class="dot ok" style="display:inline-block;margin-right:5px"></span>运行中</div>
+        <div>已同步</div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function renderLegacyModal() {
+  if (state.tab !== "legacy" || !state.legacyModal) return "";
+  const p = activeProfile();
+  return `<div class="modal-scrim" onclick="state.legacyModal=false;render()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h4>切换控制面 <span class="pain-tag">第2层弹窗</span></h4>
+      <p>切换后会记住，下次打开仍连你选的这个。</p>
+      <div style="display:grid;gap:6px">
+        ${PROFILES.map(item => `
+          <button class="pf-opt ${item.id === p.id ? "on" : ""}" style="border:1px solid var(--border)" onclick="switchProfile('${item.id}')">
+            <span class="dot ${item.id === p.id ? "ok" : ""}"></span>
+            <span class="pf-opt-t"><b>${item.rawName === "default" ? item.addr : item.name}</b><span class="mono">${item.addr}</span></span>
+            ${item.id === p.id ? "✓" : ""}
+          </button>
+        `).join("")}
+      </div>
+      <div class="modal-foot">
+        <button class="btn sm" style="margin-right:auto" onclick="setToast('关闭弹窗并跳全屏表单（第3层）')">+ 添加控制面…</button>
+        <button class="btn sm" onclick="state.legacyModal=false;render()">取消</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const p = activeProfile();
+  const tabs = [
+    { id: "optA", label: "方案 A · 悬浮直切", badge: "推荐" },
+    { id: "optB", label: "方案 B · 归位设备页", badge: "最简洁" },
+    { id: "optC", label: "方案 C · 顶切底查", badge: "双入口" },
+    { id: "legacy", label: "现状对比", badge: "痛点" }
+  ];
+
+  document.getElementById("app").innerHTML = `
+    <div class="variant-bar">
+      ${tabs.map(t => `<button class="vtab ${state.tab === t.id ? "active" : ""}" onclick="selectTab('${t.id}')">${t.label}<span class="badge">${t.badge}</span></button>`).join("")}
+    </div>
+    ${renderSummary()}
+    <div class="mpx-window">
+      <aside class="mpx-side">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="brand">
+          <div class="brand-left">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h10M4 12h14M4 16h10"/><path d="M14 5l4 7-4 7"/></svg>
+            <span>MPX</span>
+          </div>
+          <span class="brand-ver mono">v0.9.16</span>
+        </div>
+        ${renderSidebarTop(p)}
+        <nav class="nav-list">
+          ${navHTML(state.page, state.tab !== "legacy")}
+        </nav>
+        ${renderFooterStatus(p)}
+      </aside>
+      <main class="mpx-main">
+        ${renderMainContent(p)}
+      </main>
+      ${renderLegacyModal()}
+      ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+    </div>
+  `;
+}
+
+render();
+</script>
+</body>
+</html>

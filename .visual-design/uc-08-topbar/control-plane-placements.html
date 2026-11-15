@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MPX 控制面位置重构原型（脱离左上角）</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Noto Sans SC", "PingFang SC", sans-serif);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--foreground);
+  }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  .mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+
+  /* Outer element: transparent, no outer card/border/padding */
+  .root {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Variant Tabs */
+  .vbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .vtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-foreground, var(--muted));
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: background 120ms, color 120ms, border-color 120ms;
+  }
+  .vtab:hover { color: var(--foreground); background: var(--secondary); }
+  .vtab.active {
+    background: var(--primary);
+    color: var(--primary-foreground, #fff);
+    border-color: var(--primary);
+  }
+  .vtag {
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+  }
+
+  /* Context Summary Box */
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .summary-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .summary-title { font-size: 14px; font-weight: 600; }
+  .summary-pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+  .summary-desc {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--muted-foreground, var(--muted));
+  }
+
+  /* App Window Mockup */
+  .win {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 12px);
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 204px minmax(0, 1fr);
+    min-height: 438px;
+  }
+  @media (max-width: 600px) {
+    .win { grid-template-columns: 1fr; }
+    .side { display: none; }
+  }
+
+  /* Clean Sidebar (NO control plane card at top!) */
+  .side {
+    background: var(--secondary);
+    border-right: 1px solid var(--border);
+    padding: 12px 10px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .traffic {
+    display: flex;
+    gap: 6px;
+    padding: 2px 6px 12px;
+  }
+  .traffic i {
+    width: 10px; height: 10px; border-radius: 50%; display: block;
+    background: color-mix(in srgb, var(--foreground) 16%, transparent);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 16px;
+  }
+  .brand-l {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: -0.02em;
+  }
+  .brand-v { font-size: 11px; color: var(--muted-foreground, var(--muted)); }
+
+  .nav-list { display: flex; flex-direction: column; gap: 2px; }
+  .nav-sep { height: 12px; }
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 31px;
+    padding: 0 9px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    color: var(--muted-foreground, var(--muted));
+    text-align: left;
+  }
+  .nav-btn:hover {
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    color: var(--foreground);
+  }
+  .nav-btn.on {
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+    font-weight: 600;
+  }
+  .nav-ct {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .nav-btn.on .nav-ct { color: inherit; }
+
+  /* Sidebar Footer Anchor (Option 3) */
+  .side-foot {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    position: relative;
+  }
+  .foot-cp {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    text-align: left;
+    transition: background 120ms;
+  }
+  .foot-cp:hover, .foot-cp.open {
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .foot-cp-t { flex: 1; min-width: 0; }
+  .foot-cp-t b { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot-cp-t span { display: block; font-size: 10.5px; color: var(--muted-foreground, var(--muted)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Main Panel */
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--card);
+    position: relative;
+  }
+  .topbar {
+    height: 46px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .crumb { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .crumb .muted { color: var(--muted-foreground, var(--muted)); font-weight: 400; }
+  .sp { flex: 1; }
+  .top-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .ico-btn {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .ico-btn:hover { background: var(--secondary); color: var(--foreground); }
+
+  /* Top-right Control Plane Pill (Option 2) & subtle link (Option 1) */
+  .top-cp-wrap { position: relative; }
+  .top-cp-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    font-size: 12px;
+    color: var(--foreground);
+    transition: background 120ms, border-color 120ms;
+  }
+  .top-cp-pill:hover, .top-cp-pill.open {
+    background: var(--card);
+    border-color: var(--primary);
+  }
+  .subtle-cp-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .subtle-cp-link:hover { background: var(--secondary); color: var(--foreground); }
+
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--muted-foreground, var(--muted));
+  }
+  .dot.ok { background: var(--success, #16a34a); }
+
+  /* Popovers */
+  .popover {
+    position: absolute;
+    z-index: 25;
+    background: var(--popover, var(--card));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 14px 36px -8px rgba(0,0,0,0.24);
+    padding: 8px;
+    width: 312px;
+  }
+  .pop-tr { top: calc(100% + 6px); right: 0; }
+  .pop-bl { bottom: calc(100% + 8px); left: 0; width: 296px; }
+  .pop-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground, var(--muted));
+  }
+  .pf-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 9px;
+    border-radius: 8px;
+    text-align: left;
+  }
+  .pf-item:hover { background: var(--secondary); }
+  .pf-item.on { background: color-mix(in srgb, var(--primary) 11%, transparent); }
+  .pf-item-t { flex: 1; min-width: 0; }
+  .pf-item-t b { display: block; font-size: 12.5px; font-weight: 600; }
+  .pf-item-t span { display: block; font-size: 11px; color: var(--muted-foreground, var(--muted)); }
+  .pop-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+  .pop-act {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 9px;
+    border-radius: 7px;
+    font-size: 12px;
+  }
+  .pop-act:hover { background: var(--secondary); }
+  .kv-mini {
+    padding: 6px 8px;
+    display: grid;
+    gap: 6px;
+    font-size: 11.5px;
+  }
+  .kv-mini label { display: block; font-size: 10.5px; color: var(--muted-foreground, var(--muted)); }
+  .fp-box {
+    margin-top: 2px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.5;
+    word-break: break-all;
+  }
+
+  /* Page Content */
+  .page { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .page-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .page-h h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .page-h p { margin: 2px 0 0; font-size: 12px; color: var(--muted-foreground, var(--muted)); }
+
+  /* Tabs inside System page */
+  .sys-tabs {
+    display: flex;
+    gap: 14px;
+    border-bottom: 1px solid var(--border);
+    margin-top: -2px;
+  }
+  .sys-tab {
+    padding: 6px 2px 8px;
+    font-size: 12.5px;
+    color: var(--muted-foreground, var(--muted));
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .sys-tab.on {
+    color: var(--foreground);
+    font-weight: 600;
+    border-bottom-color: var(--primary);
+  }
+
+  .card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .card-h b { font-size: 13px; }
+  .kv-grid {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 6px 10px;
+    font-size: 12px;
+    align-items: center;
+  }
+  .kv-grid .k { color: var(--muted-foreground, var(--muted)); font-size: 11.5px; }
+
+  .cp-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .cp-row.on {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 27px;
+    padding: 0 11px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--card);
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--secondary); }
+  .btn.pri { background: var(--primary); color: var(--primary-foreground, #fff); border-color: var(--primary); }
+  .btn.sm { height: 24px; padding: 0 9px; font-size: 11.5px; }
+
+  .tbl { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .tbl-r {
+    display: grid; grid-template-columns: 1.5fr 0.9fr 1fr;
+    align-items: center; padding: 9px 12px; font-size: 12px; border-top: 1px solid var(--border);
+  }
+  .tbl-r:first-child { border-top: 0; background: var(--secondary); font-size: 11.5px; color: var(--muted-foreground, var(--muted)); padding: 7px 12px; }
+
+  .toast {
+    position: absolute; bottom: 12px; right: 12px; z-index: 40;
+    padding: 6px 12px; border-radius: 8px;
+    background: var(--foreground); color: var(--background);
+    font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.2);
+  }
+</style>
+</head>
+<body>
+<div class="root" id="app"></div>
+
+<script>
+const PROFILES = [
+  { id: "default", name: "主力自用", server: "https://144.34.233.37:8080", addr: "144.34.233.37:8080", device: "liuzhengdongdeMac-Mini.local", fp: "1V1S RFMQ h9oI N48W X7qS N5eN UedF UhaG KZZx 7WoA zWw", nodes: ["🇺🇸 洛杉矶 A", "🇯🇵 东京 A", "🇸🇬 新加坡 A"] },
+  { id: "family", name: "家人节点", server: "https://203.0.113.10:8080", addr: "203.0.113.10:8080", device: "liuzhengdongdeMac-Mini.local", fp: "DU4S swBA 8LrU y6O0 MfhR RxLJ Z2p8 GPRE pV2Z fxtj 9Wg", nodes: ["🇭🇰 香港 B", "🇯🇵 大阪 A"] }
+];
+
+let state = {
+  tab: "sys",       // sys | topRight | footLeft
+  currentId: "default",
+  page: "system",   // nodes | system
+  sysTab: "cp",     // cp | devices
+  popOpen: false,
+  popView: "main",  // main | detail
+  toast: ""
+};
+
+function current() { return PROFILES.find(p => p.id === state.currentId) || PROFILES[0]; }
+
+function setToast(msg) {
+  state.toast = msg;
+  render();
+  setTimeout(() => { state.toast = ""; render(); }, 1800);
+}
+
+function selectTab(t) {
+  state.tab = t;
+  state.popView = "main";
+  if (t === "sys") {
+    state.page = "system";
+    state.sysTab = "cp";
+    state.popOpen = false;
+  } else if (t === "topRight") {
+    state.page = "nodes";
+    state.popOpen = true;
+  } else if (t === "footLeft") {
+    state.page = "nodes";
+    state.popOpen = true;
+  }
+  render();
+}
+
+function switchTo(id) {
+  state.currentId = id;
+  state.popOpen = false;
+  state.popView = "main";
+  setToast("已切换到控制面「" + current().name + "」");
+}
+
+function renderSummary() {
+  const map = {
+    sys: {
+      title: "方向一：归位「系统 → 控制面」（把控制面从全局导航壳彻底拿走）",
+      pill: "最符合低频属性 · 左上角零干扰",
+      desc: "95% 的时候只连一套控制面，控制面与「设备与接入 / 备份 / 更新」同属系统管理，不该常驻全局菜单。左上角回归纯粹的 MPX + 业务导航；顶栏右侧只留极轻的状态点，点击或进「系统」才管理切换与指纹。"
+    },
+    topRight: {
+      title: "方向二：放进「右上角数据与状态栏」（与刷新时间、在线状态合并）",
+      pill: "横向空间宽 · 语义归属「数据源」",
+      desc: "右上角本来就有「更新于 17:17」「刷新」「主题」，控制面代表「当前数据来自哪台服务器」，放这里最顺理成章。横向宽敞，地址和指纹再也不用在 220px 窄侧栏里尴尬折行。"
+    },
+    footLeft: {
+      title: "方向三：沉到「左下角引擎底座」（类似 VS Code Remote / Docker Desktop）",
+      pill: "左上做业务 · 左下看引擎连接",
+      desc: "左上角 100% 留给品牌和核心导航（总览/节点/用户），底层基础设施的连接状态（控制面地址、TLS 指纹、切换）沉在侧栏最底端，向上弹出浮层，随手可切又不抢主视觉。"
+    }
+  };
+  const m = map[state.tab];
+  return `<div class="summary">
+    <div class="summary-top">
+      <span class="summary-title">${m.title}</span>
+      <span class="summary-pill">${m.pill}</span>
+    </div>
+    <p class="summary-desc">${m.desc}</p>
+  </div>`;
+}
+
+function renderNav() {
+  const items = [
+    { id: "overview", label: "总览" },
+    { id: "nodes", label: "节点", badge: current().nodes.length },
+    { id: "users", label: "用户", badge: "3" },
+    { id: "sub", label: "订阅" },
+    { id: "rules", label: "分流" },
+    { sep: true },
+    { id: "doctor", label: "体检" },
+    { id: "system", label: "系统" }
+  ];
+  return items.map(it => {
+    if (it.sep) return `<div class="nav-sep"></div>`;
+    const on = state.page === it.id;
+    const clickable = it.id === "nodes" || it.id === "system";
+    return `<button class="nav-btn ${on ? "on" : ""}" onclick="${clickable ? `state.page='${it.id}';state.popOpen=false;render()` : `setToast('点击「节点」或「系统」体验导航切换')`}">
+      <span>${it.label}</span>
+      ${it.badge ? `<span class="nav-ct mono">${it.badge}</span>` : ""}
+    </button>`;
+  }).join("");
+}
+
+function renderPopoverContent(p) {
+  if (state.popView === "detail") {
+    return `<button class="pop-act" style="font-weight:600;justify-content:flex-start" onclick="state.popView='main';render()">‹ 返回控制面列表</button>
+      <div class="pop-sep"></div>
+      <div class="kv-mini">
+        <div><label>完整地址</label><div class="mono">${p.server}</div></div>
+        <div><label>这台电脑在控制面登记为</label><div>${p.device}</div></div>
+        <div><label>TLS 证书指纹</label><div class="fp-box mono">${p.fp}</div></div>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button class="btn sm pri" style="flex:1" onclick="setToast('已复制指纹')">复制指纹</button>
+          <button class="btn sm" onclick="state.popOpen=false;state.page='system';state.sysTab='devices';render()">已接入设备 ›</button>
+        </div>
+      </div>`;
+  }
+  return `<div class="pop-hdr">
+      <span>当前连接控制面</span>
+      <button onclick="state.popOpen=false;render()">收起</button>
+    </div>
+    ${PROFILES.map(item => `
+      <button class="pf-item ${item.id === p.id ? "on" : ""}" onclick="switchTo('${item.id}')">
+        <span class="dot ${item.id === p.id ? "ok" : ""}"></span>
+        <span class="pf-item-t"><b>${item.name}</b><span class="mono">${item.addr}</span></span>
+        ${item.id === p.id ? `<span style="color:var(--primary);font-weight:600">✓</span>` : ""}
+      </button>
+    `).join("")}
+    <div class="pop-sep"></div>
+    <button class="pop-act" onclick="setToast('打开接入已有控制面流程')"><span>+ 接入另一套控制面…</span></button>
+    <button class="pop-act" onclick="state.popView='detail';render()"><span>证书指纹与本机信息</span><span style="color:var(--muted-foreground,var(--muted))">›</span></button>`;
+}
+
+function renderTopRight(p) {
+  if (state.tab === "topRight") {
+    return `<div class="top-cp-wrap">
+      <button class="top-cp-pill ${state.popOpen ? "open" : ""}" onclick="state.popOpen=!state.popOpen;state.popView='main';render()">
+        <span class="dot ok"></span>
+        <span>${p.name}</span>
+        <span class="mono" style="font-size:11px;opacity:.72">${p.addr}</span>
+        <span style="font-size:10px;opacity:.7">▾</span>
+      </button>
+      ${state.popOpen ? `<div class="popover pop-tr">${renderPopoverContent(p)}</div>` : ""}
+    </div>`;
+  }
+  if (state.tab === "sys") {
+    return `<button class="subtle-cp-link" title="点击前往 系统 → 控制面" onclick="state.page='system';state.sysTab='cp';render()">
+      <span class="dot ok"></span>
+      <span>${p.name}</span>
+      <span class="mono" style="font-size:11px">(${p.addr})</span>
+    </button>`;
+  }
+  return "";
+}
+
+function renderFooter(p) {
+  if (state.tab !== "footLeft") return "";
+  return `<div class="side-foot">
+    <button class="foot-cp ${state.popOpen ? "open" : ""}" onclick="state.popOpen=!state.popOpen;state.popView='main';render()">
+      <span class="dot ok"></span>
+      <span class="foot-cp-t">
+        <b>${p.name}</b>
+        <span class="mono">${p.addr}</span>
+      </span>
+      <span style="font-size:11px;color:var(--muted-foreground,var(--muted))">⌃</span>
+    </button>
+    ${state.popOpen ? `<div class="popover pop-bl">${renderPopoverContent(p)}</div>` : ""}
+  </div>`;
+}
+
+function renderMainBody(p) {
+  if (state.page === "system") {
+    return `<div class="page">
+      <div class="page-h">
+        <div><h3>系统</h3><p>控制面连接、通知、设备接入、备份与版本</p></div>
+      </div>
+      <div class="sys-tabs">
+        <button class="sys-tab ${state.sysTab === "cp" ? "on" : ""}" onclick="state.sysTab='cp';render()">控制面</button>
+        <button class="sys-tab" onclick="setToast('通知设置页')">通知</button>
+        <button class="sys-tab ${state.sysTab === "devices" ? "on" : ""}" onclick="state.sysTab='devices';render()">设备与接入</button>
+        <button class="sys-tab" onclick="setToast('备份与恢复页')">备份与恢复</button>
+        <button class="sys-tab" onclick="setToast('更新与版本页')">更新与版本</button>
+      </div>
+      ${state.sysTab === "devices" ? `
+        <div class="card">
+          <div class="card-h"><b>已接入此控制面的电脑（2 台）</b><button class="btn sm" onclick="state.sysTab='cp';render()">查看指纹 ›</button></div>
+          <div class="kv-grid">
+            <span class="k">1 · 这台</span><span>${p.device}</span>
+            <span class="k">2 · 3天前</span><span style="display:flex;justify-content:space-between;align-items:center"><span>MacBook-Pro.local</span><button class="btn sm" onclick="setToast('吊销设备')">吊销</button></span>
+          </div>
+        </div>
+      ` : `
+        <div class="card">
+          <div class="card-h">
+            <b>当前连接 · ${p.name}</b>
+            <div style="display:flex;gap:6px">
+              <button class="btn sm" onclick="setToast('已复制证书指纹')">复制指纹</button>
+              <button class="btn sm" onclick="setToast('重命名控制面别名')">改别名</button>
+            </div>
+          </div>
+          <div class="kv-grid">
+            <span class="k">控制面地址</span><span class="mono">${p.server}</span>
+            <span class="k">证书指纹</span><span class="mono" style="font-size:11px;word-break:break-all">${p.fp}</span>
+            <span class="k">本机设备名</span><span>${p.device}</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h">
+            <b>本机保存的控制面（${PROFILES.length}）</b>
+            <button class="btn sm pri" onclick="setToast('打开接入已有控制面向导')">+ 接入新控制面</button>
+          </div>
+          ${PROFILES.map(item => `
+            <div class="cp-row ${item.id === p.id ? "on" : ""}">
+              <span class="dot ${item.id === p.id ? "ok" : ""}"></span>
+              <div style="flex:1;min-width:0">
+                <b style="font-size:12.5px">${item.name}</b>
+                <span class="mono" style="font-size:11px;color:var(--muted-foreground,var(--muted));margin-left:6px">${item.addr}</span>
+              </div>
+              ${item.id === p.id ? `<span style="font-size:11.5px;color:var(--primary);font-weight:600">当前使用中</span>` : `<button class="btn sm" onclick="switchTo('${item.id}')">切换</button>`}
+            </div>
+          `).join("")}
+        </div>
+      `}
+    </div>`;
+  }
+
+  return `<div class="page">
+    <div class="page-h">
+      <div><h3>节点</h3><p>状态来自控制面（${p.name}）的定时检查</p></div>
+      <div style="display:flex;gap:6px"><button class="btn sm">检查触达</button><button class="btn sm pri">+ 添加节点</button></div>
+    </div>
+    <div class="tbl">
+      <div class="tbl-r"><span>节点</span><span>状态</span><span>配置</span></div>
+      ${p.nodes.map((n, i) => `<div class="tbl-r">
+        <div><b>${n}</b><div class="mono" style="font-size:11px;color:var(--muted-foreground,var(--muted))">144.34.233.${37 + i}</div></div>
+        <div><span class="dot ok" style="display:inline-block;margin-right:5px"></span>运行中</div>
+        <div>已同步</div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function render() {
+  const p = current();
+  const tabs = [
+    { id: "sys", label: "方向一 · 归位「系统 → 控制面」", tag: "最干净" },
+    { id: "topRight", label: "方向二 · 右上角状态区", tag: "空间宽" },
+    { id: "footLeft", label: "方向三 · 左下角引擎底座", tag: "随手切" }
+  ];
+  const crumbTitle = state.page === "system" ? `系统 <span class="muted">/</span> ${state.sysTab === "devices" ? "设备与接入" : "控制面"}` : "节点";
+
+  document.getElementById("app").innerHTML = `
+    <div class="vbar">
+      ${tabs.map(t => `<button class="vtab ${state.tab === t.id ? "active" : ""}" onclick="selectTab('${t.id}')">${t.label}<span class="vtag">${t.tag}</span></button>`).join("")}
+    </div>
+    ${renderSummary()}
+    <div class="win">
+      <aside class="side">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="brand">
+          <div class="brand-l">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h10M4 12h14M4 16h10"/><path d="M14 5l4 7-4 7"/></svg>
+            <span>MPX</span>
+          </div>
+          <span class="brand-v mono">v0.9.16</span>
+        </div>
+        <nav class="nav-list">${renderNav()}</nav>
+        ${renderFooter(p)}
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="crumb">${crumbTitle}</div>
+          <div class="sp"></div>
+          ${renderTopRight(p)}
+          <div class="top-meta"><span>17:17</span></div>
+          <button class="ico-btn" title="刷新" onclick="setToast('已刷新数据')">↻</button>
+          <button class="ico-btn" title="切换主题" onclick="setToast('切换深浅色')">☾</button>
+        </header>
+        ${renderMainBody(p)}
+      </main>
+      ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
+    </div>
+  `;
+}
+
+render();
+</script>
+</body>
+</html>

@@ -61,7 +61,14 @@ async function measure(page, selector, hash, title, overlay = false) {
       }[args.hash];
       const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility === 'visible';
       const check = () => {
-        const root = document.querySelector(args.overlay === 'modal' ? '#modal.open' : args.overlay ? '#drawer.open' : '#page');
+        const root = document.querySelector(args.overlay === 'modal' ? '#modal.open' : args.overlay === 'cp-pop' ? '.cp-pop' : args.overlay ? '#drawer.open' : '#page');
+        // 控制面浮层的列表态没有 h2;只要求浮层可见且文本已到(加载中/列表/切换中都算)。
+        if (args.overlay === 'cp-pop') {
+          if (location.hash === '#' + args.hash && root && visible(root) && root.textContent?.includes(args.title)) {
+            resolve(performance.now() - start); observer.disconnect();
+          }
+          return;
+        }
         const h = root?.querySelector(args.overlay ? 'h2' : 'h1');
         const rect = h?.getBoundingClientRect();
         const busy = args.overlay ? root?.querySelector('[aria-busy=true]') : document.querySelector('main[aria-busy=true]') || root?.querySelector('table,.rp-bar,.stats,.sys-tabs');
@@ -222,10 +229,9 @@ test('控制面列表与切换立即显示目标，失败可原地重试', async
     await r.fulfill({ status: 503, json: { error: '切换失败测试' } });
   });
   await login(page, env); await ready(page, 'nodes');
-  await page.click('.profile[data-act=cp-toggle]');
-  await measure(page, '[data-act=cp-switch]', 'nodes', '切换控制面', 'modal');
+  await measure(page, '.profile[data-act=cp-toggle]', 'nodes', '控制面', 'cp-pop');
   await expect(page.locator('.pfitem')).toHaveCount(2);
-  await measure(page, '.pfitem[data-name=test]', 'nodes', '正在切换到 test', 'modal');
+  await measure(page, '.pfitem[data-name=test]', 'nodes', '正在切换到 test', 'cp-pop');
   await expect(page.locator('#prof-err')).toHaveText('切换失败测试');
   await expect(page.locator('#profile-retry')).toBeVisible();
 });

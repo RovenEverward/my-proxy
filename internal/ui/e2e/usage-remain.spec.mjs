@@ -72,7 +72,8 @@ async function barMatches(bar, percent, cls, theme, expired = false) {
     light: { ok: "rgb(79, 148, 104)", warn: "rgb(201, 151, 0)", bad: "rgb(210, 75, 69)" },
     dark: { ok: "rgb(90, 154, 110)", warn: "rgb(212, 167, 44)", bad: "rgb(222, 95, 92)" },
   };
-  await expect(fill).toHaveCSS("background-color", expired ? (theme === "light" ? "rgb(161, 161, 170)" : "rgb(91, 93, 100)") : colors[theme][cls]);
+  // 过期行的用量条用 --faint(--ui-text-disabled:浅 #a8a29e / 深 #706861)。
+  await expect(fill).toHaveCSS("background-color", expired ? (theme === "light" ? "rgb(168, 162, 158)" : "rgb(112, 104, 97)") : colors[theme][cls]);
 }
 for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
   test(`剩余用量 · ${platform} ${theme}`, async ({ page }) => {
@@ -92,7 +93,8 @@ for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
       await expect(use).toHaveAttribute("title", /^已用 .* \/ 上限 /);
       await expect(use.locator(":scope > span")).toHaveText(["over", "expired-over"].includes(name) ? "超 2.0 GB / 100.0 GB" : name === "empty" ? "剩 0 / 100.0 GB" : /^剩 /);
     }
-    await expect(row(page, "expired-over").locator(".use > span")).toHaveCSS("color", theme === "light" ? "rgb(113, 113, 122)" : "rgb(143, 143, 150)");
+    // 过期行文字置灰取 --muted(Terminus:浅 #706963 / 深 #a59c95)。
+    await expect(row(page, "expired-over").locator(".use > span")).toHaveCSS("color", theme === "light" ? "rgb(112, 105, 99)" : "rgb(165, 156, 149)");
     const bad = theme === "light" ? "rgb(220, 38, 38)" : "rgb(242, 85, 90)";
     await expect(row(page, "empty").locator(".use > span")).toHaveCSS("color", bad);
     await expect(row(page, "over").locator(".use > span")).toHaveCSS("color", bad);

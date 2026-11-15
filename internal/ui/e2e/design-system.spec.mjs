@@ -97,7 +97,8 @@ test("主页主题由根元素持有，抽屉继承相同字体与表面", async
   expect(styles.drawer).toBe(styles.main);
   await page.keyboard.press("Escape");
   await page.goto(env.origin + "/#users");
-  await expect(page.locator("html")).toHaveAttribute("data-ui", "classic");
+  // 全站统一 workspace 皮肤(0f1229b 起不再按页切档)。
+  await expect(page.locator("html")).toHaveAttribute("data-ui", "workspace");
 });
 
 for (const theme of ["light", "dark"]) test(`组件目录窄屏与键盘 · ${theme}`, async ({ page }) => {

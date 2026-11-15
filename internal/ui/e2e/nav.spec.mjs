@@ -1,5 +1,5 @@
 // 界面骨架第 1 步:新侧栏(按使用顺序)、旧地址跳到新位置、用户页的「用户 | 套餐」页签、
-// 侧栏控制面卡片的展开面板、节点详情里的「连接方式」卡片、订阅 / 系统两页各自保存不丢对方的字段。
+// 顶栏控制面胶囊的浮层与指纹详情、节点详情里的「连接方式」卡片、订阅 / 系统两页各自保存不丢对方的字段。
 import { test, expect } from "@playwright/test";
 import { startEnv, login } from "./env.mjs";
 
@@ -48,28 +48,39 @@ test("用户页两个页签;套餐页签亮着「用户」", async ({ page }) =>
   await expect(page.locator("[data-act=pl-edit]").first()).toBeVisible();
 });
 
-test("控制面卡片:点开是地址、4 位一组的指纹、复制和切换,再点收起", async ({ page }) => {
+test("控制面胶囊:顶栏点开是列表入口,详情区是地址、4 位一组的指纹、复制,再点收起", async ({ page }) => {
   const FP = "SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg";
   await page.route("**/ui/meta", async r => {
     const res = await r.fetch(); const j = await res.json();
     await r.fulfill({ response: res, json: { ...j, fingerprint: FP, profiles: true } });
   });
+  await page.route("**/api/devices", r => r.fulfill({ json: [{ name: "e2e-本机", current: true }] }));
+  await page.route("**/local/profiles", r => r.fulfill({ json: [
+    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com" },
+  ] }));
   await login(page, env);
   await page.goto(env.origin + "/#overview");
+  // 侧栏不再放控制面信息,胶囊在顶栏。
+  await expect(page.locator(".side .profile")).toHaveCount(0);
+  const pill = page.locator(".top .profile[data-act=cp-toggle]");
+  await expect(pill).toBeVisible();
   await expect(page.locator(".cp-pop")).toHaveCount(0);
   // 连上是墨色点,不是绿色。
-  const dot = page.locator(".cpw .dot.ok");
+  const dot = page.locator(".cp-menu .dot.ok");
   await expect(dot).toHaveCount(1);
   const [bg, ink] = await dot.evaluate(e => [getComputedStyle(e).backgroundColor, getComputedStyle(e.closest(".app")).color]);
   expect(bg).toBe(ink);
-  await page.click(".profile[data-act=cp-toggle]");
+  await pill.click();
   const pop = page.locator(".cp-pop");
+  await expect(pop.locator(".pfitem")).toHaveCount(2);
+  await expect(pop.locator("[data-act=profile-add]")).toHaveText(/添加控制面/);
+  await page.click("[data-act=cp-detail]");
   await expect(pop).toContainText("地址");
   await expect(pop.locator(".fp i").first()).toHaveText("DU4S");
+  await expect(pop).toContainText("e2e-本机");
+  await expect(pop).toContainText("此凭据仅保存在本机");
   await expect(pop.locator("[data-act=copy]")).toHaveAttribute("data-text", FP);
-  await expect(pop.locator("[data-act=cp-switch]")).toHaveText("切换控制面");
-  await expect(pop).toContainText("只在这台电脑上能打开");
-  await page.click(".profile[data-act=cp-toggle]");
+  await pill.click();
   await expect(page.locator(".cp-pop")).toHaveCount(0);
 });
 
