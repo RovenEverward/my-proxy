@@ -2,6 +2,21 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## v0.9.16 (2026-11-15)
+
+### 要点
+- 不通节点退避放缓：断线头一小时维持 30s→5m 阶梯，持续不通一小时后改为每小时一探；新增人工重试入口 `mpx node retry <节点>` / 总览横幅「立即重试」/ `POST /api/nodes/{id}/backoff/retry`。删节点时顺带清掉它的退避条。
+- 外部订阅混入：可把已有外部订阅挂到指定用户的 MPX 订阅里，客户端同用自建与外部节点；新增 `mpx source` 与来源管理界面。
+- 规则集私有化分发（UC-05）：控制面镜像被引用的上游规则集，订阅里已就绪文件的 url 改写成控制面地址。默认关闭，`mpx settings ruleset-mode set` 开启，`mpx ruleset status|refresh` 查看与刷新。
+- 节点触达检查（UC-06）：操作机与控制面双来源对各代理端口做真实 TCP/UDP 探测，给出双通/境内不通/都不通/未知判定；`mpx node check` 与节点列表「检查触达」。
+- 安装更便捷：macOS 走 `brew install --cask RovenEverward/mpx/mpx`，Windows 走 winget，均同时得到桌面程序与 `mpx` 命令行。
+- 管理界面全面组件化（React/TypeScript）：订阅页改为行式清单、外壳样式统一、侧边栏当前项统一品牌高亮；UI 源码指纹随产物嵌入，构建前后不一致会被编译期拦住。
+
+### 兼容性
+- 控制面 API 只增不破：新增 `/api/reach/*`、`/api/rulesets`、backoff retry 等端点，旧端点行为不变。
+- 订阅内容可能变化：为某用户开启外部订阅后，其客户端会同时出现自建与外部节点；开启规则集分发后，订阅里规则集 url 指向控制面。
+- 数据库新增 `reach_checks`、`ruleset_snapshots` 与来源相关表，旧版本读库不受影响但请先用新版本备份。
+
 ## v0.9.15 (2026-11-05)
 
 ### 要点
