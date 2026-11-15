@@ -126,7 +126,7 @@ func (u *User) Status(now time.Time) Status {
 //   - 已解析且没挂套餐(PlanID 为空):同样按旧语义,InboundIDs 为空表示全部。
 //   - 已解析且挂了套餐:all_nodes 套餐就是全部;否则可用范围 = 套餐入站 ∪ 用户
 //     自己的 InboundIDs(额外授权)。套餐为空且没有额外授权时什么都不能用 ——
-//     空套餐不等于全开,这是有意的(见 docs/internal/plans-rfc.md)。
+//     空套餐不等于全开,这是有意的。
 func (u *User) AllowsInbound(inboundID int64) bool {
 	if u.planResolved && u.PlanID != nil {
 		if u.planAllNodes || u.planInbounds[inboundID] {

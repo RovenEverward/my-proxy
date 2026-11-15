@@ -7,7 +7,7 @@
 - `internal/control/`、`internal/node/`：后台循环与 SSH 驱动节点
 - `internal/render/`：订阅渲染与节点配置渲染（两套，不共用）
 - `internal/cli/`、`internal/ui/`：本机入口；`deploy/`：安装脚本与 systemd 单元
-- 整体怎么配合、每块的边界和坑见 [docs/atlas/README.md](docs/atlas/README.md)；决策日志在 [docs/internal/decisions.md](docs/internal/decisions.md)
+- 整体怎么配合、每块的边界和坑见 [docs/atlas/README.md](docs/atlas/README.md)
 
 ## 验证
 - `go vet ./... && go test ./... -count=1`：改 Go 代码必须通过（约 1 分钟）
@@ -40,7 +40,7 @@
 
 ## 维护
 - 改了某一块的边界、流程，或踩到新坑：同一次改动里更新对应的 atlas 节点，刷新 verified。
-- 硬约束、`docs/internal/decisions.md`、`docs/atlas/ideas/`、根节点的 30 秒版和愿景与思想属于守护层：不直接改，在改动说明里单独列出建议，等主人确认。
+- 硬约束、`docs/atlas/ideas/`、根节点的 30 秒版和愿景与思想属于守护层：不直接改，在改动说明里单独列出建议，等主人确认。
 - 代码和守护层冲突时，停下来问主人，不要自行二选一。
 - 提交前跑 `python3 scripts/atlas_audit.py`。
 - 提交、PR、文档里不写个人真实身份信息。

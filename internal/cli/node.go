@@ -80,7 +80,7 @@ var nodeHeaders = []string{
 // 使用者看到的就是这个节点实际会用到的值。
 func nodeRow(v model.NodeView, now time.Time) []string {
 	n := v.Node
-	// 名字为主、id 放最后(docs/internal/node-naming-rfc.md §8):「名称」是展示名,
+	// 名字为主、id 放最后:「名称」是展示名,
 	// 还没有展示名时就是内部名;「内部名」是 CLI 里敲的那个。
 	display := v.Display
 	if display == "" {

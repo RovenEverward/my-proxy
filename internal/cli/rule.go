@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// mpx rule:分流规则(见 docs/internal/routing-rules-rfc.md)。序号从 1 开始,
+// mpx rule:分流规则。序号从 1 开始,
 // 与 mpx rule list 显示的一致;--user 指向某个用户自己的规则,不带是全局规则。
 
 func init() { rootCmd.AddCommand(newRuleCmd(), newGroupCmd()) }

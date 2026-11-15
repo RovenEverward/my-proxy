@@ -28,6 +28,24 @@ import (
 //go:embed assets
 var assets embed.FS
 
+// EmbeddedSources 返回构建产物里记录的前端源码指纹。
+// assets/build/UI-SOURCES 由 scripts/package-ui.mjs 在 ui:build 时写入,
+// 第一行形如 "ui-src <sha256>"。要核对当前源码是否就是这份 UI 的来源,
+// 用 scripts/ui-fingerprint.mjs 重新算一遍源码侧清单,比 sha256。
+// 产物缺失或没有该文件时返回空字符串:对这类老构建无法判断新旧。
+func EmbeddedSources() string {
+	manifest, err := assets.ReadFile("assets/build/UI-SOURCES")
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(manifest), "\n")
+	hash, found := strings.CutPrefix(line, "ui-src ")
+	if !found {
+		return ""
+	}
+	return hash
+}
+
 // Fonts 给控制面的订阅页用:同一份内置字体。
 //
 // 订阅页与 mpx ui 的页面不在同一个进程里(前者在控制面,后者在本机),但字体

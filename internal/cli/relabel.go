@@ -148,7 +148,7 @@ func relabelApply(c doer, plans []relabelPlanItem) ([]relabelResult, error) {
 var nodeRelabelCmd = &cobra.Command{
 	Use:   "relabel [节点...]",
 	Short: "给还没有显示名的节点批量识别地区/城市,先出对照表再确认写入",
-	Long: `给还没有显示名的节点批量起显示名(docs/internal/node-naming-rfc.md §6)。
+	Long: `给还没有显示名的节点批量起显示名。
 
 对每个目标节点做一次 locate(ipwho.is),字母按节点 ID 顺序分配(la-1 是 A、la-2 是 B),
 先打印「旧名 → 新名」对照表,确认后才写入。已经有显示名的节点一律跳过,用户写过的

@@ -222,7 +222,7 @@ func (s *Store) GetUserBySubToken(token string) (*model.User, error) {
 // 迟早会出现"列表说 active、订阅说 limited"这种两份规则打架。代价是每次列表要
 // 把用户读进内存再筛 —— 全量读用户本来就在别处做过(巡检、渲染节点配置),量级
 // 在千级时这点内存和 CPU 不值得换一份第二实现;真到了十万级再考虑给 SQL 版本
-// 补一份共用判定,见 decisions.md 第 24 条。
+// 补一份共用判定。
 type UserQuery struct {
 	// Status 为空表示不限。取值合法性由调用方先校验(非法值在这里会筛出空结果)。
 	Status model.Status

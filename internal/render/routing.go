@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// 由分流规则生成订阅的分流部分(见 docs/internal/routing-rules-rfc.md)。
+// 由分流规则生成订阅的分流部分。
 //
 // 模板只提供与分流无关的段(DNS、嗅探等);Clash 的 rule-providers / proxy-groups /
 // rules 与 sing-box 的 route.rule_set / route.rules / route.final 由这里生成并覆盖。
@@ -270,7 +270,7 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 		route = map[string]any{}
 		cfg["route"] = route
 	}
-	// 模板开头连续的 sniff / hijack-dns / resolve 等纯动作规则要留在最前(见 docs/internal/routing-rules-rfc.md)。
+	// 模板开头连续的 sniff / hijack-dns / resolve 等纯动作规则要留在最前。
 	rules := []any{}
 	for _, r := range toAnySlice(route["rules"]) {
 		m, ok := r.(map[string]any)

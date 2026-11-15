@@ -10,7 +10,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// 套餐(权限组)的存储,见 docs/internal/plans-rfc.md。
+// 套餐(权限组)的存储。
 //
 // users 表刻意不加 plan_id 列:用户的整体 PUT 路径保持不动,归属放在
 // user_plans 这张一人一行的关联表里。

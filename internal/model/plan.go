@@ -11,7 +11,7 @@ import (
 //
 // 与 User.InboundIDs 为空表示「全部入站」正好相反,空套餐表示什么都不能用;
 // 「全部」由 AllNodes 显式表达,免得空套餐被误当成全开。见
-// docs/internal/plans-rfc.md。
+
 type Plan struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`

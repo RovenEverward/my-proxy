@@ -10,7 +10,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)), "/styles": fileURLToPath(new URL("../assets/styles", import.meta.url)) } },
   build: {
-    outDir: "../assets/build",
+    // 先写临时目录;package-ui.mjs 校验指纹、生成 MANIFEST 后,把 build.tmp 原子替换成
+    // 正式的 assets/build。直接写正式目录会让并行的 ui:build 把新旧 chunk 混在一起。
+    outDir: "../assets/build.tmp",
     emptyOutDir: true,
     sourcemap: false,
     rollupOptions: { input: {

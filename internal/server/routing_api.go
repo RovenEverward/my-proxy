@@ -10,7 +10,7 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 分流规则的管理接口(全部是新增,见 docs/internal/routing-rules-rfc.md §5)。
+// 分流规则的管理接口。
 
 func (s *Server) routingRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/routing", s.handleGetRouting)

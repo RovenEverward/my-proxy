@@ -25,16 +25,16 @@ verified: 2026-11-12 @ cadd0fb
 
 后台每一轮的顺序是有意的：先**采样**（读累计值，减去 `traffic_samples` 里的上次值），再**重置**到期周期，最后**收敛**名单（[internal/control/loop.go](../../internal/control/loop.go)）。每 10 轮顺路**巡检**：一条 ssh 读回服务状态、核心版本、配置哈希、证书剩余天数，和「最后一次下发记下的哈希」比对发现漂移；整轮 45 秒预算，第一轮就跑。完整走查和真实输出见 [mpx 是怎么搭起来的](../internal/index.md)。
 
-SSH 和核心安装在 [internal/node](../../internal/node/)；节点配置渲染在 [internal/render/xray.go](../../internal/render/xray.go) 等文件，和订阅渲染不共用代码（decisions 第 12 条）。
+SSH 和核心安装在 [internal/node]。
 
 ## 为什么这样设计
 
-节点零维护：不用升级组件、不用守护进程、不用给它签证书（decisions 第 2、13、14 条）。代价是拿不到结构化状态，要问就得 ssh。分两条路是因为配额恢复和续费都会触发加人，每次都重启会把整台节点的人断一次（第 3 条）。
+节点零维护：不用升级组件、不用守护进程、不用给它签证书。
 
 ## 坑
 
-- 名单变化 → sing-box 承载的 Hysteria2 / TUIC 会重启该节点全部 QUIC 连接；xray 摘人后已建立的 TCP 连接可能继续传 → 这是已接受的限制，见 [QUIC 验证](../internal/quic-validation.md)。
-- 读数比上次小 → 说明节点上的 xray 重启过 → 记异常日志，不当成负用量（decisions 第 9 条）。
-- ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短（decisions 第 34 条）。
+- 名单变化 → sing-box 承载的 Hysteria2 / TUIC 会重启该节点全部 QUIC 连接；xray 摘人后已建立的 TCP 连接可能继续传 → 这是已接受的限制，。
+- 读数比上次小 → 说明节点上的 xray 重启过 → 记异常日志，不当成负用量。
+- ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短。
 - 直连出口没设 `domainStrategy` → 双栈网站会优先走 IPv6，VPS 的 v6 段常被限流 → v0.7.3 起默认 `UseIPv4v6`，节点可用 `outbound_ip` 覆盖。
-- 节点不通 → 每轮重试会拖慢整轮 → 按退避跳过（decisions 第 18 条）：短期 30s 起翻倍封顶 5 分钟；持续不通一小时后放缓到每小时一探。修好了想立刻回来 → `mpx node retry <节点>` 或 `POST /api/nodes/{id}/backoff/retry` 当场跑一轮采样与收敛；`GET /api/nodes/{id}?fresh=1` 现场确认可达也会清退避。
+- 节点不通 → 每轮重试会拖慢整轮 → 按退避跳过：短期 30s 起翻倍封顶 5 分钟；持续不通一小时后放缓到每小时一探。修好了想立刻回来 → `mpx node retry <节点>` 或 `POST /api/nodes/{id}/backoff/retry` 当场跑一轮采样与收敛；`GET /api/nodes/{id}?fresh=1` 现场确认可达也会清退避。

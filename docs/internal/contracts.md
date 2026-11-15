@@ -11,7 +11,7 @@
 
 CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
 
-`init` 会 SSH 到一台机器上(它是在控制面存在之前运行的命令),但建对象的活交给 VPS 上的 `bootstrap`,后者仍是 `/api` 客户端。理由见 [decisions.md](decisions.md) 第 32 条。`diagnose` 是本地诊断入口，不连接管理 API；`node diagnose` 和 `node diagnostics` 则是纯 API 客户端。
+`init` 会 SSH 到一台机器上(它是在控制面存在之前运行的命令),但建对象的活交给 VPS 上的 `bootstrap`,后者仍是 `/api` 客户端。。`diagnose` 是本地诊断入口，不连接管理 API；`node diagnose` 和 `node diagnostics` 则是纯 API 客户端。
 
 ```
 login   [--profile 档名] [--server 地址] [--token token]
@@ -79,7 +79,7 @@ Fusion 总流程预算为上游执行时限加 3 分钟，API 再加 30 秒，CL
 
 `fusion` 封装保存固定版本与来源、执行状态、起止时间、耗时、配置、清理后的原始文本 `output`、真实上游 JSON `data`、截断标志、警告和错误。文本最多 64 KiB，上游 JSON 最多 128 KiB；完整保存记录仍受 256 KiB 限制。上游 `-json=-` 输出是终端文本前缀加 `goecs.report/v1` JSON，不能把整个 stdout 当作 JSON。隐私模式下上游 `text` 可为空，前缀仍须作为可能含 IP 的证据处理。
 
-解析要求 `schema_version:goecs.report/v1` 与 `ecs_version:v0.2.12`，保留上游 `sections` 和类型化 `components`，不凭文本拼造模块数据。状态区分 done、partial、failed、timeout 和 canceled。缺失、截断、版本不符或模块未完成的 JSON 保留部分文本与具体警告；上游取消且返回 0 也不能判为完成。完整运行与清理的证据范围见 [体检验证记录](diagnostic-validation.md)。
+解析要求 `schema_version:goecs.report/v1` 与 `ecs_version:v0.2.12`，保留上游 `sections` 和类型化 `components`，不凭文本拼造模块数据。状态区分 done、partial、failed、timeout 和 canceled。缺失、截断、版本不符或模块未完成的 JSON 保留部分文本与具体警告；上游取消且返回 0 也不能判为完成。完整运行与清理的证据范围见 [体检验证记录]。
 
 light 可选的固定密钥环境变量仍为执行机器的 `MPX_ABUSEIPDB_KEY` 与 `MPX_IPAPI_IS_KEY`，不会经远程 API 接收或进入报告。
 
@@ -235,7 +235,7 @@ $ mpx user revoke-sub alice      # 只换订阅 token,不动协议凭证
 CSV 的七列是 `用户名,流量上限,到期时间,可用性,重置策略,入站范围,备注`,导出时最后再加一列只读的
 `最后在线（UTC+8）`(顺序不拘,按列名认;不认识的列忽略,以后加列旧文件还能读)。空单元格表示「不限 /
 不过期 / 全部 / 默认策略」,`可用性` 只认 `启用`/`停用`(以及 `true`/`false`/`是`/`否`/`1`/`0`)——
-**认不出的写法会报错而不是当启用**,理由见 [decisions.md](decisions.md) 第 25 条。`到期时间` 收
+**认不出的写法会报错而不是当启用**,。`到期时间` 收
 `YYYY-MM-DD`(当地时区当天 23:59:59),`流量上限` 走和 `--limit` 一样的 1024 进制。导入按用户名 upsert:
 已存在的用户只改这七个定义字段,`used_traffic` 与协议凭证原样保留。`最后在线（UTC+8）` 取 `/api/users`
 里每个用户的 `presence.last_active_at`,固定按 UTC+8 写成 `YYYY-MM-DD HH:mm:ss`(与操作机时区无关),
@@ -296,13 +296,13 @@ $ curl -H 'Authorization: Bearer demo-token' \
 { "message": "已就绪,重启 mpx 后生效" }
 ```
 
-归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**(见 [decisions.md](decisions.md) 第 16 条)。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
+归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
 
 `sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
 
-`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段见 `internal/model/status.go` 里的 `ControlStatus`。
+`status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段
 
-`status` 里的 `version` 是**这份控制面自己的版本**(编译期注入,拿不到时为空串),`update` 是后台每 6 小时问一次 GitHub 的结果:`current` / `latest` / `behind`(落后几次发布)/ `url`(发布页)/ `notes`(发布说明摘要,按 rune 截到 2000 字)/ `published_at` / `checked_at` / `error`。**它只报告,不下载不替换** —— 升级是显式动作,走 `POST /api/update/control` 与 `mpx update apply`,见 [安装与升级](../atlas/install-update.md) 和 [decisions.md](decisions.md) 第 39 条。检查失败时 `error` 有值而上次的结论仍然保留(`checked_at` 不变),因为断网不等于没有新版本;`checked_at` 为 `null` 表示还没查过。判断"有没有更新"只需看 `behind > 0`,`behind` 为 0 涵盖了「已是最新」「比不出来(伪版本)」「没装版本号」三种情形。
+`status` 里的 `version` 是**这份控制面自己的版本**(编译期注入,拿不到时为空串),`update` 是后台每 6 小时问一次 GitHub 的结果:`current` / `latest` / `behind`(落后几次发布)/ `url`(发布页)/ `notes`(发布说明摘要,按 rune 截到 2000 字)/ `published_at` / `checked_at` / `error`。**它只报告,不下载不替换** —— 升级是显式动作,走 `POST /api/update/control` 与 `mpx update apply`,见 [安装与升级](../atlas/install-update.md) 。检查失败时 `error` 有值而上次的结论仍然保留(`checked_at` 不变),因为断网不等于没有新版本;`checked_at` 为 `null` 表示还没查过。判断"有没有更新"只需看 `behind > 0`,`behind` 为 0 涵盖了「已是最新」「比不出来(伪版本)」「没装版本号」三种情形。
 
 token 为空时**完全不校验**,所以那种模式只允许绑回环地址(非回环 + 空 token 会启动失败):
 
@@ -332,7 +332,7 @@ $ curl -H 'Authorization: Bearer wrong' localhost:8080/api/nodes
 
 响应里的 `total` 是**筛选之后**的总数,不是本页条数:客户端靠它才能说「还有 7 个」。
 `offset` 超出总数时 `users` 是 `[]`(不是 `null`)、`total` 照旧。筛选与分页在哪一层做、为什么不在 SQL 里写 Where,
-见 [decisions.md](decisions.md) 第 24 条。
+
 
 **`enabled` 可以不写,但两个方向含义不同。** 请求体里不带 `enabled` 时:
 
@@ -368,13 +368,13 @@ $ curl ... /api/nodes
 - **列表读的是缓存**,一次 ssh 都不发 —— 否则一条 `node list` 在十几台节点上要等半分钟。
 - **`?fresh=1` 现场查一次**:ssh 过去读服务状态、核心版本、配置哈希和每张证书的到期时间,落库再回答。查过之后紧接着一次不带参数的读看到的就是它,不会出现「刚查过、列表里还是旧的」。
 - **`status` 为空是「还没查过」**,不是「查过没问题」;`reachable: false` 才是问了没答,那时 `error` 里是 ssh 的原话。
-- 漂移不在响应里算,由读的人拿 `observed_hash` 和 `deployed_hash` 比(`!deployed_hash` 或问不到就是「不知道」,不是「一致」)。为什么这样分,见 [decisions.md](decisions.md) 第 20 条。
+- 漂移不在响应里算,由读的人拿 `observed_hash` 和 `deployed_hash` 比(`!deployed_hash` 或问不到就是「不知道」,不是「一致」)。为什么这样分,。
 
 **`GET /api/doctor` 是同一批检查的一次汇总**,回 `{ "checks": [ { "name", "status", "detail", "hint" } ] }`:`status` 取 `ok` / `warn` / `fail`,`hint` 是「接下来该做什么」,没有可做的就省略。v0.9.2 起每条还可带 `ui_hint`:同一句建议的界面版(只说界面操作,不出现命令),管理界面优先显示它,没有时退回 `hint`;`hint` 文字不变。检查控制面库与心跳、每台节点(现场查,走的就是上面那条 `?fresh=1` 的路)、六种订阅格式各渲染一次、采样表行数。一台节点只出一行结论,按最重的那条定。**v0.9.10 起,只增:** 每台节点的检查项都带 `node_id`(控制面里的节点 ID);有配置漂移时再多一个 `ui_action: "apply"`,界面靠它在该行放「应用到<节点>」按钮并跳到节点详情。已有字段和文案一字不改。
 
 **错误回答里的 `ui_hint`(v0.9.2 起,只增)**:错误一律是 `{ "error": "..." }`。少数错误的原话里带命令行提示(设备被吊销要重新接入、还没设设备密码、设备密码走了明文、识别地区失败),这些回答另带 `ui_hint`,是同一件事的界面说法;`error` 原话不变,CLI 照旧显示它,管理界面和桌面窗口优先显示 `ui_hint`。`POST /api/nodes` 的回答在已有的 `locate_note` 之外同样多一个 `locate_ui`。
 
-`mpx doctor` 有 fail 时退出码是 **3**(不是 1),只有 warn 时是 0 —— 理由见 [decisions.md](decisions.md) 第 23 条。
+`mpx doctor` 有 fail 时退出码是 **3**(不是 1),只有 warn 时是 0 —— 。
 
 ## 3. HTTP 订阅接口
 
@@ -388,7 +388,7 @@ POST /sub/{token}/rotate      换掉订阅 token(页面上「换个订阅地址�
 
 **不鉴权** —— 订阅 token 即凭证。这是行业惯例,但也意味着订阅链接泄露等同于凭证泄露。所以订阅 token(`sub_token`)与协议凭证种子(`key`)是分开存的:`revoke-sub` 只换前者。
 
-**订阅页**:`GET /sub/{token}` 只有走到「没点名格式、UA 规则没命中、本来要回默认 links」这一步、且请求的 `Accept` 里点名要 `text/html` 时,才回一屏 HTML(状态、流量、到期、各格式分享链接、换地址按钮)而不是配置 —— 见 [decisions.md](decisions.md) 第 26 条。客户端(不带 Accept 或 `*/*`)与任何点名格式的请求都拿不到页面。`POST /sub/{token}/rotate` 用路径里的 token 鉴权,换完旧地址立即 404,页面把新地址亮出来。
+**订阅页**:`GET /sub/{token}` 只有走到「没点名格式、UA 规则没命中、本来要回默认 links」这一步、且请求的 `Accept` 里点名要 `text/html` 时,才回一屏 HTML(状态、流量、到期、各格式分享链接、换地址按钮)而不是配置 —— 。客户端(不带 Accept 或 `*/*`)与任何点名格式的请求都拿不到页面。`POST /sub/{token}/rotate` 用路径里的 token 鉴权,换完旧地址立即 404,页面把新地址亮出来。
 
 ### 响应头
 
@@ -435,9 +435,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 `BatchMode=yes` 是这条设计里最要紧的一项:控制面是常驻进程,`ssh` 一旦停在等密码的提示上,整轮收敛就跟着停住。**日常维护必须依赖免密公钥认证。**
 新节点首次录入时，支持通过 `mpx node add --ssh-password` 由控制面执行一次密码引导（通过 `SSH_ASKPASS` 注入，不进历史、不进参数），将控制面自身公钥追加至远端 `authorized_keys`，引导完毕后密码即刻销毁，后续全部收敛继续保持 `BatchMode=yes` 免密。
 
-`ConnectTimeout=10` 只管到握手为止,**远端命令本身另有一条 deadline**:调用点按操作给预算(采样 20 秒、收敛 60 秒、`node sync` 2 分钟、`node install` 15 分钟),`internal/node` 再兜一个 15 分钟的下限,调用方自己带了更短的 deadline 就以调用方为准。超时和连不上是两种错,报错文本分开写:超时是「命令超时(节点卡住了)」,连不上还是 `ssh` 原话。理由见 [decisions.md](decisions.md) 第 17、18 条。
+`ConnectTimeout=10` 只管到握手为止,**远端命令本身另有一条 deadline**:调用点按操作给预算(采样 20 秒、收敛 60 秒、`node sync` 2 分钟、`node install` 15 分钟),`internal/node` 再兜一个 15 分钟的下限,调用方自己带了更短的 deadline 就以调用方为准。超时和连不上是两种错,报错文本分开写:超时是「命令超时(节点卡住了)」,连不上还是 `ssh` 原话。。
 
-跳板机、`ssh-agent`、`~/.ssh/config`、`known_hosts` 全部复用系统 `ssh` 已有的那套 —— 这也是当初不引 `golang.org/x/crypto/ssh` 的理由(见 [decisions.md](decisions.md) 第 2 条)。
+跳板机、`ssh-agent`、`~/.ssh/config`、`known_hosts` 全部复用系统 `ssh` 已有的那套 —— 这也是当初不引 `golang.org/x/crypto/ssh` 的理由()。
 
 ### 下发流程
 
@@ -479,7 +479,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 | 删用户 | `xray api rmu --server=... <tag> <email>` |
 | 读流量累计值 | `xray api statsquery --server=...` |
 
-`email` 就是用户名 —— 按用户聚合流量靠的是这个。读数**不带 `-reset`**:节点上的计数不再被抹掉,控制面自己存上次累计值算差(见 [decisions.md](decisions.md) 第 9 条)。
+`email` 就是用户名 —— 按用户聚合流量靠的是这个。读数**不带 `-reset`**:节点上的计数不再被抹掉,控制面自己存上次累计值算差()。
 
 `inbounduser` 返回 protojson。`xray api adu` 收的是一份**完整配置**,它从里面解出入站再逐个加用户,所以这里复用 `ServerConfig` 的入站渲染,而不是另写一份 account 拼装逻辑(两份必然漂移)。
 
@@ -491,7 +491,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
 | 加人、摘人、到期、超限 | 周期收敛(每 `--interval`) | **否** |
 | 换 xray 核心 | 人显式触发 `node install` | 是 |
 
-理由见 [decisions.md](decisions.md) 第 3 条。
+。
 
 ### 装核心
 
