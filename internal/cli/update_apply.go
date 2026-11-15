@@ -345,6 +345,7 @@ func waitNodeUpdate(c *Client, job int64) error {
 	deadline := time.Now().Add(nodeUpdatePollTimeout)
 	var since int64
 	var lastErr string
+	var failCount int
 
 	for {
 		if time.Now().After(deadline) {
@@ -366,7 +367,10 @@ func waitNodeUpdate(c *Client, job int64) error {
 			fmt.Println(nodeUpdateEventLine(ev))
 			since = ev.Seq
 			if ev.Status == "failed" || ev.Status == "rolled_back" {
-				lastErr = ev.Msg
+				failCount++
+				if lastErr == "" {
+					lastErr = ev.Msg
+				}
 			}
 		}
 
@@ -381,6 +385,10 @@ func waitNodeUpdate(c *Client, job int64) error {
 		case model.UpdateNodesFailed:
 			if since < p.Seq {
 				break
+			}
+			// 升级已改为行级继续:失败行可能不止一条,报失败数与第一条原因。
+			if failCount > 1 {
+				return fmt.Errorf("节点核心升级失败：%d 条失败，第一条原因：%s", failCount, lastErr)
 			}
 			if lastErr == "" {
 				lastErr = "有一台节点升级失败"
@@ -400,7 +408,12 @@ func nodeUpdateEventLine(ev model.UpdateNodeEvent) string {
 	case "start":
 		return fmt.Sprintf("%s：%s → %s 开始", head, dash(ev.From), dash(ev.To))
 	case "skip":
-		return fmt.Sprintf("%s：已是 %s，跳过", head, dash(ev.To))
+		// ev.Msg 里就是跳过原因(「已是目标版本」「节点不可达」等),空时按旧口径。
+		msg := ev.Msg
+		if msg == "" {
+			msg = "已是 " + dash(ev.To)
+		}
+		return fmt.Sprintf("%s：%s，跳过", head, msg)
 	case "ok":
 		return fmt.Sprintf("%s：%s → %s 完成", head, dash(ev.From), dash(ev.To))
 	case "rolled_back":

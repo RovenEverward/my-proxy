@@ -262,13 +262,13 @@ func TestUpdateNodesFallsBackToCachedWhenLiveCheckFails(t *testing.T) {
 	}
 }
 
-// 一台失败,后面的节点一个都不动,整轮 failed。
-func TestUpdateNodesStopsAfterFirstFailure(t *testing.T) {
+// 一台连通失败:该行标 failed,后续节点照常升级;整轮 failed。
+func TestUpdateNodesContinuesAfterConnFailure(t *testing.T) {
 	e := newEnv(t)
 	seedXrayNode(t, e, 1, "one", "25.1.1")
 	seedXrayNode(t, e, 2, "two", "25.1.1")
 	seedXrayNode(t, e, 3, "three", "25.1.1")
-	calls := fakeXrayUpgrade(e, map[string]error{"two": errors.New("ssh 连不上")}, nil)
+	calls := fakeXrayUpgrade(e, map[string]error{"two": errors.New("ssh: connect to host 203.0.113.2 port 22: Connection timed out")}, nil)
 
 	code, body := e.api("POST", "/api/update/nodes", nil)
 	if code != http.StatusAccepted {
@@ -281,14 +281,15 @@ func TestUpdateNodesStopsAfterFirstFailure(t *testing.T) {
 	}
 
 	_, upgraded := calls.snapshot()
-	if strings.Join(upgraded, ",") != "one,two" {
-		t.Errorf("被碰过的节点 = %v, two 失败后 three 不该再被调用", upgraded)
+	if strings.Join(upgraded, ",") != "one,two,three" {
+		t.Errorf("被碰过的节点 = %v, two 失败后 three 应该继续", upgraded)
 	}
 
 	events := allNodeUpdateEvents(t, e)
 	want := []struct{ node, status string }{
 		{"one", "start"}, {"one", "ok"},
 		{"two", "start"}, {"two", "failed"},
+		{"three", "start"}, {"three", "ok"},
 	}
 	if len(events) != len(want) {
 		t.Fatalf("事件数 = %d, 想要 %d:%+v", len(events), len(want), events)
@@ -298,9 +299,91 @@ func TestUpdateNodesStopsAfterFirstFailure(t *testing.T) {
 			t.Errorf("第 %d 条 = %s/%s, 想要 %s/%s", i, events[i].Node, events[i].Status, w.node, w.status)
 		}
 	}
-	last := events[len(events)-1]
-	if !strings.Contains(last.Msg, "ssh 连不上") {
-		t.Errorf("失败原因没进事件: %q", last.Msg)
+}
+
+// 一台逻辑错误(非连通):同节点 sing-box 仍要跑,不像连通错误把整台标死。
+func TestUpdateNodesSingBoxStillRunsAfterXrayLogicFailure(t *testing.T) {
+	e := newEnv(t)
+	n := model.Node{Name: "mixed", Address: "203.0.113.9"}
+	if err := e.st.CreateNode(&n); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.UpsertNodeStatus(model.NodeStatus{NodeID: n.ID, Reachable: true, Version: "25.1.1"}); err != nil {
+		t.Fatal(err)
+	}
+	// 这台同时报 xray + sing-box 行:xray 靠节点上的下发基准, sing-box 靠
+	// core_deployments 的基准哈希,两条都得有。
+	if err := e.st.SetCoreDeployed(n.ID, model.CoreXray, "xray-seeded", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetCoreDeployment(model.CoreDeployment{NodeID: n.ID, Core: model.CoreSingBox, DeployedHash: "seeded"}); err != nil {
+		t.Fatal(err)
+	}
+	fakeXrayUpgrade(e, map[string]error{"mixed": errors.New("下载 503")}, nil)
+
+	code, body := e.api("POST", "/api/update/nodes", nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("POST /api/update/nodes: %d %s", code, body)
+	}
+	p := waitNodeUpdateFinish(t, e)
+	if p.State != model.UpdateNodesFailed {
+		t.Fatalf("state = %s, 想要 failed", p.State)
+	}
+
+	events := allNodeUpdateEvents(t, e)
+	var statuses []string
+	for _, ev := range events {
+		statuses = append(statuses, string(ev.Core)+":"+ev.Status)
+	}
+	got := strings.Join(statuses, ",")
+	// 期望:xray 走 start→failed(逻辑错),sing-box 行仍在名单上、被记为 skip 之外的终态。
+	if !strings.Contains(got, "xray:failed") {
+		t.Fatalf("xray 行没记 failed: %s", got)
+	}
+	if !strings.Contains(got, "sing-box:") {
+		t.Fatalf("sing-box 行被连通跳过了(不该): %s", got)
+	}
+}
+
+// 不可达与退避中的节点不进升级名单,只留 skip 事件。
+func TestUpdateNodesSkipsUnreachableAndBackoffNodes(t *testing.T) {
+	e := newEnv(t)
+	seedXrayNode(t, e, 1, "alive", "25.1.1")
+	dead := seedXrayNode(t, e, 2, "dead", "25.1.1")
+	back := seedXrayNode(t, e, 3, "backed", "25.1.1")
+
+	if err := e.st.UpsertNodeStatus(model.NodeStatus{NodeID: dead.ID, Reachable: false, Version: "25.1.1"}); err != nil {
+		t.Fatal(err)
+	}
+	e.s.SetStatusSource(fixedStatus{st: model.ControlStatus{
+		Backoffs: []model.NodeBackoff{{NodeID: back.ID, NodeName: "backed", Failures: 3, SkipUntil: time.Now().Add(time.Hour)}},
+	}})
+
+	calls := fakeXrayUpgrade(e, nil, nil)
+	code, body := e.api("POST", "/api/update/nodes", nil)
+	if code != http.StatusAccepted {
+		t.Fatalf("POST /api/update/nodes: %d %s", code, body)
+	}
+	p := waitNodeUpdateFinish(t, e)
+	if p.State != model.UpdateNodesDone {
+		t.Fatalf("state = %s, 想要 done(没失败只是有跳过)", p.State)
+	}
+	_, upgraded := calls.snapshot()
+	if strings.Join(upgraded, ",") != "alive" {
+		t.Errorf("被碰过的节点 = %v, 只该有 alive", upgraded)
+	}
+	events := allNodeUpdateEvents(t, e)
+	var deadSkip, backSkip bool
+	for _, ev := range events {
+		if ev.Node == "dead" && ev.Status == "skip" && ev.Msg == "节点不可达" {
+			deadSkip = true
+		}
+		if ev.Node == "backed" && ev.Status == "skip" {
+			backSkip = true
+		}
+	}
+	if !deadSkip || !backSkip {
+		t.Fatalf("不可达/退避节点没出 skip 事件: %+v", events)
 	}
 }
 

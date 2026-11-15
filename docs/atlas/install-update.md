@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/cli/console_windows.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, deploy/installers/, scripts/dev-deploy.py, scripts/dev-deploy-remote.py, scripts/dev-subdiff/]
-verified: 2026-11-12 @ e954ed7
+verified: 2026-11-15 @ 8de7024 + ISS-12 working tree
 ---
 # 安装与升级
 
@@ -19,7 +19,9 @@ verified: 2026-11-12 @ e954ed7
 1. **装**：`mpx init` 是 CLI 里唯一会 SSH 的地方 装成 systemd 服务，再在 VPS 上跑 `mpx bootstrap`，后者仍是 `/api` 客户端，负责建节点、入站、用户。重复跑安全，已有对象复用。
 2. **校验**：每个发布带 SHA256SUMS，下载后先核哈希。
 3. **升控制面**：控制面进程以 `mpx` 用户运行，写不了 `/usr/local/bin`；所以 `POST /api/update/control` 只落一个请求文件，由 root 级的 `mpx-update.path` / `.service` 触发 `mpx update run control`。安装目录是「版本目录加符号链接」，保留两版，回滚就是换链接；升级后健康检查，不过自动换回上一版。方案见 [自动升级方案]。
-4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，任何一台失败就回滚这台、整批停下。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。跳不跳过按**现场**版本判：缓存（上一轮巡检）说已是目标版本时仍会 SSH 问一次，问不到才退回缓存 —— 否则两次巡检之间被手工换过核心的节点会被一直 skip。
+4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，这台失败就回滚这台。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。跳不跳过按**现场**版本判：缓存（上一轮巡检）说已是目标版本时仍会 SSH 问一次，问不到才退回缓存 —— 否则两次巡检之间被手工换过核心的节点会被一直 skip。
+
+   **单台不拦整批**（v0.9.17 起）：跑之前先把两类节点筛出名单 —— 持久化 `NodeStatus.Reachable=false` 的、以及后台还在退避窗口里的 —— 各自记一条 skip 事件（"节点不可达"），不发 SSH。跑起来后任何一行失败只影响该行：连通类错误（`ssh: …`、`命令超时`）把这台剩余核心行记 skip（"本节点连接失败,剩余核心跳过"），不再对它重复付超时；升级逻辑错误（拉取、校验、回滚失败）则同节点下一个核心照跑。整轮结束按行级结果定状态：有任何 failed/rolled_back 就是 failed，否则 done；CLI 照常非零退出并逐行打出每台结果。
 5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。页面只放一个「更新」按钮，按 控制面 → 节点核心 → 本机 的顺序把三层升完，升完原进程 exec 新二进制重启，`mpx.prev` 留上一版。
 6. **本机升级留痕**：命令行与页面发起的本机 CLI 升级写同一份 `update.json`，`mpx update show` 才看得到上一次的结果。页面那条路不认识 cli 包，靠 [internal/ui](../../internal/ui/) 的 `Options.CLIUpdated` 回调把结果交回 cli 侧落盘；命令行的 trigger 记 `manual`，页面记 `ui`。
 7. **本机开发版**：在工作区运行 `bash scripts/dev-install.sh`，把启动器装到 PATH 已包含的 `~/.local/bin/mpx-dev`，二进制放在 `~/.local/share/mpx-dev/`。启动器按 HEAD、已跟踪改动和未忽略的未跟踪文件内容计算指纹，变化才编译；`mpx-dev-update` 强制重编，不拉代码或切分支。编译失败时普通启动明确提示后使用上次成功版本，强制重编则返回失败；没有可用旧版就停止。重新运行 `mpx-dev app` 会关闭旧源码版本的开发窗口，相同版本提示使用现有窗口。`mpx-dev version` 显示 `dev-提交号-clean/dirty`。它与正式版共用控制面配置；桌面状态按 `mpx-dev` 独立，UI 默认随机端口，并忽略发布版的重启交接。开发版禁止本机发布件更新、回退与页面一键更新，改用重编命令，避免覆盖开发二进制或正式版更新记录。
@@ -35,7 +37,7 @@ verified: 2026-11-12 @ e954ed7
 - 补跑 `install.sh` 升级时没传 `--addr` → 脚本读现有 mpx.service 的 ExecStart 里的 `--addr`（`--addr=值` 也认）沿用；只有旧单元不存在或读不出 `--addr` 才按仓库默认回环装并说明。mpx-update.service 健康检查的地址从这个最终地址推出（`update_addr`，v0.9.2 起）：通配地址连 `127.0.0.1:端口`，绑在具体地址上就连那个地址；以前固定打 `127.0.0.1` 且只看这次传没传 `--addr`，端口不是 8080 时检查会失败。
 - 升级 v0.7.0 前库还是 `template` 模式 → 控制面拒绝启动 → 先用 v0.6.6 迁移（[CHANGELOG](../../CHANGELOG.md)）。
 - 源码编出的伪版本 → 比不出新旧时一律算「没有更新」，不报「落后 1 个」。
-- 节点连不上 GitHub → `apply nodes` 拉不动 xray 包 → 这台失败、整批停下；推送整包的 `mpx node install` 还在。
+- 节点连不上 GitHub → `apply nodes` 拉不动 xray 包 → 这台记 failed,其余节点继续跑；推送整包的 `mpx node install` 还在。
 - `mpx init` 至今只支持单机全包。
 - 发布件文件名是升级程序写死的 → 老版本按固定名字下载压缩包 → 改发布格式时压缩包必须继续保留。
 - Homebrew cask 装出的 MPX.app 直接带 `com.apple.quarantine` → 未签名的二进制一执行就 `Killed: 9`(app 和 bin 软链都中招) → cask 必须有 postflight 去隔离,签名落地后才删。

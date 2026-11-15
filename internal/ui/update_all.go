@@ -431,7 +431,12 @@ func nodeEventMsg(ev model.UpdateNodeEvent) string {
 	case "start":
 		return fmt.Sprintf("%s:%s → %s 开始", head, v(ev.From), v(ev.To))
 	case "skip":
-		return fmt.Sprintf("%s:已是 %s,跳过", head, v(ev.To))
+		// Msg 里就是跳过原因(「已是目标版本」「节点不可达」等),空时按旧口径。
+		msg := ev.Msg
+		if msg == "" {
+			msg = "已是 " + v(ev.To)
+		}
+		return fmt.Sprintf("%s:%s,跳过", head, msg)
 	case "ok":
 		return fmt.Sprintf("%s:%s → %s 完成", head, v(ev.From), v(ev.To))
 	case "rolled_back":
