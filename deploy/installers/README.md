@@ -41,6 +41,13 @@ manifest 提交用 `wingetcreate`：
   自动提交，需要 repo secret `WINGET_GITHUB_TOKEN`（public_repo 权限的 PAT，
   且该账号有 winget-pkgs 的 fork）。未配置时跳过并打 warning，不阻塞发布。
 
+Homebrew tap 的 `Casks/mpx.rb` 由同一个 `bump-installers` job 更新。内置
+`GITHUB_TOKEN` 只对当前仓库有权限，推 `RovenEverward/homebrew-mpx` 需要
+repo secret `TAP_GITHUB_TOKEN`（public_repo 权限的 PAT）；未配置时回退复用
+`WINGET_GITHUB_TOKEN`，两个都没有则跳过打 warning。手动补法是 clone tap
+仓库把 `version` 与 `sha256`（取 SHA256SUMS 里 `MPX-macOS.dmg` 那行）改掉
+推回，或等下一次发版自动带上。
+
 ## 手动验证清单
 
 - macOS：`brew install --cask mpx` → `/Applications/MPX.app` 存在、

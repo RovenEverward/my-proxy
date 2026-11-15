@@ -735,8 +735,10 @@ jobs:
 
   # 发布完成后,把 Homebrew tap 的 cask 与 winget manifest 更新到这个版本。
   # tap 是自家仓库(RovenEverward/homebrew-mpx),直接推;winget-pkgs 是微软的
-  # 仓库,走 fork + PR,需要 WINGET_GITHUB_TOKEN secret(带 public_repo 的 PAT)。
-  # 失败不阻塞已经完成的发布:安装渠道落后一版可以手工补,见 deploy/installers/。
+  # 仓库,走 fork + PR。两边都是写另一个仓库,内置 GITHUB_TOKEN 都够不着
+  # (v0.9.16 实测 tap push 403):统一走 WINGET_GITHUB_TOKEN secret(带
+  # public_repo 的 PAT),tap 那步再认一个 TAP_GITHUB_TOKEN 作覆盖。
+  # 未配置时对应一步跳过打 warning,不阻塞已完成的发布,见 deploy/installers/。
   bump-installers:
     needs: [publish]
     runs-on: ubuntu-latest
@@ -761,14 +763,20 @@ jobs:
 
       - name: 更新 Homebrew tap 的 cask
         env:
-          GH_TOKEN: ${{ github.token }}
+          # GITHUB_TOKEN 只对当前仓库有权限,推 tap 必须走 PAT:优先专用的
+          # TAP_GITHUB_TOKEN,没有就复用 winget 那份(同账号、同为 public_repo)。
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN || secrets.WINGET_GITHUB_TOKEN }}
           TAP_REPO: RovenEverward/homebrew-mpx
           TAG: ${{ github.ref_name }}
           VER: ${{ steps.sums.outputs.ver }}
           DMG_SHA: ${{ steps.sums.outputs.dmg_sha }}
         run: |
           set -eu
-          git clone "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::warning::未配置 TAP_GITHUB_TOKEN 或 WINGET_GITHUB_TOKEN,跳过 tap 更新。手工补法见 deploy/installers/README.md"
+            exit 0
+          fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           cd tap
           git config user.name github-actions
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
