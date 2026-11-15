@@ -40,7 +40,7 @@ async function dimensions(page) {
     brand.append(probe);
     const baseline = probe.getBoundingClientRect().bottom; probe.remove();
     return { logo: box('.brand img.lk' + (document.documentElement.dataset.theme === 'dark' ? '.lk-d' : '.lk-l')),
-      icon: box('.nav.on svg'), dot: box('.cpw .dot'), card: box('.cpw .profile'), nav: box('.nav.on'),
+      icon: box('.nav.on svg'), pill: box('.cp-menu .profile'), top: box('.top'), nav: box('.nav.on'),
       version: box('.brand small'), count: box('.nav.on .ct'), drag: box('.side>.tb-drag'),
       padding: getComputedStyle(document.querySelector('.side')).paddingTop,
       dragRegion: getComputedStyle(document.querySelector('.side>.tb-drag')).getPropertyValue('--app-region').trim(),
@@ -54,7 +54,13 @@ async function aligned(page, mode, version = VERSION, display = DISPLAY_VERSION)
   await expect(el).toHaveCSS('margin-top', '6.5px');
   const style = await el.evaluate(e => {
     const s = getComputedStyle(e);
-    return { family: s.fontFamily, faint: getComputedStyle(document.querySelector('.nav.on .ct')).color, overflow: s.textOverflow };
+    // 直接解析 --faint 做基准:当前项计数继承品牌高亮色,拿页面元素会借错值。
+    const probe = document.createElement('b');
+    probe.style.color = 'var(--faint)';
+    e.append(probe);
+    const faint = getComputedStyle(probe).color;
+    probe.remove();
+    return { family: s.fontFamily, faint, overflow: s.textOverflow };
   });
   expect(style.family).toContain('Mona Sans Mono VF');
   expect(style.overflow).not.toBe('ellipsis');
@@ -62,15 +68,17 @@ async function aligned(page, mode, version = VERSION, display = DISPLAY_VERSION)
   await expect(page.locator('.brand small')).toHaveAttribute('title', version);
   const m = await dimensions(page);
   console.log('LOGO_ALIGN ' + JSON.stringify({ mode, ...m }));
-  expect(m.logo.left).toBe(20); expect(m.logo.left).toBe(m.icon.left);
-  expect(m.dot.left).toBe(21);
-  expect(m.card.left).toBe(m.nav.left); expect(m.card.right).toBe(m.nav.right);
+  expect(m.logo.left).toBe(22); expect(m.logo.left).toBe(m.icon.left);
+  // 控制面胶囊搬到顶栏:竖向居中、不越过顶栏右缘,正常可点。
+  expect(m.pill.top).toBeGreaterThanOrEqual(m.top.top);
+  expect(m.pill.top + m.pill.height).toBeLessThanOrEqual(m.top.top + m.top.height);
+  expect(m.pill.right).toBeLessThanOrEqual(m.top.right);
   expect(m.version.right).toBeCloseTo(m.count.right, 1);
   expect(m.versionFits).toBe(true); expect(m.sideOverflow).toBe(false);
   expect(Math.abs(m.baseline - (m.logo.top + m.logo.height * 18 / 24))).toBeLessThanOrEqual(0.5);
   expect(m.drag.height).toBe(mode === 'mac' ? 36 : 0);
-  expect(m.padding).toBe(mode === 'mac' ? '0px' : '14px');
-  expect(m.logo.top).toBe(mode === 'mac' ? 38 : 16);
+  expect(m.padding).toBe(mode === 'mac' ? '0px' : '16px');
+  expect(m.logo.top).toBe(mode === 'mac' ? 42 : 22);
   expect(m.dragRegion).toBe('drag');
 }
 for (const mode of ['mac', 'mac-fullscreen', 'browser', 'windows']) for (const theme of ['light', 'dark']) {
@@ -100,7 +108,7 @@ for (const [version, display] of [
   ['v0.9.11', 'v0.9.11'],
   ['dev-aaaaaaaaaaaa-clean', 'dev-aaaaaaa'],
   ['dev-aaaaaaaaaaaa-dirty', 'dev-aaaaaaa*'],
-  ['dev-aaaaaaaaaaaa', 'dev-aaaaaaaaaaaa'],
+  ['dev-aaaaaaaaaaaa', 'dev-aaaaaaa'],
   ['dev-aaaaaaaaaaaaa', 'dev-aaaaaaa'],
 ]) test('版本短显示与完整提示 · ' + version, async ({ page }) => {
   await setup(page, 'browser', 'light', version);

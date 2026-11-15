@@ -247,13 +247,13 @@ test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色
   await page.goto(env.origin + "/#rules");
   await expect(page.locator(".rp-row").first()).toBeVisible();
 
-  // 规则类型:不透明灰底标签,文字也是灰(不用彩色/强调徽章)。
+  // 规则类型:灰底标签,文字也是灰(不用彩色/强调徽章;底可以是低透明度的中性色)。
   const ty = await page.locator(".rp-row").first().locator(".rp-ty").evaluate(el => {
     const s = getComputedStyle(el); return { bg: s.backgroundColor, color: s.color };
   });
   const tbg = rgb(ty.bg), tbgA = rgb(ty.bg)[3] ?? 1;
-  expect(tbgA).toBe(1);
-  expect(gray(tbg, 3)).toBe(true);
+  expect(tbgA).toBeGreaterThan(0);
+  expect(gray(tbg, 6)).toBe(true);
   expect(gray(rgb(ty.color), 10)).toBe(true);
 
   // 所有去向都是灰底标签,没有墨黑实心强调徽章。
@@ -261,8 +261,8 @@ test("分流颜色:类型和去向都是灰底标签,只有失效的组是红色
   expect(tos.length).toBeGreaterThan(0);
   for (const bg of tos) {
     const c = rgb(bg);
-    expect(gray(c, 3)).toBe(true);
-    expect(c[0] + c[1] + c[2]).toBeGreaterThan(120);
+    expect(gray(c, 6)).toBe(true);
+    expect(c[0] + c[1] + c[2]).toBeGreaterThan(60);
   }
 
   // 把第一条规则指向一个已不存在的策略组:只有它是红的。数据由 Node 侧先取好

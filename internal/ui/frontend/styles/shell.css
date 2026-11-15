@@ -8,24 +8,28 @@
 /* 标志自成一行:左右内边距 10 → 标志框左缘 x=20,和导航图标框、控制面圆点对齐(标志和图标都是 24 格内缩 3,墨迹左缘同在 21.5)。 */
 .brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin-bottom:14px;font-weight:620;font-size:var(--ui-font-size-body);--app-region:drag}
 /* 版本号等宽显示、靠右(右缘 212 = 导航数字、下拉箭头右缘);margin-top 6.5 让它的基线落在字标基线(标志高的 18/24 = 16.5)。 */
-.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:6.5px;font:500 var(--ui-font-size-meta)/1 var(--mono);color:var(--faint);white-space:nowrap}
-.profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:var(--ui-font-size-control)}
-.profile .pf-t{flex:1;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:6.5px;font:500 var(--ui-font-size-meta)/1 var(--mono);color:var(--faint);white-space:nowrap;max-width:100%;overflow:hidden}
+/* 控制面状态胶囊:顶栏「更新于」左侧的圆点 + 名称小药丸,点开下面那层浮层。 */
+.cp-menu{position:relative;flex:none}
+.profile{display:flex;align-items:center;gap:7px;max-width:220px;height:28px;padding:0 11px;border:0;border-radius:var(--ui-radius-pill);background:var(--panel);font-size:var(--ui-font-size-control)}
+.profile .pf-t{display:flex;align-items:baseline;gap:7px;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}
 .pflist{display:grid;gap:6px;margin-bottom:6px}
 .pfitem{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:9px;background:var(--panel);text-align:left;cursor:pointer}
 .pfitem:hover{background:var(--hover)}.pfitem.on{background:var(--canvas);box-shadow:inset 0 0 0 1px var(--stone)}
 .pfitem .pf-t{flex:1;min-width:0}.pfitem b,.pfitem span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pfitem b{font-weight:560;font-size:var(--ui-font-size-control)}.pfitem span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta)}
 .pfitem svg{width:15px;height:15px;flex:none;color:var(--ok)}
-/* 控制面卡片和导航高亮同宽(10–222);左内边距 11 让圆点左缘落在 21,贴近图标墨迹 21.43(整数,Windows 1x 不发虚)。 */
-.cpw{margin:0 0 12px}.cpw .profile{margin:0;padding-left:11px}
 .pf-car{transition:transform 160ms var(--ease,ease)}.pf-car.up{transform:rotate(180deg)}
-.cpw .dot.ok{background:var(--ink);box-shadow:none}
-.cp-pop{margin-top:6px;padding:10px 12px 12px;border-radius:9px;background:var(--canvas)}
-.cp-kv{display:grid;grid-template-columns:1fr!important;gap:2px!important;padding:0 0 10px!important;font-size:var(--ui-font-size-body)!important;margin:0}.cp-kv dt{color:var(--muted);font-size:var(--ui-font-size-caption)}.cp-kv dd{margin:0 0 6px!important;white-space:normal;overflow-wrap:anywhere}
+/* 浮层挂在胶囊下面、右缘对齐胶囊右缘;层低于弹窗遮罩(z30),草稿确认弹窗来了不被遮。 */
+.cp-pop{position:absolute;z-index:28;top:calc(100% + 6px);right:0;width:340px;max-width:calc(100vw - 24px);padding:10px;border-radius:var(--ui-radius-md);background:var(--canvas);border:1px solid var(--ui-border-subtle);box-shadow:var(--ui-shadow-popover)}
+.cp-list{max-height:320px;overflow-y:auto}
+.cp-kv{display:grid;grid-template-columns:1fr!important;gap:2px!important;padding:4px 4px 10px!important;font-size:var(--ui-font-size-body)!important;margin:0}.cp-kv dt{color:var(--muted);font-size:var(--ui-font-size-caption)}.cp-kv dd{margin:0 0 6px!important;white-space:normal;overflow-wrap:anywhere}
 .cp-kv .fp{display:flex;flex-wrap:wrap;gap:1px 6px;font-size:var(--ui-font-size-meta);line-height:1.6;color:var(--ink2)}.cp-kv .fp i{font-style:normal}
-.cp-acts{display:flex;gap:6px;flex-wrap:wrap}.cp-acts .btn{flex:1;justify-content:center;padding:0 8px}
-.cp-note{margin:10px 0 0;font-size:var(--ui-font-size-caption);line-height:1.5}
+.cp-act{display:flex;align-items:center;gap:8px;width:100%;padding:8px 9px;border:0;border-radius:8px;background:none;text-align:left;cursor:pointer;font-size:var(--ui-font-size-control)}
+.cp-act:hover{background:var(--hover)}.cp-act>span{flex:1;display:flex;align-items:center;gap:8px;min-width:0}.cp-act svg{width:14px;height:14px;flex:none;color:var(--muted)}
+.cp-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--ui-border-subtle)}.cp-acts .btn{flex:1;justify-content:center;padding:0 8px}
+.cp-note{margin:8px 4px 2px;font-size:var(--ui-font-size-caption);line-height:1.5}
+.cp-busy{padding:10px 6px 6px}.cp-busy h2{margin:0 0 6px;font-size:var(--ui-font-size-title);font-weight:620}.cp-busy p{margin:0 0 10px;color:var(--muted);font-size:var(--ui-font-size-control)}
 .nsep{height:14px}.side .nav .ct .dot{width:6px;height:6px}
 .ua-to{display:inline-flex}.ua-to svg{width:14px;height:14px}
 .tabs .tab-adv{margin-left:6px;font-size:var(--ui-font-size-micro);color:var(--faint);font-weight:450}
@@ -93,6 +97,9 @@ main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:var
    卡片头的吸顶位置就是 main 的顶(top:0),不用再让出顶栏。 */
 html.tb-right main{margin-top:var(--mygo-titlebar-height,52px);height:calc(100% - var(--mygo-titlebar-height,52px) - 8px)}
 html.tb-right .top{position:fixed;top:0;left:232px;right:0;height:var(--mygo-titlebar-height,52px);padding:0 calc(var(--mygo-titlebar-inset-right,138px) + 12px) 0 20px;background:var(--base);border-radius:0;border:0;box-shadow:none;backdrop-filter:none;z-index:29;--app-region:drag}
+/* 固定定位的顶栏不吃 absolute 锚点:Windows 模式下浮层改 fixed,贴胶囊正下方。 */
+html.tb-right .cp-menu{position:static}
+html.tb-right .cp-pop{position:fixed;top:calc(var(--mygo-titlebar-height,52px) + 2px);right:calc(var(--mygo-titlebar-inset-right,138px) + 12px);max-width:calc(100vw - 24px);z-index:28}
 /* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
 html.tb-right .drawer{top:calc(var(--mygo-titlebar-height,52px) + 4px)}
 html.tb-right .modal{top:calc(50% + var(--mygo-titlebar-height,52px) / 2)}
@@ -123,25 +130,9 @@ html:not(.os-mac) main::-webkit-scrollbar-thumb:hover{background-color:color-mix
 
 .brand small { font-size: var(--ui-font-size-meta); }
 
-.cpw { margin-bottom: 20px; }
-
-.profile {
-  min-height: 48px;
-  padding: 6px 10px;
-  background: transparent;
-  border-radius: var(--ui-radius-md);
-  cursor: pointer;
-}
-
-.profile b { font-size: var(--ui-font-size-navigation); }
-
-.profile span:not(.dot) { margin-top: 2px; font-size: var(--ui-font-size-meta); }
-
-.profile:hover { background: var(--hover); }
+.profile { cursor: pointer; }
 
 .profile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-
-.cp-pop { background: var(--panel); }
 
 main { margin: 0; height: 100%; border-radius: 0; }
 
@@ -175,4 +166,7 @@ main { margin: 0; height: 100%; border-radius: 0; }
 
 .btn.pri:active { background: var(--ui-action-pressed); }
 
-.cp-pop { animation: home-expand var(--ui-duration-fast) var(--ui-ease-out) both; transform-origin: top; }
+.cp-pop { animation: home-expand var(--ui-duration-fast) var(--ui-ease-out) both; transform-origin: top right; }
+
+@media (max-width:860px){.profile{max-width:140px}.cp-pop{right:0}}
+

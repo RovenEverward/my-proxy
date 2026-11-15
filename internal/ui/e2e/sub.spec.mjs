@@ -459,10 +459,7 @@ test("切换控制面先确认草稿，留下取消，不保存或保存后才�
   await open(page);
   const choose = async () => {
     if (await page.locator(".profile[data-act=cp-toggle]").getAttribute("aria-expanded") !== "true") await page.click(".profile[data-act=cp-toggle]");
-    // 展开面板时顺手查一次本机设备名,回来后面板要重画一遍、多一行人再排一次。等这行出来
-    // 面板就不再变形了,否则点击可能落到重画后的另一块上(按钮被换掉,点一直落不下去)。
-    await expect(page.locator(".cp-pop")).toContainText("e2e-本机");
-    await page.click(".cp-pop [data-act=cp-switch]");
+    await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
     await page.click('.pfitem[data-name="other"]');
     await expect(page.locator("#modal.open h2")).toContainText("还没保存");
   };
@@ -545,15 +542,15 @@ test("切换控制面选不保存但切换失败：页面已画回保存的值",
   await open(page);
   await setTitle(page, "要丢掉的草稿");
   await page.click(".profile[data-act=cp-toggle]");
-  await page.click(".cp-pop [data-act=cp-switch]");
+  await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
   await page.click('.pfitem[data-name="other"]');
   await page.getByRole("button", { name: "不保存", exact: true }).click();
   await expectTitle(page, "{USERNAME}");
   await expect(page.locator("#sb")).toBeEmpty();
 });
 
-// 离页对话框开着时,慢回来的「切换控制面」弹窗换掉它,要先收掉它的焦点陷阱;再点「添加控制面」后 Tab 不被拦回弹窗。
-test("关闭列表后旧响应不覆盖离页确认，重新打开时清理焦点陷阱", async ({ page }) => {
+// 离页对话框开着时,慢回来的浮层列表不盖掉它的焦点约束;再点「添加控制面」后 Tab 不被拦回弹层。
+test("慢回来的浮层不干扰离页确认，添加控制面后 Tab 不被拦回", async ({ page }) => {
   let release;
   const held = new Promise(r => { release = r; });
   await page.route("**/local/profiles", async r => { await held; await r.fulfill({ json: [
@@ -562,25 +559,21 @@ test("关闭列表后旧响应不覆盖离页确认，重新打开时清理焦�
   await open(page);
   await setTitle(page, "陷阱测试");
   await page.click(".profile[data-act=cp-toggle]");
-  await page.click(".cp-pop [data-act=cp-switch]");
-  await expect(page.locator("#modal.open [aria-busy=true]")).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(page.locator(".cp-pop [role=status]")).toBeVisible();
   await page.locator('.side a.nav[href="#nodes"]').click();
   await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
   const returned = page.waitForResponse(r => new URL(r.url()).pathname === "/local/profiles");
   release(); await returned;
   await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
   await page.getByRole("button", { name: "留下", exact: true }).click();
-  await page.click(".cp-pop [data-act=cp-switch]");
-  await expect(page.locator(".pfitem")).toHaveCount(2);
-  await expect(page.locator("#modal.open h2")).toHaveText("切换控制面");
-  await expect(page.locator('#modal.open[aria-labelledby~="sub-leave-title"]')).toHaveCount(0);
-  await expect(page.locator("#modal")).toHaveAttribute("role", "dialog");
-  const btn = page.locator("[data-act=profile-add]");
+  // 刚才点导航的外侧点击把浮层收了;重开,慢回来的列表应在里面。
+  await page.click(".profile[data-act=cp-toggle]");
+  await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
+  const btn = page.locator(".cp-pop [data-act=profile-add]");
   if (await btn.count()) {
     await btn.click();
-    await expect(page.locator("#modal.open")).toHaveCount(0);
+    await expect(page.locator(".cp-pop")).toHaveCount(0);
     await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.getElementById("modal")?.contains(document.activeElement) ?? false)).toBe(false);
+    expect(await page.evaluate(() => document.querySelector(".cp-pop")?.contains(document.activeElement) ?? false)).toBe(false);
   }
 });

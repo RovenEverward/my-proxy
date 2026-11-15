@@ -24,5 +24,5 @@ export function shortVersion(value?: string) {
   const text = String(value || ""), release = /^v?\d+\.\d+\.\d+/.exec(text);
   if (release) return release[0].startsWith("v") ? release[0] : "v" + release[0];
   const development = /^dev-([0-9a-f]{7,40})(?:-(clean|dirty))?$/.exec(text);
-  return text.length > 16 && development ? "dev-" + development[1].slice(0, 7) + (development[2] === "dirty" ? "*" : "") : text;
+  return development ? "dev-" + development[1].slice(0, 7) + (development[2] === "dirty" ? "*" : "") : text;
 }

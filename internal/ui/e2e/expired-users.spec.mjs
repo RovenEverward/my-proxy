@@ -68,8 +68,9 @@ test("过期行的名字、用量和状态圈在深浅主题置灰", async ({ pa
     expect(await row(page, "recent").locator(".dot").evaluate(e => getComputedStyle(e).boxShadow)).toContain(faint);
   }
   await page.goto(env.origin + "/#users");
-  await expect(row(page, "recent").locator(".use > span")).toHaveCSS("color", "rgb(143, 143, 150)");
-  await expect(row(page, "recent").locator(".bar i")).toHaveCSS("background-color", "rgb(91, 93, 100)");
+  // 过期行置灰用 --muted 与 --faint(词元已并入 Terminus:muted 深 #a59c95、faint 深 #706861)。
+  await expect(row(page, "recent").locator(".use > span")).toHaveCSS("color", "rgb(165, 156, 149)");
+  await expect(row(page, "recent").locator(".bar i")).toHaveCSS("background-color", "rgb(112, 104, 97)");
 });
 
 test("续期选项与 CLI 一致，开框不请求，指定日期校验", async ({ page }) => {

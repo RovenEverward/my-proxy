@@ -25,7 +25,7 @@ async function overview(page) {
   await page.goto(env.origin + "/#overview");
   await expect(page.locator(".ph h1")).toHaveText("总览");
   await settled(page);
-  await expect(page.locator(".app.home-workspace")).toBeVisible();
+  await expect(page.locator(".app.p-overview")).toBeVisible();
 }
 
 // 用实际 Tab 查找动作，不依赖固定顺序，也不用脚本代替键盘聚焦。
@@ -91,7 +91,7 @@ test("主页页头添加用户：真写请求成功，并打开新用户详情",
   await expect(page.locator("#drawer.open .ud-v")).toHaveText(/^10(?:\.0+)?\s*GB$/);
   const user = await control(`/api/users/${NEW_USER}`);
   expect(user).toMatchObject({ username: NEW_USER, enabled: true, data_limit: 10 * 2 ** 30 });
-  await expect(page.locator(".home-workspace")).toHaveCount(0);
+  await expect(page.locator(".p-overview")).toHaveCount(0);
 });
 
 test("节点名和需处理用户保留详情入口及列表入口", async ({ page }) => {
@@ -103,7 +103,7 @@ test("节点名和需处理用户保留详情入口及列表入口", async ({ pa
   await settled(page);
   await expect(page.locator(".ph h1")).toContainText(NODE_NAME);
   await expect(page.locator(".conn-card")).toContainText("连接方式");
-  await expect(page.locator(".home-workspace")).toHaveCount(0);
+  await expect(page.locator(".p-overview")).toHaveCount(0);
 
   await page.locator('.side a[href="#overview"]').click();
   await settled(page);
@@ -130,7 +130,7 @@ test("主页主题可切换，并在跨页及重新加载后保留", async ({ pa
   await settled(page);
   await page.reload();
   await settled(page);
-  await expect(page.locator(".app.home-workspace")).toBeVisible();
+  await expect(page.locator(".app.p-overview")).toBeVisible();
   await expect(html).toHaveAttribute("data-theme", changed);
   await page.getByRole("button", { name: "切换主题", exact: true }).click();
   await expect(html).toHaveAttribute("data-theme", initial);
@@ -153,7 +153,7 @@ test("390×844 手机无水平溢出，底部导航可访问用户", async ({ pa
   await settled(page);
   await expect(page.locator(".ph h1")).toHaveText("用户");
   await expect(page.locator(`tr[data-href="#users/${EXPIRED_USER}"]`)).toBeVisible();
-  await expect(page.locator(".home-workspace")).toHaveCount(0);
+  await expect(page.locator(".p-overview")).toHaveCount(0);
 });
 
 test("主页风格范围只在总览，切换其他主页面后清除", async ({ page }) => {
@@ -163,11 +163,11 @@ test("主页风格范围只在总览，切换其他主页面后清除", async ({
     await expect(page).toHaveURL(new RegExp(`#${route}$`));
     await settled(page);
     await expect(page.locator(".app")).toBeVisible();
-    await expect(page.locator(".home-workspace")).toHaveCount(0);
+    await expect(page.locator(".p-overview")).toHaveCount(0);
     await page.locator('.side a[href="#overview"]').click();
     await settled(page);
-    await expect(page.locator(".app.home-workspace")).toBeVisible();
-    await expect(page.locator(".home-workspace")).toHaveCount(1);
+    await expect(page.locator(".app.p-overview")).toBeVisible();
+    await expect(page.locator(".p-overview")).toHaveCount(1);
   }
 });
 

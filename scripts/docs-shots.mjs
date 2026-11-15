@@ -282,8 +282,8 @@ const SHOTS = [
     },
   },
   {
-    // 「切换控制面」弹窗:列表用路由摆两套示例控制面(当前这套 + 给家人的一套)。
-    name: "profiles", crop: "#modal",
+    // 顶栏控制面胶囊的浮层:列表用路由摆两套示例控制面(当前这套 + 给家人的一套)。
+    name: "profiles", crop: ".cp-pop",
     routes: async page => {
       await page.route("**/local/profiles", r => r.fulfill({ json: [
         { name: "default", server: "https://203.0.113.10:8080", current: true },
@@ -293,8 +293,7 @@ const SHOTS = [
     run: async (page, env) => {
       await page.goto(env.origin + "/#overview");
       await page.click('[data-act="cp-toggle"]');
-      await page.click('[data-act="cp-switch"]');
-      await page.waitForSelector("#modal.open .pflist");
+      await page.waitForSelector(".cp-pop .pflist");
       await page.waitForTimeout(300);
     },
   },

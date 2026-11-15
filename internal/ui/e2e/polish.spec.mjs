@@ -78,9 +78,18 @@ test("M3 输入框聚焦光圈是中性色，不是蓝色(删除确认里的输�
   for (const c of cs) expect(neutral(c), c).toBe(true);
 });
 
-test("M5 键盘聚焦光圈是中性色，不是蓝色(按钮、侧栏、选项卡、表格行)", async ({ page }) => {
+test("M5 键盘聚焦光圈取自 --ring(Terminus 蓝),各类控件一致", async ({ page }) => {
   await go(page, "users");
   // 用户页同时有按钮、侧栏项、选项卡和可聚焦的表格行。
+  const ring = await page.evaluate(() => {
+    const probe = document.createElement("i");
+    probe.style.color = "var(--ring)";
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  expect(ring.startsWith("rgb")).toBe(true);
   for (const sel of [".side .nav", ".page .btn", ".tabs a", "tbody tr[tabindex]"]) {
     await expect(page.locator(sel).first()).toHaveCount(1);
     // 光圈有过渡动画:轮询到它停下再读。
@@ -88,7 +97,7 @@ test("M5 键盘聚焦光圈是中性色，不是蓝色(按钮、侧栏、选项�
       const s = await keyboardFocus(page, sel);
       expect(s.fv, `${sel} 没拿到键盘焦点`).toBe(true);
       expect(s.style, sel).toBe("solid");
-      expect(neutral(s.color), `${sel} ${s.color}`).toBe(true);
+      expect(s.color, `${sel} 聚焦圈应等于 --ring`).toBe(ring);
     }).toPass();
   }
 });

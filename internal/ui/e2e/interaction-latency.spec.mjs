@@ -162,12 +162,12 @@ test('进入页面时读取控制面列表不取消页面加载', async ({ page 
   });
   try {
     await login(page, env);
+    // 胶囊一挂上就取控制面列表(响应已在路由层备好,不等页面加载完)。
+    const profiles = page.waitForResponse(response => new URL(response.url()).pathname === '/local/profiles');
     await page.goto(env.origin + '/#rules');
     await expect(page.locator('html[data-loading]')).toHaveCount(1);
-    const profiles = page.waitForResponse(response => new URL(response.url()).pathname === '/local/profiles');
-    await page.locator('[data-act=cp-toggle]').click();
-    await page.locator('[data-act=cp-switch]').click();
     await profiles;
+    await page.locator('[data-act=cp-toggle]').click();
     await expect(page.locator('.pfitem')).toHaveCount(2);
     await expect(page.locator('html[data-loading]')).toHaveCount(1);
     await page.keyboard.press('Escape');

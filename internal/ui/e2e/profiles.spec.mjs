@@ -1,7 +1,7 @@
-// 左上角控制面卡片:用 page.route 把 /local/profiles 换成假列表,验证
+// 顶栏控制面胶囊:用 page.route 把 /local/profiles 换成假列表,验证
 // 当前项打勾、每项只显示名称和地址(不显示指纹;自动生成的 default 直接显示地址)、
 // 点别的会 POST /local/profiles/use 并整页刷新;
-// 弹窗里有「添加控制面…」入口,只有一个档时也弹(加新控制面就从这进)。
+// 浮层里有「添加控制面…」入口,只有一个档时也弹(加新控制面就从这进)。
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -28,48 +28,43 @@ async function mockProfiles(page, items, useCalls) {
   });
 }
 
-test("点控制面卡片:列出全部,当前档打勾,点别的会切换并刷新", async ({ page }) => {
+test("点控制面胶囊:列出全部,当前档打勾,点别的会切换并刷新", async ({ page }) => {
   const useCalls = [];
   await mockProfiles(page, list, useCalls);
   await login(page, env);
 
-  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
-  await page.click(".profile[data-act=cp-toggle]");
-  await page.click(".cp-pop [data-act=cp-switch]");
-  await expect(page.locator("#modal.open")).toBeVisible();
-  await expect(page.locator(".pfitem")).toHaveCount(2);
-  await expect(page.locator("#modal h2")).toHaveText("切换控制面");
-  await expect(page.locator("#modal")).toContainText("下次打开仍连你选的这个");
+  await page.click(".top .profile[data-act=cp-toggle]");
+  const pop = page.locator(".cp-pop");
+  await expect(pop).toBeVisible();
+  await expect(pop.locator(".pfitem")).toHaveCount(2);
   // 自动生成的 default 不显示,直接用地址当名字;有名字的显示名字 + 地址。
-  await expect(page.locator(".pfitem.on b")).toHaveText("127.0.0.1:9001");
-  await expect(page.locator(".pfitem.on")).not.toContainText("default");
-  await expect(page.locator(".pfitem:not(.on) b")).toHaveText("prod");
-  await expect(page.locator(".pfitem:not(.on)")).toContainText("cp.example.net");
-  // 指纹不进列表(在控制面卡片的面板里看);地址里的 scheme 不显示,token 不在弹窗里。
-  await expect(page.locator("#modal")).not.toContainText("SHA256");
-  await expect(page.locator("#modal")).not.toContainText("配置档");
-  await expect(page.locator("#modal")).not.toContainText("http://");
-  await expect(page.locator("#modal")).not.toContainText("token");
+  await expect(pop.locator(".pfitem.on b")).toHaveText("127.0.0.1:9001");
+  await expect(pop.locator(".pfitem.on")).not.toContainText("default");
+  await expect(pop.locator(".pfitem:not(.on) b")).toHaveText("prod");
+  await expect(pop.locator(".pfitem:not(.on)")).toContainText("cp.example.net");
+  // 指纹不进列表(在「证书指纹与本机信息」里看);地址里的 scheme 不显示,token 不在浮层里。
+  await expect(pop).not.toContainText("SHA256");
+  await expect(pop).not.toContainText("http://");
+  await expect(pop).not.toContainText("token");
 
   await page.click(".pfitem:not(.on)");
+  await expect(page.locator(".cp-pop .cp-busy")).toContainText("正在切换到 prod");
   await expect.poll(() => useCalls.length).toBe(1);
   expect(useCalls[0]).toEqual({ name: "prod" });
-  // 切换成功后整页 reload:模态会被冲掉。
-  await expect(page.locator("#modal.open")).toBeHidden();
+  // 切换成功后整页 reload:浮层会被冲掉。
+  await expect(page.locator(".cp-pop")).toBeHidden();
 });
 
-test("弹窗里有「添加控制面…」:打开接入表单", async ({ page }) => {
+test("浮层里有「添加控制面…」:打开接入表单", async ({ page }) => {
   await mockProfiles(page, list, null);
   // 接入表单第一步要取指纹,把 probe 挡在路由层即可(不点接入就不用真连)。
   await page.route("**/local/profiles/connect/probe", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ server: "https://203.0.113.10:8080", fingerprint: FP }) }));
   await login(page, env);
 
-  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
-  await page.click(".profile[data-act=cp-toggle]");
-  await page.click(".cp-pop [data-act=cp-switch]");
-  await page.click("[data-act=profile-add]");
-  // 模态关掉,换成全屏的接入表单;控制面名是正常模式多出来的必填项。
-  await expect(page.locator("#modal.open")).toBeHidden();
+  await page.click(".top .profile[data-act=cp-toggle]");
+  await page.click(".cp-pop [data-act=profile-add]");
+  // 浮层关掉,换成全屏的接入表单;控制面名是正常模式多出来的必填项。
+  await expect(page.locator(".cp-pop")).toBeHidden();
   await expect(page.locator(".setup")).toBeVisible();
   await expect(page.locator("#s-cp-addr")).toBeVisible();
   await expect(page.getByLabel("控制面名称", { exact: true })).toBeVisible();
@@ -132,14 +127,11 @@ test("弹窗里有「添加控制面…」:打开接入表单", async ({ page })
   }
 });
 
-test("只有一个控制面:也弹窗,好从这加新的", async ({ page }) => {
+test("只有一个控制面:也弹浮层,好从这加新的", async ({ page }) => {
   await mockProfiles(page, [list[0]], null);
   await login(page, env);
-  // 侧栏控制面卡片先展开面板,再点「切换控制面」。
-  await page.click(".profile[data-act=cp-toggle]");
-  await page.click(".cp-pop [data-act=cp-switch]");
-  await expect(page.locator("#modal.open")).toBeVisible();
-  await expect(page.locator(".pfitem")).toHaveCount(1);
-  await expect(page.locator("[data-act=profile-add]")).toBeVisible();
+  await page.click(".top .profile[data-act=cp-toggle]");
+  await expect(page.locator(".cp-pop")).toBeVisible();
+  await expect(page.locator(".cp-pop .pfitem")).toHaveCount(1);
+  await expect(page.locator(".cp-pop [data-act=profile-add]")).toBeVisible();
 });
-
