@@ -14,7 +14,7 @@ test.afterAll(async () => { await env?.stop(); });
 test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有分组标题和页脚术语", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#overview");
-  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "分流", "体检", "系统"]);
+  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "外部订阅", "分流", "体检", "系统"]);
   await expect(page.locator(".side .nsep")).toHaveCount(1);
   await expect(page.locator(".side .navg")).toHaveCount(0);
   await expect(page.locator(".side")).not.toContainText("token 不出本进程");

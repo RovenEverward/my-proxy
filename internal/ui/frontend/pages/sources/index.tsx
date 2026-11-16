@@ -14,7 +14,7 @@ import { SourceDrawer } from "./SourceEditor";
 interface SourcesData { sources: SubscriptionSource[]; users: User[]; groups: SavedProxyGroup[] }
 export function SourcesPage({ route: _route }: PageProps) {
   const app = useApp();
-  usePageTitle([{ label: "订阅", href: "#sub" }, { label: "外部订阅" }]);
+  usePageTitle([{ label: "外部订阅" }]);
   const page = usePageData<SourcesData>("sources", async read => {
     const [sources, users, groups] = await Promise.all([read<SubscriptionSource[]>("/api/sources"), readSubscriptionUsers(read), read<SavedProxyGroup[]>("/api/proxy-groups")]);
     return { sources, users, groups };
