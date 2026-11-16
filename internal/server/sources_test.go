@@ -79,12 +79,23 @@ func TestSourcesMixedSubscriptionAndIsolation(t *testing.T) {
 	if src.NodeCount != 2 || src.LastError != "" {
 		t.Fatalf("source not imported: %#v", src)
 	}
+	if len(src.Grants) != 0 {
+		t.Fatalf("expected empty default grants, got %#v", src.Grants)
+	}
 	_, _, before := e.sub("/sub/"+alice.SubToken+"/sing-box", "")
 	if strings.Contains(string(before), "first.example.test") {
 		t.Fatal("default source disclosure")
 	}
 	if code, data := e.api("PUT", fmt.Sprintf("/api/sources/%d/grants/alice", src.ID), nil); code != 200 {
 		t.Fatalf("grant: %d %s", code, data)
+	}
+	if code, listData := e.api("GET", "/api/sources", nil); code != 200 {
+		t.Fatalf("list sources: %d %s", code, listData)
+	} else {
+		list := decodeJSON[[]sourceView](t, listData)
+		if len(list) != 1 || len(list[0].Grants) != 1 || list[0].Grants[0] != "alice" {
+			t.Fatalf("expected grants in /api/sources, got %#v", list)
+		}
 	}
 	g := &model.ProxyGroup{Name: "mixed", Mode: model.GroupManual}
 	if err := e.st.CreateProxyGroup(g); err != nil {

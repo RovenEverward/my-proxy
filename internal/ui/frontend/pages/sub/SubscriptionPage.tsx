@@ -163,7 +163,7 @@ function SubscriptionWorkspace({ route, data, selected, refresh, readError, onRe
       </div>
 
       <div className={"card r-list " + (advanced ? "open" : "")} id="sec-adv">
-        <a className="r-li r-li-row" href="#sources"><div className="r-ll"><b>外部订阅</b><span className="sub">把别人的机场订阅合并进来一起分发</span></div><span className="sub r-rr-v">{data.sources.length ? `${data.sources.length} 个来源` : ""}</span><Icon name="arrow" className="r-chv" /></a>
+        <a className="r-li r-li-row" href="#nodes/sources"><div className="r-ll"><b>外部订阅</b><span className="sub">把别人的机场订阅合并进来一起分发</span></div><span className="sub r-rr-v">{data.sources.length ? `${data.sources.length} 个来源` : ""}</span><Icon name="arrow" className="r-chv" /></a>
         <section className={"r-adv " + (advanced ? "open" : "")}>
           <button type="button" className="r-li r-li-row" data-act="s5-adv" aria-expanded={advanced} onClick={() => setAdvanced(previous => { advancedPreference = !previous; return !previous; })}>
             <div className="r-ll"><b>订阅底稿</b><span className="sub">分流规则、策略组和 DNS 的模板</span></div><span className="sub r-rr-v">{customTemplates ? `${customTemplates} 种自定义` : "都用内置"}</span><Icon name="down" className="s5-car" />

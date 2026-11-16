@@ -45,6 +45,7 @@ type sourceView struct {
 	Nodes       []sourceNodeRef                         `json:"nodes"`
 	InputFormat string                                    `json:"input_format"`
 	Issues      []source.Issue                          `json:"issues"`
+	Grants      []string                                `json:"grants"`
 	Formats     map[model.ClientFormat]sourceFormatView `json:"formats"`
 }
 
@@ -55,7 +56,10 @@ type sourceNodeRef struct {
 }
 
 func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
-	v := sourceView{SubscriptionSource: src, Refreshing: s.sources.Running(src.ID), SnapshotStale: len(src.Snapshot) > 0 && src.SnapshotURL != src.URL, Issues: []source.Issue{}, Formats: map[model.ClientFormat]sourceFormatView{}}
+	v := sourceView{SubscriptionSource: src, Refreshing: s.sources.Running(src.ID), SnapshotStale: len(src.Snapshot) > 0 && src.SnapshotURL != src.URL, Issues: []source.Issue{}, Grants: []string{}, Formats: map[model.ClientFormat]sourceFormatView{}}
+	if grants, err := s.store.SourceGrants(src.ID); err == nil && grants != nil {
+		v.Grants = grants
+	}
 	if u, err := url.Parse(src.URL); err == nil {
 		v.URLMasked = u.Scheme + "://" + u.Host + "/••••"
 	}

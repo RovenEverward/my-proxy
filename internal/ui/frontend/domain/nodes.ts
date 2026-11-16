@@ -75,6 +75,10 @@ export async function autoNodeName(): Promise<string> {
   try { names = new Set((await api<Node[]>("/api/nodes")).map(node => node.name)); } catch { /* Let the control plane report a name conflict. */ }
   for (let index = 1; ; index++) if (!names.has(`node-${index}`)) return `node-${index}`;
 }
+export const NODE_TABS = [
+  { key: "nodes", label: "自建节点", href: "#nodes" },
+  { key: "sources", label: "外部订阅", href: "#nodes/sources" },
+];
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 export const dateTime = (value?: string) => value ? new Date(value).toLocaleString("sv-SE", { hour12: false }).slice(0, 16) : "";
 export const hourMinute = (value: string) => new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });

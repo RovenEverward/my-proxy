@@ -1,11 +1,11 @@
 const oldRoutes: Record<string, string> = {
-  inbounds: "nodes", settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients",
+  inbounds: "nodes", sources: "nodes/sources", settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients",
   "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans",
 };
-const known = new Set(["overview", "nodes", "users", "sub", "sources", "rules", "doctor", "system"]);
+const known = new Set(["overview", "nodes", "users", "sub", "rules", "doctor", "system"]);
 export function canonicalKey(value: string) {
   const key = value.replace(/^#/, "") || "overview";
-  const moved = oldRoutes[key] || (key.startsWith("inbounds/") ? "nodes" : key.startsWith("plans/") ? "users/" + key : key);
+  const moved = oldRoutes[key] || (key.startsWith("inbounds/") ? "nodes" : key.startsWith("plans/") ? "users/" + key : key.startsWith("sources/") ? "nodes/sources" : key);
   return known.has(moved.split("/")[0]) ? moved : "overview";
 }
 export function routeOf(key: string) {
@@ -16,7 +16,6 @@ export function routeOf(key: string) {
 export const navigation = [
   { key: "overview", label: "总览", icon: "home" }, { key: "nodes", label: "节点", icon: "nodes" },
   { key: "users", label: "用户", icon: "users" }, { key: "sub", label: "订阅", icon: "sub" },
-  { key: "sources", label: "外部订阅", icon: "globe" },
   { key: "rules", label: "分流", icon: "split" }, { key: "doctor", label: "体检", icon: "pulse" },
   { key: "system", label: "系统", icon: "set" },
 ] as const;

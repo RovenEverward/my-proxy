@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { NativeSelect } from "../../components/native-select";
-import { Card, EmptyState, ErrorState, Field, FlagText, Icon, LoadingTable, PageHeader, StatusBadge } from "../../components/primitives";
+import { Card, EmptyState, ErrorState, Field, FlagText, Icon, LoadingTable, PageHeader, StatusBadge, Tabs } from "../../components/primitives";
 import { AddConnection } from "../../components/connections/AddConnection";
 import { ConnectionList } from "../../components/connections/ConnectionList";
 import { Menu } from "../../components/connections/Menu";
@@ -12,10 +12,8 @@ import { useApp, usePageTitle } from "../../runtime/app-context";
 import { cachedPage, usePageData } from "../../runtime/query";
 import type { PageProps, Read } from "../../runtime/types";
 import { loadConnections, type ConnectionData } from "../../domain/connections";
-import { coreText, dateTime, driftState, errorMessage, hourMinute, nodeLabel, nodePath, nodeStateLabel, nodeStateTone, sinceText, sshText, type NodeView } from "../../domain/nodes";
-import { sourcePath, type SubscriptionSource } from "../../domain/routing";
-import { SourceStatus, sourceInterval } from "../sources/components";
-import { SourceDrawer } from "../sources/SourceEditor";
+import { coreText, dateTime, driftState, errorMessage, hourMinute, NODE_TABS, nodeLabel, nodePath, nodeStateLabel, nodeStateTone, sinceText, sshText, type NodeView } from "../../domain/nodes";
+import { SourcesPage } from "../sources";
 import { NodeEditor } from "./NodeEditor";
 import { NodeInfoDrawer } from "./NodeInfoDrawer";
 import { ReachDrawer } from "./ReachDrawer";
@@ -25,22 +23,23 @@ import { useNodeJobs, type NodeJob } from "./use-node-jobs";
 import { useReachCheck } from "./use-reach";
 import { sourceText, type ReachLast, type ReachNodeCheck, type ReachVerdict } from "../../domain/reach";
 
-interface NodeListData { nodes: NodeView[]; reach: ReachLast | null; sources: SubscriptionSource[] }
+interface NodeListData { nodes: NodeView[]; reach: ReachLast | null }
 interface Report { checked_at: string; measured_address?: string; report: string | { summary?: string[] } }
 interface DetailData { node: NodeView; conn?: ConnectionData; report?: Report | { error: string } | null }
-export function NodesPage({ route }: PageProps) { return route[1] ? <NodeDetailPage key={route[1]} id={Number(route[1])} /> : <NodeListPage />; }
+export function NodesPage({ route }: PageProps) {
+  if (route[1] === "sources") return <SourcesPage />;
+  return route[1] ? <NodeDetailPage key={route[1]} id={Number(route[1])} /> : <NodeListPage />;
+}
 export default NodesPage;
 function NodeState({ node }: { node: NodeView }) { return <StatusBadge tone={nodeStateTone(node)}>{nodeStateLabel(node)}</StatusBadge>; }
 function Drift({ node }: { node: NodeView }) { const state = driftState(node); return state.tone ? <StatusBadge tone={state.tone}>{state.text}</StatusBadge> : <span className="sub">{state.text}</span>; }
 // loadNodeList 把触达检查存档并进列表读取:/api/reach/last 404 表示还没查过,不是错。
-// 外部订阅一并带上:来源接口不可用时(旧控制面或无权限)只当没有外部节点,不影响自建列表。
 async function loadNodeList(read: Read): Promise<NodeListData> {
-  const [nodes, reach, sources] = await Promise.all([
+  const [nodes, reach] = await Promise.all([
     read<NodeView[]>("/api/nodes"),
     read<ReachLast>("/api/reach/last").catch((error: unknown) => error instanceof APIError && error.status === 404 ? null : Promise.reject(error)),
-    read<SubscriptionSource[]>("/api/sources").catch(() => []),
   ]);
-  return { nodes, reach, sources };
+  return { nodes, reach };
 }
 
 type ReachFilter = "all" | ReachVerdict;
@@ -74,50 +73,14 @@ function NodeListPage() {
     const s = sourceText(side === "local" ? checks.get(node.id)?.local : checks.get(node.id)?.cp);
     return <td className="reach-col"><span className="st"><span className={`dot ${s.tone}`} />{s.text}</span>{s.latency && <div className="sub mono reach-lat">{s.latency}</div>}</td>;
   };
-  return <><PageHeader title="节点" description="节点状态来自定时检查；外部节点来自订阅快照" actions={<>{app.meta.relabel && query.data?.nodes.some(node => !node.display) && <Button data-act="relabel-open" onClick={() => app.openModal(<RelabelModal onChanged={changed} />)}><Icon name="globe" />批量识别显示名</Button>}<Button data-act="reach-check" loading={reach.running} onClick={() => void reach.start()}><Icon name="pulse" />{checked ? "重新检查" : "检查触达"}</Button>{writable && <Button variant="primary" data-act="node-wizard" onClick={wizard}><Icon name="plus" />添加节点</Button>}</>} />
+  return <><PageHeader title="节点" description="节点状态来自定时检查" actions={<>{app.meta.relabel && query.data?.nodes.some(node => !node.display) && <Button data-act="relabel-open" onClick={() => app.openModal(<RelabelModal onChanged={changed} />)}><Icon name="globe" />批量识别显示名</Button>}<Button data-act="reach-check" loading={reach.running} onClick={() => void reach.start()}><Icon name="pulse" />{checked ? "重新检查" : "检查触达"}</Button>{writable && <Button variant="primary" data-act="node-wizard" onClick={wizard}><Icon name="plus" />添加节点</Button>}</>} />
+    <Tabs items={NODE_TABS} value="nodes" />
     {reach.running && <div className="callout stone mb" role="status"><Icon name="refresh" /><div>正在检查：本机对每个代理端口各探一次 TCP/UDP，控制面同时探一轮。只读不改，十几秒。</div></div>}
     {query.error && <ErrorState title="节点" error={query.error} onRetry={() => void query.refresh()} />}
     {!query.data ? !query.error && <LoadingTable rows={5} columns={6} /> : <div className="card">{!query.data.nodes.length ? <EmptyState icon="nodes" title="还没有节点" description="填 VPS 的地址和 SSH 密码，自动装好并加进订阅。点下面的「添加节点」开始。" actions={writable && <div style={{ display: "grid", gap: 10, justifyItems: "center" }}><Button size="sm" variant="primary" data-act="node-wizard" onClick={wizard}><Icon name="plus" />添加节点</Button><button type="button" className="lnk wlnk" data-act="node-new" onClick={register}>已能免密 SSH，直接登记</button></div>} /> : <>
       {checked && <div className="tb"><div className="seg" role="tablist" aria-label="触达判定">{seg("all", "全部", query.data.nodes.length)}{seg("ok", "双通", counts.ok)}{seg("blocked", "境内不通", counts.blocked)}{seg("down", "都不通", counts.down)}{seg("unknown", "未知", counts.unknown)}</div><span className="sp" /><span className="sub" data-role="reach-at">检查于 {query.data.reach?.checked_at ? sinceText(query.data.reach.checked_at) : "—"}</span></div>}
       <div className="tw"><table><thead><tr><th>节点</th><th>状态</th>{checked && <><th>本机 → 节点</th><th>控制面 → 节点</th></>}<th className="hide-m">代理程序</th><th className="hide-m">配置</th><th className="hide-m">SSH</th><th className="num hide-m">检查于</th>{checked && <th />}</tr></thead><tbody>{nodes.map(node => <tr key={node.id} data-href={`#nodes/${node.id}`} tabIndex={0} onClick={() => app.navigate(`nodes/${node.id}`)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); app.navigate(`nodes/${node.id}`); } }}><td><b className="bold"><FlagText>{nodeLabel(node)}</FlagText></b><div className="sub mono">{node.address}</div></td><td><NodeState node={node} /></td>{checked && srcCell(node, "local")}{checked && srcCell(node, "cp")}<td className="hide-m">{node.status?.cores?.length ? node.status.cores.map(core => <span className="tag" key={core.core}>{core.core}</span>) : node.status?.version ? <><span className="tag">xray</span> <span className="sub">{node.status.version}</span></> : null}</td><td className="hide-m"><Drift node={node} /></td><td className="hide-m mono sub">{sshText(node)}</td><td className="num sub hide-m">{sinceText(node.status?.checked_at)}</td>{checked && <td className="num" data-v={checks.get(node.id)?.verdict || "unknown"}><span className="row-btns"><Button size="sm" data-act="reach-view" onClick={event => { event.stopPropagation(); openReach(node); }}>查看</Button></span></td>}</tr>)}{!nodes.length && <tr><td className="sub" colSpan={10} style={{ textAlign: "center", padding: 26 }}>这个筛选下没有节点</td></tr>}</tbody></table></div></>}</div>}
-    {query.data && <ExternalNodesCard sources={query.data.sources} queryRefresh={query.refresh} />}
   </>;
-}
-
-// ExternalNodesCard 把外部订阅的来源与成员节点列在自建节点表下面。成员节点不进
-// SSH/配置/下发链路,这里只做展示与来源管理入口,状态与名单归来源服务。
-function ExternalNodesCard({ sources, queryRefresh }: { sources: SubscriptionSource[]; queryRefresh: () => Promise<unknown> }) {
-  const app = useApp();
-  const [open, setOpen] = useState<Set<number>>(() => new Set());
-  const [refreshing, setRefreshing] = useState<Set<number>>(() => new Set());
-  const canWrite = app.can("POST", "/api/sources");
-  const toggle = (id: number) => setOpen(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  const addSource = () => app.openDrawer(<SourceDrawer onChanged={async () => { await queryRefresh(); }} onCreated={() => { void queryRefresh(); }} />, { wide: true, key: "source:new" });
-  async function refreshSource(source: SubscriptionSource) {
-    if (refreshing.has(source.id)) return;
-    setRefreshing(previous => new Set(previous).add(source.id));
-    try { await write("POST", sourcePath(source.id) + "/refresh"); app.toast("已开始刷新，可在来源详情查看结果"); }
-    catch (reason) { app.toast(errorMessage(reason), true); }
-    finally { setRefreshing(previous => { const next = new Set(previous); next.delete(source.id); return next; }); }
-  }
-  return <Card className="ext-nodes" title="外部节点" actions={canWrite && <Button size="sm" data-act="ext-src-new" onClick={addSource}><Icon name="plus" />添加外部订阅</Button>}>
-    {!sources.length ? <EmptyState icon="sub" title="还没有外部订阅" description="添加订阅地址后，外部节点会按来源列在这里；管理权限和单个节点详情在「外部订阅」页。" /> :
-      <div className="tw"><table><thead><tr><th>节点</th><th>状态</th><th className="hide-m">协议</th><th className="num hide-m">检查于</th><th className="num" /></tr></thead><tbody>{sources.map(source => {
-        const expanded = open.has(source.id);
-        const members = source.nodes || [];
-        return <Fragment key={source.id}>
-          <tr className={"src-group" + (expanded ? " open" : "")} onClick={() => toggle(source.id)}>
-            <td><b className="bold"><button type="button" className="src-chev" aria-expanded={expanded} aria-label={`展开或收起来源 ${source.name} 的成员`} onClick={event => { event.stopPropagation(); toggle(source.id); }}><Icon name="down" /></button>{source.name}</b><div className="sub">{source.node_count} 个节点 · {sourceInterval(source)}{source.enabled ? "" : " · 已停用"}</div></td>
-            <td><SourceStatus source={source} /></td>
-            <td className="hide-m"><span className="sub">—</span></td>
-            <td className="num sub hide-m">{source.last_good_at ? sinceText(source.last_good_at) : "尚未成功"}</td>
-            <td className="num"><Button size="icon" title={`刷新 ${source.name}`} aria-label={`刷新 ${source.name}`} data-act="ext-src-refresh" data-id={source.id} disabled={!source.enabled || source.refreshing || refreshing.has(source.id) || !canWrite} loading={refreshing.has(source.id)} onClick={event => { event.stopPropagation(); void refreshSource(source); }}><Icon name="refresh" /></Button><Button size="icon" title="管理来源" aria-label={`管理 ${source.name}`} data-act="ext-src-manage" data-id={source.id} onClick={event => { event.stopPropagation(); app.navigate("sources"); }}><Icon name="more" /></Button></td>
-          </tr>
-          {expanded && members.map((member, index) => <tr className="src-member" key={`${source.id}:${index}`}><td><span className="sub"><FlagText>{member.name}</FlagText></span></td><td /><td className="hide-m sub">{member.protocol}</td><td className="num sub hide-m" /><td /></tr>)}
-          {expanded && !members.length && <tr className="src-member"><td className="sub" colSpan={5} style={{ paddingLeft: 40 }}>这个来源还没有节点{source.last_error ? "，上一次刷新失败" : ""}。</td></tr>}
-        </Fragment>;
-      })}</tbody></table></div>}
-  </Card>;
 }
 function NodeDetailPage({ id }: { id: number }) {
   const app = useApp();

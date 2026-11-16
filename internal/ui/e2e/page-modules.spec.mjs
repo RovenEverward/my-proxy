@@ -99,6 +99,7 @@ function routes() {
   return [
     ["overview", "总览", page => expect(page.getByRole("button", { name: "添加用户", exact: true }).first()).toBeVisible()],
     ["nodes", "节点", page => expect(page.locator("main").getByText(NODE, { exact: true }).first()).toBeVisible()],
+    ["nodes/sources", "节点", page => expect(page.getByRole("button", { name: "添加订阅", exact: true }).first()).toBeVisible()],
     [`nodes/${nodeID}`, new RegExp("^" + NODE + "(?:\\s|$)"), page => expect(page.locator("main")).toContainText("连接方式")],
     ["users", "用户", page => expect(page.locator("main").getByText(USER, { exact: true })).toBeVisible()],
     [`users/${USER}`, "用户", async page => {
@@ -226,6 +227,7 @@ test("旧地址保持兼容，并加载正确页面", async ({ page }, testInfo)
       ["settings/backup", "system/backup", "系统"],
       ["inbounds", "nodes", "节点"],
       [`inbounds/${nodeID}`, "nodes", "节点"],
+      ["sources", "nodes/sources", "节点"],
     ]) await test.step("legacy #" + old, async () => {
       await coldRoute(page, env, old);
       await expect(page).toHaveURL(env.origin + "/#" + current);

@@ -14,7 +14,7 @@ test.afterAll(async () => { await env?.stop(); });
 test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有分组标题和页脚术语", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#overview");
-  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "外部订阅", "分流", "体检", "系统"]);
+  await expect(page.locator(".side .nav")).toHaveText(["总览", "节点1", "用户", "订阅", "分流", "体检", "系统"]);
   await expect(page.locator(".side .nsep")).toHaveCount(1);
   await expect(page.locator(".side .navg")).toHaveCount(0);
   await expect(page.locator(".side")).not.toContainText("token 不出本进程");
@@ -23,7 +23,7 @@ test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有�
 });
 
 for (const [from, to] of [
-  ["plans", "users/plans"], ["settings", "sub"], ["settings/general", "sub"], ["settings/rules", "sub/clients"],
+  ["plans", "users/plans"], ["sources", "nodes/sources"], ["settings", "sub"], ["settings/general", "sub"], ["settings/rules", "sub/clients"],
   ["settings/templates", "sub/templates"], ["settings/devices", "system/devices"], ["settings/backup", "system/backup"],
 ]) {
   test(`旧地址 #${from} 跳到 #${to}`, async ({ page }) => {
@@ -36,6 +36,17 @@ for (const [from, to] of [
     } else await expect(page.locator(".tabs a.on")).toHaveCount(1);
   });
 }
+
+test("节点页两个页签;外部订阅页签亮着「节点」", async ({ page }) => {
+  await login(page, env);
+  await page.goto(env.origin + "/#nodes");
+  await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅"]);
+  await page.click(".tabs a:has-text('外部订阅')");
+  await expect(page).toHaveURL(/#nodes\/sources$/);
+  await expect(page.locator(".tabs a.on")).toHaveText("外部订阅");
+  await expect(page.locator(".side .nav.on")).toHaveAccessibleName(/^节点/);
+  await expect(page.locator("[data-act=source-new]").first()).toBeVisible();
+});
 
 test("用户页两个页签;套餐页签亮着「用户」", async ({ page }) => {
   await login(page, env);
