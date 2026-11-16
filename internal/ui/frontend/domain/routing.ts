@@ -34,6 +34,8 @@ export type SourceFormat = typeof SOURCE_FORMATS[number][0];
 export interface SubscriptionSource {
   id: number; name: string; enabled: boolean; revision: number; interval_seconds: number;
   region?: string; url_masked?: string; refreshing: boolean; node_count: number;
+  // nodes 是快照里的成员名单(显示名+协议),节点页用来列外部节点;旧控制面没有时回退为空。
+  nodes?: { name: string; protocol: string }[];
   last_good_at?: string; last_error?: string; snapshot_stale?: boolean; input_format?: string;
   formats: Partial<Record<SourceFormat, { count: number; issues?: SourceIssue[] }>>; issues?: SourceIssue[];
 }
