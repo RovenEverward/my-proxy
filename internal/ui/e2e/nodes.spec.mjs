@@ -829,9 +829,9 @@ test("模板漂移:详情提示「应用一次才生效」,列表标「需要应
   const row = page.locator('tbody tr[data-href="#nodes/2"]');
   await expect(row).toContainText("需要应用");
 });
-// 外部节点卡:节点页下方独立一张表,来源组行可展开成员;成员只做展示,不带 SSH/配置。
-// 控制面 /api/sources 的 nodes 字段带脱敏名单(名字+协议),前端按来源展开。
-test("外部节点卡:来源成行、成员可展开、行尾只带来源动作", async ({ page }) => {
+// 外部订阅从自建节点列表下拆出，收纳进节点页二级页签「自建节点 | 外部订阅」。
+// 控制面 /api/sources 的 nodes 字段带脱敏名单(名字+协议),外部订阅页签下按来源展开且成员只读。
+test("节点页签切换:自建列表不混外部节点,外部订阅页签按来源展开只读成员", async ({ page }) => {
   const net = (await import("node:net")).default;
   const http = (await import("node:http")).default;
   const port = await new Promise(res => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
@@ -856,24 +856,29 @@ test("外部节点卡:来源成行、成员可展开、行尾只带来源动作"
     await login(page, env);
     await page.goto(env.origin + "/#nodes");
     await expect(page.locator("html[data-loading]")).toHaveCount(0);
-    const card = page.locator(".ext-nodes");
-    await expect(card.locator(".ch")).toContainText("外部节点");
-    const group = card.locator("tr.src-group");
-    await expect(group).toContainText("页面源");
+    await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅"]);
+    await expect(page.locator(".ext-nodes")).toHaveCount(0);
+
+    // 切换到「外部订阅」页签
+    await page.click(".tabs a:has-text('外部订阅')");
+    await expect(page).toHaveURL(/#nodes\/sources$/);
+    const group = page.locator("tr.src-group", { hasText: "页面源" });
     await expect(group).toContainText("2 个节点");
     // 默认收起,成员不在页面上。
     await expect(page.locator("tr.src-member")).toHaveCount(0);
-    // 行尾刷新在请求层发 POST /api/sources/{id}/refresh,不开成员。
+    // 行尾刷新发 POST /api/sources/{id}/refresh,不开成员。
     env.takeLog();
-    await group.locator("[data-act=ext-src-refresh]").click();
+    const refreshDone = page.waitForResponse(r => r.request().method() === "POST" && r.url().includes(`/api/sources/${created.id}/refresh`));
+    await group.locator("[data-act=source-refresh]").click();
+    await refreshDone;
     expect(env.takeLog().some(r => r.method === "POST" && r.path === `/api/sources/${created.id}/refresh`)).toBeTruthy();
-    // 点组行展开成员:成员行只有名字与协议,没有 SSH/配置列。
-    await group.click();
+    // 点组行展开成员:成员行只有名字与协议,没有 SSH/节点操作。
+    await group.locator("[data-act=source-expand]").click();
     const members = page.locator("tr.src-member");
     await expect(members).toHaveCount(2);
     await expect(members.first()).toContainText("ext-jp-tokyo");
     await expect(members.nth(1)).toContainText("ext-sg");
-    await expect(members.nth(1).locator("td").nth(2)).toHaveText(/ss/i);
+    await expect(members.nth(1)).toContainText(/ss/i);
     // 成员行不可点、不带节点动作。
     await expect(members.first().locator("[data-act]")).toHaveCount(0);
   } finally {

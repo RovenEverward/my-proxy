@@ -1,50 +1,40 @@
 # UC-03 界面验收记录
 
-日期：2026-11-09。范围：外部订阅入口、来源管理、授权、混合预览和策略组来源条件。
+日期：2026-11-16（Round 4 更新，基于 2026-11-09 初始验收）。范围：外部订阅收纳进「节点」页二级页签、可展开来源列表、两分段详情抽屉（单次保存）、按需混合订阅预览弹窗与策略组来源条件。
 
 ## 结果
 
-- 页面入口位于“订阅”页头，名称为“管理外部订阅”。原来的四段内容结构保留。
-- 来源列表显示刷新状态、有效节点数和最近成功时间。
-- 来源详情支持配置、授权和格式报告。详情抽屉可以滚动到底部。
-- 异步刷新只更新结果区域，保留正在编辑的配置。
-- 预览按用户与格式计算。策略组预览同时显示成员和排除原因。
-- 390px 窄屏没有横向滚动。键盘焦点保持在抽屉内，Escape 关闭后返回触发按钮。
-- 深浅主题继承现有根主题。页面复用当前版本的组件、布局和图标，不依赖并行任务尚未提交的界面规范。
+- 外部订阅从顶级侧栏移除，收纳进「节点」页二级页签（`自建节点 | 外部订阅`，对应 `#nodes` / `#nodes/sources`）；旧地址 `#sources` 与 `sources/*` 重定向至 `#nodes/sources`。
+- 订阅页保留第三张卡片中的「管理外部订阅」跳转入口，指向 `#nodes/sources`。
+- 「节点 > 外部订阅」页签提供单张可展开来源表：行内展示接收用户与状态，按需展开只读成员节点（仅名称与协议，无节点动作），操作区提供刷新与详情入口。
+- 详情抽屉采用「配置与授权 | 节点与格式」两分段（支持键盘方向键与草稿保留）及底部单次保存（串联来源 PATCH 与授权 PUT）；异步刷新独立轮询并保留编辑状态。
+- 混合订阅预览从页面底部平铺改为页头「预览混合订阅」弹窗，按接收用户与客户端格式计算实际输出，Escape 关闭后焦点返回触发按钮。
+- 策略组继续支持来源条件按用户预览与「来源不符」排除提示。
+- 390px 窄屏无横向滚动，列表、展开行、抽屉与预览弹窗均不溢出视口，深浅主题继承现有根主题。
 
-## 独立审查
+## 自动验证（2026-11-16 Round 4）
 
-独立审查者实现并运行了 9 个浏览器用例。审查者未实现产品界面。
-
-审查发现详情内容断开 Flex 布局，导致底部操作不可达。现已修正，并重新验证滚动和操作。
-
-策略组预览保留排除项，并显示“来源不符”。测试分别核对实际成员与排除原因。
-
-审查者与实现者均检查了 2x 截图。没有发现阻断操作的布局问题。移动端刷新按钮会换行，不影响使用。
-
-## 自动验证
-
-- 新增来源用例：9 项通过。
-- 共享工作区全量 Playwright：336 项通过，8 项按现有条件跳过，0 项失败。
-- 独立提交候选基于当前主干，排除并行 UX 改动：316 项通过，8 项按现有条件跳过，0 项失败。20 项差异来自并行任务尚未合入的用例，外部订阅的 9 项用例均通过。
-- Go 全量、`go vet`、`ui:check` 和文档构建通过。
-- 来源并发回归通过 race detector。
-- 真正运行两次控制面进程，验证重启后保留授权并刷新到期来源。
-- 官方 sing-box 1.14.3 与 mihomo 1.19.33 分别通过自建 VLESS 与外部 Shadowsocks 连接测试服务。
-- 两个核心均通过混合协议配置校验。实际连通测试覆盖上述 VLESS 与 Shadowsocks 组合。
+- 前端规范与类型：`npm run ui:check`、`npm run ui:typecheck`、`npm run ui:build` 通过。
+- Go 测试与静态检查：`go vet ./...`、`go test ./... -count=1` 全部通过（含 `TestSourceListIncludesGrants` 验证 `GET /api/sources` 返回 `grants`）。
+- 全量 Playwright E2E（`CI=1 TZ=Asia/Shanghai npx playwright test -c internal/ui/e2e`）：361 项通过，8 项按既有条件跳过，0 项失败。
+- 文档巡检：`python3 scripts/atlas_audit.py` 无与本改动相关的断链或陈旧提示。
 
 所有上游均为测试样本。没有使用实际订阅账户或生产凭证。当前验收不代表所有供应商配置均受支持。
 
 ## 截图
 
-![桌面浅色列表](./sources-list-desktop-light@2x.png)
+![桌面浅色列表与展开](./sources-list-desktop-light@2x.png)
 
-![桌面深色列表](./sources-list-desktop-dark@2x.png)
+![桌面深色列表与展开](./sources-list-desktop-dark@2x.png)
 
-![窄屏浅色列表](./sources-list-mobile-light@2x.png)
+![窄屏浅色列表与展开](./sources-list-mobile-light@2x.png)
 
-![窄屏深色列表](./sources-list-mobile-dark@2x.png)
+![窄屏深色列表与展开](./sources-list-mobile-dark@2x.png)
 
-![桌面来源详情](./source-drawer-desktop-light@2x.png)
+![桌面详情抽屉 · 配置与授权](./source-drawer-config-desktop-light@2x.png)
 
-![窄屏来源详情](./source-drawer-mobile-dark@2x.png)
+![桌面详情抽屉 · 节点与格式](./source-drawer-nodes-desktop-light@2x.png)
+
+![窄屏深色详情抽屉](./source-drawer-config-mobile-dark@2x.png)
+
+![桌面混合订阅预览弹窗](./source-preview-modal-desktop-light@2x.png)

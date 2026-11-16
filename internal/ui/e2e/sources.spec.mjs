@@ -1,5 +1,5 @@
-// 「外部订阅」页:真控制面 + 可控 Node HTTP 上游,走完 UC-03 的整条链:
-// 新增 → 授权 → 混合预览 → 刷新失败留快照 → 停用恢复 → 删除;
+// 「外部订阅」页签(#nodes/sources):真控制面 + 可控 Node HTTP 上游,走完 UC-03 的整条链:
+// 新增 → 可展开成员 → 抽屉分段编辑与单次保存 → 混合预览弹窗 → 刷新失败留快照 → 停用恢复 → 删除;
 // 另测策略组来源筛选(含旧 PUT 不清关系)、表单错误保留、键盘与窄屏。
 // 文件内用例串行,前一个用例造的数据后面接着用。
 import http from "node:http";
@@ -33,7 +33,7 @@ test.beforeAll(async () => {
   env = await startEnv();
   upstreamBody = CLASH_YAML;
   const port = await freePort();
-  upstream = http.createServer((req, res) => {
+  upstream = http.createServer((_req, res) => {
     if (upstreamBody === "__FAIL__") { res.writeHead(500); res.end("upstream exploded"); return; }
     res.writeHead(200, { "Content-Type": "text/yaml" }); res.end(upstreamBody);
   });
@@ -51,12 +51,13 @@ test.afterAll(async () => { upstream?.close(); await env?.stop(); });
 
 const open = async page => {
   await login(page, env);
-  await page.goto(env.origin + "/#sources");
+  await page.goto(env.origin + "/#nodes/sources");
   await expect(page.locator("html[data-loading]")).toHaveCount(0);
 };
-// 来源行按名定位;详情抽屉的字段统一从 #drawer 里取。
+// 来源行按名定位;详情抽屉的字段统一从 #drawer 里取,混合预览弹窗从 #modal 里取。
 const rowOf = (page, name) => page.locator(".source-row", { hasText: name });
 const drawer = page => page.locator("#drawer.open");
+const modal = page => page.locator("#modal.open");
 // 等控制面把一次刷新落到终态(refreshing 变假)。
 const settle = async id => {
   for (let i = 0; i < 100; i++) {
@@ -66,19 +67,26 @@ const settle = async id => {
   }
   throw new Error("刷新超过 20 秒没落停");
 };
+const openPreviewModal = async page => {
+  const trigger = page.locator("[data-act=source-preview-open]");
+  await trigger.click();
+  await expect(modal(page)).toBeVisible();
+  await expect(page.locator("#modal h2")).toHaveText("混合订阅预览");
+};
 const shotDir = ".visual-design/mixed-sources";
 
 // 用例之间是真依赖:前一个造的数据后面接着用。串行声明后,一步失败剩余
 // 跳过 —— 不然 worker 重启 beforeAll 会造出空环境,后面的失败全是假象。
 test.describe.configure({ mode: "serial" });
 
-test("新增来源、授权用户、按用户与格式混合预览", async ({ page }) => {
+test("新增来源、展开列表、抽屉分段单次保存与混合预览弹窗", async ({ page }) => {
   await open(page);
-  await expect(page.locator(".ph h1")).toHaveText("外部订阅");
+  await expect(page.locator(".ph h1")).toHaveText("节点");
+  await expect(page.locator(".tabs a.on")).toHaveText("外部订阅");
   await expect(page.locator(".source-list")).toContainText("还没有外部订阅");
 
   // --- 新增 ---
-  await page.click('[data-act=source-new]');
+  await page.click("[data-act=source-new]");
   await expect(drawer(page)).toBeVisible();
   await expect(page.locator("#source-drawer-title")).toHaveText("添加外部订阅");
   await page.fill("#source-name", "测试源");
@@ -93,30 +101,62 @@ test("新增来源、授权用户、按用户与格式混合预览", async ({ pa
   expect(posted).toBeTruthy();
   expect(JSON.parse(posted.body)).toEqual({ name: "测试源", url: env.upstreamURL, interval_seconds: 21600, region: "JP" });
 
-  // 详情抽屉接着打开(可能正在拉,也可能已拉完):轮询到 2 个节点。
+  // 详情抽屉接着打开:轮询到 2 个节点,默认停留在「配置与授权」分段。
   await expect(drawer(page)).toBeVisible();
   const first = await getJSON("/api/sources");
   const sid = first[0].id;
   await settle(sid);
   await expect(page.locator("#drawer")).toContainText("2 个节点");
+  await expect(page.locator('#drawer [data-act=source-tab][data-tab=config]')).toHaveAttribute("aria-selected", "true");
   // 地址遮蔽:抽屉与列表都不出现真 URL。
   const drawerText = await page.locator("#drawer").innerText();
   for (const bad of [env.upstreamURL, "rawsecret", "ss-secret", "sg-secret"]) expect(drawerText).not.toContain(bad);
   await page.keyboard.press("Escape");
   await expect(rowOf(page, "测试源")).toContainText("2 个节点");
 
-  // --- 授权:勾选 alice,PUT 整表 ---
-  await rowOf(page, "测试源").locator('[data-act=source-open]').click();
+  // --- 主列表展开与收起成员 ---
+  await expect(page.locator("tr.src-member")).toHaveCount(0);
+  await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
+  await expect(page.locator("tr.src-member")).toHaveCount(2);
+  await expect(page.locator("tr.src-member").first()).toContainText("ext-jp-tokyo");
+  await expect(page.locator("tr.src-member").nth(1)).toContainText("ext-sg");
+  await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
+  await expect(page.locator("tr.src-member")).toHaveCount(0);
+
+  // --- 抽屉两段切换(含草稿保留 & 键盘方向键) + 单次保存授权 ---
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
   await expect(drawer(page)).toBeVisible();
   await page.locator('#source-grants-form input[name=user][value="alice"]').check();
-  await page.click("#source-grants-save");
+  await page.fill("#source-region", "SG");
+
+  // 键盘方向键切换分段 tab
+  const configTab = page.locator('#drawer [data-act=source-tab][data-tab=config]');
+  const nodesTab = page.locator('#drawer [data-act=source-tab][data-tab=nodes]');
+  await configTab.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(nodesTab).toHaveAttribute("aria-selected", "true");
+  await expect(nodesTab).toBeFocused();
+  await expect(page.locator("#source-format-results")).toContainText("Clash Meta");
+  await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-sg");
+
+  // 切回后草稿与未保存勾选仍在
+  await page.keyboard.press("ArrowLeft");
+  await expect(configTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#source-region")).toHaveValue("SG");
+  await expect(page.locator('#source-grants-form input[name=user][value="alice"]')).toBeChecked();
+
+  // 还原地区只保存授权,验证单次提交按钮 #source-save
+  await page.fill("#source-region", "JP");
+  await page.click("#source-save");
   await expect(page.locator(".toast")).toContainText("接收用户已保存");
   const granted = env.takeLog().find(r => r.method === "PUT" && /\/api\/sources\/\d+\/grants$/.test(r.path));
   expect(JSON.parse(granted.body)).toEqual({ users: ["alice"] });
   expect((await getJSON(`/api/sources/${sid}/grants`)).users).toEqual(["alice"]);
-  await page.keyboard.press("Escape");
+  await expect(rowOf(page, "测试源")).toContainText("alice");
 
-  // --- 混合预览:alice 有自建+外部,bob 只有自建 ---
+  // --- 混合预览弹窗:按需打开,alice 有自建+外部,bob 只有自建,Esc 关弹窗还焦点 ---
+  await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "alice");
   await page.selectOption("#source-preview-format", "clash-meta");
   await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
@@ -126,6 +166,9 @@ test("新增来源、授权用户、按用户与格式混合预览", async ({ pa
   await page.selectOption("#source-preview-user", "bob");
   await expect(page.locator("#source-preview")).not.toContainText("ext-jp-tokyo");
   await expect(page.locator("#source-preview")).toContainText("自建专线");
+  await page.keyboard.press("Escape");
+  await expect(modal(page)).toHaveCount(0);
+  await expect(page.locator("[data-act=source-preview-open]")).toBeFocused();
 });
 
 test("刷新失败:旧快照保留、错误上屏、订阅不受影响", async ({ page }) => {
@@ -144,7 +187,7 @@ test("刷新失败:旧快照保留、错误上屏、订阅不受影响", async (
   await open(page);
   const row = rowOf(page, "测试源");
   await expect(row).toContainText("使用上次结果");
-  await row.locator('[data-act=source-open]').click();
+  await row.locator("[data-act=source-open]").click();
   await expect(page.locator("#drawer")).toContainText("个节点");
   // last_error 上屏(alert 段落),且说明正在用上次结果。
   await expect(page.locator('#drawer p.c-bad[role="alert"]')).toContainText("正在使用");
@@ -157,20 +200,27 @@ test("刷新失败:旧快照保留、错误上屏、订阅不受影响", async (
 test("停用后订阅不再有外部节点,恢复后回来", async ({ page }) => {
   const sid = (await getJSON("/api/sources")).find(s => s.name === "测试源").id;
   await open(page);
-  await rowOf(page, "测试源").locator('[data-act=source-open]').click();
-  await page.locator('#drawer [data-act=source-toggle]').click();
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await page.locator("#drawer [data-act=source-toggle]").click();
   await expect(page.locator(".toast")).toContainText("已停用");
   const offPatch = env.takeLog().filter(r => r.method === "PATCH" && r.path === `/api/sources/${sid}`).pop();
   expect(JSON.parse(offPatch.body)).toEqual({ enabled: false });
   await expect(rowOf(page, "测试源")).toContainText("已停用");
-  await expect(page.locator("#source-preview")).not.toContainText("ext-jp-tokyo");
 
-  await rowOf(page, "测试源").locator('[data-act=source-open]').click();
-  await page.locator('#drawer [data-act=source-toggle]').click();
+  await openPreviewModal(page);
+  await page.selectOption("#source-preview-user", "alice");
+  await expect(page.locator("#source-preview")).not.toContainText("ext-jp-tokyo");
+  await page.keyboard.press("Escape");
+
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await page.locator("#drawer [data-act=source-toggle]").click();
   await expect(page.locator(".toast")).toContainText("已恢复");
   await expect(rowOf(page, "测试源")).not.toContainText("已停用");
+
+  await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "alice");
   await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await page.keyboard.press("Escape");
 });
 
 test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部", async ({ page }) => {
@@ -208,7 +258,7 @@ test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部",
   const missed = (hasText) => page.locator("#gp-pv .pp-pvr.miss", { hasText });
   await expect(admitted("ext-jp-tokyo")).toHaveCount(1);
   // chip 的 input 是透明的(可访问性走 label),点 chip 文本。
-  await page.locator('.chip', { hasText: "测试源" }).click();
+  await page.locator(".chip", { hasText: "测试源" }).click();
   await expect(page.locator(`input[data-source-choice][value="source:${sid}"]`)).not.toBeChecked();
   // 被来源条件排除的节点仍列出并标原因(UC 要求看到为什么被排掉),只是不入选。
   await expect(admitted("ext-jp-tokyo")).toHaveCount(0);
@@ -224,7 +274,7 @@ test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部",
 
   // 全不选 = 全部来源(空数组),组条件显示回「全部节点」。
   await page.locator(".rp-g", { hasText: "混合组" }).click();
-  await page.locator('.chip', { hasText: "自建节点" }).click();
+  await page.locator(".chip", { hasText: "自建节点" }).click();
   await expect(page.locator('input[data-source-choice][value="managed"]')).not.toBeChecked();
   const emptyPut = page.waitForResponse(r => r.url().includes(`/api/proxy-groups/${g.id}/sources`) && r.request().method() === "PUT");
   await page.click("#gp-save");
@@ -237,7 +287,7 @@ test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部",
 
 test("来源表单:拒收保留输入,修正后能存", async ({ page }) => {
   await open(page);
-  await page.click('[data-act=source-new]');
+  await page.click("[data-act=source-new]");
   await page.fill("#source-name", "会被拒的源");
   // 服务端校验:非 http/https 地址拒收(客户端只查非空)。
   await page.fill("#source-url", "ftp://up.example/sub");
@@ -260,7 +310,7 @@ test("来源表单:拒收保留输入,修正后能存", async ({ page }) => {
 
 test("抽屉键盘:进入聚焦、Tab 不跑出去、Escape 还回触发点", async ({ page }) => {
   await open(page);
-  const trigger = page.locator('[data-act=source-new]');
+  const trigger = page.locator("[data-act=source-new]");
   await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(drawer(page)).toBeVisible();
@@ -274,13 +324,13 @@ test("抽屉键盘:进入聚焦、Tab 不跑出去、Escape 还回触发点", as
   // Escape 关掉并把焦点还给触发按钮。
   await page.keyboard.press("Escape");
   await expect(page.locator("#drawer.open")).toHaveCount(0);
-  await expect(page.locator('[data-act=source-new]:focus')).toHaveCount(1);
+  await expect(page.locator("[data-act=source-new]:focus")).toHaveCount(1);
 });
 
 test("删除来源:确认框点名,删后列表清空、组里显示来源已删除", async ({ page }) => {
   await open(page);
-  await rowOf(page, "测试源").locator('[data-act=source-open]').click();
-  await page.locator('#drawer [data-act=source-delete]').click();
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await page.locator("#drawer [data-act=source-delete]").click();
   await expect(page.locator("#modal")).toContainText("删除订阅来源 测试源");
   await page.click("#okb");
   await expect(page.locator(".toast")).toContainText("已删除来源");
@@ -293,7 +343,7 @@ test("删除来源:确认框点名,删后列表清空、组里显示来源已删
   await expect(page.locator(".rp-g", { hasText: "混合组" })).toContainText("来源已删除");
 });
 
-test("窄屏 390:列表可读、抽屉不溢出、预览可选", async ({ page }) => {
+test("窄屏 390:列表与展开可读、抽屉与预览弹窗不溢出", async ({ page }) => {
   // 重造一个来源再验窄屏。
   upstreamBody = CLASH_YAML;
   const r = await cp("/api/sources", { method: "POST", body: JSON.stringify({ name: "测试源", url: env.upstreamURL, interval_seconds: 21600 }) });
@@ -303,19 +353,26 @@ test("窄屏 390:列表可读、抽屉不溢出、预览可选", async ({ page }
 
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page);
-  await expect(page.locator(".ph h1")).toHaveText("外部订阅");
-  await expect(page.locator(".ph h1")).toBeVisible();
+  await expect(page.locator(".ph h1")).toHaveText("节点");
+  await expect(page.locator(".tabs a.on")).toHaveText("外部订阅");
   await expect(rowOf(page, "测试源")).toBeVisible();
-  // 页面不许横向滚动。
+  // 展开成员行后仍不溢出。
+  await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
+  await expect(page.locator("tr.src-member")).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await rowOf(page, "测试源").locator('[data-act=source-open]').click();
-  await expect(drawer(page)).toBeVisible();
   // 抽屉不许比视口宽。
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await expect(drawer(page)).toBeVisible();
   const box = await drawer(page).boundingBox();
   expect(box.width).toBeLessThanOrEqual(390);
   await page.keyboard.press("Escape");
+  // 预览弹窗不许比视口宽。
+  await openPreviewModal(page);
+  const mbox = await modal(page).boundingBox();
+  expect(mbox.width).toBeLessThanOrEqual(390);
   await page.selectOption("#source-preview-user", "alice");
   await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await page.keyboard.press("Escape");
   await cp(`/api/sources/${created.id}`, { method: "DELETE" });
 });
 
@@ -339,30 +396,37 @@ test("视觉取证:桌面 1440 与手机 390,深浅两主题", async ({ page: _p
       const page = await context.newPage();
       await page.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
       await login(page, env);
-      await page.goto(env.origin + "/#sources");
+      await page.goto(env.origin + "/#nodes/sources");
       await expect(page.locator("html[data-loading]")).toHaveCount(0);
-      await page.selectOption("#source-preview-user", "alice");
-      await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
-      await expect(page.locator("#source-preview")).toContainText("自建专线");
+      await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
+      await expect(page.locator("tr.src-member")).toHaveCount(2);
       await page.mouse.move(1, 1);
       await page.screenshot({ path: `${shotDir}/sources-list-${label}-${theme}@2x.png` });
-      // 详情抽屉也留一张(desktop light 与 mobile dark 已覆盖两种形态)。
-      if ((label === "desktop" && theme === "light") || (label === "mobile" && theme === "dark")) {
-        await rowOf(page, "测试源").locator('[data-act=source-open]').click();
-        await expect(page.locator("#drawer")).toContainText("格式兼容");
+
+      if (label === "desktop" && theme === "light") {
+        // 抽屉:配置与授权 + 节点与格式 + 预览弹窗各留一张。
+        await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+        await expect(page.locator("#drawer")).toContainText("接收用户");
         await page.mouse.move(1, 1);
-        await page.screenshot({ path: `${shotDir}/source-drawer-${label}-${theme}@2x.png` });
+        await page.screenshot({ path: `${shotDir}/source-drawer-config-desktop-light@2x.png` });
+        await page.click('#drawer [data-act=source-tab][data-tab=nodes]');
+        await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-jp-tokyo");
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: `${shotDir}/source-drawer-nodes-desktop-light@2x.png` });
+        await page.keyboard.press("Escape");
+
+        await openPreviewModal(page);
+        await page.selectOption("#source-preview-user", "alice");
+        await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+        await expect(page.locator("#source-preview")).toContainText("自建专线");
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: `${shotDir}/source-preview-modal-desktop-light@2x.png` });
       }
-      // 节点页的外部节点卡留一张(desktop light 与 mobile light 已覆盖两种形态):
-      // 开一张、展开成员,各留一屏。
-      if (theme === "light") {
-        await page.goto(env.origin + "/#nodes");
-        await expect(page.locator("html[data-loading]")).toHaveCount(0);
+      if (label === "mobile" && theme === "dark") {
+        await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+        await expect(page.locator("#drawer")).toContainText("接收用户");
         await page.mouse.move(1, 1);
-        await page.screenshot({ path: `${shotDir}/nodes-external-${label}-light@2x.png` });
-        await page.locator(".ext-nodes tr.src-group").first().click();
-        await page.mouse.move(1, 1);
-        await page.screenshot({ path: `${shotDir}/nodes-external-open-${label}-light@2x.png` });
+        await page.screenshot({ path: `${shotDir}/source-drawer-config-mobile-dark@2x.png` });
       }
       await context.close();
     }

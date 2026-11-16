@@ -11,17 +11,6 @@ pre.code{margin:0;padding:12px;border-radius:8px;background:var(--stone);font:va
 .reach-lat{font-size:var(--ui-font-size-meta);margin-top:1px}
 .row-btns{opacity:0;transition:opacity 100ms}
 tr:hover .row-btns,tr:focus-within .row-btns{opacity:1}
-
-/* 外部节点卡:来源组行与成员行。成员不参与 SSH/配置/检查,只做展示。 */
-.ext-nodes{margin-top:14px}
-.ext-nodes .src-group{cursor:pointer}
-.ext-nodes .src-group:hover{background:var(--hover)}
-.ext-nodes .src-chev{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border:0;background:none;color:var(--muted);cursor:pointer;vertical-align:-4px;margin-right:2px;border-radius:4px}
-.ext-nodes .src-chev:hover{background:var(--hover);color:var(--ink)}
-.ext-nodes .src-chev .icon{transition:transform .16s var(--ease)}
-.ext-nodes .src-group:not(.open) .src-chev .icon,.ext-nodes .src-chev[aria-expanded="false"] .icon{transform:rotate(-90deg)}
-.ext-nodes .src-member td{padding-top:4px;padding-bottom:4px;border-bottom:0}
-.ext-nodes .src-member td:first-child{padding-left:40px}
 .reach-src-head{display:flex;align-items:baseline;gap:10px;padding:14px 6px 6px;font-weight:560}
 .reach-src-head .sub{font-weight:400}
 .reach-row{display:flex;align-items:center;gap:14px;padding:8px 6px;border-radius:8px}

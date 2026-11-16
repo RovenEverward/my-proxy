@@ -14,7 +14,6 @@ import { SubscriptionPage } from "@/pages/sub";
 import { SystemPage } from "@/pages/system";
 import { RulesPage } from "@/pages/rules";
 import { DoctorPage } from "@/pages/doctor";
-import { SourcesPage } from "@/pages/sources";
 import { SetupPage, ConnectForm } from "@/pages/setup";
 import { ProfilesDialog } from "@/runtime/profiles";
 import { OverviewPage } from "@/pages/overview";
@@ -22,9 +21,9 @@ import { UpdateDialog, useUpdateState } from "@/runtime/update";
 
 const pages: Record<string, ComponentType<PageProps>> = {
   overview: OverviewPage, users: UsersPage, plans: PlansPage, nodes: NodesPage, sub: SubscriptionPage,
-  system: SystemPage, rules: RulesPage, doctor: DoctorPage, sources: SourcesPage,
+  system: SystemPage, rules: RulesPage, doctor: DoctorPage,
 };
-const titleFor = (key: string) => navigation.find(item => item.key === key)?.label || (key === "plans" ? "套餐" : key === "sources" ? "外部订阅" : "MPX");
+const titleFor = (key: string) => navigation.find(item => item.key === key)?.label || (key === "plans" ? "套餐" : "MPX");
 export function App({ meta }: { meta: Meta }) {
   const [key, setKey] = useState(() => canonicalKey(location.hash));
   const [navigationState, setNavigationState] = useState<Record<string, string>>({});
