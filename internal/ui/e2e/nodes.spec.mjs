@@ -829,3 +829,55 @@ test("模板漂移:详情提示「应用一次才生效」,列表标「需要应
   const row = page.locator('tbody tr[data-href="#nodes/2"]');
   await expect(row).toContainText("需要应用");
 });
+// 外部节点卡:节点页下方独立一张表,来源组行可展开成员;成员只做展示,不带 SSH/配置。
+// 控制面 /api/sources 的 nodes 字段带脱敏名单(名字+协议),前端按来源展开。
+test("外部节点卡:来源成行、成员可展开、行尾只带来源动作", async ({ page }) => {
+  const net = (await import("node:net")).default;
+  const http = (await import("node:http")).default;
+  const port = await new Promise(res => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "text/yaml" });
+    res.end(`proxies:\n  - name: ext-jp-tokyo\n    type: ss\n    server: 198.51.100.5\n    port: 8388\n    cipher: aes-256-gcm\n    password: ss-secret\n  - name: ext-sg\n    type: ss\n    server: 198.51.100.9\n    port: 8488\n    cipher: chacha20-ietf-poly1305\n    password: sg-secret\n`);
+  });
+  await new Promise(r => upstream.listen(port, "127.0.0.1", r));
+  const cp = p => cpFetch(env.cpURL + p, { method: "POST", headers: { Authorization: "Bearer " + env.token, "Content-Type": "application/json" }, body: JSON.stringify({ name: "页面源", url: `http://127.0.0.1:${port}/clash`, interval_seconds: 21600 }) });
+  const created = await (await cp("/api/sources")).json();
+  // 等快照落库,GET /api/sources/{id} 的 nodes 里应有两条成员。
+  let detail;
+  for (let i = 0; i < 100; i++) {
+    const r = await cpFetch(env.cpURL + `/api/sources/${created.id}`, { headers: { Authorization: "Bearer " + env.token } });
+    detail = await r.json();
+    if (!detail.refreshing) break;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  expect(detail.node_count).toBe(2);
+  expect((detail.nodes || []).map(n => n.name)).toEqual(["ext-jp-tokyo", "ext-sg"]);
+  try {
+    await login(page, env);
+    await page.goto(env.origin + "/#nodes");
+    await expect(page.locator("html[data-loading]")).toHaveCount(0);
+    const card = page.locator(".ext-nodes");
+    await expect(card.locator(".ch")).toContainText("外部节点");
+    const group = card.locator("tr.src-group");
+    await expect(group).toContainText("页面源");
+    await expect(group).toContainText("2 个节点");
+    // 默认收起,成员不在页面上。
+    await expect(page.locator("tr.src-member")).toHaveCount(0);
+    // 行尾刷新在请求层发 POST /api/sources/{id}/refresh,不开成员。
+    env.takeLog();
+    await group.locator("[data-act=ext-src-refresh]").click();
+    expect(env.takeLog().some(r => r.method === "POST" && r.path === `/api/sources/${created.id}/refresh`)).toBeTruthy();
+    // 点组行展开成员:成员行只有名字与协议,没有 SSH/配置列。
+    await group.click();
+    const members = page.locator("tr.src-member");
+    await expect(members).toHaveCount(2);
+    await expect(members.first()).toContainText("ext-jp-tokyo");
+    await expect(members.nth(1)).toContainText("ext-sg");
+    await expect(members.nth(1).locator("td").nth(2)).toHaveText(/ss/i);
+    // 成员行不可点、不带节点动作。
+    await expect(members.first().locator("[data-act]")).toHaveCount(0);
+  } finally {
+    await cpFetch(env.cpURL + `/api/sources/${created.id}`, { method: "DELETE", headers: { Authorization: "Bearer " + env.token } });
+    upstream.close();
+  }
+});

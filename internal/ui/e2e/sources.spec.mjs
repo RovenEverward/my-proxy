@@ -353,6 +353,17 @@ test("视觉取证:桌面 1440 与手机 390,深浅两主题", async ({ page: _p
         await page.mouse.move(1, 1);
         await page.screenshot({ path: `${shotDir}/source-drawer-${label}-${theme}@2x.png` });
       }
+      // 节点页的外部节点卡留一张(desktop light 与 mobile light 已覆盖两种形态):
+      // 开一张、展开成员,各留一屏。
+      if (theme === "light") {
+        await page.goto(env.origin + "/#nodes");
+        await expect(page.locator("html[data-loading]")).toHaveCount(0);
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: `${shotDir}/nodes-external-${label}-light@2x.png` });
+        await page.locator(".ext-nodes tr.src-group").first().click();
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: `${shotDir}/nodes-external-open-${label}-light@2x.png` });
+      }
       await context.close();
     }
   }

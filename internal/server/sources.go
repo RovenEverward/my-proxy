@@ -40,9 +40,18 @@ type sourceView struct {
 	Refreshing    bool                                    `json:"refreshing"`
 	SnapshotStale bool                                    `json:"snapshot_stale"`
 	NodeCount     int                                     `json:"node_count"`
-	InputFormat   string                                  `json:"input_format"`
-	Issues        []source.Issue                          `json:"issues"`
-	Formats       map[model.ClientFormat]sourceFormatView `json:"formats"`
+	// Nodes 是快照里的节点名单:只带显示名与协议,不带地址和凭证,
+	// 让节点页这类清单界面可以直接展示成员而不用读订阅预览。
+	Nodes       []sourceNodeRef                         `json:"nodes"`
+	InputFormat string                                    `json:"input_format"`
+	Issues      []source.Issue                          `json:"issues"`
+	Formats     map[model.ClientFormat]sourceFormatView `json:"formats"`
+}
+
+// sourceNodeRef 是外部节点的最小展示字段。
+type sourceNodeRef struct {
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
 }
 
 func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
@@ -59,6 +68,10 @@ func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
 	var eps []render.Endpoint
 	_ = json.Unmarshal(src.Snapshot, &eps)
 	v.NodeCount = len(eps)
+	v.Nodes = make([]sourceNodeRef, 0, len(eps))
+	for _, ep := range eps {
+		v.Nodes = append(v.Nodes, sourceNodeRef{Name: ep.Remark, Protocol: render.ProtocolShort(ep)})
+	}
 	for _, f := range sourceFormats {
 		fv := sourceFormatView{Issues: []source.Issue{}}
 		for i, ep := range eps {

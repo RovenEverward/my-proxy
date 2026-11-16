@@ -1,4 +1,4 @@
-ui-src 888c693269e3c1ab14517979d4ce159c8987bdce7128465ca4ae6a8712c33c33
+ui-src 4c4cb7ea93a43d0d5a44d7c4ad5e3d51a9d9d8fb3c1d3086e8521c5c93c86338
 78c3488077343d5e  internal/ui/assets/styles/terminus/fonts.css
 b921242b4a54e7db  internal/ui/assets/styles/terminus/fonts/LICENSE-EB-Garamond.txt
 5dd548d31a85f756  internal/ui/assets/styles/terminus/fonts/LICENSE-Inter.txt
@@ -42,7 +42,7 @@ bbada097fd805f8d  internal/ui/frontend/domain/nodes.ts
 1343cd078ee321ef  internal/ui/frontend/domain/plans.ts
 142549f97e62c67e  internal/ui/frontend/domain/reach.ts
 0ba6943515bd1599  internal/ui/frontend/domain/releases.tsx
-c27c44bf1ce7a7be  internal/ui/frontend/domain/routing.ts
+f4b3ec65f915b6dc  internal/ui/frontend/domain/routing.ts
 a28dbf19f71582ed  internal/ui/frontend/domain/settings.ts
 4b22d9536427aee0  internal/ui/frontend/domain/users.ts
 7af78994c5541576  internal/ui/frontend/index.html
@@ -54,7 +54,7 @@ dbecde54e5d2acf0  internal/ui/frontend/pages/catalog/index.tsx
 46f383e194eae9c9  internal/ui/frontend/pages/doctor/use-doctor.ts
 88131c9d74ee901d  internal/ui/frontend/pages/nodes/NodeEditor.tsx
 b81c341652fec75c  internal/ui/frontend/pages/nodes/NodeInfoDrawer.tsx
-2fe2dfd2d25b2be6  internal/ui/frontend/pages/nodes/NodesPage.tsx
+4d568ca6afa6c230  internal/ui/frontend/pages/nodes/NodesPage.tsx
 795abfefd52a79f1  internal/ui/frontend/pages/nodes/ReachDrawer.tsx
 f54275caddd0e156  internal/ui/frontend/pages/nodes/RelabelModal.tsx
 706f4603ad6f9ea9  internal/ui/frontend/pages/nodes/index.ts
@@ -127,7 +127,7 @@ a51973c9b98ad056  internal/ui/frontend/styles/components/overlays.css
 1638b9c14853ba23  internal/ui/frontend/styles/index.css
 6824db607f596cef  internal/ui/frontend/styles/pages/catalog.css
 3aa14b44d91350f6  internal/ui/frontend/styles/pages/doctor.css
-d6401a999c0c9dc3  internal/ui/frontend/styles/pages/nodes.css
+1bb236ee9953d964  internal/ui/frontend/styles/pages/nodes.css
 71f7d81078a69a69  internal/ui/frontend/styles/pages/overview.css
 9e0e87351365d47c  internal/ui/frontend/styles/pages/page-overview.css
 e4cc90fa7da923ec  internal/ui/frontend/styles/pages/plans.css
