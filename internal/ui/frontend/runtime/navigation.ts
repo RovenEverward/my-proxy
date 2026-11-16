@@ -16,10 +16,11 @@ export function routeOf(key: string) {
 export const navigation = [
   { key: "overview", label: "总览", icon: "home" }, { key: "nodes", label: "节点", icon: "nodes" },
   { key: "users", label: "用户", icon: "users" }, { key: "sub", label: "订阅", icon: "sub" },
+  { key: "sources", label: "外部订阅", icon: "globe" },
   { key: "rules", label: "分流", icon: "split" }, { key: "doctor", label: "体检", icon: "pulse" },
   { key: "system", label: "系统", icon: "set" },
 ] as const;
-export function navKey(route: string[]) { return route[0] === "plans" ? "users" : route[0] === "sources" ? "sub" : route[0]; }
+export function navKey(route: string[]) { return route[0] === "plans" ? "users" : route[0]; }
 export function shortVersion(value?: string) {
   const text = String(value || ""), release = /^v?\d+\.\d+\.\d+/.exec(text);
   if (release) return release[0].startsWith("v") ? release[0] : "v" + release[0];
