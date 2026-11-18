@@ -38,6 +38,8 @@ export interface SubscriptionSource {
   nodes?: { name: string; protocol: string }[];
   // grants 是已授权用户名列表(按需新增字段),旧控制面未返回时前端降级从抽屉单独读。
   grants?: string[];
+  // grant_all 为真时全员可见(含新建用户),旧控制面未返回时按 false 处理。
+  grant_all?: boolean;
   last_good_at?: string; last_error?: string; snapshot_stale?: boolean; input_format?: string;
   formats: Partial<Record<SourceFormat, { count: number; issues?: SourceIssue[] }>>; issues?: SourceIssue[];
 }

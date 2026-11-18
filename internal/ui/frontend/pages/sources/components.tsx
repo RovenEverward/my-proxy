@@ -15,7 +15,8 @@ export function sourceIssueCount(source: SubscriptionSource): number {
   return total;
 }
 
-export function SourceGrantsSummary({ grants }: { grants?: string[] }) {
+export function SourceGrantsSummary({ grants, all }: { grants?: string[]; all?: boolean }) {
+  if (all) return <span className="tag">全部用户</span>;
   if (!grants) return <span className="sub">—</span>;
   if (!grants.length) return <span className="sub">未分配</span>;
   if (grants.length <= 2) return <span>{grants.join("、")}</span>;

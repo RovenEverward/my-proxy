@@ -11,7 +11,7 @@ import (
 
 func (s *Store) migrateSources() error {
 	for _, ddl := range []string{
-		`CREATE TABLE IF NOT EXISTS subscription_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, url TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER NOT NULL DEFAULT 21600, region TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1, last_attempt_at INTEGER, last_error TEXT NOT NULL DEFAULT '', report BLOB NOT NULL DEFAULT '{}')`,
+		`CREATE TABLE IF NOT EXISTS subscription_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, url TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER NOT NULL DEFAULT 21600, region TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 1, last_attempt_at INTEGER, last_error TEXT NOT NULL DEFAULT '', report BLOB NOT NULL DEFAULT '{}', grant_all INTEGER NOT NULL DEFAULT 0)`,
 		`CREATE TABLE IF NOT EXISTS source_snapshots (source_id INTEGER PRIMARY KEY REFERENCES subscription_sources(id) ON DELETE CASCADE, url TEXT NOT NULL, endpoints BLOB NOT NULL, created_at INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS user_source_grants (source_id INTEGER NOT NULL REFERENCES subscription_sources(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, PRIMARY KEY(source_id,user_id))`,
 		// Source selectors retain deleted IDs so deletion cannot widen a group.
@@ -21,15 +21,18 @@ func (s *Store) migrateSources() error {
 			return err
 		}
 	}
-	return nil
+	// grant_all 建表之后补加:旧库靠这里升上来。这条迁移在 addMissingColumns
+	// 之后跑(那里的循环跑时 subscription_sources 可能还没建),所以放这里。
+	return s.addColumnIfMissing("subscription_sources", "grant_all",
+		`ALTER TABLE subscription_sources ADD COLUMN grant_all INTEGER NOT NULL DEFAULT 0`)
 }
 
-const sourceSelect = `SELECT s.id,s.name,s.url,s.enabled,s.interval_seconds,s.region,s.revision,s.last_attempt_at,s.last_error,s.report,p.created_at,COALESCE(p.url,''),COALESCE(p.endpoints,'') FROM subscription_sources s LEFT JOIN source_snapshots p ON p.source_id=s.id`
+const sourceSelect = `SELECT s.id,s.name,s.url,s.enabled,s.interval_seconds,s.region,s.grant_all,s.revision,s.last_attempt_at,s.last_error,s.report,p.created_at,COALESCE(p.url,''),COALESCE(p.endpoints,'') FROM subscription_sources s LEFT JOIN source_snapshots p ON p.source_id=s.id`
 
 func scanSource(row scanner) (*model.SubscriptionSource, error) {
 	var s model.SubscriptionSource
 	var attempted, good sql.NullInt64
-	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.Enabled, &s.IntervalSeconds, &s.Region, &s.Revision, &attempted, &s.LastError, &s.Report, &good, &s.SnapshotURL, &s.Snapshot)
+	err := row.Scan(&s.ID, &s.Name, &s.URL, &s.Enabled, &s.IntervalSeconds, &s.Region, &s.GrantAll, &s.Revision, &attempted, &s.LastError, &s.Report, &good, &s.SnapshotURL, &s.Snapshot)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -52,7 +55,7 @@ func (s *Store) CreateSource(v *model.SubscriptionSource) error {
 	if err := v.Validate(); err != nil {
 		return err
 	}
-	res, err := s.db.Exec(`INSERT INTO subscription_sources(name,url,enabled,interval_seconds,region) VALUES(?,?,?,?,?)`, v.Name, v.URL, v.Enabled, v.IntervalSeconds, v.Region)
+	res, err := s.db.Exec(`INSERT INTO subscription_sources(name,url,enabled,interval_seconds,region,grant_all) VALUES(?,?,?,?,?,?)`, v.Name, v.URL, v.Enabled, v.IntervalSeconds, v.Region, v.GrantAll)
 	if isUnique(err) {
 		return ErrDuplicate
 	}
@@ -90,7 +93,7 @@ func (s *Store) listSources(query string, args ...any) ([]model.SubscriptionSour
 }
 
 func (s *Store) ListSourcesForUser(userID int64) ([]model.SubscriptionSource, error) {
-	return s.listSources(sourceSelect+` WHERE s.enabled=1 AND EXISTS(SELECT 1 FROM user_source_grants g WHERE g.source_id=s.id AND g.user_id=?) ORDER BY s.id`, userID)
+	return s.listSources(sourceSelect+` WHERE s.enabled=1 AND (s.grant_all=1 OR EXISTS(SELECT 1 FROM user_source_grants g WHERE g.source_id=s.id AND g.user_id=?)) ORDER BY s.id`, userID)
 }
 
 func (s *Store) UpdateSource(v *model.SubscriptionSource) error {
@@ -98,7 +101,7 @@ func (s *Store) UpdateSource(v *model.SubscriptionSource) error {
 	if err := v.Validate(); err != nil {
 		return err
 	}
-	res, err := s.db.Exec(`UPDATE subscription_sources SET name=?,url=?,enabled=?,interval_seconds=?,region=?,revision=revision+1 WHERE id=? AND revision=?`, v.Name, v.URL, v.Enabled, v.IntervalSeconds, v.Region, v.ID, v.Revision)
+	res, err := s.db.Exec(`UPDATE subscription_sources SET name=?,url=?,enabled=?,interval_seconds=?,region=?,grant_all=?,revision=revision+1 WHERE id=? AND revision=?`, v.Name, v.URL, v.Enabled, v.IntervalSeconds, v.Region, v.GrantAll, v.ID, v.Revision)
 	if isUnique(err) {
 		return ErrDuplicate
 	}

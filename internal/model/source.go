@@ -20,6 +20,9 @@ type SubscriptionSource struct {
 	Enabled         bool       `json:"enabled"`
 	IntervalSeconds int64      `json:"interval_seconds"`
 	Region          string     `json:"region,omitempty"`
+	// GrantAll 为真时忽略按人授权,所有用户(含新建)都能看到这来源的节点。
+	// 显式授权记录保留,开关关掉后恢复按人过滤。
+	GrantAll        bool       `json:"grant_all,omitempty"`
 	Revision        int64      `json:"revision"`
 	LastAttemptAt   *time.Time `json:"last_attempt_at,omitempty"`
 	LastGoodAt      *time.Time `json:"last_good_at,omitempty"`

@@ -444,3 +444,63 @@ func TestSourceInactiveUsersAndDeletedReferences(t *testing.T) {
 		t.Fatal("deleted source refreshed")
 	}
 }
+
+func TestSourceGrantAllPatchAndVisibility(t *testing.T) {
+	e := newEnv(t)
+	t.Cleanup(e.s.sources.Close)
+	alice, bob := e.createUser("alice"), e.createUser("bob")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "vless://11111111-1111-4111-8111-111111111111@open.example.test:443?security=tls&sni=open.example.test#all")
+	}))
+	defer upstream.Close()
+	src := addTestSource(t, e, upstream.URL)
+	if src.GrantAll {
+		t.Fatal("新来源默认开了全员授权")
+	}
+	if _, _, body := e.sub("/sub/"+bob.SubToken+"/links", ""); strings.Contains(string(body), "open.example.test") {
+		t.Fatal("未授权用户看到来源节点")
+	}
+	code, data := e.api("PATCH", fmt.Sprintf("/api/sources/%d", src.ID), map[string]any{"grant_all": true, "revision": src.Revision})
+	if code != 200 {
+		t.Fatalf("patch grant_all: %d %s", code, data)
+	}
+	v := decodeJSON[sourceView](t, data)
+	if !v.GrantAll {
+		t.Fatalf("grant_all not persisted: %s", data)
+	}
+	for _, u := range []userView{alice, bob} {
+		code, _, body := e.sub("/sub/"+u.SubToken+"/links", "")
+		if code != 200 || !strings.Contains(string(body), "open.example.test") {
+			t.Fatalf("%s: %d %s", u.Username, code, body)
+		}
+	}
+	// 新建用户不用单独授权也可见。
+	carol := e.createUser("carol")
+	if code, _, body := e.sub("/sub/"+carol.SubToken+"/links", ""); code != 200 || !strings.Contains(string(body), "open.example.test") {
+		t.Fatalf("carol: %d %s", code, body)
+	}
+	// 关掉开关:bob/carol 不可见;只给 alice 补授权后仅她可见。
+	v2 := awaitSource(t, e, src.ID)
+	code, _ = e.api("PATCH", fmt.Sprintf("/api/sources/%d", src.ID), map[string]any{"grant_all": false, "revision": v2.Revision})
+	if code != 200 {
+		t.Fatal("close grant_all")
+	}
+	if code, data := e.api("PUT", fmt.Sprintf("/api/sources/%d/grants/alice", src.ID), nil); code != 200 {
+		t.Fatalf("grant alice: %d %s", code, data)
+	}
+	if _, _, body := e.sub("/sub/"+bob.SubToken+"/links", ""); strings.Contains(string(body), "open.example.test") {
+		t.Fatal("关闭后未授权用户仍可见")
+	}
+	if code, _, body := e.sub("/sub/"+alice.SubToken+"/links", ""); code != 200 || !strings.Contains(string(body), "open.example.test") {
+		t.Fatal("关闭后 alice 看不到")
+	}
+	// grants 名单仍只反映按人记录,不被全员开关篡改。
+	code, data = e.api("GET", fmt.Sprintf("/api/sources/%d", src.ID), nil)
+	if code != 200 {
+		t.Fatal("get")
+	}
+	got := decodeJSON[sourceView](t, data)
+	if len(got.Grants) != 1 || got.Grants[0] != "alice" {
+		t.Fatalf("grants: %#v", got.Grants)
+	}
+}

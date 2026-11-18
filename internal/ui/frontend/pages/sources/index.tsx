@@ -126,7 +126,7 @@ export function SourcesPage() {
                       {source.last_error && <div className="sub c-bad src-row-err" title={source.last_error}>{source.last_error}</div>}
                     </td>
                     <td className="hide-m" onClick={event => { event.stopPropagation(); openSource(source.id, "config"); }}>
-                      <SourceGrantsSummary grants={source.grants} />
+                      <SourceGrantsSummary grants={source.grants} all={source.grant_all} />
                     </td>
                     <td className="hide-m" onClick={event => { event.stopPropagation(); openSource(source.id, "nodes"); }}>
                       <SourceFormatsSummary source={source} />
