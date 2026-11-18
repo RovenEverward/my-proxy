@@ -33,7 +33,7 @@ SSH 和核心安装在 [internal/node]。
 
 ### 订阅镜像(UC-10)
 
-名单内一台节点可同时是订阅入口:`sub_mirrors` 登记「节点 + 端口 + 上游」,渲染时在该节点配置里追加一个 `dokodemo-door`(xray)或 `direct`(sing-box)入站,把公开端口的 TCP 转给控制面。镜像不进数据通路、不持真相、不参与计量;内容与鉴权以控制面为唯一来源。加/删/改上游都是结构性变更,`mpx mirror add|rm|set` 默认走 `DeployNode` 下发(会重启核心),`--sync=false` 只登记。上游指到控制面的 `--sub-addr` 专用口时,`/api` 不会出现在镜像端口。
+名单内一台节点可同时是订阅入口:`sub_mirrors` 登记「节点 + 端口 + 上游」,渲染时在该节点的 xray 配置里追加一个 `dokodemo-door` 入站,把公开端口的 TCP 转给控制面。镜像只在主核心 xray 上渲染 —— sing-box 是第二核心,同机同端口只能绑一边;纯 QUIC 节点有镜像时强制下发 xray。镜像不进数据通路、不持真相、不参与计量;内容与鉴权以控制面为唯一来源。加/删/改上游都是结构性变更,`mpx mirror add|rm|set` 默认走 `DeployNode` 下发(会重启核心),`--sync=false` 只登记。上游指到控制面的 `--sub-addr` 专用口时,`/api` 不会出现在镜像端口。
 
 ## 坑
 
