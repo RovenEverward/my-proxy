@@ -229,13 +229,13 @@ type RegradeRow struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`
 	Display string `json:"display,omitempty"`
-	Region  string `json:"region,omitempty"`  // 归一化后的地区
-	City    string `json:"city,omitempty"`    // 归一化后的城市
-	Score   *int   `json:"score,omitempty"`   // nil = 未测
-	Verdict string `json:"verdict"`           // ok / partial / untested
-	Old     string `json:"old"`               // 旧字母,空串为没有
-	New     string `json:"new"`               // 建议字母;"-" 表示不写入
-	Note    string `json:"note,omitempty"`    // 跳过原因或不一致提示
+	Region  string `json:"region,omitempty"` // 归一化后的地区
+	City    string `json:"city,omitempty"`   // 归一化后的城市
+	Score   *int   `json:"score,omitempty"`  // nil = 未测
+	Verdict string `json:"verdict"`          // ok / partial / untested
+	Old     string `json:"old"`              // 旧字母,空串为没有
+	New     string `json:"new"`              // 建议字母;"-" 表示不写入
+	Note    string `json:"note,omitempty"`   // 跳过原因或不一致提示
 	Changed bool   `json:"changed"`
 }
 
@@ -254,13 +254,13 @@ type regradeInput struct {
 
 // regradeNode 是进入重排计算的节点视图。
 type regradeNode struct {
-	id      int64
-	name    string
-	score   int
-	tested  bool // 有质量分才参与排名
-	m       model.LocationMetadata // 归一化后的目标元数据
-	old     model.LocationMetadata // 归一化前的元数据
-	note    string
+	id     int64
+	name   string
+	score  int
+	tested bool                   // 有质量分才参与排名
+	m      model.LocationMetadata // 归一化后的目标元数据
+	old    model.LocationMetadata // 归一化前的元数据
+	note   string
 }
 
 // handleRegrade 计算或执行评级:默认只返回对照表,apply=true 持锁重算并写入。

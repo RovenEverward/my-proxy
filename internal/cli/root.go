@@ -97,7 +97,6 @@ func Execute(args ...string) int {
 	if buildinfo.Desktop() && (len(args) > 0 || len(os.Args) > 1) {
 		attachParentConsole()
 	}
-	configureDevelopment()
 	wireCompletion(rootCmd)
 	if len(args) > 0 {
 		rootCmd.SetArgs(args)

@@ -14,22 +14,22 @@ const DefaultSourceInterval = 6 * 60 * 60
 // SubscriptionSource owns upstream configuration, never managed server state.
 // Secret fields are persisted but are never serialized through management APIs.
 type SubscriptionSource struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	URL             string     `json:"-"`
-	Enabled         bool       `json:"enabled"`
-	IntervalSeconds int64      `json:"interval_seconds"`
-	Region          string     `json:"region,omitempty"`
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	URL             string `json:"-"`
+	Enabled         bool   `json:"enabled"`
+	IntervalSeconds int64  `json:"interval_seconds"`
+	Region          string `json:"region,omitempty"`
 	// GrantAll 为真时忽略按人授权,所有用户(含新建)都能看到这来源的节点。
 	// 显式授权记录保留,开关关掉后恢复按人过滤。
-	GrantAll        bool       `json:"grant_all,omitempty"`
-	Revision        int64      `json:"revision"`
-	LastAttemptAt   *time.Time `json:"last_attempt_at,omitempty"`
-	LastGoodAt      *time.Time `json:"last_good_at,omitempty"`
-	LastError       string     `json:"last_error,omitempty"`
-	Snapshot        []byte     `json:"-"`
-	SnapshotURL     string     `json:"-"`
-	Report          []byte     `json:"-"`
+	GrantAll      bool       `json:"grant_all,omitempty"`
+	Revision      int64      `json:"revision"`
+	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
+	LastGoodAt    *time.Time `json:"last_good_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	Snapshot      []byte     `json:"-"`
+	SnapshotURL   string     `json:"-"`
+	Report        []byte     `json:"-"`
 }
 
 func (s *SubscriptionSource) Normalize() {

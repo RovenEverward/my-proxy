@@ -2,16 +2,14 @@ package cli
 
 import (
 	"context"
+	"github.com/RovenEverward/my-proxy/internal/pin"
+	"github.com/RovenEverward/my-proxy/internal/server"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/RovenEverward/my-proxy/internal/buildinfo"
-	"github.com/RovenEverward/my-proxy/internal/pin"
-	"github.com/RovenEverward/my-proxy/internal/server"
 )
 
 // controlHealthEnv 起一个假控制面:自签 TLS、按 token 鉴权、/api/status 回版本。
@@ -95,14 +93,5 @@ func TestUpdateRunParsesControlArg(t *testing.T) {
 	}
 	if err := cmd.Args(cmd, []string{"nodes"}); err == nil {
 		t.Fatal("nodes 不该被接受")
-	}
-}
-
-func TestDevelopmentControlRunnerRejectsReleaseUpdate(t *testing.T) {
-	if !buildinfo.IsDevelopment(buildinfo.Version()) {
-		t.Skip("需要开发版构建")
-	}
-	if err := runUpdateRunControl(nil, nil); err == nil || !strings.Contains(err.Error(), "mpx-dev deploy") {
-		t.Fatal("开发版 root 更新入口应在任何操作前拒绝")
 	}
 }

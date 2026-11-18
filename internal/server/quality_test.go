@@ -36,8 +36,8 @@ func probeOut(ip, cc, city, flags string) string {
 
 func TestProbeQuality(t *testing.T) {
 	ops := &fakeQualityProber{out: map[string]string{
-		"la": probeOut("1.2.3.4", "US", "Los Angeles", `{"is_datacenter":true,"asn":{"asn":123,"org":"DC Inc."}}`),
-		"jp": probeOut("5.6.7.8", "JP", "Tokyo", `{"is_tor":true,"is_proxy":true}`),
+		"la":  probeOut("1.2.3.4", "US", "Los Angeles", `{"is_datacenter":true,"asn":{"asn":123,"org":"DC Inc."}}`),
+		"jp":  probeOut("5.6.7.8", "JP", "Tokyo", `{"is_tor":true,"is_proxy":true}`),
 		"bad": "",
 	}}
 	ops.err = nil
@@ -97,11 +97,11 @@ func TestProbeQuality(t *testing.T) {
 func TestRegradePlan(t *testing.T) {
 	ops := &fakeQualityProber{out: map[string]string{
 		// la-b 分最高 → 应拿 A;la-a 第二 → B;untouched 不参与,留着 A 让位。
-		"la-a":       probeOut("1.1.1.1", "US", "Los Angeles", `{"is_datacenter":true}`),
-		"la-b":       probeOut("1.1.1.2", "US", "Los Angeles", `{}`),
-		"conflict":   probeOut("2.2.2.2", "JP", "Tokyo", `{}`),
-		"no-region":  probeOut("3.3.3.3", "SG", "Singapore", `{}`),
-		"untested":   "",
+		"la-a":      probeOut("1.1.1.1", "US", "Los Angeles", `{"is_datacenter":true}`),
+		"la-b":      probeOut("1.1.1.2", "US", "Los Angeles", `{}`),
+		"conflict":  probeOut("2.2.2.2", "JP", "Tokyo", `{}`),
+		"no-region": probeOut("3.3.3.3", "SG", "Singapore", `{}`),
+		"untested":  "",
 	}}
 	e := newEnvWith(t, ops)
 	names := []string{"la-a", "la-b", "conflict", "no-region", "untested"}

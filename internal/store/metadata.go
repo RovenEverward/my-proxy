@@ -81,6 +81,7 @@ func (s *Store) SaveLocationMetadata(kind string, id int64, m model.LocationMeta
 	_, err = s.db.Exec(`INSERT INTO `+table+`(id,config) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config`, id, string(b))
 	return err
 }
+
 // SaveLocationMetadataBatch 在一个事务里写入多条节点元数据。regrade 按组
 // 重排字母时必须是全有或全无:中途失败留一半,显示名就排错了。
 func (s *Store) SaveLocationMetadataBatch(items map[int64]model.LocationMetadata) error {

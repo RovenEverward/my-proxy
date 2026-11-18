@@ -28,26 +28,26 @@ import (
 // 它只有元数据:遮蔽后的 URL、状态、计数与原因 —— 真实凭证只进快照与授权订阅,
 // 详情接口从不回吐。
 type sourceView struct {
-	ID              int64                   `json:"id"`
-	Name            string                  `json:"name"`
-	URLMasked       string                  `json:"url_masked"`
-	Enabled         bool                    `json:"enabled"`
-	IntervalSeconds int                     `json:"interval_seconds"`
-	Region          string                  `json:"region"`
-	GrantAll        bool                    `json:"grant_all"`
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	URLMasked       string `json:"url_masked"`
+	Enabled         bool   `json:"enabled"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	Region          string `json:"region"`
+	GrantAll        bool   `json:"grant_all"`
 	PlanGrants      []struct {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	} `json:"plan_grants"`
-	Revision        int64                   `json:"revision"`
-	LastAttemptAt   string                  `json:"last_attempt_at"`
-	LastGoodAt      string                  `json:"last_good_at"`
-	LastError       string                  `json:"last_error"`
-	Refreshing      bool                    `json:"refreshing"`
-	NodeCount       int                     `json:"node_count"`
-	InputFormat     string                  `json:"input_format"`
-	Issues          []sourceIssue           `json:"issues"`
-	Formats         map[string]sourceFormat `json:"formats"`
+	Revision      int64                   `json:"revision"`
+	LastAttemptAt string                  `json:"last_attempt_at"`
+	LastGoodAt    string                  `json:"last_good_at"`
+	LastError     string                  `json:"last_error"`
+	Refreshing    bool                    `json:"refreshing"`
+	NodeCount     int                     `json:"node_count"`
+	InputFormat   string                  `json:"input_format"`
+	Issues        []sourceIssue           `json:"issues"`
+	Formats       map[string]sourceFormat `json:"formats"`
 }
 
 // sourceIssue 是快照里被跳过条目的一条说明:位置、显示名与原因。

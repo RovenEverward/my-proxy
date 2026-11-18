@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { startEnv, login } from './env.mjs';
 let env;
-const VERSION = 'dev-aaaaaaaaaaaa-clean';
-const DISPLAY_VERSION = 'dev-aaaaaaa';
+const VERSION = 'v0.9.17';
+const DISPLAY_VERSION = 'v0.9.17';
 test.use({ deviceScaleFactor: 2, viewport: { width: 1280, height: 820 } });
 test.beforeAll(async () => {
   env = await startEnv();
@@ -106,10 +106,8 @@ test('Mac 进出全屏：inset 归零时收起拖拽行，恢复时重新占36px
 
 for (const [version, display] of [
   ['v0.9.11', 'v0.9.11'],
-  ['dev-aaaaaaaaaaaa-clean', 'dev-aaaaaaa'],
-  ['dev-aaaaaaaaaaaa-dirty', 'dev-aaaaaaa*'],
-  ['dev-aaaaaaaaaaaa', 'dev-aaaaaaa'],
-  ['dev-aaaaaaaaaaaaa', 'dev-aaaaaaa'],
+  ['0.9.11', 'v0.9.11'],
+  ['v0.9.11-beta.2', 'v0.9.11'],
 ]) test('版本短显示与完整提示 · ' + version, async ({ page }) => {
   await setup(page, 'browser', 'light', version);
   await aligned(page, 'browser', version, display);

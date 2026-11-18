@@ -2,16 +2,14 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/RovenEverward/my-proxy/internal/buildinfo"
-	"github.com/RovenEverward/my-proxy/internal/model"
-	"github.com/RovenEverward/my-proxy/internal/selfupdate"
 )
 
 // controlDirEnv 起一个控制面并把升级目录指到临时目录,返回那个目录。
@@ -253,22 +251,5 @@ func TestUpdateControlRequiresToken(t *testing.T) {
 	code, _ := e.request("POST", "/api/update/control", map[string]any{"version": "v0.7.0"}, map[string]string{"Authorization": "Bearer wrong"})
 	if code != http.StatusUnauthorized {
 		t.Fatalf("token 不对应当 401,实际 %d", code)
-	}
-}
-
-// 用 -ldflags 注入开发版运行此项，核对真实路由先拒绝、没有落请求文件。
-func TestDevelopmentControlRejectsReleaseUpdate(t *testing.T) {
-	if !buildinfo.IsDevelopment(buildinfo.Version()) {
-		t.Skip("需要开发版构建")
-	}
-	e, dir := controlDirEnv(t)
-	for _, action := range []string{"upgrade", "rollback"} {
-		code, body := e.api("POST", "/api/update/control", map[string]any{"action": action})
-		if code != http.StatusConflict || !strings.Contains(string(body), "mpx-dev deploy") {
-			t.Fatalf("未拒绝发布件更新：%d", code)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "request")); !os.IsNotExist(err) {
-			t.Fatal("开发版不应落请求文件")
-		}
 	}
 }

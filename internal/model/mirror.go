@@ -10,8 +10,8 @@ import "github.com/RovenEverward/my-proxy/internal/netutil"
 // 没有 MPX 组件;「能 SSH 的节点」与「订阅入口」分开,一台节点可以同时是
 // 代理承载者与订阅镜像。
 type SubMirror struct {
-	ID     int64  `json:"id"`
-	NodeID int64  `json:"node_id"`
+	ID     int64 `json:"id"`
+	NodeID int64 `json:"node_id"`
 	// Port 是节点对外监听的订阅端口。与入站端口同一套约束:1-65535,
 	// 与同节点的入站和 API 端口区分开。
 	Port int `json:"port"`

@@ -191,12 +191,12 @@ func (s *Server) handleReachProbe(w http.ResponseWriter, r *http.Request) {
 // reachTargetsResponse 是探测点与操作机拉到的调度输入:目标、周期、各对象
 // 各侧的新鲜度。freshness 按对象身份键;到期规则是「该侧距今超过 interval」。
 type reachTargetsResponse struct {
-	FetchedAt time.Time                 `json:"fetched_at"`
-	Interval  int                       `json:"interval_minutes"`
-	StaleSec  int64                     `json:"stale_seconds"`
+	FetchedAt time.Time `json:"fetched_at"`
+	Interval  int       `json:"interval_minutes"`
+	StaleSec  int64     `json:"stale_seconds"`
 	// ExcludeEnabled 告诉探测端:剔除开着,境内侧欠账才值得清(UC-12)。
-	ExcludeEnabled bool                      `json:"exclude_enabled"`
-	Targets        []reach.Target            `json:"targets"`
+	ExcludeEnabled bool                       `json:"exclude_enabled"`
+	Targets        []reach.Target             `json:"targets"`
 	Freshness      map[string]reach.Freshness `json:"freshness"`
 }
 
@@ -279,7 +279,7 @@ func (s *Server) subjectFreshness() (map[string]reach.Freshness, error) {
 type reachResultsRequest struct {
 	CheckedAt time.Time           `json:"checked_at"`
 	Results   []reach.NodeCheck   `json:"results,omitempty"`
-	Scope     string              `json:"scope,omitempty"`    // domestic / cp(新形状)
+	Scope     string              `json:"scope,omitempty"`     // domestic / cp(新形状)
 	SourceID  string              `json:"source_id,omitempty"` // 探测点身份,probe:<id>
 	Subjects  []reach.SourceCheck `json:"subjects,omitempty"`
 }

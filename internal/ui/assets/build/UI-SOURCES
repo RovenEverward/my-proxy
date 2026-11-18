@@ -1,4 +1,4 @@
-ui-src 51eafed281b09cc241c926f22fcf87ac02f468324b20219b12fcb925ce4931e0
+ui-src 58f24f106a08bca2f96da3ad68bf50ddde52cc95bfd8b83c3c7670a659053f00
 78c3488077343d5e  internal/ui/assets/styles/terminus/fonts.css
 b921242b4a54e7db  internal/ui/assets/styles/terminus/fonts/LICENSE-EB-Garamond.txt
 5dd548d31a85f756  internal/ui/assets/styles/terminus/fonts/LICENSE-Inter.txt
@@ -114,7 +114,7 @@ acd01c7a4fce82ab  internal/ui/frontend/pages/users/renew.tsx
 3ca466aedefcaceb  internal/ui/frontend/pages/users/send.tsx
 e483731cfbf26613  internal/ui/frontend/runtime/api.ts
 7cc7adfbc7ca7070  internal/ui/frontend/runtime/app-context.tsx
-a52b4cf5321c4e83  internal/ui/frontend/runtime/navigation.ts
+81873213c678ff80  internal/ui/frontend/runtime/navigation.ts
 0ae88c259ae119a6  internal/ui/frontend/runtime/platform.ts
 3fb11764bd82f325  internal/ui/frontend/runtime/profiles.tsx
 baa47a4f87d36169  internal/ui/frontend/runtime/query.ts

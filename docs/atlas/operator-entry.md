@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-18 @ UC-12 + UC-14 合并工作树
+verified: 2026-11-19 @ 8e11b21 + working tree
 ---
 # 本机入口：CLI、mpx ui、设备接入
 

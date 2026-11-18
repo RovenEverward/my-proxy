@@ -40,19 +40,19 @@ type sourceFormatView struct {
 }
 type sourceView struct {
 	*model.SubscriptionSource
-	URLMasked     string                                  `json:"url_masked"`
-	Refreshing    bool                                    `json:"refreshing"`
-	SnapshotStale bool                                    `json:"snapshot_stale"`
-	NodeCount     int                                     `json:"node_count"`
+	URLMasked     string `json:"url_masked"`
+	Refreshing    bool   `json:"refreshing"`
+	SnapshotStale bool   `json:"snapshot_stale"`
+	NodeCount     int    `json:"node_count"`
 	// Nodes 是快照里的节点名单:只带显示名与协议,不带地址和凭证,
 	// 让节点页这类清单界面可以直接展示成员而不用读订阅预览。
-	Nodes       []sourceNodeRef                         `json:"nodes"`
-	InputFormat string                                    `json:"input_format"`
-	Issues      []source.Issue                          `json:"issues"`
-	Grants      []string                                `json:"grants"`
+	Nodes       []sourceNodeRef `json:"nodes"`
+	InputFormat string          `json:"input_format"`
+	Issues      []source.Issue  `json:"issues"`
+	Grants      []string        `json:"grants"`
 	// PlanGrants 是按套餐授权的名单;用户可见性 = grant_all ∪ grants ∪ 所在套餐。
-	PlanGrants []sourcePlanRef                          `json:"plan_grants"`
-	Formats     map[model.ClientFormat]sourceFormatView `json:"formats"`
+	PlanGrants []sourcePlanRef                         `json:"plan_grants"`
+	Formats    map[model.ClientFormat]sourceFormatView `json:"formats"`
 }
 
 // sourcePlanRef 是授权名单里的套餐最小表示(id 唯一,name 唯一)。
@@ -155,8 +155,8 @@ type sourceWrite struct {
 	Region          *string `json:"region"`
 	// GrantAll 是「全员授权」开关:为真时这来源对所有用户(含新建)可见,
 	// 按人授权表不再决定可见性,但保留记录,关掉后恢复生效。
-	GrantAll        *bool   `json:"grant_all"`
-	Revision        *int64  `json:"revision"`
+	GrantAll *bool  `json:"grant_all"`
+	Revision *int64 `json:"revision"`
 }
 
 func (p sourceWrite) apply(src *model.SubscriptionSource) {

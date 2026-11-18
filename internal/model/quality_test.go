@@ -25,7 +25,10 @@ func TestQualityScore(t *testing.T) {
 }
 
 func TestNormalizeRegion(t *testing.T) {
-	cases := []struct{ stored, detected, want string; conflict bool }{
+	cases := []struct {
+		stored, detected, want string
+		conflict               bool
+	}{
 		{"", "US", "US", false},
 		{"美西", "US", "US", false},
 		{"us", "US", "US", false},

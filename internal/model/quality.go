@@ -24,18 +24,18 @@ var NodeQualityVerdicts = map[string]bool{
 
 // QualityReport 是 node_quality.report 的明细形状,CLI 与界面都按它渲染。
 type QualityReport struct {
-	EgressIP  string `json:"egress_ip,omitempty"`
-	Region    string `json:"region,omitempty"`    // ipwho.is 给出的国家码,大写
-	CityEn    string `json:"city_en,omitempty"`   // ipwho.is 原文城市
-	City      string `json:"city,omitempty"`      // 经 CityZh 对照后的中文城市,没有则为空
-	ASN       string `json:"asn,omitempty"`       // ipapi.is,例如 AS13335
-	Org       string `json:"org,omitempty"`       // ipapi.is 组织名
-	Flags     map[string]bool `json:"flags,omitempty"` // ipapi.is 风险标记:is_datacenter / is_vpn / is_proxy / is_tor / is_abuser / is_bogon
-	AbuseScore *int  `json:"abuse_score,omitempty"` // AbuseIPDB 置信分(0–100),只在控制面配了密钥时有
-	Score     int    `json:"score"`
+	EgressIP   string             `json:"egress_ip,omitempty"`
+	Region     string             `json:"region,omitempty"`      // ipwho.is 给出的国家码,大写
+	CityEn     string             `json:"city_en,omitempty"`     // ipwho.is 原文城市
+	City       string             `json:"city,omitempty"`        // 经 CityZh 对照后的中文城市,没有则为空
+	ASN        string             `json:"asn,omitempty"`         // ipapi.is,例如 AS13335
+	Org        string             `json:"org,omitempty"`         // ipapi.is 组织名
+	Flags      map[string]bool    `json:"flags,omitempty"`       // ipapi.is 风险标记:is_datacenter / is_vpn / is_proxy / is_tor / is_abuser / is_bogon
+	AbuseScore *int               `json:"abuse_score,omitempty"` // AbuseIPDB 置信分(0–100),只在控制面配了密钥时有
+	Score      int                `json:"score"`
 	Deductions []QualityDeduction `json:"deductions,omitempty"`
-	Steps      []QualityStep      `json:"steps"`            // 每个探测子步骤的结果
-	Error      string             `json:"error,omitempty"`  // untested 的原因
+	Steps      []QualityStep      `json:"steps"`           // 每个探测子步骤的结果
+	Error      string             `json:"error,omitempty"` // untested 的原因
 }
 
 // QualityStep 记录一次探测里每个子步骤的状态。

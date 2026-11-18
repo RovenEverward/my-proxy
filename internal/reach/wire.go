@@ -38,20 +38,20 @@ type NodeCheck struct {
 // ExtCheck 是一个外部订阅端点的触达存档(UC-12)。判定与明细同源,身份是
 // render.EndpointKey;展示名沿来源名 + 端点名。
 type ExtCheck struct {
-	SubjectKey string         `json:"subject_key"`
-	SourceID   int64          `json:"source_id"`
-	SourceName string         `json:"source_name"`
-	Name       string         `json:"name"`
-	CheckedAt  time.Time      `json:"checked_at"`
-	Verdict    string         `json:"verdict"`
-	Local      SourceSummary  `json:"local"`
-	CP         SourceSummary  `json:"cp"`
-	Address    string         `json:"address"`
-	Port       int            `json:"port"`
-	Protocol   string         `json:"protocol"`
-	Rows       []Row          `json:"rows,omitempty"`
-	Excluded   bool           `json:"excluded,omitempty"`
-	Kept       bool           `json:"kept,omitempty"`
+	SubjectKey string        `json:"subject_key"`
+	SourceID   int64         `json:"source_id"`
+	SourceName string        `json:"source_name"`
+	Name       string        `json:"name"`
+	CheckedAt  time.Time     `json:"checked_at"`
+	Verdict    string        `json:"verdict"`
+	Local      SourceSummary `json:"local"`
+	CP         SourceSummary `json:"cp"`
+	Address    string        `json:"address"`
+	Port       int           `json:"port"`
+	Protocol   string        `json:"protocol"`
+	Rows       []Row         `json:"rows,omitempty"`
+	Excluded   bool          `json:"excluded,omitempty"`
+	Kept       bool          `json:"kept,omitempty"`
 }
 
 // SourceCheck 是(对象 × 来源)的原始探测结果存档(UC-12):判定从它重算。

@@ -131,9 +131,6 @@ func runUpdateRollback(cmd *cobra.Command, args []string) error {
 
 // applyCLI 完成一次本机 CLI 自更新。
 func applyCLI(cmd *cobra.Command) error {
-	if err := selfupdate.CheckLocalUpdate(localVersion()); err != nil {
-		return err
-	}
 	version, _ := cmd.Flags().GetString("version")
 	allowDowngrade, _ := cmd.Flags().GetBool("allow-downgrade")
 	yes, _ := cmd.Flags().GetBool("yes")
@@ -211,9 +208,6 @@ func applyCLI(cmd *cobra.Command) error {
 
 // rollbackCLI 把本机 CLI 换回 .prev。
 func rollbackCLI() error {
-	if err := selfupdate.CheckLocalUpdate(localVersion()); err != nil {
-		return err
-	}
 	exe, err := selfExecutable()
 	if err != nil {
 		return err

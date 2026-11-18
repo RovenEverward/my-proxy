@@ -105,10 +105,10 @@ func TestReachTargetsListsNodeAndExt(t *testing.T) {
 		t.Fatalf("targets: %d %s", code, body)
 	}
 	var rt struct {
-		Interval  int             `json:"interval_minutes"`
-		Targets   []reach.Target  `json:"targets"`
-		Freshness map[string]any  `json:"freshness"`
-		Exclude   bool            `json:"exclude_enabled"`
+		Interval  int            `json:"interval_minutes"`
+		Targets   []reach.Target `json:"targets"`
+		Freshness map[string]any `json:"freshness"`
+		Exclude   bool           `json:"exclude_enabled"`
 	}
 	if err := json.Unmarshal(body, &rt); err != nil {
 		t.Fatal(err)
