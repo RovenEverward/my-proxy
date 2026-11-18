@@ -78,6 +78,11 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 		{Name: "xray", URL: sub + "/xray"},
 		{Name: "base64", URL: sub + "/base64-links"},
 	}
+	// 订阅镜像:把名单内节点上开放的 /sub 入口追加进来。内容与其他入口一致,
+	// 用户在哪台节点能通就用哪个;镜像不可用时页面仍能渲染,只是入口会 404。
+	for _, e := range s.mirrorEndpoints() {
+		data.Links = append(data.Links, subPageLink{Name: "镜像 · " + e.Name, URL: e.Endpoint + "/sub/" + user.SubToken})
+	}
 
 	var err error
 	data.Capabilities, err = s.subscriberCapabilities(user, now)

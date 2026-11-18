@@ -28,6 +28,10 @@ type ServeOptions struct {
 	Logger   *slog.Logger
 	// NoAutoLocate 关掉「新建节点后自动识别地区」(mpx serve --auto-locate=false 或 MPX_AUTO_LOCATE=0)。
 	NoAutoLocate bool
+	// SubAddr 是订阅专用监听(UC-10),例如 0.0.0.0:8081;空串不起。
+	// 节点镜像把 /sub 流量转到这个口,管理 /api 不会出现在这个监听上,
+	// 也不需要经过 TLS 嗅探分流(它就是纯 HTTP)。
+	SubAddr string
 }
 
 // Serve 打开数据库、拉起后台任务、监听 HTTP,直到 ctx 结束或监听失败。
@@ -148,6 +152,37 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	defer func() { stopWorkers(); <-taskDone }()
 
 	errCh := make(chan error, 1)
+
+	// 订阅专用监听(可选):只路由 /sub,且是纯 HTTP —— 节点镜像(dokodemo-door
+	// TCP 转发)把订阅流量送到这里时,/api 永远不会出现在这个口上,比把镜像
+	// 指到主监听安全(主监听的 TLS 嗅探会把 /api 也带出去)。
+	var subSrv *http.Server
+	if opt.SubAddr != "" {
+		srv.SetSubAddr(opt.SubAddr)
+		subLn, err := net.Listen("tcp", opt.SubAddr)
+		if err != nil {
+			return fmt.Errorf("监听订阅专用口 %s: %w", opt.SubAddr, err)
+		}
+		subSrv = &http.Server{
+			Handler:           srv.rateLimit(srv.subLimiter, srv.subHandler),
+			ReadHeaderTimeout: 10 * time.Second,
+			BaseContext:       func(net.Listener) context.Context { return ctx },
+		}
+		go func() {
+			logger.Info("订阅专用监听已启动", "addr", opt.SubAddr)
+			if err := subSrv.Serve(subLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- fmt.Errorf("订阅专用监听 %s: %w", opt.SubAddr, err)
+			}
+		}()
+		defer func() {
+			if subSrv != nil {
+				shCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				_ = subSrv.Shutdown(shCtx)
+				cancel()
+			}
+		}()
+	}
+
 	go func() {
 		ln, err := net.Listen("tcp", opt.Addr)
 		if err != nil {

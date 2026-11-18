@@ -65,6 +65,10 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 	if err != nil {
 		return err
 	}
+	mirrors, err := c.store.ListSubMirrors(n.ID)
+	if err != nil {
+		return err
+	}
 	d, err := c.store.GetCoreDeployment(n.ID, model.CoreSingBox)
 	if err != nil {
 		return err
@@ -76,7 +80,7 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 	if err != nil {
 		return err
 	}
-	cfg, err := render.SingBoxServerConfig(n, *d, inbounds, users, now)
+	cfg, err := render.SingBoxServerConfig(n, *d, inbounds, users, mirrors, now)
 	if err != nil {
 		return err
 	}
@@ -99,7 +103,7 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 			if err != nil {
 				return err
 			}
-			fresh, err := render.SingBoxServerConfig(n, *d, inbounds, freshUsers, at)
+			fresh, err := render.SingBoxServerConfig(n, *d, inbounds, freshUsers, mirrors, at)
 			if err != nil {
 				return err
 			}

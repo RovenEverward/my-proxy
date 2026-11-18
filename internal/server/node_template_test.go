@@ -18,7 +18,11 @@ func templateHashOf(t *testing.T, e *env, n model.Node) string {
 	if err != nil {
 		t.Fatalf("读入站: %v", err)
 	}
-	h, err := control.TemplateHash(n, inbounds)
+	mirrors, err := e.st.ListSubMirrors(n.ID)
+	if err != nil {
+		t.Fatalf("读订阅镜像: %v", err)
+	}
+	h, err := control.TemplateHash(n, inbounds, mirrors)
 	if err != nil {
 		t.Fatalf("算模板哈希: %v", err)
 	}

@@ -362,6 +362,11 @@ func (s *Server) handleUserLinks(w http.ResponseWriter, r *http.Request) {
 	sub := base + "/sub/" + u.SubToken
 
 	out := map[string]string{"auto": sub}
+	// 镜像入口:同一 token 在每台开了订阅镜像的节点上都有一份地址。键名
+	// "mirror-<节点>" 固定,旧 CLI 把它当成未知格式原样带出,不受影响。
+	for _, e := range s.mirrorEndpoints() {
+		out["mirror-"+e.Name] = e.Endpoint + "/sub/" + u.SubToken
+	}
 	// 只加的字段:链接开头没填时 auto 按这次请求的 Host 拼(本机开发、经 mpx ui 转发都会变),
 	// 页面拿它判断「链接开头就是这台控制面」。旧读者只认 auto 及其余格式,不受影响。
 	if settings.SubURLPrefix == "" {

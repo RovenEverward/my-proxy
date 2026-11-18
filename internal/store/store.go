@@ -83,6 +83,15 @@ var schema = []string{
 		outbound_ip  TEXT    NOT NULL DEFAULT ''
 	)`,
 
+	`CREATE TABLE IF NOT EXISTS sub_mirrors (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+		port       INTEGER NOT NULL DEFAULT 0,
+		upstream   TEXT    NOT NULL DEFAULT '',
+		remark     TEXT    NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_sub_mirrors_node_id ON sub_mirrors(node_id)`,
+
 	`CREATE TABLE IF NOT EXISTS inbounds (
 		id           INTEGER PRIMARY KEY AUTOINCREMENT,
 		node_id      INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,

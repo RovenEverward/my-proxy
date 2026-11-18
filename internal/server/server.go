@@ -135,7 +135,16 @@ type Server struct {
 	// 速率与突发见 ratelimit.go 的常数,按真实使用拍,不做配置项。
 	subLimiter *ipRateLimiter
 	apiLimiter *ipRateLimiter
+	// subHandler 是只含 /sub 路由的处理器,给订阅专用监听(--sub-addr)用:
+	// 那个口上永远没有 /api,管理面不会随订阅端口外泄。
+	subHandler http.Handler
+	// subAddr 是订阅专用监听的地址(--sub-addr / MPX_SUB_ADDR),镜像默认
+	// 上游推导靠它决定转发端口;空串表示没开。
+	subAddr string
 }
+
+// SetSubAddr 告诉 server 订阅专用口开在哪;由 Serve 起监听前调一次。
+func (s *Server) SetSubAddr(addr string) { s.subAddr = addr }
 
 // New 组装一台控制面。token 为空表示不校验管理接口的鉴权,只用于本机开发。
 //
@@ -216,6 +225,7 @@ func (s *Server) routes() {
 	// ({format} 是单段);fmt/name 的白名单在处理器里校验。
 	sub.HandleFunc("GET /sub/{token}/ruleset/{fmt}/{name}", s.handleRulesetFile)
 	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
+	s.subHandler = sub
 
 	api := http.NewServeMux()
 	s.metadataRoutes(api)
@@ -226,6 +236,10 @@ func (s *Server) routes() {
 	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
 	s.reachRoutes(api)
+	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
+	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
+	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)
+	api.HandleFunc("DELETE /api/mirrors/{id}", s.handleDeleteMirror)
 	api.HandleFunc("GET /api/status", s.handleStatus)
 	api.HandleFunc("GET /api/update", s.handleUpdate)
 	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的

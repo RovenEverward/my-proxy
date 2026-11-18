@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +82,16 @@ type serverInbound struct {
 // serverAPISettings 是 API 入站的 dokodemo-door 配置:把流量转给本机 xray 自身。
 type serverAPISettings struct {
 	Address string `json:"address"`
+}
+
+// serverMirrorSettings 是订阅镜像入站的 dokodemo-door 配置:把到达节点端口的
+// TCP 转给控制面,订阅请求由控制面处理。节点自身不解 HTTP,因此 /sub 与 /api
+// 的分流只能靠上游端口区分 —— 上游指到控制面的订阅专用口时,/api 不会出现在
+// 节点的镜像端口上。
+type serverMirrorSettings struct {
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	Network string `json:"network"`
 }
 
 // serverStreamSettings 是传输层配置。
@@ -262,7 +274,7 @@ type serverRoutingRule struct {
 //
 // 只有 now 时刻状态为 active 且被该入站授权的用户才会被写进配置;过期、超限、
 // 停用的用户既不在配置里,也不能通过 xray 认证。
-func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User, now time.Time) ([]byte, error) {
+func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User, mirrors []model.SubMirror, now time.Time) ([]byte, error) {
 	apiPort := node.APIPort
 	if apiPort == 0 {
 		apiPort = defaultServerAPIPort
@@ -306,7 +318,40 @@ func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User,
 		cfg.Inbounds = append(cfg.Inbounds, rendered)
 	}
 
+	// 订阅镜像:dokodemo-door 把节点公开端口上的 TCP 转给控制面。它不参与
+	// 用户鉴权与计量 —— 流量对 xray 来说就是几条透明转发连接,不落到
+	// 任何用户名上;订阅内容由控制面唯一产生。
+	for _, m := range mirrors {
+		if m.NodeID != 0 && m.NodeID != node.ID {
+			continue
+		}
+		host, port, err := mirrorUpstream(m)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Inbounds = append(cfg.Inbounds, serverInbound{
+			Tag:      fmt.Sprintf("sub-mirror-%d", m.Port),
+			Listen:   "0.0.0.0",
+			Port:     m.Port,
+			Protocol: "dokodemo-door",
+			Settings: serverMirrorSettings{Address: host, Port: port, Network: "tcp"},
+		})
+	}
+
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// mirrorUpstream 把镜像的上游(host:port)拆成地址与端口,供两份服务端渲染共用。
+func mirrorUpstream(m model.SubMirror) (string, int, error) {
+	host, portStr, err := net.SplitHostPort(m.Upstream)
+	if err != nil {
+		return "", 0, fmt.Errorf("订阅镜像 %d 的上游 %q 不是 host:port: %w", m.ID, m.Upstream, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("订阅镜像 %d 的上游端口 %q 无效", m.ID, portStr)
+	}
+	return host, port, nil
 }
 
 // InboundAddUserConfig 渲染「只含一个入站、且该入站只含一个用户」的配置片段。

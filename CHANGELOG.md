@@ -2,6 +2,16 @@
 
 每个版本的完整说明见 [GitHub Releases](https://github.com/RovenEverward/my-proxy/releases)。本文件从 v0.5.0 开始记录。
 
+## 未发布
+
+### 要点
+- 订阅镜像(UC-10):在名单内一台节点上开放 /sub 入口,订阅地址可不止控制面一个 IP。节点侧是核心自带的 TCP 转发(dokodemo-door / sing-box direct),不装 MPX 组件;内容与鉴权以控制面为唯一真相。新增 `mpx mirror add|list|set|rm`,API `GET/POST/PUT/DELETE /api/mirrors`,`mpx serve --sub-addr` 可开一个只路由 /sub 的专用监听(节点镜像指到它时 /api 不出现在镜像端口)。订阅页与用户链接列出"镜像 · <节点>"入口。
+- 控制面迁移后,`mpx mirror set <id> --upstream <新控制面>:<端口>` 让既有镜像跟随新控制面。
+
+### 兼容性
+- 控制面 API 只增不破:新增 `/api/mirrors*` 与 `user links` 里的 `mirror-<节点>` 键,旧端点行为不变。
+- 数据库新增 `sub_mirrors` 表;`ServerConfig`/`SingBoxServerConfig` 增加 mirrors 参数,旧版本读库不受影响但请先用新版本备份。
+
 ## v0.9.16 (2026-11-15)
 
 ### 要点

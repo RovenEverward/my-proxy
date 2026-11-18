@@ -86,7 +86,13 @@ func (s *Server) markTemplateDrift(v *model.NodeView) {
 		s.logger.Warn("算节点模板漂移失败:读不到它的入站", "node", v.Name, "error", err)
 		return
 	}
-	hash, err := control.TemplateHash(v.Node, inbounds)
+	hash, err := func() (string, error) {
+		mirrors, merr := s.store.ListSubMirrors(v.Node.ID)
+		if merr != nil {
+			return "", merr
+		}
+		return control.TemplateHash(v.Node, inbounds, mirrors)
+	}()
 	if err != nil {
 		s.logger.Warn("算节点模板漂移失败:渲染不出配置模板", "node", v.Name, "error", err)
 		return
@@ -549,5 +555,9 @@ func (s *Server) renderNodeConfig(n *model.Node) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return render.ServerConfig(*n, inbounds, users, time.Now())
+	mirrors, err := s.store.ListSubMirrors(n.ID)
+	if err != nil {
+		return nil, err
+	}
+	return render.ServerConfig(*n, inbounds, users, mirrors, time.Now())
 }

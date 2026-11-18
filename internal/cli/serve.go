@@ -20,6 +20,7 @@ var serveFlags struct {
 	db         string
 	interval   time.Duration
 	autoLocate bool
+	subAddr    string
 }
 
 var serveCmd = &cobra.Command{
@@ -68,6 +69,13 @@ var serveCmd = &cobra.Command{
 			Interval: serveFlags.interval,
 			// 关闭开关:--auto-locate=false,或环境变量 MPX_AUTO_LOCATE=0(systemd 单元里好改)。
 			NoAutoLocate: !serveFlags.autoLocate || os.Getenv("MPX_AUTO_LOCATE") == "0",
+			// 订阅专用口也可由 MPX_SUB_ADDR 给(systemd env 文件里好改);flag 优先。
+			SubAddr: func() string {
+				if serveFlags.subAddr != "" {
+					return serveFlags.subAddr
+				}
+				return os.Getenv("MPX_SUB_ADDR")
+			}(),
 		})
 	},
 }
@@ -100,4 +108,5 @@ func init() {
 	serveCmd.Flags().StringVar(&serveFlags.db, "db", defaultDBPath(), "SQLite 数据库路径")
 	serveCmd.Flags().BoolVar(&serveFlags.autoLocate, "auto-locate", true, "新建节点后按 IP 问 ipwho.is 自动设显示名(节点 IP 会发给它);也可设 MPX_AUTO_LOCATE=0 关闭")
 	serveCmd.Flags().DurationVar(&serveFlags.interval, "interval", 30*time.Second, "后台收敛人员名单与采集流量的间隔")
+	serveCmd.Flags().StringVar(&serveFlags.subAddr, "sub-addr", "", "订阅专用监听(UC-10):只路由 /sub 的纯 HTTP 口,给节点镜像转发用;空串不起")
 }

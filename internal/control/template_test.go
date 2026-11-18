@@ -28,7 +28,7 @@ func TestDeployRecordsTemplateHashIndependentOfUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := TemplateHash(n, inbounds)
+	want, err := TemplateHash(n, inbounds, nil)
 	if err != nil {
 		t.Fatalf("算模板哈希: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestTemplateHashReportsRenderError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := TemplateHash(n, inbounds); err == nil {
+	if _, err := TemplateHash(n, inbounds, nil); err == nil {
 		t.Fatal("坏入站应让模板哈希报错")
 	}
 }

@@ -347,7 +347,7 @@ func TestServerConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := ServerConfig(tt.node, tt.inbounds, tt.users, scNow)
+			raw, err := ServerConfig(tt.node, tt.inbounds, tt.users, nil, scNow)
 			if err != nil {
 				t.Fatalf("ServerConfig 返回错误: %v", err)
 			}
@@ -378,7 +378,7 @@ func TestServerConfig_UserFiltering(t *testing.T) {
 		Network: model.NetworkTCP, Security: model.SecurityNone,
 	}}
 
-	raw, err := ServerConfig(node, inbounds, users, scNow)
+	raw, err := ServerConfig(node, inbounds, users, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestServerConfig_ClientsSortedByUsername(t *testing.T) {
 		ID: 1, Tag: "vless-1", Protocol: model.ProtocolVLESS, Port: 443,
 		Network: model.NetworkTCP, Security: model.SecurityNone,
 	}}
-	raw, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, users, scNow)
+	raw, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, users, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
@@ -444,11 +444,11 @@ func TestServerConfig_Deterministic(t *testing.T) {
 	usersA := []model.User{scActiveUser("zoe"), scActiveUser("alice"), scActiveUser("bob")}
 	usersB := []model.User{scActiveUser("bob"), scActiveUser("zoe"), scActiveUser("alice")}
 
-	first, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersA, scNow)
+	first, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersA, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
-	second, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersA, scNow)
+	second, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersA, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestServerConfig_Deterministic(t *testing.T) {
 		t.Errorf("同一输入两次输出不一致:\n%s\n---\n%s", first, second)
 	}
 
-	reordered, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersB, scNow)
+	reordered, err := ServerConfig(model.Node{APIPort: 10085}, inbounds, usersB, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestServerConfig_APIPort(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := ServerConfig(model.Node{ID: 1, APIPort: tt.apiPort}, nil, nil, scNow)
+			raw, err := ServerConfig(model.Node{ID: 1, APIPort: tt.apiPort}, nil, nil, nil, scNow)
 			if err != nil {
 				t.Fatalf("ServerConfig 返回错误: %v", err)
 			}
@@ -505,7 +505,7 @@ func TestServerConfig_APIPort(t *testing.T) {
 
 // TestServerConfig_Skeleton 断言 log / api / stats / policy / outbounds / routing 落在该在的位置。
 func TestServerConfig_Skeleton(t *testing.T) {
-	raw, err := ServerConfig(model.Node{ID: 1, APIPort: 10085}, nil, nil, scNow)
+	raw, err := ServerConfig(model.Node{ID: 1, APIPort: 10085}, nil, nil, nil, scNow)
 	if err != nil {
 		t.Fatalf("ServerConfig 返回错误: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestServerConfig_OutboundIP(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("pref="+tc.pref, func(t *testing.T) {
-			raw, err := ServerConfig(model.Node{ID: 1, APIPort: 10085, OutboundIP: tc.pref}, nil, nil, scNow)
+			raw, err := ServerConfig(model.Node{ID: 1, APIPort: 10085, OutboundIP: tc.pref}, nil, nil, nil, scNow)
 			if err != nil {
 				t.Fatalf("ServerConfig 返回错误: %v", err)
 			}
@@ -600,7 +600,7 @@ func TestServerConfig_UnsupportedInput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := ServerConfig(node, []model.Inbound{tt.inbound}, users, scNow)
+			raw, err := ServerConfig(node, []model.Inbound{tt.inbound}, users, nil, scNow)
 			if err == nil {
 				t.Fatalf("期望报错,却拿到了配置:\n%s", raw)
 			}
@@ -613,7 +613,7 @@ func TestServerConfig_UnsupportedInput(t *testing.T) {
 
 // 节点配置要开在线统计,「在线用户」才读得到(否则 xray 的在线 API 永远是空)。
 func TestServerConfigEnablesUserOnlineStats(t *testing.T) {
-	cfg, err := ServerConfig(model.Node{Name: "la", Address: "203.0.113.10"}, nil, nil, time.Now())
+	cfg, err := ServerConfig(model.Node{Name: "la", Address: "203.0.113.10"}, nil, nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

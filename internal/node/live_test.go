@@ -180,7 +180,7 @@ func TestLiveServerConfigAcceptedByXray(t *testing.T) {
 	}
 
 	node := liveNode(t, dir, freePort(t))
-	cfg, err := render.ServerConfig(node, inbounds, users, time.Now())
+	cfg, err := render.ServerConfig(node, inbounds, users, nil, time.Now())
 	if err != nil {
 		t.Fatalf("渲染节点配置: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestLiveXrayAPIContract(t *testing.T) {
 		Network: model.NetworkTCP, Security: model.SecurityNone,
 	}
 
-	cfg, err := render.ServerConfig(node, []model.Inbound{in}, []model.User{alice}, time.Now())
+	cfg, err := render.ServerConfig(node, []model.Inbound{in}, []model.User{alice}, nil, time.Now())
 	if err != nil {
 		t.Fatalf("渲染节点配置: %v", err)
 	}

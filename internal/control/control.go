@@ -89,6 +89,10 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err != nil {
 		return err
 	}
+	mirrors, err := c.store.ListSubMirrors(n.ID)
+	if err != nil {
+		return err
+	}
 	d, err := c.store.GetCoreDeployment(n.ID, model.CoreSingBox)
 	if err != nil {
 		return err
@@ -107,7 +111,7 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if !xrayRequired {
 		return quicErr
 	}
-	cfg, err := render.ServerConfig(n, inbounds, users, now)
+	cfg, err := render.ServerConfig(n, inbounds, users, mirrors, now)
 	if err != nil {
 		return errors.Join(quicErr, fmt.Errorf("渲染节点 %s 的配置失败: %w", n.Name, err))
 	}
@@ -126,7 +130,7 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	}
 	// 顺带记下模板哈希,下次读节点时就能看出新版本有没有改配置的写法。这一步
 	// 失败不影响下发本身:配置已经在节点上跑着了,只是这一台暂时报不出模板漂移。
-	if th, err := TemplateHash(n, inbounds); err != nil {
+	if th, err := TemplateHash(n, inbounds, mirrors); err != nil {
 		c.logger.Warn("算节点模板哈希失败,这次不记模板漂移基准", "node", n.Name, "error", err)
 	} else if err := c.store.SetNodeTemplateHash(n.ID, th); err != nil {
 		c.logger.Warn("记录节点模板哈希失败", "node", n.Name, "error", err)
@@ -144,8 +148,8 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 //
 // 用户列表传 nil:ServerConfig 对空名单照常渲染(clients / peers 写空数组,
 // shadowsocks 的服务端 psk 由入站 tag 派生,不依赖用户),所以不需要探针用户。
-func TemplateHash(n model.Node, inbounds []model.Inbound) (string, error) {
-	cfg, err := render.ServerConfig(n, inbounds, nil, time.Unix(0, 0).UTC())
+func TemplateHash(n model.Node, inbounds []model.Inbound, mirrors []model.SubMirror) (string, error) {
+	cfg, err := render.ServerConfig(n, inbounds, nil, mirrors, time.Unix(0, 0).UTC())
 	if err != nil {
 		return "", err
 	}
