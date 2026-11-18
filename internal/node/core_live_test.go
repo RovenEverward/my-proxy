@@ -224,7 +224,7 @@ while True:
 
 func liveQUICConfig(t *testing.T, n model.Node, d model.CoreDeployment, in []model.Inbound, users []model.User) []byte {
 	t.Helper()
-	cfg, err := render.SingBoxServerConfig(n, d, in, users, nil, time.Now())
+	cfg, err := render.SingBoxServerConfig(n, d, in, users, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

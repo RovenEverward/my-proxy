@@ -52,38 +52,28 @@ func TestServerConfigMirrorInbound(t *testing.T) {
 	}
 }
 
-func TestSingBoxServerConfigMirrorInbound(t *testing.T) {
+// 镜像只在主核心(xray)上开。sing-box 是第二核心,只承载 QUIC 入站;两台
+// 核心同机时同一端口只能由一边绑,所以渲染层根本不给 sing-box 出镜像入站。
+func TestSingBoxDoesNotRenderMirrors(t *testing.T) {
 	n := model.Node{ID: 1}
 	d := model.CoreDeployment{NodeID: 1, Core: model.CoreSingBox, APIPort: 10085}
-	// 至少一个 QUIC 入站,否则 SingBoxServerConfig 走空配置路径。
 	ins := []model.Inbound{{
 		ID: 1, NodeID: 1, Tag: "hy2", Protocol: model.ProtocolHysteria2,
 		Port: 8444, Network: model.NetworkUDP, Security: model.SecurityTLS,
 		CertFile: "/c.pem", KeyFile: "/k.pem",
 	}}
-	mirrors := []model.SubMirror{{ID: 7, NodeID: 1, Port: 18080, Upstream: "203.0.113.1:8081"}}
-
-	raw, err := SingBoxServerConfig(n, d, ins, nil, mirrors, time.Now())
+	raw, err := SingBoxServerConfig(n, d, ins, nil, time.Now())
 	if err != nil {
 		t.Fatalf("渲染: %v", err)
 	}
-	var cfg struct {
-		Inbounds []map[string]any `json:"inbounds"`
-	}
+	var cfg struct{ Inbounds []map[string]any }
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatalf("解析: %v", err)
 	}
-	found := false
 	for _, in := range cfg.Inbounds {
-		if in["tag"] == "sub-mirror-18080" {
-			found = true
-			if in["type"] != "direct" || in["override_address"] != "203.0.113.1" || in["override_port"] != float64(8081) {
-				t.Fatalf("sing-box 镜像入站不对: %v", in)
-			}
+		if in["type"] == "direct" {
+			t.Fatalf("sing-box 不应渲染镜像入站: %v", in)
 		}
-	}
-	if !found {
-		t.Fatalf("没渲染出 sing-box 镜像入站")
 	}
 }
 

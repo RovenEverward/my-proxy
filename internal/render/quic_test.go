@@ -123,7 +123,7 @@ func TestQUICServerFiltering(t *testing.T) {
 	users = append(users, model.User{Username: "limited", Key: "limited", Enabled: true, DataLimit: 1, UsedTraffic: 1}, model.User{Username: "expired", Key: "expired", Enabled: true, ExpireAt: &scNow})
 	// 用更晚的判定时刻覆盖过期过滤。
 	now := scNow.Add(1)
-	raw, err := SingBoxServerConfig(n, model.CoreDeployment{NodeID: n.ID, Core: model.CoreSingBox}, ins, users, nil, now)
+	raw, err := SingBoxServerConfig(n, model.CoreDeployment{NodeID: n.ID, Core: model.CoreSingBox}, ins, users, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestQUICServerFiltering(t *testing.T) {
 	if stats["listen"] != "127.0.0.1:10086" || !reflect.DeepEqual(stats["stats"].(map[string]any)["users"], []any{"alice", "bob"}) {
 		t.Fatal(stats)
 	}
-	again, err := SingBoxServerConfig(n, model.CoreDeployment{}, ins, users, nil, now)
+	again, err := SingBoxServerConfig(n, model.CoreDeployment{}, ins, users, now)
 	if err != nil || !bytes.Equal(raw, again) {
 		t.Fatal("配置不稳定")
 	}
@@ -168,7 +168,7 @@ func TestQUICRejectInvalid(t *testing.T) {
 	} {
 		bad := ins[0]
 		mutate(&bad)
-		if _, err := SingBoxServerConfig(n, model.CoreDeployment{}, []model.Inbound{bad}, users, nil, scNow); err == nil {
+		if _, err := SingBoxServerConfig(n, model.CoreDeployment{}, []model.Inbound{bad}, users, scNow); err == nil {
 			t.Fatalf("接受无效入站: %+v", bad)
 		}
 	}
@@ -208,7 +208,7 @@ func TestQUICExportRuntimeFixtures(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	raw, err := SingBoxServerConfig(n, model.CoreDeployment{APIPort: 19233}, ins, users, nil, scNow)
+	raw, err := SingBoxServerConfig(n, model.CoreDeployment{APIPort: 19233}, ins, users, scNow)
 	write("render-server.json", raw, err)
 	eps := Resolve(n, ins[:2], nil, &users[1])
 	for i, ep := range eps {

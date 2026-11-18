@@ -13,7 +13,7 @@ import (
 
 // SingBoxServerConfig 生成 QUIC 第二核心的配置。计量依赖官方 v1.14.3 源码
 // with_v2ray_api 构建:用户 name 与 stats.users 同为控制面用户名。
-func SingBoxServerConfig(n model.Node, d model.CoreDeployment, inbounds []model.Inbound, users []model.User, mirrors []model.SubMirror, now time.Time) ([]byte, error) {
+func SingBoxServerConfig(n model.Node, d model.CoreDeployment, inbounds []model.Inbound, users []model.User, now time.Time) ([]byte, error) {
 	if d.Core != "" && d.Core != model.CoreSingBox {
 		return nil, fmt.Errorf("sing-box: 部署核心 %q 不匹配", d.Core)
 	}
@@ -49,26 +49,6 @@ func SingBoxServerConfig(n model.Node, d model.CoreDeployment, inbounds []model.
 			names[u.Username] = struct{}{}
 		}
 		rendered = append(rendered, item)
-	}
-	// 订阅镜像:sing-box 的 direct 入站把节点公开端口上的 TCP 转给控制面,
-	// 与 xray 侧 dokodemo-door 同一机制;不计入 stats(镜像流量不归属用户)。
-	for _, m := range mirrors {
-		if m.NodeID != 0 && m.NodeID != n.ID {
-			continue
-		}
-		host, port, err := mirrorUpstream(m)
-		if err != nil {
-			return nil, err
-		}
-		rendered = append(rendered, map[string]any{
-			"type":             "direct",
-			"tag":              fmt.Sprintf("sub-mirror-%d", m.Port),
-			"listen":           "::",
-			"listen_port":      m.Port,
-			"network":          "tcp",
-			"override_address": host,
-			"override_port":    port,
-		})
 	}
 	statsUsers := make([]string, 0, len(names))
 	for name := range names {

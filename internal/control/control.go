@@ -108,7 +108,9 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	if err != nil {
 		return err
 	}
-	if !xrayRequired {
+	// 纯 QUIC 节点可以不下发 xray 配置,但只要挂了订阅镜像就必须下:
+	// 镜像入站只在 xray 侧渲染(sing-box 是第二核心,同机同端口只能绑一边)。
+	if !xrayRequired && len(mirrors) == 0 {
 		return quicErr
 	}
 	cfg, err := render.ServerConfig(n, inbounds, users, mirrors, now)
