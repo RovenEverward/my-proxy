@@ -39,6 +39,7 @@ verified: 2026-11-15 @ 8de7024 + ISS-12 working tree
 - 源码编出的伪版本 → 比不出新旧时一律算「没有更新」，不报「落后 1 个」。
 - 节点连不上 GitHub → `apply nodes` 拉不动 xray 包 → 这台记 failed,其余节点继续跑；推送整包的 `mpx node install` 还在。
 - `mpx init` 至今只支持单机全包。
+- 手动迁移控制面（装新机器再灌库）：`install.sh` 幂等——`/etc/mpx/env` 存在就不换 token、`id_ed25519` 存在就不重新生成，所以「先预置 token 与节点私钥 → 再装」是安全顺序；但落到 `/var/lib/mpx/.ssh/` 的私钥必须 `chown mpx:mpx`、目录 0700，否则服务以 `mpx` 用户读不到 → 全部节点 `Permission denied`。`POST /api/restore` 传大归档可能 `EOF`，走 `scp` 库文件到 `mpx.db.restore` 等价。`tls_identity` 在库里，迁移后指纹不变，已接入设备只需改 server。
 - 发布件文件名是升级程序写死的 → 老版本按固定名字下载压缩包 → 改发布格式时压缩包必须继续保留。
 - Homebrew cask 装出的 MPX.app 直接带 `com.apple.quarantine` → 未签名的二进制一执行就 `Killed: 9`(app 和 bin 软链都中招) → cask 必须有 postflight 去隔离,签名落地后才删。
 - 桌面版 Windows 二进制是 `-H windowsgui` 的 GUI 进程,没有控制台 → 它通过 PATH 当 `mpx` 用时靠 `internal/cli/console_windows.go` 挂回父终端才有输出 → 别在 Execute 前面做依赖 stdout 可见性的逻辑。
