@@ -75,6 +75,9 @@ var uiAllow = []string{
 	"DELETE /api/probes",
 	// 剔除豁免(UC-12):reach keep / unkeep,CLI 等价 mpx reach keep
 	"PUT /api/reach/keep",
+	// IP 质量评级重排(UC-14,CLI 等价 mpx node regrade;质量探测走
+	// POST /api/nodes/{id}/quality,已被上面的节点前缀放行)
+	"POST /api/regrade",
 }
 
 var uiFlags struct {

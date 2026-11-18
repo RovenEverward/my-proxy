@@ -53,6 +53,14 @@ bootstrap --address <节点对外地址> [--name default] [--username user1] [--
 
 管理接口：`GET/PUT /api/nodes/{id}/metadata` 和 `/api/hosts/{id}/metadata`。全部使用同一 Bearer 管理鉴权。PUT 是完整替换；元数据 `{}` 清空覆盖，回落 node。节点元数据只认 `region`、`city`、`letter`（命名 RFC N3）：省略这两个键时保留原值（老客户端整份 PUT 不会冲掉）；有 `region` 而 `letter` 为空时由控制面按（地区, 城市）分配最小空闲字母，显式字母冲突 409；host 元数据带 `city`/`letter` 400。老客户端带来的 `line`/`purposes` 字段不再认识，写入时被忽略，读出时也不会出现（v0.7.0 删除）。`GET /api/nodes`、`GET /api/nodes/{id}` 的节点视图多一个只读 `display`（旗帜 + 城市或国家中文名 + 字母，无地区时省略）。新建或改名为纯数字的节点名 400。`POST /api/nodes/{id}/locate`（N4）只返回建议不写入：`{region, city, city_en, ip, source:"ipwho.is", via:"control"|"node", display}`；地址是 IP 时控制面查 ipwho.is，是域名时 SSH 到节点 `curl https://ipwho.is/` 看出口；城市不在内置对照表里 `city` 为空；查不到 502。`POST /api/nodes` 建好节点后，控制面默认按 IP 自动 locate 并写入显示名（只在节点还没有地区时写；地址是域名时不自动探测），回答在节点字段之外多 `display` 与 `locate_note`（失败提示，不影响 201）；`mpx serve --auto-locate=false` 或 `MPX_AUTO_LOCATE=0` 关闭。
 
+### IP 质量评级 API（UC-14）
+
+`POST /api/nodes/{id}/quality` 经 SSH 在节点上探测出口 IP：api.ipify.org 取地址、ipwho.is 取地区、api.ipapi.is 取风险标记，控制面配了 `MPX_ABUSEIPDB_KEY` 时再查 AbuseIPDB；`MPX_IPAPI_IS_KEY` 存在时 ipapi.is 走 POST body 携带密钥（免费档匿名 GET）。打分基准 100：is_tor −50、is_bogon −40、is_abuser −30、is_proxy −25、is_vpn −25、is_datacenter −10、AbuseIPDB 置信分 ×0.3，下限 0；规则在 `model.QualityScore`。结果存 `node_quality` 表（节点每探测一次覆盖一行，report 上限 64KiB），判定 `ok` / `partial`（有步骤失败）/ `untested`（出口都没测出）。探测并发 4、单台 40 秒。
+
+`GET /api/nodes/{id}/quality` 读一台的最新记录（没有 404），`GET /api/quality` 回 `{nodes:[…]}` 全部，`GET /api/quality/last` 回 `{checked_at}`（没探测过 404）。
+
+`POST /api/regrade` 按最近一次探测的分数重排同地区同城市节点的字母。不带体或 `{"apply":false}` 只回对照表 `{rows, plans}` 不写库；`{"apply":true}` 在 `metadataMu` 下重算并事务批量写 `node_metadata`，写完失效订阅缓存。只测出分的节点参与排名；未测节点保留原字母占位；已存地区与探测地区不一致（冲突）或地区为空且探测也无结果时不参与重排，只在行 `note` 里提示；地区为空或不是国家码的被归一化成探测结果。字母分配取组内最小空闲位（未测节点字母算占用），保证名次顺序即字母顺序。
+
 ### 分流规则 API 与订阅
 
 `GET /api/routing`（只读，`mode` 恒为 `rules`）、`POST /api/routing/migrate`、`GET/PUT /api/rules`、`PATCH /api/rules/{id}`、`PUT /api/rules/final`、`POST /api/rules/test`、`GET /api/rule-catalog`，以及 `GET/POST /api/proxy-groups`、`GET/PUT/DELETE /api/proxy-groups/{id}`、`POST /api/proxy-groups/preview`。`PUT /api/routing`（旧的分流模式开关）与 `GET/POST /api/purposes*` 已在 v0.7.0 删除，旧版 CLI 或脚本调用得到 404。
