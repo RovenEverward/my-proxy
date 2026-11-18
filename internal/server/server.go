@@ -237,6 +237,7 @@ func (s *Server) routes() {
 	s.jobRoutes(api)
 	s.reachRoutes(api)
 	s.probeRoutes(api)
+	s.qualityRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)

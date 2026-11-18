@@ -81,6 +81,48 @@ func (s *Store) SaveLocationMetadata(kind string, id int64, m model.LocationMeta
 	_, err = s.db.Exec(`INSERT INTO `+table+`(id,config) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config`, id, string(b))
 	return err
 }
+// SaveLocationMetadataBatch 在一个事务里写入多条节点元数据。regrade 按组
+// 重排字母时必须是全有或全无:中途失败留一半,显示名就排错了。
+func (s *Store) SaveLocationMetadataBatch(items map[int64]model.LocationMetadata) error {
+	if len(items) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	exists, err := tx.Prepare(`SELECT 1 FROM nodes WHERE id=?`)
+	if err != nil {
+		return err
+	}
+	defer exists.Close()
+	stmt, err := tx.Prepare(`INSERT INTO node_metadata(id,config) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for id, m := range items {
+		if err := m.Validate(); err != nil {
+			return err
+		}
+		var one int
+		if err := exists.QueryRow(id).Scan(&one); errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		b, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		if _, err := stmt.Exec(id, string(b)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) ListLocationMetadata(kind string) (map[int64]model.LocationMetadata, error) {
 	return listLocationMetadata(s.db, kind)
 }
