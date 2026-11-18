@@ -321,6 +321,16 @@ func inboundOccupancy(users []model.User, inbounds []model.Inbound, now time.Tim
 // 订阅是「所有节点合成一份」,所以这里把全部节点都过一遍;入站授权和状态由
 // render.Resolve 与 placeholder 逻辑负责。
 func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
+	excl, err := s.exclusion()
+	if err != nil {
+		return nil, err
+	}
+	return s.managedEndpointsFor(user, excl)
+}
+
+// managedEndpointsFor 与 endpointsFor 同逻辑,剔除视图由调用方给:
+// subscriptionEndpointsFor 自建与外部共用同一份判定,算一次就够。
+func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]render.Endpoint, error) {
 	if status := user.Status(time.Now()); status != model.StatusActive {
 		return []render.Endpoint{placeholderEndpoint(user, status)}, nil
 	}
@@ -371,6 +381,10 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 		// 排水中的节点不再出现在订阅里:已连上的用户会随下一次刷新订阅自然漂
 		// 走,不主动掐线。
 		if n.Draining {
+			continue
+		}
+		// UC-12:自动剔除同理 —— 判定为不通且未被保留的节点不进订阅。
+		if excl.on && excl.nodes[n.ID] {
 			continue
 		}
 		eps = append(eps, render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user)...)

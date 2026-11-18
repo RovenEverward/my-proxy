@@ -40,7 +40,7 @@ for (const [from, to] of [
 test("节点页两个页签;外部订阅页签亮着「节点」", async ({ page }) => {
   await login(page, env);
   await page.goto(env.origin + "/#nodes");
-  await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅"]);
+  await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅", "探测点"]);
   await page.click(".tabs a:has-text('外部订阅')");
   await expect(page).toHaveURL(/#nodes\/sources$/);
   await expect(page.locator(".tabs a.on")).toHaveText("外部订阅");

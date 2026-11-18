@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
+
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/source"
@@ -59,10 +61,13 @@ type sourcePlanRef struct {
 	Name string `json:"name"`
 }
 
-// sourceNodeRef 是外部节点的最小展示字段。
+// sourceNodeRef 是外部节点的最小展示字段。Key 是对象身份(UC-12),
+// Excluded 标它当前是否被自动剔除。
 type sourceNodeRef struct {
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"`
+	Key      string `json:"key,omitempty"`
+	Excluded bool   `json:"excluded,omitempty"`
 }
 
 func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
@@ -88,8 +93,12 @@ func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
 	_ = json.Unmarshal(src.Snapshot, &eps)
 	v.NodeCount = len(eps)
 	v.Nodes = make([]sourceNodeRef, 0, len(eps))
+	excl, _ := s.exclusion() // 读不到设置时当没开:可见性是锦上添花,不能拖垮列表
 	for _, ep := range eps {
-		v.Nodes = append(v.Nodes, sourceNodeRef{Name: ep.Remark, Protocol: render.ProtocolShort(ep)})
+		ep.SourceID = src.ID
+		ref := sourceNodeRef{Name: ep.Remark, Protocol: render.ProtocolShort(ep), Key: string(ep.Key())}
+		ref.Excluded = excl.excluded(ref.Key)
+		v.Nodes = append(v.Nodes, ref)
 	}
 	for _, f := range sourceFormats {
 		fv := sourceFormatView{Issues: []source.Issue{}}
@@ -227,6 +236,11 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "订阅源")
 		return
 	}
+	// 这个来源名下全部端点的触达存档一并清(UC-12):对象身份长在来源 ID
+	// 上,来源没了,它的判定再留着就只剩误导。
+	if err := s.store.DeleteSubjectResultsByPrefix(fmt.Sprintf("s:%d:", id)); err != nil {
+		s.logger.Warn("清理来源触达存档失败", "source", id, "err", err)
+	}
 	s.invalidateSubCache()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -360,7 +374,11 @@ type endpointSet struct {
 
 // subscriptionEndpointsFor is the sole merge boundary. It never fetches upstream.
 func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientFormat) (endpointSet, error) {
-	managed, err := s.endpointsFor(user)
+	excl, err := s.exclusion()
+	if err != nil {
+		return endpointSet{}, err
+	}
+	managed, err := s.managedEndpointsFor(user, excl)
 	if err != nil {
 		return endpointSet{}, err
 	}
@@ -385,6 +403,9 @@ func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientF
 			ep.SourceID, ep.SourceRegion = src.ID, src.Region
 			ep.Remark = src.Name + " · " + ep.Remark
 			ep.AutoRemark = false
+			if excl.on && excl.excluded(string(ep.Key())) {
+				continue // UC-12:不通的外部端点不进入订阅
+			}
 			if err := render.Compatible(ep, format); err != nil {
 				set.Issues = append(set.Issues, source.Issue{Index: i + 1, Name: ep.Remark, Reason: err.Error()})
 				continue
@@ -415,6 +436,8 @@ type subscriptionPreviewNode struct {
 	SourceName string   `json:"source_name"`
 	Groups     []string `json:"groups"`
 	Reasons    []string `json:"reasons"`
+	// Excluded 为真时这个节点不出现在订阅里,只在预览里说明原因(UC-12)。
+	Excluded bool `json:"excluded,omitempty"`
 }
 
 func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Request) {
@@ -493,6 +516,35 @@ func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Reques
 				}
 			}
 			nodes = append(nodes, n)
+		}
+		// UC-12:被自动剔除的对象不渲染,但要留在预览里说明为什么不在。
+		if excl, err := s.exclusion(); err == nil && excl.on {
+			for id := range excl.nodes {
+				targets, err := s.reachTargets([]int64{id})
+				if err != nil || len(targets) == 0 {
+					continue
+				}
+				key := string(model.NodeSubjectKey(id))
+				nodes = append(nodes, subscriptionPreviewNode{
+					Name: targets[0].NodeName, SourceName: names[0],
+					Reasons: []string{excl.excludeReason(key)}, Excluded: true,
+					Groups: []string{},
+				})
+			}
+			for key := range excl.exts {
+				targets, err := s.reachExtTargets([]string{key})
+				if err != nil || len(targets) == 0 {
+					continue
+				}
+				t := targets[0]
+				var srcID int64
+				_, _ = fmt.Sscanf(key, "s:%d:", &srcID)
+				nodes = append(nodes, subscriptionPreviewNode{
+					Name: t.Label, Protocol: t.Protocol, SourceID: srcID,
+					SourceName: names[srcID], Groups: []string{},
+					Reasons: []string{excl.excludeReason(key)}, Excluded: true,
+				})
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "issues": set.Issues, "status": u.Status(time.Now()), "format": f})

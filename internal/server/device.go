@@ -30,6 +30,17 @@ type ctxKey int
 
 const deviceIDKey ctxKey = 1
 
+// probeIDKey 把探测点身份挂进请求上下文;值为 0 表示这条请求不是探测点发的。
+const probeIDKey ctxKey = 2
+
+// probeAllowed 是探测点凭据够得着的接口(UC-12):拉目标、回结果、让控制面
+// 代探。管理面其余接口它一律不可见。
+var probeAllowed = map[string]bool{
+	"GET /api/reach/targets":  true,
+	"POST /api/reach/results": true,
+	"POST /api/reach/probe":   true,
+}
+
 // deviceTouchEvery 是记"最近使用"的最小间隔:每个请求都写一次库没有意义。
 const deviceTouchEvery = time.Minute
 
@@ -55,6 +66,21 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			}
 			if !errors.Is(err, store.ErrNotFound) {
 				s.writeStoreError(w, err, "设备")
+				return
+			}
+			// 探测点凭据是第三类(UC-12):只放行它够得着的探测接口。
+			p, perr := s.store.ProbeByToken(hashToken(got))
+			if perr == nil {
+				if !probeAllowed[r.Method+" "+r.URL.Path] {
+					writeError(w, http.StatusForbidden, "探测点凭据不能访问管理接口")
+					return
+				}
+				s.touchProbe(p.ID, r)
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), probeIDKey, p.ID)))
+				return
+			}
+			if !errors.Is(perr, store.ErrNotFound) {
+				s.writeStoreError(w, perr, "探测点")
 				return
 			}
 		}
@@ -87,6 +113,28 @@ func newDeviceToken() (string, error) {
 }
 
 var touchMu sync.Mutex
+
+// probeTouched 与 deviceTouched 分两张表记节流:探测点 id 与设备 id 是两个
+// 命名空间,混一张表会互相顶掉对方的节流窗口。
+var probeTouched = map[int64]time.Time{}
+
+func (s *Server) touchProbe(id int64, r *http.Request) {
+	now := time.Now()
+	touchMu.Lock()
+	if now.Sub(probeTouched[id]) < deviceTouchEvery {
+		touchMu.Unlock()
+		return
+	}
+	probeTouched[id] = now
+	touchMu.Unlock()
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+	if err := s.store.TouchProbe(id, ip); err != nil {
+		s.logger.Warn("记录探测点最近上报失败", "probe", id, "err", err)
+	}
+}
 
 func (s *Server) touchDevice(id int64, r *http.Request) {
 	now := time.Now()

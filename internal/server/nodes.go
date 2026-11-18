@@ -292,6 +292,10 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	if s.backoff != nil {
 		s.backoff.ClearNodeBackoff(id)
 	}
+	// 触达存档一并清:留着只会让「不通已剔除」的幽灵对象留在名册外。
+	if err := s.store.DeleteSubjectResults(model.NodeSubjectKey(id)); err != nil {
+		s.logger.Warn("清理触达存档失败", "node", id, "err", err)
+	}
 	s.invalidateSubCache()
 	writeJSON(w, http.StatusOK, nil)
 }

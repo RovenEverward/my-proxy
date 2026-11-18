@@ -84,11 +84,15 @@ export interface Settings {
   webhook_url: string; notify_days_left: number; notify_usage_percent: number;
   ruleset_mode?: string;
   rules: ClientRule[] | null; templates: Record<string, boolean> | null;
+  // UC-12:自动剔除开关、探测周期(分钟)与逐对象保留豁免;旧控制面不带这三个
+  // 字段,读取时按未开启处理。
+  reach_exclude?: boolean; reach_interval_minutes?: number; reach_keeps?: Record<string, boolean>;
 }
 export interface ClientRule { pattern: string; result: string; label?: string }
 export interface SubPull { username: string; client: string; first_pulled_at: string; last_pulled_at: string }
 export interface Status {
   version: string; uptime_seconds: number; counts: Record<string, number>;
+  tls_fingerprint?: string;
   last_tick_at?: string; last_tick_seconds?: number;
   update?: { behind?: number; latest?: string };
   backoffs: { node_id: number; node_name: string; failures: number; skip_until: string }[];

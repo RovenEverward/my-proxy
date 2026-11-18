@@ -384,6 +384,10 @@ func (s *Store) migrate() error {
 	if err := s.migrateReach(); err != nil {
 		return err
 	}
+	// UC-12 探测点与对象级触达存档;旧 reach_checks 在这里搬进新表。
+	if err := s.migrateProbes(); err != nil {
+		return err
+	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
 	return s.migratePlans()
 }
@@ -420,6 +424,14 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// 规则集分发方式:""=上游直连(零值,老库升级上来就是它)/ upstream / privatized。
 	{"settings", "ruleset_mode",
 		`ALTER TABLE settings ADD COLUMN ruleset_mode TEXT NOT NULL DEFAULT ''`},
+	// UC-12:自动剔除的开关与节奏。reach_exclude 默认关:升级上来订阅输出
+	// 与老版逐字节一致。reach_keeps 存 JSON 对象(对象身份→true)。
+	{"settings", "reach_exclude",
+		`ALTER TABLE settings ADD COLUMN reach_exclude INTEGER NOT NULL DEFAULT 0`},
+	{"settings", "reach_interval_minutes",
+		`ALTER TABLE settings ADD COLUMN reach_interval_minutes INTEGER NOT NULL DEFAULT 60`},
+	{"settings", "reach_keeps",
+		`ALTER TABLE settings ADD COLUMN reach_keeps TEXT NOT NULL DEFAULT '{}'`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

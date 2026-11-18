@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UC-12 自动剔除 · 方向原型</title>
+<style>
+@font-face{font-family:"Mona Sans VF";src:url(../assets/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+@font-face{font-family:"Mona Sans Mono VF";src:url(../assets/fonts/MonaSansMonoVF.woff2) format("woff2");font-weight:200 900;font-display:swap}
+@font-face{font-family:"Noto Sans SC";src:url(../assets/fonts/NotoSansSC-subset.woff2) format("woff2");font-weight:100 900;font-display:swap;unicode-range:U+2010-206F,U+2E80-9FFF,U+F900-FAFF,U+FE30-FE4F,U+FF00-FFEF}
+:root{
+  --ui-font-size-display:21px;--ui-font-size-title:15px;--ui-font-size-body:14.5px;
+  --ui-font-size-navigation:13.5px;--ui-font-size-control:13.5px;--ui-font-size-caption:12.5px;
+  --ui-font-size-meta:11.5px;--ui-line-height-body:1.47;
+  --ui-icon-size:16px;--ui-icon-stroke:1.75;--r-card:12px;
+  --ui-control-height:32px;--ui-icon-button-size:30px;
+  --ease:cubic-bezier(.23,1,.32,1);color-scheme:light;
+  --base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;
+  --hover:color-mix(in srgb,var(--ink) 4.5%,transparent);
+  --ink:#2F3033;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
+  --lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);
+  --flag-edge:rgba(0,0,0,.14);--ui-border-subtle:rgba(28,25,23,.10);
+  --ok:#16a34a;--warn:#8F6B00;--warn-ico:#C99700;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;
+  --bad-bg:#fef2f2;--warn-bg:#FDF8E1;
+  --sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif;
+  --mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace;
+  --font-body:var(--ui-font-size-body);--line-body:var(--ui-line-height-body);--font-control:var(--ui-font-size-control);
+  --font-control-sm:var(--ui-font-size-control);--font-status:var(--ui-font-size-navigation);
+  --control-height:var(--ui-control-height);--control-height-sm:28px;--control-radius:8px;--icon-button-size:32px;
+  --button-primary-bg:var(--ink);--button-primary-text:var(--canvas);
+  --ui-toast-bg:rgba(28,25,23,.94);--ui-toast-text:#fafaf9;
+}
+[data-theme=dark]{color-scheme:dark;--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);
+  --ink:#DDDEE0;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;--flag-edge:rgba(255,255,255,.22);--ui-border-subtle:rgba(250,249,247,.12);
+  --ok:#3fb950;--warn:#D4A72C;--warn-ico:#D4A72C;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;
+  --bad-bg:#2a1214;--warn-bg:#221D0B}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--base);color:var(--ink);font:var(--font-body)/var(--line-body) var(--sans);-webkit-font-smoothing:antialiased;font-feature-settings:"kern","tnum"}
+button,input{font:inherit;color:inherit}a{color:inherit;text-decoration:none}
+h1,h2,h3,h4{font-size:var(--ui-font-size-title)}
+code,.mono{font-family:var(--mono);font-size:var(--ui-font-size-meta)}
+.bold{font-weight:540}.sub{color:var(--muted);font-size:var(--ui-font-size-caption)}
+.c-bad{color:var(--bad)}.mt{margin-top:14px}.mb{margin-bottom:14px}.mt2{margin-top:2px}.mt6{margin-top:6px}.mb14{margin-bottom:14px}.mb8{margin-bottom:8px}
+.b6{font-weight:560}.pad16{padding:16px}
+.icon{width:var(--ui-icon-size);height:var(--ui-icon-size);flex:none;stroke-width:var(--ui-icon-stroke)}
+.flag-w{position:relative;display:inline-flex;vertical-align:-.1em;border-radius:2px;line-height:0}
+.flag-w::after{content:"";position:absolute;inset:0;border-radius:2px;box-shadow:inset 0 0 0 1px var(--flag-edge);pointer-events:none}
+.flag{height:.9em;width:auto;aspect-ratio:4/3;border-radius:2px;display:block}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);height:100vh}
+.side{overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:14px 10px;background:var(--base)}
+.brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin-bottom:14px;font-weight:620;font-size:var(--ui-font-size-body)}
+.brand svg{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:6.5px;font:500 var(--ui-font-size-meta)/1 var(--mono);color:var(--faint)}
+.profile{display:flex;align-items:center;gap:8px;margin:0 2px 12px;padding:8px 10px;border-radius:9px;background:var(--canvas);font-size:var(--ui-font-size-control);width:100%;border:0;cursor:pointer}
+.profile .pf-t{flex:1;min-width:0;text-align:left}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta)}
+.nav{display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:7px;color:var(--ink2);font-weight:470;font-size:var(--ui-font-size-navigation);cursor:pointer}
+.nav:hover{background:var(--hover)}.nav.on{background:var(--canvas);color:var(--ink);font-weight:560}
+.nav svg{width:16px;height:16px;flex:none;opacity:.75}.nav .ct{margin-left:auto;font:500 var(--ui-font-size-meta) var(--mono);color:var(--faint)}
+.nsep{height:14px}
+main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:var(--r-card);height:calc(100vh - 16px);overflow-x:hidden;overflow-y:auto}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 28px;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--canvas)}
+.crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:var(--ui-font-size-control)}
+.crumb b{color:var(--ink);font-weight:560;font-size:var(--ui-font-size-title)}.crumb i{font-style:normal;color:var(--faint)}
+.top .sp{flex:1}.top .sub{font-size:var(--ui-font-size-meta)}
+.ib{display:inline-grid;place-items:center;width:var(--icon-button-size);height:var(--icon-button-size);border:0;border-radius:var(--control-radius);background:none;color:var(--muted);cursor:pointer}
+.ib:hover{background:var(--hover);color:var(--ink)}.ib svg{width:16px;height:16px}
+.page{max-width:1200px;margin:0 auto;padding:28px 28px 80px}
+.ph{display:flex;align-items:flex-end;gap:16px;margin-bottom:22px}
+.ph h1{margin:0;font-size:var(--ui-font-size-title);font-weight:640;letter-spacing:-.015em}.ph p{margin:4px 0 0;color:var(--muted)}.ph .sp{flex:1}
+.card{background:var(--panel);border-radius:var(--r-card)}
+.card:has(table){padding:0 6px 6px}
+.ch{display:flex;align-items:center;gap:8px;margin:0;padding:14px 16px;font-size:var(--ui-font-size-title);font-weight:600}
+.ch .sp{flex:1}.ch small{font-weight:450;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--off);flex:none;display:inline-block}
+.dot.ok{background:var(--ink);box-shadow:none}.dot.warn{background:none;box-shadow:inset 0 0 0 1.5px var(--ink)}
+.dot.bad{background:var(--bad)}.dot.info{background:none;box-shadow:inset 0 0 0 1.5px var(--muted)}
+.st{display:inline-flex;align-items:center;gap:7px;font-size:var(--font-status);white-space:nowrap}
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:6px;background:var(--stone);color:var(--ink2);font:500 var(--ui-font-size-control) var(--mono)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{position:sticky;top:0;text-align:left;font-weight:500;font-size:var(--ui-font-size-caption);color:var(--muted);padding:9px 16px;white-space:nowrap;background:var(--panel)}
+td{padding:11px 16px;vertical-align:middle;white-space:nowrap}
+tbody tr{cursor:pointer;transition:background 100ms}tbody tr:hover{background:var(--hover)}
+tbody tr td:first-child{border-radius:8px 0 0 8px}tbody tr td:last-child{border-radius:0 8px 8px 0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.callout{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:var(--warn-bg);font-size:var(--ui-font-size-caption);color:var(--ink2)}
+.callout.bad{background:var(--bad-bg)}.callout.stone{background:var(--stone)}.callout b{color:var(--ink)}
+.callout svg{flex:none;margin-top:1px;width:16px;height:16px}
+.callout .ico-bad{color:var(--bad)}.callout .ico-warn{color:var(--warn-ico)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:var(--control-height);padding:0 12px;border:0;border-radius:var(--control-radius);background:var(--stone);font-weight:520;font-size:var(--font-control);cursor:pointer;white-space:nowrap;transition:transform 140ms var(--ease),background 120ms}
+.btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}.btn svg{width:14px;height:14px}
+.btn.pri{background:var(--button-primary-bg);color:var(--button-primary-text)}.btn.pri:hover{opacity:.9}
+.btn.sm{height:var(--control-height-sm);padding:0 10px;font-size:var(--font-control-sm)}
+.btn.busy{position:relative;color:transparent;pointer-events:none}
+.btn.busy::after{content:"";position:absolute;inset:0;margin:auto;width:14px;height:14px;border-radius:50%;border:2px solid var(--canvas);border-color:var(--canvas) transparent var(--canvas) var(--canvas);animation:spin .7s linear infinite}
+.btn:not(.pri).busy::after{border-color:var(--ink) transparent var(--ink) var(--ink)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.btn:focus-visible,.ib:focus-visible,.seg button:focus-visible,.lnk:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--stone)}
+.seg button{height:26px;padding:0 10px;border:0;border-radius:6px;background:none;color:var(--muted);font-size:var(--ui-font-size-control);cursor:pointer;display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.seg button.on{background:var(--canvas);color:var(--ink);font-weight:540}
+.seg .ct{font:500 var(--ui-font-size-meta) var(--mono);color:var(--faint)}
+.lnk{background:none;border:0;padding:0;color:var(--ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 45%,transparent);text-underline-offset:2px;cursor:pointer;font:inherit}
+.scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.28);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity 180ms}
+[data-theme=dark] .scrim{background:rgba(0,0,0,.55)}
+.scrim.open{opacity:1;pointer-events:auto}
+.drawer{position:fixed;z-index:31;top:8px;right:8px;bottom:8px;width:440px;max-width:calc(100vw - 16px);display:flex;flex-direction:column;background:var(--canvas);border-radius:var(--r-card);box-shadow:var(--lift);transform:translateX(110%);transition:transform 260ms var(--ease)}
+.drawer.open{transform:none}
+.drawer .dh{display:flex;align-items:flex-start;gap:10px;padding:18px 18px 6px}
+.dt h2{margin:0;font-size:var(--ui-font-size-title);font-weight:620}.dt .sub{display:block;margin-top:2px}
+.drawer .db{flex:1;overflow:auto;padding:14px 18px 18px}
+.drawer .df{display:flex;gap:8px;align-items:center;padding:12px 18px}
+.drawer .df .sp{flex:1}
+.toast{position:fixed;z-index:40;bottom:20px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:var(--ui-toast-bg);color:var(--ui-toast-text);font-size:var(--ui-font-size-caption);box-shadow:var(--lift)}
+.toast svg{width:14px;height:14px}
+/* === 原型专属 === */
+.px-top{position:sticky;top:0;z-index:70;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;background:var(--canvas);border-bottom:1px solid var(--ui-border-subtle)}
+.px-top b{font-size:var(--ui-font-size-title);font-weight:640}
+.px-note{font-size:var(--ui-font-size-caption);color:var(--muted);margin-left:auto}
+.px-dir-desc{display:flex;align-items:baseline;gap:10px;padding:12px 18px 0;font-size:var(--ui-font-size-caption);color:var(--muted)}
+.px-dir-desc b{color:var(--ink);font-weight:560;white-space:nowrap}
+.px-src-head{padding:12px 12px 4px;display:flex;align-items:baseline;gap:10px;font-weight:560}
+.px-src-head .sub{font-weight:400}
+.px-d-row{display:flex;align-items:center;gap:14px;padding:8px 6px;border-radius:8px;font-size:var(--ui-font-size-body)}
+.px-d-row:hover{background:var(--hover)}
+.px-d-row .inb{display:flex;align-items:center;gap:8px;min-width:0;width:158px;flex:none}
+.px-d-row .ptag{font-size:var(--ui-font-size-caption);padding:0 7px}
+.px-d-row .inb b{font-weight:560;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:99px;background:var(--stone);color:var(--ink2);font-size:var(--ui-font-size-control);font-weight:540;white-space:nowrap}
+.cx-port{color:var(--ink2);font-size:var(--ui-font-size-meta)}
+.px-r{display:flex;align-items:center;gap:6px;min-width:88px;flex:1;justify-content:flex-end}
+.px-r .lat{font-family:var(--mono);font-size:var(--ui-font-size-meta);color:var(--muted)}
+.px-legend{margin:14px 6px 0;padding-top:10px;border-top:1px solid var(--ui-border-subtle);font-size:var(--ui-font-size-caption);color:var(--muted);line-height:1.6}
+.vcell{display:grid;gap:1px;justify-items:start}
+.vcell .lat{font-family:var(--mono);font-size:var(--ui-font-size-meta);color:var(--muted)}
+.filterbar{display:flex;align-items:center;gap:10px;padding:10px 16px 4px;flex-wrap:wrap}
+.row-btns{opacity:0;transition:opacity 100ms}tr:hover .row-btns,.px-d-row:hover .row-btns{opacity:1}
+.px-checking{color:var(--muted)}
+.px-checking i{animation:spin 1.4s linear infinite;display:inline-flex}
+.px-checking i svg{width:13px;height:13px}
+.chev{width:14px;height:14px;color:var(--faint);transition:transform 180ms var(--ease)}
+tr.expanded .chev{transform:rotate(180deg)}
+tr.xrow:hover{background:none}tr.xrow td{cursor:default;padding:0 16px 14px}
+.xbody{background:var(--stone);border-radius:10px;padding:10px 12px}
+.xbody .px-d-row{padding:7px 6px;font-size:var(--ui-font-size-control)}
+@media (max-width:860px){.app{grid-template-columns:1fr}.side{display:none}main{margin:8px}.px-top{padding:8px 12px}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.tabs{display:flex;gap:4px;margin:2px 0 18px;border-bottom:1px solid var(--ui-border-subtle)}
+.tabs a{display:block;padding:7px 12px 9px;color:var(--muted);font-size:var(--ui-font-size-control);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.tabs a.on{color:var(--ink);font-weight:560;border-bottom-color:var(--ink)}
+.row{display:flex;gap:16px;align-items:flex-start;padding:13px 16px;border-top:1px solid var(--ui-border-subtle)}
+.row:first-child{border-top:0}
+.row .grow{flex:1;min-width:0}.row .t1{font-weight:540}
+.cmd{background:var(--stone);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:var(--ui-font-size-meta);line-height:1.55;word-break:break-all;user-select:all}
+.swi{position:relative;width:34px;height:20px;border-radius:10px;background:var(--stone);border:0;cursor:pointer;flex:none;transition:background .15s}
+.swi::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--canvas);box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+.swi.on{background:var(--ink)}.swi.on::after{left:17px}
+.row-in{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--ui-border-subtle)}
+.row-in:first-child{border-top:0}
+.row-in .in-label{flex:1}.row-in .in-label b{display:block;font-weight:540}
+.frm{display:grid;gap:14px}
+.fld label{display:block;font-size:var(--ui-font-size-caption);color:var(--muted);margin-bottom:5px}
+.in{width:100%;height:var(--control-height);padding:0 10px;border:1px solid var(--ui-border-subtle);border-radius:var(--control-radius);background:var(--canvas);font-size:var(--font-control)}
+.in:focus{outline:2px solid var(--ring);border-color:transparent}
+.steps{margin:10px 0 0;padding-left:18px;display:grid;gap:8px;font-size:var(--ui-font-size-caption)}
+.steps li::marker{color:var(--faint)}
+.member-sub td{background:color-mix(in srgb,var(--stone) 40%,transparent);padding:8px 16px}
+.x-tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;background:var(--bad-bg);color:var(--bad);font:500 var(--ui-font-size-control) var(--mono)}
+.k-tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:6px;background:var(--warn-bg);color:var(--warn);font:500 var(--ui-font-size-control) var(--mono)}
+.px-scr-desc{color:var(--muted);font-size:var(--ui-font-size-caption);padding:10px 18px}
+</style>
+
+</head>
+<body>
+<div class="px-top">
+  <b>UC-12 自动剔除不通节点</b>
+  <div class="seg" id="scrSeg" role="tablist" aria-label="界面">
+    <button class="on" data-scr="probes" role="tab">探测点页签</button>
+    <button data-scr="nodes" role="tab">自建节点列表</button>
+    <button data-scr="ext" role="tab">外部订阅成员</button>
+    <button data-scr="drawer" role="tab">添加探测点</button>
+  </div>
+  <div class="seg" id="stSeg" aria-label="开关">
+    <button data-st="off">剔除关</button>
+    <button class="on" data-st="on">剔除开</button>
+  </div>
+  <span class="px-note">示例数据 · 点「保留 / 撤销保留」「添加探测点」可看交互</span>
+</div>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="7.5" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="7" r="1.1" fill="currentColor" stroke="none"/><circle cx="16.5" cy="10" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="16" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="16" r="1.1" fill="currentColor" stroke="none"/></svg>MPX<small>v0.9.x</small></div>
+    <div class="cpw"><button type="button" class="profile"><span class="dot ok"></span><span class="pf-t"><b>控制台 · mpx.dev</b><span>198.51.100.2:8443</span></span></button></div>
+    <a class="nav"><i data-ic="home"></i>总览</a>
+    <a class="nav on"><i data-ic="nodes"></i>节点<span class="ct">6</span></a>
+    <a class="nav"><i data-ic="users"></i>用户<span class="ct">27</span></a>
+    <a class="nav"><i data-ic="sub"></i>订阅</a>
+    <a class="nav"><i data-ic="split"></i>分流</a>
+    <div class="nsep"></div>
+    <a class="nav"><i data-ic="pulse"></i>体检</a>
+    <a class="nav"><i data-ic="set"></i>系统</a>
+  </aside>
+  <main>
+    <div class="top"><div class="crumb"><a href="javascript:void 0">节点</a><span><i>/</i><b id="crumbPage">探测点</b></span></div><span class="sp"></span><button class="ib" type="button" title="切换主题" id="themeBtn"><i data-ic="moon"></i></button></div>
+    <div class="px-scr-desc" id="scrDesc"></div>
+    <div class="page" id="page"></div>
+  </main>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer" role="dialog"></div>
+<div id="toastRoot"></div>
+
+<script>
+const IC={
+home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+nodes:'<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+sub:'<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/>',
+split:'<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+pulse:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+set:'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 0 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.73V20a2 2 0 0 0 2-2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73-.73l-.15-.08a2 2 0 0 1-1-1.74l.15-.09a2 2 0 0 0-.73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+moon:'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/><path d="M12 17h.01"/>',
+check:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+pin:'<path d="M12 17v5"/><path d="M15 8a5 5 0 1 0-10 0c0 5 5 6 5 6s5-1 5-6z" transform="translate(0 -1)"/><path d="M9 8h.01"/>',
+antenna:'<path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/>',
+refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
+x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+key:'<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+copy:'<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'
+};
+const $=s=>document.querySelector(s);
+const ic=n=>`<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[n]||""}</svg>`;
+document.querySelectorAll("[data-ic]").forEach(e=>e.innerHTML=ic(e.dataset.ic));
+
+const state={scr:"probes",st:"on",keep:{2:true},joined:false};
+
+const NODES=[
+  {id:1,flag:"🇭🇰",name:"hk-1",addr:"198.51.100.9",v:"ok",excl:false},
+  {id:2,flag:"🇯🇵",name:"jp-1",addr:"203.0.113.7",v:"blocked",excl:true},
+  {id:3,flag:"🇺🇸",name:"us-1",addr:"192.0.2.44",v:"blocked",excl:true,kept:true},
+  {id:4,flag:"🇸🇬",name:"sg-1",addr:"198.51.100.31",v:"down",excl:true},
+  {id:5,flag:"🇩🇪",name:"de-1",addr:"203.0.113.99",v:"unknown",excl:false},
+];
+const PROBES=[
+  {id:1,name:"家 · Mac mini",addr:"192.168.3.22",online:true,seen:"2 分钟前",src:"macmini"},
+  {id:2,name:"深圳 · 备用",addr:"—",online:false,seen:"3 天前",src:"sz-spare"},
+];
+const MEMBERS=[
+  {name:"🇭🇰 机场·香港01",proto:"vless",excl:false},
+  {name:"🇯🇵 机场·日本02",proto:"trojan",excl:true,verdict:"blocked"},
+  {name:"🇺🇸 机场·美西03",proto:"vless",excl:true,verdict:"down",kept:true},
+  {name:"🇸🇬 机场·新加坡04",proto:"ss",excl:false},
+];
+
+const verdictTag={blocked:"境内不通",down:"都不通",ok:"双通",unknown:"未知"};
+const verdictTone={ok:"ok",blocked:"bad",down:"bad",unknown:"info"};
+
+function ph(title,desc,btn){
+  return `<div class="ph"><h1>${title}</h1><p>${desc}</p><span class="sp"></span>${btn||""}</div>`;
+}
+const TABS=(on)=>`<div class="tabs"><a class="${on==="nodes"?"on":""}" data-nav="nodes">自建节点</a><a class="${on==="ext"?"on":""}" data-nav="ext">外部订阅</a><a class="${on==="probes"?"on":""}" data-nav="probes">探测点</a></div>`;
+
+function exclBanner(){
+  if(state.st==="off")return "";
+  return `<div class="callout stone mb"><i class="icon" style="color:var(--info)">${ic("shield")}</i><div><b>自动剔除已开启</b> · 判定「境内不通 / 都不通」且判定新鲜的节点不出现在订阅里；恢复连通或判定过期后自动回来。<span class="sub">周期 60 分钟 · <a class="lnk" data-nav="probes">探测点页签</a>可改</span></div></div>`;
+}
+
+/* —— 自建节点页 —— */
+function pageNodes(){
+  const excl=state.st==="on";
+  const rows=NODES.map(n=>{
+    const kept=!!n.kept;
+    const excluded=excl&&n.excl&&!kept;
+    return `<tr>
+      <td><b class="bold">${n.flag} ${n.name}</b><div class="sub mono">${n.addr}</div></td>
+      <td><span class="st"><i class="dot ${n.id===5?"info":"ok"}"></i>${n.id===5?"未知":"在线"}</span></td>
+      <td><span class="st"><i class="dot ${verdictTone[n.v]}"></i>${verdictTag[n.v]}</span>${excluded?` <span class="x-tag">${ic("x")}已剔除</span>`:""}${kept&&n.excl?` <span class="k-tag">${ic("pin")}保留中</span>`:""}</td>
+      <td><span class="st"><i class="dot ${n.v==="down"?"bad":"ok"}"></i>${n.v==="down"?"不通":"可达"}</span></td>
+      <td class="hide-m"><span class="tag">xray</span> <span class="sub">25.6.8</span></td>
+      <td class="num"><button class="btn sm" data-act="keep" data-id="${n.id}">${kept?"撤销保留":"保留"}</button></td>
+    </tr>`;
+  }).join("");
+  return `${ph("节点","节点状态来自定时检查","<button class='btn'>检查触达</button><button class='btn pri'>添加节点</button>")}${TABS("nodes")}${exclBanner()}
+  <div class="card"><div class="tw"><table><thead><tr><th>节点</th><th>状态</th><th>本机 → 节点</th><th>控制面 → 节点</th><th class="hide-m">代理程序</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  <p class="sub mt" style="padding:0 4px">「已剔除」= 不出现在任何订阅；「保留中」= 豁免剔除。「保留」入口也在节点详情的触达抽屉里。</p>`;
+}
+
+/* —— 外部订阅成员 —— */
+function pageExt(){
+  const excl=state.st==="on";
+  const rows=MEMBERS.map((m,i)=>{
+    const excluded=excl&&m.excl&&!m.kept;
+    return `<tr class="member-sub">
+      <td><span class="bold">${m.name}</span></td>
+      <td>${excluded?`<span class="x-tag">${ic("x")}已剔除</span>`:m.kept&&m.excl?`<span class="k-tag">${ic("pin")}保留中</span>`:`<span class="sub">只读外部节点</span>`}</td>
+      <td class="hide-m"><span class="tag">${m.proto}</span></td>
+      <td class="num"><button class="btn sm" data-act="keep-ext" data-i="${i}">${m.kept?"撤销保留":"保留"}</button></td>
+    </tr>`;
+  }).join("");
+  return `${ph("节点","将外部订阅与自建节点合并分发","<button class='btn'>预览混合订阅</button><button class='btn pri'>添加订阅</button>")}${TABS("ext")}${exclBanner()}
+  <div class="card"><div class="tw"><table>
+    <thead><tr><th>来源</th><th>状态</th><th class="hide-m">格式</th><th></th></tr></thead><tbody>
+    <tr><td><b class="bold">快连机场</b><div class="sub">4 个节点 · 每 6 小时</div></td><td><span class="st"><i class="dot ok"></i>正常</span></td><td class="hide-m"><span class="tag">links</span></td><td></td></tr>
+    ${rows}
+    </tbody></table></div></div>
+  <p class="sub mt" style="padding:0 4px">外部端点按单个成员剔除:同一份订阅里不通的下架、可达的保留。</p>`;
+}
+
+/* —— 探测点页签 —— */
+function pageProbes(){
+  const excl=state.st==="on";
+  const rows=PROBES.map(p=>`<tr>
+    <td><b class="bold">${p.name}</b><div class="sub mono">${p.addr}</div></td>
+    <td><span class="st"><i class="dot ${p.online?"ok":"bad"}"></i>${p.online?"在线":"离线"}</span></td>
+    <td class="hide-m sub">${p.seen}</td>
+    <td class="num"><span class="row-btns"><button class="ib" title="轮换凭据" data-act="rotate">${ic("key")}</button><button class="ib" title="删除" data-act="del-probe">${ic("trash")}</button></span></td>
+  </tr>`).join("");
+  return `${ph("节点","探测点是境内常驻主机,负责替你探「墙内还通不通」","<button class='btn pri' data-act='add-probe'>添加探测点</button>")}${TABS("probes")}
+  <div class="card mb"><div class="ch">自动剔除<small>把判定不通的对象从订阅里拿掉</small></div>
+    <div class="row-in"><div class="in-label"><b>剔除不通的对象</b><span class="sub">判定「境内不通 / 都不通」且未过期的节点与外部端点不再进订阅;判定恢复或过期自动回来</span></div><button class="swi ${excl?"on":""}" data-act="sw" role="switch" aria-checked="${excl}" aria-label="剔除不通的对象"></button></div>
+    ${excl?`<div class="row-in"><div class="in-label"><b>探测周期</b><span class="sub">每个对象隔多久探一次;到期对象在周期内均匀铺开,不整批突扫</span></div><div class="seg"><button class="on">60 分钟</button><button>30 分钟</button><button>4 小时</button></div></div>`:""}
+  </div>
+  <div class="card"><div class="ch">探测点<small>境内常驻主机 · 每个探测端各自轮转</small></div>
+    <div class="tw"><table><thead><tr><th>探测点</th><th>状态</th><th class="hide-m">最近上报</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=4 class="sub" style="text-align:center;padding:26px">还没有探测点——mpx ui 开着时本机也探;装上探测点后关机也不断档</td></tr>'}</tbody></table></div>
+    <div class="row"><div class="grow"><div class="sub">探测点只拿「读目标、回结果」两个权限,凭据可单独吊销。这台电脑运行 <span class="mono">mpx ui</span> 时也算一个境内来源。</div></div></div>
+  </div>`;
+}
+
+/* —— 添加探测点抽屉 —— */
+function drawerAdd(){
+  const step2=state.joined
+    ?`<div class="callout stone"><i class="icon" style="color:var(--ok)">${ic("check")}</i><div><b>home-mini 已接入</b>,正在按 60 分钟周期轮转探测。</div></div>`
+    :`<ol class="steps"><li>把命令拷到境内常驻主机上跑(比如家里的 Mac mini)。</li><li>主机用这一次性命令换取正式凭据,随后每分钟拉一次目标清单。</li><li>接入后出现在列表里;凭据可随时轮换或删除。</li></ol>`;
+  return `<div class="dh"><div><h3>添加探测点</h3><p class="sub mt6">探测点是你自己的境内常驻主机,只出不进,家里宽带就能跑</p></div><span class="sp"></span><button class="ib" data-act="drawer-close">${ic("x")}</button></div>
+  <div class="db"><div class="frm">
+    <div class="fld"><label>名字</label><input class="in" value="home-mini" /></div>
+    <div class="fld"><label>在这台主机上执行</label><div class="cmd">mpx probe run --cp https://198.51.100.2:8443 --token jk_7Qm9…x2 --fp 9C:4A:…:E1</div><div class="mt6"><button class="btn sm" data-act="copy">${ic("copy")}复制命令</button></div></div>
+    ${step2}
+  </div></div>
+  <div class="df"><span class="sub">命令只能用一次,凭据不落日志</span><span class="sp"></span><button class="btn" data-act="sim-join">${state.joined?"":"模拟主机接入"}</button><button class="btn pri" data-act="drawer-close">完成</button></div>`;
+}
+
+const DESC={
+  probes:"探测点是境内常驻探测主机:加一台、给它一条接入命令,它就按周期替你探。自动剔除的开关也在这里。",
+  nodes:"自建节点列表:剔除生效时不通节点标「已剔除」,可单独「保留」。",
+  ext:"外部订阅成员:按单个端点剔除,保留可逐成员豁免。",
+  drawer:"添加探测点:给一次性接入命令,主机跑完自己注册。"
+};
+
+function render(){
+  $("#scrDesc").textContent=DESC[state.scr];
+  $("#crumbPage").textContent={probes:"探测点",nodes:"列表",ext:"外部订阅",drawer:"探测点"}[state.scr];
+  const fn={probes:pageProbes,nodes:pageNodes,ext:pageExt,drawer:pageProbes}[state.scr];
+  $("#page").innerHTML=fn();
+  if(state.scr==="drawer")openDrawer(drawerAdd());else closeDrawer();
+}
+function openDrawer(html){$("#drawer").innerHTML=html;$("#drawer").classList.add("open");$("#scrim").classList.add("open")}
+function closeDrawer(){$("#drawer").classList.remove("open");$("#scrim").classList.remove("open")}
+function toast(msg){const t=document.createElement("div");t.className="toast";t.innerHTML=`${ic("check")}<span>${msg}</span>`;$("#toastRoot").appendChild(t);setTimeout(()=>t.remove(),3200)}
+
+document.addEventListener("click",e=>{
+  const nav=e.target.closest("[data-nav]");
+  if(nav){state.scr=nav.dataset.nav;render();return}
+  const el=e.target.closest("[data-act],[data-scr],[data-st]");
+  if(!el)return;
+  if(el.dataset.scr){state.scr=el.dataset.scr;document.querySelectorAll("#scrSeg button").forEach(b=>b.classList.toggle("on",b.dataset.scr===state.scr));render();return}
+  if(el.dataset.st){state.st=el.dataset.st;document.querySelectorAll("#stSeg button").forEach(b=>b.classList.toggle("on",b.dataset.st===state.st));render();return}
+  switch(el.dataset.act){
+    case "drawer-close":closeDrawer();if(state.scr==="drawer"){state.scr="probes";render()}return;
+    case "sw":state.st=state.st==="on"?"off":"on";document.querySelectorAll("#stSeg button").forEach(b=>b.classList.toggle("on",b.dataset.st===state.st));render();toast(state.st==="on"?"自动剔除已开启:不通对象将从订阅剔除":"自动剔除已关闭:全部对象照常输出");return;
+    case "add-probe":openDrawer(drawerAdd());return;
+    case "copy":toast("接入命令已复制");return;
+    case "sim-join":state.joined=true;openDrawer(drawerAdd());toast("home-mini 已接入,出现在探测点列表");return;
+    case "rotate":toast("原型:生成新凭据与接入命令,旧凭据立即失效");return;
+    case "del-probe":toast("原型:吊销凭据并移除,历史判定随过期消失");return;
+    case "keep":{const n=NODES.find(x=>x.id==el.dataset.id);n.kept=!n.kept;render();toast(n.kept?`${n.name} 已保留:不受剔除影响`:`${n.name} 撤销保留:按判定剔除`);return}
+    case "keep-ext":{const m=MEMBERS[el.dataset.i];m.kept=!m.kept;render();toast(m.kept?"该端点已保留":"撤销保留");return}
+  }
+});
+$("#scrim").addEventListener("click",()=>{closeDrawer();if(state.scr==="drawer"){state.scr="probes";render()}});
+$("#themeBtn").addEventListener("click",()=>{const h=document.documentElement,next=h.dataset.theme==="dark"?"light":"dark";h.dataset.theme=next;$("#themeBtn").innerHTML=ic(next==="dark"?"sun":"moon")});
+render();
+</script>
+</body>
+</html>

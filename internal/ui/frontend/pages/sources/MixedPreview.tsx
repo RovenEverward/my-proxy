@@ -71,7 +71,7 @@ export function MixedPreviewModal({ users, revision }: { users: User[]; revision
             {result.nodes.length ? result.nodes.map((node, index) => (
               <div className="row source-preview-row" key={`${node.source_id}:${index}`}>
                 <div className="grow source-name">
-                  <b><FlagText>{node.name}</FlagText></b>
+                  <b><FlagText>{node.name}</FlagText></b>{node.excluded && <span className="tag x-tag">已剔除</span>}
                   <div className="sub">{node.source_name} · {node.protocol}</div>
                   {node.reasons?.map((reason, reasonIndex) => <div className="c-bad sub" key={reasonIndex}>{reason}</div>)}
                 </div>
