@@ -15,12 +15,15 @@ export function sourceIssueCount(source: SubscriptionSource): number {
   return total;
 }
 
-export function SourceGrantsSummary({ grants, all }: { grants?: string[]; all?: boolean }) {
+export function SourceGrantsSummary({ grants, plans, all }: { grants?: string[]; plans?: { id: number; name: string }[]; all?: boolean }) {
   if (all) return <span className="tag">全部用户</span>;
-  if (!grants) return <span className="sub">—</span>;
-  if (!grants.length) return <span className="sub">未分配</span>;
-  if (grants.length <= 2) return <span>{grants.join("、")}</span>;
-  return <span title={grants.join("、")}>{grants.slice(0, 2).join("、")} <span className="tag">+{grants.length - 2}</span></span>;
+  const planTags = (plans || []).map(p => <span className="tag" key={p.id}>套餐：{p.name}</span>);
+  if (!grants) return planTags.length ? <span>{planTags}</span> : <span className="sub">—</span>;
+  if (!grants.length) return planTags.length ? <span>{planTags}</span> : <span className="sub">未分配</span>;
+  const userText = grants.length <= 2
+    ? <span>{grants.join("、")}</span>
+    : <span title={grants.join("、")}>{grants.slice(0, 2).join("、")} <span className="tag">+{grants.length - 2}</span></span>;
+  return <span>{userText}{planTags}</span>;
 }
 
 export function SourceFormatsSummary({ source }: { source: SubscriptionSource }) {

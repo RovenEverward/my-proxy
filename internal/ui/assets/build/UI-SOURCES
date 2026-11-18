@@ -1,4 +1,4 @@
-ui-src 6c2cc6af1b5599edb142227f3b63de0ba2b6bd2d2f7371b48aa4d85641e7699e
+ui-src 31670b879c0981e02f77920795b63655208fca1b424b1f9ae84a0828fa635b08
 78c3488077343d5e  internal/ui/assets/styles/terminus/fonts.css
 b921242b4a54e7db  internal/ui/assets/styles/terminus/fonts/LICENSE-EB-Garamond.txt
 5dd548d31a85f756  internal/ui/assets/styles/terminus/fonts/LICENSE-Inter.txt
@@ -43,7 +43,7 @@ bc6b1c115fcc9d63  internal/ui/frontend/components/ui/tabs.tsx
 cdfa213baceeada6  internal/ui/frontend/domain/probes.ts
 809080b5e3c2e791  internal/ui/frontend/domain/reach.ts
 0ba6943515bd1599  internal/ui/frontend/domain/releases.tsx
-a9d91b817a94484d  internal/ui/frontend/domain/routing.ts
+ae10af8f7f19afe2  internal/ui/frontend/domain/routing.ts
 ff316c2bb4d60109  internal/ui/frontend/domain/settings.ts
 4b22d9536427aee0  internal/ui/frontend/domain/users.ts
 7af78994c5541576  internal/ui/frontend/index.html
@@ -86,10 +86,10 @@ b80fc7bca4f75f2e  internal/ui/frontend/pages/setup/install-steps.tsx
 f0a8773053d9ee46  internal/ui/frontend/pages/setup/ssh-steps.tsx
 23f2545cc6d3a932  internal/ui/frontend/pages/setup/use-installation.ts
 fc3562b5181cf6e2  internal/ui/frontend/pages/sources/MixedPreview.tsx
-b274436b164907dc  internal/ui/frontend/pages/sources/SourceEditor.tsx
-35d0764cb4d80928  internal/ui/frontend/pages/sources/components.tsx
+c408ac30a0cb3571  internal/ui/frontend/pages/sources/SourceEditor.tsx
+b04b2931a8fdd93c  internal/ui/frontend/pages/sources/components.tsx
 a9451ca5e22020f3  internal/ui/frontend/pages/sources/hooks.ts
-a878ae64f6ae070a  internal/ui/frontend/pages/sources/index.tsx
+82281fb2708cc4f9  internal/ui/frontend/pages/sources/index.tsx
 1ab54158b543fd21  internal/ui/frontend/pages/sub/RulesDrawer.tsx
 247e5cf1a636ce28  internal/ui/frontend/pages/sub/SubscriptionPage.tsx
 6c5fbd06596e0855  internal/ui/frontend/pages/sub/TemplateDrawer.tsx

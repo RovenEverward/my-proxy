@@ -25,6 +25,8 @@ func (s *Server) sourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/sources/{id}/grants", s.handleReplaceSourceGrants)
 	api.HandleFunc("PUT /api/sources/{id}/grants/{username}", s.handleSourceGrant)
 	api.HandleFunc("DELETE /api/sources/{id}/grants/{username}", s.handleSourceGrant)
+	api.HandleFunc("PUT /api/sources/{id}/plan-grants/{plan}", s.handleSourcePlanGrant)
+	api.HandleFunc("DELETE /api/sources/{id}/plan-grants/{plan}", s.handleSourcePlanGrant)
 	api.HandleFunc("GET /api/proxy-groups/{id}/sources", s.handleGetGroupSources)
 	api.HandleFunc("PUT /api/proxy-groups/{id}/sources", s.handleSetGroupSources)
 	api.HandleFunc("GET /api/users/{username}/subscription-preview", s.handleSubscriptionPreview)
@@ -48,7 +50,15 @@ type sourceView struct {
 	InputFormat string                                    `json:"input_format"`
 	Issues      []source.Issue                          `json:"issues"`
 	Grants      []string                                `json:"grants"`
+	// PlanGrants 是按套餐授权的名单;用户可见性 = grant_all ∪ grants ∪ 所在套餐。
+	PlanGrants []sourcePlanRef                          `json:"plan_grants"`
 	Formats     map[model.ClientFormat]sourceFormatView `json:"formats"`
+}
+
+// sourcePlanRef 是授权名单里的套餐最小表示(id 唯一,name 唯一)。
+type sourcePlanRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // sourceNodeRef 是外部节点的最小展示字段。Key 是对象身份(UC-12),
@@ -61,9 +71,14 @@ type sourceNodeRef struct {
 }
 
 func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
-	v := sourceView{SubscriptionSource: src, Refreshing: s.sources.Running(src.ID), SnapshotStale: len(src.Snapshot) > 0 && src.SnapshotURL != src.URL, Issues: []source.Issue{}, Grants: []string{}, Formats: map[model.ClientFormat]sourceFormatView{}}
+	v := sourceView{SubscriptionSource: src, Refreshing: s.sources.Running(src.ID), SnapshotStale: len(src.Snapshot) > 0 && src.SnapshotURL != src.URL, Issues: []source.Issue{}, Grants: []string{}, PlanGrants: []sourcePlanRef{}, Formats: map[model.ClientFormat]sourceFormatView{}}
 	if grants, err := s.store.SourceGrants(src.ID); err == nil && grants != nil {
 		v.Grants = grants
+	}
+	if plans, err := s.store.SourcePlanGrants(src.ID); err == nil {
+		for _, p := range plans {
+			v.PlanGrants = append(v.PlanGrants, sourcePlanRef{ID: p.ID, Name: p.Name})
+		}
 	}
 	if u, err := url.Parse(src.URL); err == nil {
 		v.URLMasked = u.Scheme + "://" + u.Host + "/••••"
@@ -252,22 +267,55 @@ func (s *Server) handleSourceGrants(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "来源或用户")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	plans, err := s.store.SourcePlanGrants(id)
+	if err != nil {
+		s.writeStoreError(w, err, "来源或套餐")
+		return
+	}
+	refs := make([]sourcePlanRef, 0, len(plans))
+	for _, p := range plans {
+		refs = append(refs, sourcePlanRef{ID: p.ID, Name: p.Name})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users, "plans": refs})
 }
 
+// handleReplaceSourceGrants 整组替换授权。users / plan_ids 两个键独立:
+// 带哪个键换哪一份,不带的键原样保留(老客户端只发 users,不会误清套餐授权)。
 func (s *Server) handleReplaceSourceGrants(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.pathID(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Users []string `json:"users"`
+		Users   *[]string `json:"users"`
+		PlanIDs *[]int64  `json:"plan_ids"`
 	}
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if err := s.store.ReplaceSourceGrants(id, body.Users); err != nil {
-		s.writeStoreError(w, err, "来源或用户")
+	if body.Users != nil {
+		if err := s.store.ReplaceSourceGrants(id, *body.Users); err != nil {
+			s.writeStoreError(w, err, "来源或用户")
+			return
+		}
+	}
+	if body.PlanIDs != nil {
+		if err := s.store.ReplaceSourcePlanGrants(id, *body.PlanIDs); err != nil {
+			s.writeStoreError(w, err, "来源或套餐")
+			return
+		}
+	}
+	s.invalidateSubCache()
+	s.handleSourceGrants(w, r)
+}
+
+func (s *Server) handleSourcePlanGrant(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.SetSourcePlanGrant(id, r.PathValue("plan"), r.Method == http.MethodPut); err != nil {
+		s.writeStoreError(w, err, "来源或套餐")
 		return
 	}
 	s.invalidateSubCache()
