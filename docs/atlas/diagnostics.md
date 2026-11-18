@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go, internal/reach/, internal/cli/reach.go, internal/ui/reach.go, internal/probeagent/, internal/cli/probe.go, internal/control/quality.go, internal/server/quality.go, internal/cli/quality.go, internal/ui/frontend/domain/quality.ts, internal/ui/frontend/pages/nodes/GradeModal.tsx]
-verified: 2026-11-18 @ feat/uc12-auto-exclude working tree
+verified: 2026-11-19 @ UC-12 + UC-14 合并工作树
 ---
 # 体检与诊断
 

@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/, internal/store/, internal/model/, internal/backup/]
-verified: 2026-11-18 @ HEAD + plan_source_grants 工作树
+verified: 2026-11-18 @ 1583c52 + working tree
 ---
 # 控制面与数据
 
