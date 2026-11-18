@@ -34,6 +34,7 @@ type sourceView struct {
 	Enabled         bool                    `json:"enabled"`
 	IntervalSeconds int                     `json:"interval_seconds"`
 	Region          string                  `json:"region"`
+	GrantAll        bool                    `json:"grant_all"`
 	Revision        int64                   `json:"revision"`
 	LastAttemptAt   string                  `json:"last_attempt_at"`
 	LastGoodAt      string                  `json:"last_good_at"`
@@ -90,6 +91,7 @@ const (
 type sourceFlags struct {
 	interval time.Duration
 	region   string
+	everyone bool
 	disabled bool
 	enabled  bool
 	name     string
@@ -100,6 +102,7 @@ type sourceFlags struct {
 func (f *sourceFlags) bind(c *cobra.Command, forAdd bool) {
 	c.Flags().DurationVar(&f.interval, "interval", sourceDefaultInterval, "刷新间隔(如 6h;0 = 只手动刷新)")
 	c.Flags().StringVar(&f.region, "region", "", "来源默认地区(外部节点不凭名字判地区,这里给一个兜底)")
+	c.Flags().BoolVar(&f.everyone, "everyone", false, "授权给所有用户(含之后新建;--everyone=false 关掉)")
 	if forAdd {
 		c.Flags().BoolVar(&f.disabled, "disabled", false, "先建出来但停用(不输出、不自动拉取)")
 		c.Flags().BoolVar(&f.urlStdin, "url-stdin", false, "从标准输入读订阅地址(自动化用;交互下不回显输入)")
@@ -142,6 +145,9 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			if strings.TrimSpace(addF.region) != "" {
 				body["region"] = strings.TrimSpace(addF.region)
+			}
+			if cmd.Flags().Changed("everyone") {
+				body["grant_all"] = addF.everyone
 			}
 			raw, err := cl.do("POST", "/api/sources", body)
 			if err != nil {
@@ -275,8 +281,11 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 				}
 				patch["url"] = rawURL
 			}
+			if cmd.Flags().Changed("everyone") {
+				patch["grant_all"] = editF.everyone
+			}
 			if len(patch) == 0 {
-				return fmt.Errorf("没给要改的字段(--name/--region/--interval/--url-stdin;启停用 source enable|disable)")
+				return fmt.Errorf("没给要改的字段(--name/--region/--interval/--everyone/--url-stdin;启停用 source enable|disable)")
 			}
 			raw, err := cl.do("PATCH", sourcePath(v.ID), patch)
 			if err != nil {
@@ -347,7 +356,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 	c.AddCommand(refresh)
 
 	c.AddCommand(&cobra.Command{
-		Use: "grants NAME|ID", Short: "列出已授权的用户", Args: cobra.ExactArgs(1),
+		Use: "grants NAME|ID", Short: "列出已授权的用户(全员授权时按人记录不代表实际可见范围)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
 			if err != nil {
@@ -760,7 +769,9 @@ func printSourceDetail(cl *Client, v *sourceView) error {
 	if err != nil {
 		return err
 	}
-	if len(users) == 0 {
+	if v.GrantAll {
+		fmt.Printf("授权:所有用户(全员授权;按人记录:%s)\n", strings.Join(users, "、"))
+	} else if len(users) == 0 {
 		fmt.Println("授权:无(还没有用户能看到这个来源)")
 	} else {
 		fmt.Printf("授权:%s\n", strings.Join(users, "、"))

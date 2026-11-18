@@ -78,3 +78,80 @@ func TestSourceSnapshotAndSeparateRelationships(t *testing.T) {
 		t.Fatalf("deleted source resurrected: %v", err)
 	}
 }
+
+func TestSourceGrantAllVisibility(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	src := &model.SubscriptionSource{Name: "external", URL: "https://example.test/sub/secret", Enabled: true, IntervalSeconds: 21600}
+	if err := st.CreateSource(src); err != nil {
+		t.Fatal(err)
+	}
+	if src.GrantAll {
+		t.Fatal("新来源默认开了全员授权")
+	}
+	alice := &model.User{Username: "alice", Enabled: true}
+	if err := st.CreateUser(alice); err != nil {
+		t.Fatal(err)
+	}
+	bob := &model.User{Username: "bob", Enabled: true}
+	if err := st.CreateUser(bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSourceGrant(src.ID, "alice", true); err != nil {
+		t.Fatal(err)
+	}
+	assertVisible := func(username string, id int64, want int) {
+		t.Helper()
+		got, err := st.ListSourcesForUser(id)
+		if err != nil {
+			t.Fatalf("%s: %v", username, err)
+		}
+		if len(got) != want {
+			t.Fatalf("%s: want %d sources, got %d", username, want, len(got))
+		}
+	}
+	assertVisible("alice", alice.ID, 1)
+	assertVisible("bob", bob.ID, 0)
+
+	// 打开全员授权:bob 立刻可见,alice 的按人授权保留。
+	src.GrantAll = true
+	current, err := st.GetSource(src.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.GrantAll = true
+	if err := st.UpdateSource(current); err != nil {
+		t.Fatal(err)
+	}
+	assertVisible("alice", alice.ID, 1)
+	assertVisible("bob", bob.ID, 1)
+
+	// 新建用户不用单独授权也可见。
+	carol := &model.User{Username: "carol", Enabled: true}
+	if err := st.CreateUser(carol); err != nil {
+		t.Fatal(err)
+	}
+	assertVisible("carol", carol.ID, 1)
+
+	// 关掉开关:回到按人授权,bob 和 carol 不可见,alice 的授权仍在。
+	current.GrantAll = false
+	if err := st.UpdateSource(current); err != nil {
+		t.Fatal(err)
+	}
+	assertVisible("alice", alice.ID, 1)
+	assertVisible("bob", bob.ID, 0)
+	assertVisible("carol", carol.ID, 0)
+
+	// grant_all 随往返读出来,不影响旧库缺列时的零值。
+	after, err := st.GetSource(src.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.GrantAll {
+		t.Fatal("关闭后 grant_all 仍为真")
+	}
+}

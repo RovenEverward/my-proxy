@@ -129,6 +129,9 @@ type sourceWrite struct {
 	Enabled         *bool   `json:"enabled"`
 	IntervalSeconds *int64  `json:"interval_seconds"`
 	Region          *string `json:"region"`
+	// GrantAll 是「全员授权」开关:为真时这来源对所有用户(含新建)可见,
+	// 按人授权表不再决定可见性,但保留记录,关掉后恢复生效。
+	GrantAll        *bool   `json:"grant_all"`
 	Revision        *int64  `json:"revision"`
 }
 
@@ -147,6 +150,9 @@ func (p sourceWrite) apply(src *model.SubscriptionSource) {
 	}
 	if p.Region != nil {
 		src.Region = *p.Region
+	}
+	if p.GrantAll != nil {
+		src.GrantAll = *p.GrantAll
 	}
 }
 

@@ -129,6 +129,7 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
   const [url, setURL] = useState("");
   const [interval, setIntervalValue] = useState(String(initial.source.interval_seconds / 3600));
   const [region, setRegion] = useState(initial.source.region || "");
+  const [grantAll, setGrantAll] = useState(Boolean(initial.source.grant_all));
   const [selected, setSelected] = useState(initial.grants);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -190,7 +191,8 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
       trimmedName !== savedSource.name ||
       Boolean(trimmedURL) ||
       seconds !== savedSource.interval_seconds ||
-      trimmedRegion !== (savedSource.region || "")
+      trimmedRegion !== (savedSource.region || "") ||
+      grantAll !== Boolean(savedSource.grant_all)
     );
     const grantsChanged = canGrant && !sameUsers(selected, savedGrants);
     if (!configChanged && !grantsChanged) {
@@ -206,6 +208,7 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
           name: trimmedName,
           interval_seconds: seconds,
           region: trimmedRegion,
+          grant_all: grantAll,
           revision: latestRevision,
           ...(trimmedURL ? { url: trimmedURL } : {}),
         };
@@ -360,6 +363,16 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
           <section className="src-grants-sec">
             <h3>接收用户</h3>
             <p className="sub">这些用户共享上游凭证。撤回授权后，不再提供这些节点。已保存的凭证仍需由上游轮换。</p>
+            <label className="chk" id="source-grant-all-row">
+              <input
+                type="checkbox"
+                name="grant_all"
+                checked={grantAll}
+                disabled={saving || !canPatch}
+                onChange={event => setGrantAll(event.target.checked)}
+              />
+              授权给所有用户（含之后新建的用户）
+            </label>
             <div className="two source-user-list" id="source-grants-form">
               {initial.users.length ? initial.users.map(user => (
                 <label className="chk" key={user.username}>
@@ -368,13 +381,14 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
                     name="user"
                     value={user.username}
                     checked={selected.includes(user.username)}
-                    disabled={saving || !canGrant}
+                    disabled={saving || !canGrant || grantAll}
                     onChange={event => setSelected(previous => event.target.checked ? [...previous, user.username] : previous.filter(value => value !== user.username))}
                   />
                   {user.username}
                 </label>
               )) : <p className="sub">还没有用户。添加用户后可分配。</p>}
             </div>
+            {grantAll && <p className="sub" id="source-grants-note">全员授权已开启，按人名单保留但不决定可见性。</p>}
           </section>
           <div className="err" id="source-err" role="alert">{error}</div>
         </div>
