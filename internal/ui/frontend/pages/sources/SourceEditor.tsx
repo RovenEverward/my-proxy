@@ -5,11 +5,12 @@ import { useApp } from "../../runtime/app-context";
 import { api, write } from "../../runtime/api";
 import type { User } from "../../runtime/types";
 import { errorMessage, readSubscriptionUsers, sourcePath, type SubscriptionSource } from "../../domain/routing";
+import type { Plan } from "../../domain/plans";
 import { SourceFormatDetails, SourceRuntime, sourceIssueCount } from "./components";
 import { useSourceRuntime } from "./hooks";
 
 export type SourceDrawerTab = "config" | "nodes";
-interface SourcePacket { source: SubscriptionSource; grants: string[]; users: User[] }
+interface SourcePacket { source: SubscriptionSource; grants: string[]; planGrants: number[]; users: User[]; plans: Plan[] }
 interface DrawerProps { id?: number; initialTab?: SourceDrawerTab; onChanged: () => Promise<void>; onCreated: (id: number) => void }
 
 export function SourceDrawer({ id, initialTab = "config", onChanged, onCreated }: DrawerProps) {
@@ -24,9 +25,10 @@ export function SourceDrawer({ id, initialTab = "config", onChanged, onCreated }
     setError("");
     void Promise.all([
       api<SubscriptionSource>(sourcePath(id), { signal: controller.signal }),
-      api<{ users: string[] }>(sourcePath(id) + "/grants", { signal: controller.signal }),
+      api<{ users: string[]; plans?: { id: number; name: string }[] }>(sourcePath(id) + "/grants", { signal: controller.signal }),
       readSubscriptionUsers((path, init) => api(path, { ...init, signal: controller.signal })),
-    ]).then(([source, grants, users]) => { if (active) setPacket({ source, grants: grants.users, users }); })
+      api<Plan[]>("/api/plans", { signal: controller.signal }).catch((): Plan[] => []),
+    ]).then(([source, grants, users, plans]) => { if (active) setPacket({ source, grants: grants.users, planGrants: (grants.plans || []).map(p => p.id), users, plans }); })
       .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
     return () => { active = false; controller.abort(); };
   }, [id, attempt]);
@@ -125,12 +127,14 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
   const [tab, setTab] = useState<SourceDrawerTab>(initialTab);
   const [savedSource, setSavedSource] = useState(initial.source);
   const [savedGrants, setSavedGrants] = useState(initial.grants);
+  const [savedPlanGrants, setSavedPlanGrants] = useState(initial.planGrants);
   const [name, setName] = useState(initial.source.name);
   const [url, setURL] = useState("");
   const [interval, setIntervalValue] = useState(String(initial.source.interval_seconds / 3600));
   const [region, setRegion] = useState(initial.source.region || "");
   const [grantAll, setGrantAll] = useState(Boolean(initial.source.grant_all));
   const [selected, setSelected] = useState(initial.grants);
+  const [selectedPlans, setSelectedPlans] = useState(initial.planGrants);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [invalid, setInvalid] = useState<"name" | "url" | "interval" | null>(null);
@@ -194,7 +198,8 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
       trimmedRegion !== (savedSource.region || "") ||
       grantAll !== Boolean(savedSource.grant_all)
     );
-    const grantsChanged = canGrant && !sameUsers(selected, savedGrants);
+    const planChanged = !sameUsers(selectedPlans.map(String), savedPlanGrants.map(String));
+    const grantsChanged = canGrant && (!sameUsers(selected, savedGrants) || planChanged);
     if (!configChanged && !grantsChanged) {
       app.closeOverlays();
       return;
@@ -220,9 +225,10 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
       }
       if (grantsChanged) {
         try {
-          const updatedGrants = await write<{ users: string[] }>("PUT", sourcePath(savedSource.id) + "/grants", { users: selected });
+          const updatedGrants = await write<{ users: string[]; plans?: { id: number; name: string }[] }>("PUT", sourcePath(savedSource.id) + "/grants", { users: selected, ...(planChanged ? { plan_ids: selectedPlans } : {}) });
           if (!mounted.current) return;
           setSavedGrants(updatedGrants.users);
+          setSavedPlanGrants((updatedGrants.plans || []).map(p => p.id));
         } catch (grantReason) {
           if (!mounted.current) return;
           if (configSavedNow) {
@@ -388,7 +394,25 @@ function ExistingSourceEditor({ initial, initialTab, onChanged }: { initial: Sou
                 </label>
               )) : <p className="sub">还没有用户。添加用户后可分配。</p>}
             </div>
-            {grantAll && <p className="sub" id="source-grants-note">全员授权已开启，按人名单保留但不决定可见性。</p>}
+            {initial.plans.length > 0 && <>
+              <p className="sub" id="source-plans-label">按套餐授权：套餐下的用户（含之后挂进来的）都能看到这个来源。</p>
+              <div className="two source-user-list" id="source-plan-grants-form">
+                {initial.plans.map(plan => (
+                  <label className="chk" key={plan.id}>
+                    <input
+                      type="checkbox"
+                      name="plan"
+                      value={plan.id}
+                      checked={selectedPlans.includes(plan.id)}
+                      disabled={saving || !canGrant || grantAll}
+                      onChange={event => setSelectedPlans(previous => event.target.checked ? [...previous, plan.id] : previous.filter(value => value !== plan.id))}
+                    />
+                    {plan.name}{plan.is_default ? "（默认）" : ""}
+                  </label>
+                ))}
+              </div>
+            </>}
+            {grantAll && <p className="sub" id="source-grants-note">全员授权已开启，按人与按套餐名单保留但不决定可见性。</p>}
           </section>
           <div className="err" id="source-err" role="alert">{error}</div>
         </div>

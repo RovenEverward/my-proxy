@@ -155,3 +155,87 @@ func TestSourceGrantAllVisibility(t *testing.T) {
 		t.Fatal("关闭后 grant_all 仍为真")
 	}
 }
+
+func TestSourcePlanGrantsVisibility(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "source.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	src := &model.SubscriptionSource{Name: "external", URL: "https://example.test/sub/secret", Enabled: true, IntervalSeconds: 21600}
+	if err := st.CreateSource(src); err != nil {
+		t.Fatal(err)
+	}
+	vip := &model.Plan{Name: "VIP"}
+	if err := st.CreatePlan(vip); err != nil {
+		t.Fatal(err)
+	}
+	def, err := st.DefaultPlanID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// alice 挂 VIP,bob 留在默认套餐。
+	alice := &model.User{Username: "alice", Enabled: true, PlanID: &vip.ID}
+	if err := st.CreateUser(alice); err != nil {
+		t.Fatal(err)
+	}
+	bob := &model.User{Username: "bob", Enabled: true, PlanID: &def}
+	if err := st.CreateUser(bob); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSourcePlanGrant(src.ID, "VIP", true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.ListSourcesForUser(alice.ID)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("alice: %v %v", got, err)
+	}
+	got, err = st.ListSourcesForUser(bob.ID)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("bob: %v %v", got, err)
+	}
+	// 套餐授权名单可读。
+	plans, err := st.SourcePlanGrants(src.ID)
+	if err != nil || len(plans) != 1 || plans[0].Name != "VIP" {
+		t.Fatalf("plan grants: %v %v", plans, err)
+	}
+	// 撤回后 alice 也看不到。
+	if err := st.SetSourcePlanGrant(src.ID, "VIP", false); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.ListSourcesForUser(alice.ID)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("alice after revoke: %v %v", got, err)
+	}
+	// 整组替换:给默认套餐授权,bob 可见;坏 id 不落事务。
+	if err := st.ReplaceSourcePlanGrants(src.ID, []int64{def}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = st.ListSourcesForUser(bob.ID)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("bob after replace: %v %v", got, err)
+	}
+	if err := st.ReplaceSourcePlanGrants(src.ID, []int64{99999}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("bad plan id: %v", err)
+	}
+	plans, err = st.SourcePlanGrants(src.ID)
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("replace rolled back badly: %v %v", plans, err)
+	}
+	// 删套餐级联清授权(不复活):用一个没挂用户的套餐测。
+	temp := &model.Plan{Name: "temp"}
+	if err := st.CreatePlan(temp); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSourcePlanGrant(src.ID, "temp", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeletePlan(temp.ID); err != nil {
+		t.Fatal(err)
+	}
+	plans, err = st.SourcePlanGrants(src.ID)
+	if err != nil || len(plans) != 1 {
+		t.Fatalf("deleted plan grant leaked: %v %v", plans, err)
+	}
+}

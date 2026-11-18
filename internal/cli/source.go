@@ -35,6 +35,10 @@ type sourceView struct {
 	IntervalSeconds int                     `json:"interval_seconds"`
 	Region          string                  `json:"region"`
 	GrantAll        bool                    `json:"grant_all"`
+	PlanGrants      []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"plan_grants"`
 	Revision        int64                   `json:"revision"`
 	LastAttemptAt   string                  `json:"last_attempt_at"`
 	LastGoodAt      string                  `json:"last_good_at"`
@@ -356,7 +360,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 	c.AddCommand(refresh)
 
 	c.AddCommand(&cobra.Command{
-		Use: "grants NAME|ID", Short: "列出已授权的用户(全员授权时按人记录不代表实际可见范围)", Args: cobra.ExactArgs(1),
+		Use: "grants NAME|ID", Short: "列出已授权的用户与套餐(全员授权时名单不代表实际可见范围)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
 			if err != nil {
@@ -373,50 +377,69 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			if opts.output == outputJSON {
 				return emitJSON(raw)
 			}
-			users, err := decodeGrants(raw)
+			g, err := decodeSourceGrants(raw)
 			if err != nil {
 				return err
 			}
-			if len(users) == 0 {
-				fmt.Println("(未授权给任何用户)")
+			if len(g.Users) == 0 && len(g.Plans) == 0 {
+				fmt.Println("(未授权给任何用户或套餐)")
 				return nil
 			}
-			for _, u := range users {
+			for _, u := range g.Users {
 				fmt.Println(u)
+			}
+			for _, p := range g.Plans {
+				fmt.Printf("套餐:%s\n", p.Name)
 			}
 			return nil
 		},
 	})
 
-	var grantUsers []string
+	var grantUsers, grantPlans []string
 	grant := &cobra.Command{
-		Use: "grant NAME|ID --user USER...", Short: "把来源授权给用户(可重复 --user;重复授权幂等)",
+		Use: "grant NAME|ID (--user USER... | --plan PLAN...)", Short: "把来源授权给用户或套餐(可重复;重复授权幂等)",
 		Example: `  mpx source grant 7 --user alice
-  mpx source grant 7 --user alice --user bob`,
+  mpx source grant 7 --user alice --plan 基础套餐
+  mpx source grant 7 --plan 全家桶`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return sourceGrantEach(args[0], grantUsers, func(cl *Client, id int64, u string) ([]byte, error) {
-				return cl.do("PUT", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
-			}, "已授权 %s")
+			if len(grantUsers) == 0 && len(grantPlans) == 0 {
+				return fmt.Errorf("至少给一个 --user 或 --plan")
+			}
+			return sourceGrantRun(args[0], grantUsers, grantPlans,
+				func(cl *Client, id int64, u string) ([]byte, error) {
+					return cl.do("PUT", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
+				},
+				func(cl *Client, id int64, p string) ([]byte, error) {
+					return cl.do("PUT", fmt.Sprintf("%s/plan-grants/%s", sourcePath(id), url.PathEscape(p)), nil)
+				}, "已授权 %s")
 		},
 	}
-	grant.Flags().StringSliceVar(&grantUsers, "user", nil, "接收这个来源的用户(必填,可重复或逗号分隔)")
-	_ = grant.MarkFlagRequired("user")
+	grant.Flags().StringSliceVar(&grantUsers, "user", nil, "接收这个来源的用户(可重复或逗号分隔)")
+	grant.Flags().StringSliceVar(&grantPlans, "plan", nil, "接收这个来源的套餐名(可重复或逗号分隔)")
 	c.AddCommand(grant)
 
-	var revokeUsers []string
+	var revokeUsers, revokePlans []string
 	revoke := &cobra.Command{
-		Use: "revoke NAME|ID --user USER...", Short: "撤回某用户对该来源的授权(不影响对方已保存的上游凭证)",
-		Example: `  mpx source revoke 7 --user alice`,
-		Args:    cobra.ExactArgs(1),
+		Use: "revoke NAME|ID (--user USER... | --plan PLAN...)", Short: "撤回某用户或套餐对该来源的授权(不影响对方已保存的上游凭证)",
+		Example: `  mpx source revoke 7 --user alice
+  mpx source revoke 7 --plan 基础套餐`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return sourceGrantEach(args[0], revokeUsers, func(cl *Client, id int64, u string) ([]byte, error) {
-				return cl.do("DELETE", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
-			}, "已撤回 %s")
+			if len(revokeUsers) == 0 && len(revokePlans) == 0 {
+				return fmt.Errorf("至少给一个 --user 或 --plan")
+			}
+			return sourceGrantRun(args[0], revokeUsers, revokePlans,
+				func(cl *Client, id int64, u string) ([]byte, error) {
+					return cl.do("DELETE", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
+				},
+				func(cl *Client, id int64, p string) ([]byte, error) {
+					return cl.do("DELETE", fmt.Sprintf("%s/plan-grants/%s", sourcePath(id), url.PathEscape(p)), nil)
+				}, "已撤回 %s")
 		},
 	}
-	revoke.Flags().StringSliceVar(&revokeUsers, "user", nil, "要撤回授权的用户(必填,可重复或逗号分隔)")
-	_ = revoke.MarkFlagRequired("user")
+	revoke.Flags().StringSliceVar(&revokeUsers, "user", nil, "要撤回授权的用户(可重复或逗号分隔)")
+	revoke.Flags().StringSliceVar(&revokePlans, "plan", nil, "要撤回授权的套餐名(可重复或逗号分隔)")
 	c.AddCommand(revoke)
 
 	c.AddCommand(&cobra.Command{
@@ -578,7 +601,9 @@ func waitSourceRefresh(cl *Client, id int64) (sourceView, error) {
 
 // sourceGrantEach 是 grant/revoke 的公共骨架:逐个用户对幂等的按人接口发请求。
 // 授权不是一条 PUT 整表替换,是为了「重复执行不重复授权」与部分失败可重试。
-func sourceGrantEach(arg string, users []string, act func(cl *Client, id int64, user string) ([]byte, error), doneFmt string) error {
+// sourceGrantRun 解析一次来源,再把用户、套餐两批名字各跑一遍 act。
+func sourceGrantRun(arg string, users, plans []string,
+	userAct, planAct func(cl *Client, id int64, name string) ([]byte, error), doneFmt string) error {
 	cl, err := newClient()
 	if err != nil {
 		return err
@@ -587,24 +612,30 @@ func sourceGrantEach(arg string, users []string, act func(cl *Client, id int64, 
 	if err != nil {
 		return err
 	}
-	for _, u := range users {
-		u = strings.TrimSpace(u)
-		if u == "" {
-			continue
-		}
-		raw, err := act(cl, v.ID, u)
-		if err != nil {
-			return err
-		}
-		if opts.output == outputJSON {
-			if err := emitJSON(raw); err != nil {
+	each := func(names []string, act func(*Client, int64, string) ([]byte, error)) error {
+		for _, u := range names {
+			u = strings.TrimSpace(u)
+			if u == "" {
+				continue
+			}
+			raw, err := act(cl, v.ID, u)
+			if err != nil {
 				return err
 			}
-			continue
+			if opts.output == outputJSON {
+				if err := emitJSON(raw); err != nil {
+					return err
+				}
+				continue
+			}
+			fmt.Printf(doneFmt+"\n", u)
 		}
-		fmt.Printf(doneFmt+"\n", u)
+		return nil
 	}
-	return nil
+	if err := each(users, userAct); err != nil {
+		return err
+	}
+	return each(plans, planAct)
 }
 
 // sourceSetEnabled 是 enable/disable 的公共骨架:PATCH 只改 enabled 一个字段。
@@ -627,15 +658,27 @@ func sourceSetEnabled(arg string, on bool) error {
 	return report(raw, "已停用来源 %d(%s)", v.ID, v.Name)
 }
 
-// decodeGrants 解出 {users:[...]} 里的名单。
+// sourceGrants 是 GET/PUT .../grants 的响应:按人名单 + 按套餐名单。
+type sourceGrants struct {
+	Users []string `json:"users"`
+	Plans []struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	} `json:"plans"`
+}
+
+// decodeGrants 解出 {users:[...]} 里的名单;旧控制面只返回 users。
 func decodeGrants(raw []byte) ([]string, error) {
-	var g struct {
-		Users []string `json:"users"`
-	}
+	g, err := decodeSourceGrants(raw)
+	return g.Users, err
+}
+
+func decodeSourceGrants(raw []byte) (sourceGrants, error) {
+	var g sourceGrants
 	if err := json.Unmarshal(raw, &g); err != nil {
-		return nil, fmt.Errorf("解析授权列表: %w", err)
+		return g, fmt.Errorf("解析授权列表: %w", err)
 	}
-	return g.Users, nil
+	return g, nil
 }
 
 // readSourceURL 取真实订阅地址。
@@ -765,16 +808,23 @@ func printSourceDetail(cl *Client, v *sourceView) error {
 	if err != nil {
 		return err
 	}
-	users, err := decodeGrants(raw)
+	g, err := decodeSourceGrants(raw)
 	if err != nil {
 		return err
 	}
 	if v.GrantAll {
-		fmt.Printf("授权:所有用户(全员授权;按人记录:%s)\n", strings.Join(users, "、"))
-	} else if len(users) == 0 {
+		fmt.Printf("授权:所有用户(全员授权;按人记录:%s)\n", strings.Join(g.Users, "、"))
+	} else if len(g.Users) == 0 && len(g.Plans) == 0 {
 		fmt.Println("授权:无(还没有用户能看到这个来源)")
-	} else {
-		fmt.Printf("授权:%s\n", strings.Join(users, "、"))
+	} else if len(g.Users) > 0 {
+		fmt.Printf("授权:%s\n", strings.Join(g.Users, "、"))
+	}
+	if len(g.Plans) > 0 {
+		names := make([]string, 0, len(g.Plans))
+		for _, p := range g.Plans {
+			names = append(names, p.Name)
+		}
+		fmt.Printf("套餐授权:%s\n", strings.Join(names, "、"))
 	}
 	return nil
 }
