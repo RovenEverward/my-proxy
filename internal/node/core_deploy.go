@@ -10,6 +10,16 @@ import (
 
 const singBoxBin = `SING_BOX_BIN="${MPX_SING_BOX_BIN:-/usr/local/lib/mpx/sing-box}"; `
 
+// StaleDeployError 表示 apply 已经推进到"正式配置可能被换"的阶段:候选
+// 文件被 mv 进正式路径,或服务在新配置下没能起来。此时节点磁盘上的配置
+// 不再是调用方记的那份基准 —— 控制面据此清掉 DeployedHash,让巡检报漂移、
+// 下一次下发不被"hash 相同"的跳过挡住。采样失败这类没动磁盘配置的错误
+// 不带这个标记,基准照留。
+type StaleDeployError struct{ Err error }
+
+func (e *StaleDeployError) Error() string { return e.Err.Error() }
+func (e *StaleDeployError) Unwrap() error { return e.Err }
+
 // DeploySingBox validates a staged file before touching the running service.
 // It explicitly stops all QUIC connections, then commits the accounting reset
 // before starting the new process. The callbacks run only at those boundaries.
@@ -34,7 +44,8 @@ func DeploySingBox(ctx context.Context, r Runner, n model.Node, d model.CoreDepl
 		}
 	}
 	if _, err := r.Run(ctx, n, "if test -f "+shellQuote(p)+"; then cp -f "+shellQuote(p)+" "+shellQuote(backup)+"; fi; mv -f "+shellQuote(staged)+" "+shellQuote(p)); err != nil {
-		return err
+		// mv 失败时正式路径可能是半截新配置:基准已脱节。
+		return &StaleDeployError{Err: err}
 	}
 	startErr := CoreUnit(ctx, r, n, d, "start")
 	if startErr == nil {
@@ -53,7 +64,7 @@ func DeploySingBox(ctx context.Context, r Runner, n model.Node, d model.CoreDepl
 	// automatically resurrect removed users after a failed revocation deployment.
 	_, _ = r.Run(ctx, n, "systemctl stop "+shellQuote(d.ServiceNameOrDefault()))
 	tail, _ := r.Run(ctx, n, "journalctl -u "+shellQuote(d.ServiceNameOrDefault())+" -n 20 --no-pager 2>&1")
-	return fmt.Errorf("sing-box failed to start; service stopped; previous configuration at %s: %v: %s", backup, startErr, strings.TrimSpace(tail))
+	return &StaleDeployError{Err: fmt.Errorf("sing-box failed to start; service stopped; previous configuration at %s: %v: %s", backup, startErr, strings.TrimSpace(tail))}
 }
 
 // StageSingBoxConfig may refresh the validated candidate after final accounting

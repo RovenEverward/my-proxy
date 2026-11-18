@@ -789,11 +789,12 @@ func TestSingBoxDeploymentFailureKeepsHashAndBaselines(t *testing.T) {
 			if getErr != nil {
 				t.Fatal(getErr)
 			}
-			if d.DeployedHash != oldHash || !d.DeployedAt.Equal(now.Add(-time.Hour).Truncate(time.Second)) {
-				t.Fatalf("failed deploy falsely recorded: %+v", d)
-			}
 			baseline := coreBaseline(t, st, n, model.CoreSingBox, "alice")
 			if failure != "start" {
+				// 采样挂在 DeploySingBox 之前,根本没开始写配置:基准照留。
+				if d.DeployedHash != oldHash || !d.DeployedAt.Equal(now.Add(-time.Hour).Truncate(time.Second)) {
+					t.Fatalf("failed deploy falsely recorded: %+v", d)
+				}
 				if !strings.Contains(err.Error(), "final sing-box sample failed") {
 					t.Fatal(err)
 				}
@@ -805,6 +806,11 @@ func TestSingBoxDeploymentFailureKeepsHashAndBaselines(t *testing.T) {
 					t.Fatalf("failed query modified baseline: %+v", baseline)
 				}
 			} else {
+				// start 失败时磁盘上的配置已经不是基准那份:清掉基准,巡检
+				// 和下一次下发才不会被"hash 相同"骗过(UC-10 实测踩过这个坑)。
+				if d.DeployedHash != "" || d.DeployedAt != nil {
+					t.Fatalf("failed start should clear baseline: %+v", d)
+				}
 				coreUsage(t, st, "alice", 40)
 				if baseline.Uplink != 0 || baseline.Downlink != 0 {
 					t.Fatal("stopped process baseline was not reset")
@@ -843,3 +849,20 @@ func TestSingBoxGenerationRaceDoesNotApplySamples(t *testing.T) {
 
 var _ node.StatsDialer = (*coreTestRunner)(nil)
 var _ node.Runner = (*coreTestRunner)(nil)
+
+func TestSingBoxSkipsUnchangedWhileActive(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	addUser(t, st, activeUser("alice"))
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.calls, r.stdin = nil, nil
+	r.mu.Unlock()
+	if err := c.deploySingBox(context.Background(), n, time.Now(), false); err != nil {
+		t.Fatal(err)
+	}
+	if r.ran("umask 077") || r.ran("systemctl start") {
+		t.Fatalf("服务在跑且配置没变,不该重新下发: %v", r.callList())
+	}
+}

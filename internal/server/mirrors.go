@@ -289,25 +289,27 @@ func (s *Server) resolveUpstream(given string, r *http.Request) (string, string)
 		}
 		return given, ""
 	}
-	// host 来源:订阅前缀优先,否则用本次请求的 Host。端口来源:控制面开了
-	// 订阅专用口(--sub-addr)时优先用它的端口 —— 镜像端口上只会有 /sub,
-	// /api 不跟着出去;没开则沿用 host 来源自带的端口(主监听,8080)。
+	// host 来源:本次请求的 Host 优先 —— 那是操作者正在调用的这台控制面,
+	// 一定是活的;订阅前缀(SubURLPrefix)只是"客户端看到的地址",迁移后
+	// 可能是台死机,转发指过去镜像就是空的。端口来源:控制面开了订阅专用口
+	// (--sub-addr)时优先用它的端口 —— 镜像端口上只会有 /sub,/api 不跟着
+	// 出去;没开则沿用 host 来源自带的端口(主监听,8080)。
 	host := ""
 	fallback := ""
-	if settings, err := s.store.GetSettings(); err == nil && settings.SubURLPrefix != "" {
-		host = hostOf(settings.SubURLPrefix)
-		fallback = portOf(settings.SubURLPrefix, "8080")
-	}
-	if host == "" && r != nil && r.Host != "" {
-		h, _, err := net.SplitHostPort(r.Host)
+	if r != nil && r.Host != "" {
+		h, p, err := net.SplitHostPort(r.Host)
 		if err != nil {
 			h = r.Host
 		}
 		if !isLoopbackHost(h) {
 			host = h
-			if _, p, err := net.SplitHostPort(r.Host); err == nil {
-				fallback = p
-			}
+			fallback = p
+		}
+	}
+	if host == "" {
+		if settings, err := s.store.GetSettings(); err == nil && settings.SubURLPrefix != "" {
+			host = hostOf(settings.SubURLPrefix)
+			fallback = portOf(settings.SubURLPrefix, "8080")
 		}
 	}
 	if host == "" {

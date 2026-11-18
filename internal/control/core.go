@@ -81,6 +81,9 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 		return err
 	}
 	hash := hashOf(cfg)
+	// 无 ssh 的快路径:渲染结果与"最后一次下发成功"的基准一致就跳过。
+	// 失败的下发会把基准清掉(见下方 DeploySingBox 的错误分支),所以这里
+	// 的 == 等价于"磁盘上确实是这一份",而不是"记过但可能没生效"。
 	if !force && hash == d.DeployedHash {
 		return nil
 	}
@@ -115,6 +118,15 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 	}
 	afterStop := func() error { return c.store.ResetCoreTrafficBaselines(n.ID, model.CoreSingBox, time.Now()) }
 	if err := node.DeploySingBox(ctx, c.runner, n, *d, cfg, beforeStop, afterStop); err != nil {
+		// apply 推进到写正式配置之后才失败的(StaleDeployError):磁盘上的
+		// 配置不再是记过的那份基准。清掉它,下一次下发不会被"hash 相同"挡
+		// 在门口,巡检也会如实报漂移。采样等更早的失败没动磁盘,基准照留。
+		var stale *node.StaleDeployError
+		if errors.As(err, &stale) {
+			if cerr := c.store.ClearCoreDeployed(n.ID, model.CoreSingBox); cerr != nil {
+				c.logger.Warn("清 sing-box 下发基准失败", "node", n.Name, "error", cerr)
+			}
+		}
 		return err
 	}
 	return c.store.SetCoreDeployed(n.ID, model.CoreSingBox, hash, now)

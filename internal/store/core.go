@@ -102,3 +102,18 @@ func (s *Store) SetCoreDeployed(nodeID int64, core model.Core, hash string, now 
 	_, err := s.db.Exec(`INSERT INTO core_deployments(node_id,core,deployed_hash,deployed_at) VALUES (?,?,?,?) ON CONFLICT(node_id,core) DO UPDATE SET deployed_hash=excluded.deployed_hash,deployed_at=excluded.deployed_at`, nodeID, core, hash, normalizeTime(now).Unix())
 	return err
 }
+
+// ClearCoreDeployed 抹掉"最后一次下发成功"的基准。只有部署明确失败、
+// 磁盘上的配置与记过的基准已经脱节时才调 —— 清掉之后巡检会如实报漂移,
+// 下一次下发也不会被"hash 相同"的跳过挡住。
+func (s *Store) ClearCoreDeployed(nodeID int64, core model.Core) error {
+	if !core.Valid() {
+		return fmt.Errorf("不支持的核心: %s", core)
+	}
+	if core == model.CoreXray {
+		_, err := s.db.Exec(`UPDATE nodes SET deployed_hash='',deployed_at=NULL WHERE id=?`, nodeID)
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE core_deployments SET deployed_hash='',deployed_at=NULL WHERE node_id=? AND core=?`, nodeID, core)
+	return err
+}
