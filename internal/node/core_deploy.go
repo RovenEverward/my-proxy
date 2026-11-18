@@ -120,3 +120,17 @@ func SingBoxVersion(ctx context.Context, r Runner, n model.Node) (string, error)
 	}
 	return "", fmt.Errorf("unrecognized sing-box version: %s", out)
 }
+
+// ConfigHash 读节点上正式配置文件的 sha256(与下发时 hashOf 同一种格式)。
+// 部署前的校验都建立在它之上,所以文件不存在或 sha256sum 缺失都算"读不到"。
+func ConfigHash(ctx context.Context, r Runner, n model.Node, d model.CoreDeployment) (string, error) {
+	out, err := r.Run(ctx, n, "sha256sum "+shellQuote(d.ConfigPathOrDefault()))
+	if err != nil {
+		return "", err
+	}
+	f := strings.Fields(out)
+	if len(f) == 0 {
+		return "", fmt.Errorf("sha256sum 没有输出")
+	}
+	return f[0], nil
+}

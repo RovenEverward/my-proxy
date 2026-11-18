@@ -54,13 +54,13 @@ func (c *Control) InstallNodeCore(ctx context.Context, n model.Node, core model.
 	if err := node.InstallSingBox(ctx, c.runner, n, *d, files.Binary); err != nil {
 		return "", err
 	}
-	if err := c.deploySingBox(ctx, n, time.Now(), true); err != nil {
+	if err := c.deploySingBox(ctx, n, time.Now(), true, false); err != nil {
 		return files.Version, err
 	}
 	return files.Version, nil
 }
 
-func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time, force bool) error {
+func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time, force, verifyRemote bool) error {
 	inbounds, err := c.store.ListInbounds(n.ID)
 	if err != nil {
 		return err
@@ -81,11 +81,19 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 		return err
 	}
 	hash := hashOf(cfg)
-	// 无 ssh 的快路径:渲染结果与"最后一次下发成功"的基准一致就跳过。
-	// 失败的下发会把基准清掉(见下方 DeploySingBox 的错误分支),所以这里
-	// 的 == 等价于"磁盘上确实是这一份",而不是"记过但可能没生效"。
 	if !force && hash == d.DeployedHash {
-		return nil
+		if !verifyRemote {
+			// 无 ssh 的快路径(周期收敛):渲染结果与"最后一次下发成功"的
+			// 基准一致就跳过。失败的下发会把基准清掉(见下方错误分支),
+			// 所以 == 等价于"磁盘上确实是这一份"。
+			return nil
+		}
+		// 结构级下发(node sync / 镜像增删)本来就发一把 ssh,顺手对一次
+		// 磁盘哈希:失败的下发、人工改文件都可能让磁盘与基准脱节,那正是
+		// node sync 该修的东西。对不上或读不到都继续往下走。
+		if onDisk, err := node.ConfigHash(ctx, c.runner, n, *d); err == nil && onDisk == hash {
+			return nil
+		}
 	}
 	active, err := node.CoreIsActive(ctx, c.runner, n, *d)
 	if err != nil {

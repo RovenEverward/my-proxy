@@ -99,7 +99,7 @@ func (c *Control) DeployNode(ctx context.Context, n model.Node, now time.Time) e
 	}
 	xrayRequired, _ := coreRequirements(n, *d, inbounds)
 	quicCtx, cancelQUIC := context.WithTimeout(ctx, deployBudget)
-	quicErr := c.deploySingBox(quicCtx, n, now, false)
+	quicErr := c.deploySingBox(quicCtx, n, now, false, true)
 	cancelQUIC()
 	ctx, cancelXray := context.WithTimeout(ctx, deployBudget)
 	defer cancelXray()
@@ -334,7 +334,7 @@ func (c *Control) ReconcileUsers(ctx context.Context, n model.Node, now time.Tim
 	}
 	var firstErr error
 	quicCtx, cancelQUIC := context.WithTimeout(ctx, c.coreReconcileBudget())
-	if err := c.deploySingBox(quicCtx, n, now, false); err != nil {
+	if err := c.deploySingBox(quicCtx, n, now, false, false); err != nil {
 		firstErr = err
 	}
 	cancelQUIC()

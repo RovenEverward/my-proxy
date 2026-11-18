@@ -37,6 +37,10 @@ SSH 和核心安装在 [internal/node]。
 
 ## 坑
 
+- sing-box 下发的"hash 相同就跳过"只信「最后一次下发成功」的基准:失败的 apply(mv/start 失败)会把候选配置留在磁盘、服务留在停机,基准已脱节 —— 此时 `deploySingBox` 经 `StaleDeployError` 清掉 `DeployedHash`。而 `node sync`(verifyRemote)会额外对一次节点上的 `sha256sum`,磁盘对不上就重发;周期收敛(无 verify)仍是零 ssh 快路径。
+- 订阅镜像只在主核心 xray 渲染:sing-box 是第二核心,同机同端口只能绑一边,两边都写会撞绑让 sing-box 起不来(实测踩过)。纯 QUIC 节点有镜像时强制下发 xray。
+- `sub_url_prefix` 只是"客户端看到的地址",可能指到迁移前的死机;镜像上游推导以本次请求的 Host 为准,前缀只兜底。
+
 - 名单变化 → sing-box 承载的 Hysteria2 / TUIC 会重启该节点全部 QUIC 连接；xray 摘人后已建立的 TCP 连接可能继续传 → 这是已接受的限制，。
 - 读数比上次小 → 说明节点上的 xray 重启过 → 记异常日志，不当成负用量。
 - ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短。

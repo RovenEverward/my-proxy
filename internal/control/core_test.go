@@ -859,7 +859,7 @@ func TestSingBoxSkipsUnchangedWhileActive(t *testing.T) {
 	r.mu.Lock()
 	r.calls, r.stdin = nil, nil
 	r.mu.Unlock()
-	if err := c.deploySingBox(context.Background(), n, time.Now(), false); err != nil {
+	if err := c.deploySingBox(context.Background(), n, time.Now(), false, false); err != nil {
 		t.Fatal(err)
 	}
 	if r.ran("umask 077") || r.ran("systemctl start") {
