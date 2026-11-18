@@ -197,6 +197,7 @@ test("按套餐授权:抽屉勾选套餐、保存带 plan_ids、列表显示套�
   await rowOf(page, "测试源").locator("[data-act=source-open]").click();
   await page.locator(`#source-plan-grants-form input[name=plan][value="${def.id}"]`).uncheck();
   await page.click("#source-save");
+  await expect(page.locator(".toast")).toContainText("接收用户已保存"); // 等保存完成的回执再取请求记录
   const put2 = env.takeLog().find(r => r.method === "PUT" && /\/api\/sources\/\d+\/grants$/.test(r.path));
   expect(JSON.parse(put2.body)).toEqual({ users: ["alice"], plan_ids: [] });
   expect((await getJSON(`/api/sources/${sid}/grants`)).plans).toEqual([]);
