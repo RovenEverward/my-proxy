@@ -10,10 +10,11 @@ import { NodeWizard } from "../../components/node-wizard/NodeWizard";
 import { APIError, api, write } from "../../runtime/api";
 import { useApp, usePageTitle } from "../../runtime/app-context";
 import { cachedPage, usePageData } from "../../runtime/query";
-import type { PageProps, Read } from "../../runtime/types";
+import type { PageProps, Read, Settings } from "../../runtime/types";
 import { loadConnections, type ConnectionData } from "../../domain/connections";
 import { coreText, dateTime, driftState, errorMessage, hourMinute, NODE_TABS, nodeLabel, nodePath, nodeStateLabel, nodeStateTone, sinceText, sshText, type NodeView } from "../../domain/nodes";
 import { SourcesPage } from "../sources";
+import { ProbesPage } from "../probes";
 import { NodeEditor } from "./NodeEditor";
 import { NodeInfoDrawer } from "./NodeInfoDrawer";
 import { ReachDrawer } from "./ReachDrawer";
@@ -22,12 +23,14 @@ import { plainSummary } from "./report-summary";
 import { useNodeJobs, type NodeJob } from "./use-node-jobs";
 import { useReachCheck } from "./use-reach";
 import { sourceText, type ReachLast, type ReachNodeCheck, type ReachVerdict } from "../../domain/reach";
+import { nodeSubject } from "../../domain/probes";
 
-interface NodeListData { nodes: NodeView[]; reach: ReachLast | null }
+interface NodeListData { nodes: NodeView[]; reach: ReachLast | null; excludeOn: boolean }
 interface Report { checked_at: string; measured_address?: string; report: string | { summary?: string[] } }
 interface DetailData { node: NodeView; conn?: ConnectionData; report?: Report | { error: string } | null }
 export function NodesPage({ route }: PageProps) {
   if (route[1] === "sources") return <SourcesPage />;
+  if (route[1] === "probes") return <ProbesPage />;
   return route[1] ? <NodeDetailPage key={route[1]} id={Number(route[1])} /> : <NodeListPage />;
 }
 export default NodesPage;
@@ -35,11 +38,13 @@ function NodeState({ node }: { node: NodeView }) { return <StatusBadge tone={nod
 function Drift({ node }: { node: NodeView }) { const state = driftState(node); return state.tone ? <StatusBadge tone={state.tone}>{state.text}</StatusBadge> : <span className="sub">{state.text}</span>; }
 // loadNodeList 把触达检查存档并进列表读取:/api/reach/last 404 表示还没查过,不是错。
 async function loadNodeList(read: Read): Promise<NodeListData> {
-  const [nodes, reach] = await Promise.all([
+  const [nodes, reach, settings] = await Promise.all([
     read<NodeView[]>("/api/nodes"),
     read<ReachLast>("/api/reach/last").catch((error: unknown) => error instanceof APIError && error.status === 404 ? null : Promise.reject(error)),
+    // 剔除开关在设置里,不在触达存档里:还没查过时提示条也要亮。
+    read<Settings>("/api/settings").catch(() => null),
   ]);
-  return { nodes, reach };
+  return { nodes, reach, excludeOn: !!(settings?.reach_exclude ?? reach?.exclude) };
 }
 
 type ReachFilter = "all" | ReachVerdict;
@@ -69,17 +74,32 @@ function NodeListPage() {
     app.openDrawer(<ReachDrawer node={node} check={check} running={reach.running} onRecheck={() => void reach.start([node.id])} />, { key: `reach:${node.id}` });
   };
   const seg = (key: ReachFilter, label: string, count?: number) => <button type="button" role="tab" aria-selected={reachFilter === key} className={reachFilter === key ? "on" : ""} data-act="reach-filter" data-f={key} onClick={() => setReachFilter(key)}>{label}<em>{count ?? ""}</em></button>;
+  const excludeOn = !!query.data?.excludeOn;
+  const toggleKeep = async (node: NodeView) => {
+    const check = checks.get(node.id);
+    const next = !check?.kept;
+    try {
+      await write("PUT", "/api/reach/keep", { subject: nodeSubject(node.id), keep: next });
+      app.toast(next ? `${nodeLabel(node)} 已保留：不受剔除影响` : `${nodeLabel(node)} 撤销保留：按判定剔除`);
+      void query.refresh(false);
+    } catch (error) { app.toast(errorMessage(error), true); }
+  };
   const srcCell = (node: NodeView, side: "local" | "cp") => {
-    const s = sourceText(side === "local" ? checks.get(node.id)?.local : checks.get(node.id)?.cp);
-    return <td className="reach-col"><span className="st"><span className={`dot ${s.tone}`} />{s.text}</span>{s.latency && <div className="sub mono reach-lat">{s.latency}</div>}</td>;
+    const check = checks.get(node.id);
+    const s = sourceText(side === "local" ? check?.local : check?.cp);
+    return <td className="reach-col"><span className="st"><span className={`dot ${s.tone}`} />{s.text}</span>
+      {check?.excluded && <span className="tag x-tag">已剔除</span>}
+      {!check?.excluded && check?.kept && <span className="tag k-tag">保留中</span>}
+      {s.latency && <div className="sub mono reach-lat">{s.latency}</div>}</td>;
   };
   return <><PageHeader title="节点" description="节点状态来自定时检查" actions={<>{app.meta.relabel && query.data?.nodes.some(node => !node.display) && <Button data-act="relabel-open" onClick={() => app.openModal(<RelabelModal onChanged={changed} />)}><Icon name="globe" />批量识别显示名</Button>}<Button data-act="reach-check" loading={reach.running} onClick={() => void reach.start()}><Icon name="pulse" />{checked ? "重新检查" : "检查触达"}</Button>{writable && <Button variant="primary" data-act="node-wizard" onClick={wizard}><Icon name="plus" />添加节点</Button>}</>} />
     <Tabs items={NODE_TABS} value="nodes" />
+    {excludeOn && <div className="callout stone mb"><Icon name="pulse" /><div><b>自动剔除已开启</b> · 判定「境内不通 / 都不通」且判定新鲜的节点不出现在订阅里；恢复连通或判定过期后自动回来。<a className="lnk" href="#nodes/probes">探测点页签</a>可改</div></div>}
     {reach.running && <div className="callout stone mb" role="status"><Icon name="refresh" /><div>正在检查：本机对每个代理端口各探一次 TCP/UDP，控制面同时探一轮。只读不改，十几秒。</div></div>}
     {query.error && <ErrorState title="节点" error={query.error} onRetry={() => void query.refresh()} />}
     {!query.data ? !query.error && <LoadingTable rows={5} columns={6} /> : <div className="card">{!query.data.nodes.length ? <EmptyState icon="nodes" title="还没有节点" description="填 VPS 的地址和 SSH 密码，自动装好并加进订阅。点下面的「添加节点」开始。" actions={writable && <div style={{ display: "grid", gap: 10, justifyItems: "center" }}><Button size="sm" variant="primary" data-act="node-wizard" onClick={wizard}><Icon name="plus" />添加节点</Button><button type="button" className="lnk wlnk" data-act="node-new" onClick={register}>已能免密 SSH，直接登记</button></div>} /> : <>
       {checked && <div className="tb"><div className="seg" role="tablist" aria-label="触达判定">{seg("all", "全部", query.data.nodes.length)}{seg("ok", "双通", counts.ok)}{seg("blocked", "境内不通", counts.blocked)}{seg("down", "都不通", counts.down)}{seg("unknown", "未知", counts.unknown)}</div><span className="sp" /><span className="sub" data-role="reach-at">检查于 {query.data.reach?.checked_at ? sinceText(query.data.reach.checked_at) : "—"}</span></div>}
-      <div className="tw"><table><thead><tr><th>节点</th><th>状态</th>{checked && <><th>本机 → 节点</th><th>控制面 → 节点</th></>}<th className="hide-m">代理程序</th><th className="hide-m">配置</th><th className="hide-m">SSH</th><th className="num hide-m">检查于</th>{checked && <th />}</tr></thead><tbody>{nodes.map(node => <tr key={node.id} data-href={`#nodes/${node.id}`} tabIndex={0} onClick={() => app.navigate(`nodes/${node.id}`)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); app.navigate(`nodes/${node.id}`); } }}><td><b className="bold"><FlagText>{nodeLabel(node)}</FlagText></b><div className="sub mono">{node.address}</div></td><td><NodeState node={node} /></td>{checked && srcCell(node, "local")}{checked && srcCell(node, "cp")}<td className="hide-m">{node.status?.cores?.length ? node.status.cores.map(core => <span className="tag" key={core.core}>{core.core}</span>) : node.status?.version ? <><span className="tag">xray</span> <span className="sub">{node.status.version}</span></> : null}</td><td className="hide-m"><Drift node={node} /></td><td className="hide-m mono sub">{sshText(node)}</td><td className="num sub hide-m">{sinceText(node.status?.checked_at)}</td>{checked && <td className="num" data-v={checks.get(node.id)?.verdict || "unknown"}><span className="row-btns"><Button size="sm" data-act="reach-view" onClick={event => { event.stopPropagation(); openReach(node); }}>查看</Button></span></td>}</tr>)}{!nodes.length && <tr><td className="sub" colSpan={10} style={{ textAlign: "center", padding: 26 }}>这个筛选下没有节点</td></tr>}</tbody></table></div></>}</div>}
+      <div className="tw"><table><thead><tr><th>节点</th><th>状态</th>{checked && <><th>本机 → 节点</th><th>控制面 → 节点</th></>}<th className="hide-m">代理程序</th><th className="hide-m">配置</th><th className="hide-m">SSH</th><th className="num hide-m">检查于</th>{checked && <th />}</tr></thead><tbody>{nodes.map(node => <tr key={node.id} data-href={`#nodes/${node.id}`} tabIndex={0} onClick={() => app.navigate(`nodes/${node.id}`)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); app.navigate(`nodes/${node.id}`); } }}><td><b className="bold"><FlagText>{nodeLabel(node)}</FlagText></b><div className="sub mono">{node.address}</div></td><td><NodeState node={node} /></td>{checked && srcCell(node, "local")}{checked && srcCell(node, "cp")}<td className="hide-m">{node.status?.cores?.length ? node.status.cores.map(core => <span className="tag" key={core.core}>{core.core}</span>) : node.status?.version ? <><span className="tag">xray</span> <span className="sub">{node.status.version}</span></> : null}</td><td className="hide-m"><Drift node={node} /></td><td className="hide-m mono sub">{sshText(node)}</td><td className="num sub hide-m">{sinceText(node.status?.checked_at)}</td>{checked && <td className="num" data-v={checks.get(node.id)?.verdict || "unknown"}><span className="row-btns">{excludeOn && app.can("PUT", "/api/reach/keep") && <Button size="sm" data-act="reach-keep" data-id={node.id} onClick={event => { event.stopPropagation(); void toggleKeep(node); }}>{checks.get(node.id)?.kept ? "撤销保留" : "保留"}</Button>}<Button size="sm" data-act="reach-view" onClick={event => { event.stopPropagation(); openReach(node); }}>查看</Button></span></td>}</tr>)}{!nodes.length && <tr><td className="sub" colSpan={10} style={{ textAlign: "center", padding: 26 }}>这个筛选下没有节点</td></tr>}</tbody></table></div></>}</div>}
   </>;
 }
 function NodeDetailPage({ id }: { id: number }) {

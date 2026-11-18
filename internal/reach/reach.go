@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,7 +37,9 @@ const (
 	CellUnreachable = "unreachable" // 保留码位:网络不可达类错误
 )
 
-// Target 是要探的一个入站端口:节点对外地址 + 入站端口。
+// Target 是要探的一个入站端口:对外地址 + 端口。自建节点按入站生成;
+// 外部订阅端点(UC-12)也生成 Target,此时 Subject/TID 标记对象与端点身份,
+// InboundID/NodeID 为零值,NodeName 用来署名。
 type Target struct {
 	InboundID int64  `json:"inbound_id"`
 	NodeID    int64  `json:"node_id"`
@@ -46,6 +49,12 @@ type Target struct {
 	Port      int    `json:"port"`
 	Protocol  string `json:"protocol"` // vless / hysteria2 / …
 	Network   string `json:"network"`  // tcp / udp / ws / …
+
+	// UC-12:对象身份与端点身份。自建目标 Subject 为 "node:<节点ID>"、
+	// TID 为 "inbound:<入站ID>";外部目标 Subject 为 render.EndpointKey
+	// ("s:<源ID>:<指纹>")、TID 与 Subject 相同(外部按端点判定)。
+	Subject string `json:"subject,omitempty"`
+	TID     string `json:"tid,omitempty"`
 }
 
 // Result 是一个入站两个协议的探测结果。探针缺席表示该协议不适用:
@@ -171,10 +180,38 @@ func (o Options) udpWait() time.Duration {
 // 所以 UDP 没回包只能判 unknown(见包级注释)。
 var udpPayload = []byte{0x01, 0x02, 0x03, 0x04}
 
+// Key 返回目标的稳定身份:外部端点用 TID,自建入站用 InboundID 的字符串形。
+// 同一目标在不同来源的结果按它归并。
+func (t Target) Key() string {
+	if t.TID != "" {
+		return t.TID
+	}
+	return strconv.FormatInt(t.InboundID, 10)
+}
+
 // Probe 对一批目标并发探测,按 InboundID 收结果。一个目标探 TCP(总是)
 // 与 UDP(仅该入站本来就走 UDP 时),两个探针独立计时、互不阻塞。
+// UC-12 起 Target.Key() 是字符串身份("inbound:<id>"),键要先经目标表回译
+// 成入站号,不能直接 ParseInt —— 那会把所有结果丢成空 map。
 func Probe(ctx context.Context, targets []Target, opts Options) map[int64]*Result {
-	results := make(map[int64]*Result, len(targets))
+	keyed := ProbeKeyed(ctx, targets, opts)
+	inboundOf := make(map[string]int64, len(targets))
+	for _, t := range targets {
+		inboundOf[t.Key()] = t.InboundID
+	}
+	results := make(map[int64]*Result, len(keyed))
+	for k, r := range keyed {
+		if id := inboundOf[k]; id != 0 {
+			results[id] = r
+		}
+	}
+	return results
+}
+
+// ProbeKeyed 与 Probe 同源,结果按 Target.Key() 归集:外部订阅端点的
+// InboundID 全是零值,整数键会撞成一坨,按字符串身份收才对。
+func ProbeKeyed(ctx context.Context, targets []Target, opts Options) map[string]*Result {
+	results := make(map[string]*Result, len(targets))
 	var mu sync.Mutex
 	sem := make(chan struct{}, opts.concurrency())
 	var wg sync.WaitGroup
@@ -182,7 +219,7 @@ func Probe(ctx context.Context, targets []Target, opts Options) map[int64]*Resul
 		t := t
 		res := &Result{InboundID: t.InboundID}
 		mu.Lock()
-		results[t.InboundID] = res
+		results[t.Key()] = res
 		mu.Unlock()
 		probes := []func() *Cell{func() *Cell { return probeTCP(ctx, t, opts.timeout()) }}
 		if t.udp() {

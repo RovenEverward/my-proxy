@@ -78,6 +78,7 @@ export async function autoNodeName(): Promise<string> {
 export const NODE_TABS = [
   { key: "nodes", label: "自建节点", href: "#nodes" },
   { key: "sources", label: "外部订阅", href: "#nodes/sources" },
+  { key: "probes", label: "探测点", href: "#nodes/probes" },
 ];
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 export const dateTime = (value?: string) => value ? new Date(value).toLocaleString("sv-SE", { hour12: false }).slice(0, 16) : "";

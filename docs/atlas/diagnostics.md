@@ -1,12 +1,12 @@
 ---
 kind: part
 parent: README.md
-code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go, internal/reach/, internal/cli/reach.go, internal/ui/reach.go]
-verified: 2026-11-13 @ c4faa0e + working tree
+code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go, internal/reach/, internal/cli/reach.go, internal/ui/reach.go, internal/probeagent/, internal/cli/probe.go]
+verified: 2026-11-18 @ feat/uc12-auto-exclude working tree
 ---
 # 体检与诊断
 
-> **30 秒版**：四种「看一看」：**能力检测**经某个入口真的连出去，看出口 IP 在哪、能不能解锁特定网站，结果给策略组做筛选条件；**一键体检**（`mpx node diagnose`）在节点上跑一套有时间和体积上限的网络测量；**自检**（`mpx doctor`）把整套系统查一遍：控制面的库和后台任务、每台节点的现场状态、六种订阅格式各渲染一次、采样表；**触达检查**（`mpx node check`、节点列表「检查触达」）从本机与控制面各探一轮入站 TCP/UDP，给出「双通 / 境内不通 / 都不通 / 未知」判定。另有 `mpx diagnose` 在操作机本地跑同样有上限的网络测量。
+> **30 秒版**：四种「看一看」：**能力检测**经某个入口真的连出去，看出口 IP 在哪、能不能解锁特定网站，结果给策略组做筛选条件；**一键体检**（`mpx node diagnose`）在节点上跑一套有时间和体积上限的网络测量；**自检**（`mpx doctor`）把整套系统查一遍：控制面的库和后台任务、每台节点的现场状态、六种订阅格式各渲染一次、采样表；**触达检查**（`mpx node check`、节点列表「检查触达」）从本机与控制面各探一轮入站 TCP/UDP，给出「双通 / 境内不通 / 都不通 / 未知」判定。另有 `mpx diagnose` 在操作机本地跑同样有上限的网络测量。**自动剔除**（UC-12）在触达判定之上做周期轮转：境内常驻**探测点**（`mpx probe`）与操作机各按周期摊批探一遍，判定为「境内不通 / 都不通」且数据新鲜的节点与外部订阅端点不再进订阅，`reach keep` 可逐对象豁免；开关关掉时订阅输出与旧版逐字节一致。
 
 ## 边界
 
@@ -20,7 +20,9 @@ verified: 2026-11-13 @ c4faa0e + working tree
 2. 一键体检默认引擎是固定版本的官方 Go ECS 融合怪，经 SSH 在节点上跑，报告受传输预算约束。
 3. 自检只有 fail 才让退出码非 0。`mpx ui` 的「自检」页走本地接口，由操作机上的 `mpx` 执行。
 4. 控制面给有漂移的节点检查项带 `node_id` 与 `ui_action: "apply"`（只增，v0.9.10 起）。界面据此在体检页放行内「应用到<节点>」：点击只记一个 10 秒有效的标记并跳到节点详情，由详情页弹确认框，用户确认才真的下发；节点连不上时详情头部的「应用到节点」是 `aria-disabled`（仍可聚焦、读屏读得到原因，点击被界面统一拦下），提示先点「刷新状态」。
-5. 触达检查的探针只有一份（`internal/reach/`）：操作机（`mpx node check`、`mpx ui` 的 `/local/reach/check`）与控制面（`POST /api/reach/probe`）跑同一份 `Probe`，各探各的，操作机合并明细与判定再 `POST /api/reach/results` 回存（表 `reach_checks`，按节点存最近一次）。判定按入站自己的协议选格：TCP 系看 TCP 格，QUIC/UDP 系（wireguard、hysteria2、tuic、network=udp）看 UDP 格；另一协议的探测只进明细不参与判定——在 UDP 端口上探 TCP 必失败，混进判定会把「该协议本来就不该通」误读成「节点不通」。UDP 超时只记 unknown（服务端可以合法沉默），节点全 UDP 入站且全超时判「未知」不判「不通」。页面数据走 `GET /api/reach/last`（含逐入站明细）与 `GET /api/reach`（摘要），列表双列与筛选只在查过一轮后出现。
+5. 触达检查的探针只有一份（`internal/reach/`）：操作机（`mpx node check`、`mpx ui` 的 `/local/reach/check`）与控制面（`POST /api/reach/probe`）跑同一份 `Probe`，各探各的，操作机合并明细与判定再 `POST /api/reach/results` 回存。判定按入站自己的协议选格：TCP 系看 TCP 格，QUIC/UDP 系（wireguard、hysteria2、tuic、network=udp）看 UDP 格；另一协议的探测只进明细不参与判定——在 UDP 端口上探 TCP 必失败，混进判定会把「该协议本来就不该通」误读成「节点不通」。UDP 超时只记 unknown（服务端可以合法沉默），节点全 UDP 入站且全超时判「未知」不判「不通」。页面数据走 `GET /api/reach/last`（含逐入站明细）与 `GET /api/reach`（摘要），列表双列与筛选只在查过一轮后出现。UC-12 起探测对象从「节点」泛化成**对象**：自建节点对象身份是 `node:<id>`，外部订阅端点是 `s:<srcID>:<SourceKey>`；结果按（对象 × 来源 × 方位）存明细行（`reach_source_checks`），`recomputeSubject` 折回对象级存档（`reach_subject_checks`），旧形状 `results:` 回写路径继续走、服务端同时补两份来源行。`Target.Key()` 是字符串身份（`inbound:<id>` 或端点 key），`Probe` 收结果要经目标表回译成入站号，不能直接对键 ParseInt。
+6. 探测点（UC-12）是控制面名册里的第一类实体，不是节点：`POST /api/probes` 发一次性接入命令（`mpx probe run --server <base> --join <token>`，HTTPS 另要 `--fp`），接入后按周期（默认 60 分钟，`reach_interval_minutes`）轮转——到期对象摊进整个周期分批探，不整批突扫（`probeagent.Tick` + `reach.DueSubjects/RotationBatch`）。`mpx ui` 开着时操作机也算一个境内来源。探测端只拿「读目标、回结果」两个权限（`GET /api/reach/targets`、`POST /api/reach/results`、`POST /api/reach/probe`、hello），凭据可轮换、可吊销；在线判定看 `last_seen_at` 是否在三小时内。
+7. 自动剔除只在订阅组装时读时算（`exclusion()`）：开关 `reach_exclude` 开、判定 blocked/down、且境内侧数据新鲜（≤24h）的对象进剔除集，`reach_keeps` 逐对象豁免。剔除不改存档，判定恢复或过期后对象自动回来；外部端点同样按对象剔除。节点列表挂「已剔除 / 保留中」标，外部订阅成员行同。
 
 ## 坑
 

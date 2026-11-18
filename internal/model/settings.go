@@ -72,6 +72,26 @@ type Settings struct {
 	// RulesetMode 决定订阅里引用的上游规则集从哪下载:"" / "upstream" 由
 	// 客户端直连上游,"privatized" 由控制面镜像、客户端改从控制面取。
 	RulesetMode string `json:"ruleset_mode"`
+
+	// ReachExclude 开启后,触达判定为 blocked / down 且未过期的对象不再进入
+	// 订阅输出(UC-12)。默认关闭;关闭时订阅行为与开启前逐字节一致。
+	ReachExclude bool `json:"reach_exclude"`
+	// ReachIntervalMinutes 是触达检查的探测周期,单位分钟;0 取默认值。
+	ReachIntervalMinutes int `json:"reach_interval_minutes"`
+	// ReachKeeps 是按对象身份的剔除豁免名单:键为 ProbeSubjectKey,值为真
+	// 表示该对象不受自动剔除影响。
+	ReachKeeps map[string]bool `json:"reach_keeps,omitempty"`
+}
+
+// DefaultReachIntervalMinutes 是探测周期的默认值。
+const DefaultReachIntervalMinutes = 60
+
+// ReachInterval 返回生效的探测周期(分钟)。
+func (s *Settings) ReachInterval() int {
+	if s == nil || s.ReachIntervalMinutes <= 0 {
+		return DefaultReachIntervalMinutes
+	}
+	return s.ReachIntervalMinutes
 }
 
 // RulesetModePrivatized 是设置里「规则集由控制面镜像」的取值。

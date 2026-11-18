@@ -69,6 +69,12 @@ var uiAllow = []string{
 	"POST /api/routing/migrate",
 	// 规则集镜像手动刷新(UC-05,CLI 等价 ruleset refresh)
 	"POST /api/rulesets",
+	// 探测点(UC-12):probe add / rm / rename / rotate,CLI 等价 mpx probe *
+	"POST /api/probes",
+	"PATCH /api/probes",
+	"DELETE /api/probes",
+	// 剔除豁免(UC-12):reach keep / unkeep,CLI 等价 mpx reach keep
+	"PUT /api/reach/keep",
 }
 
 var uiFlags struct {
@@ -203,6 +209,11 @@ func serveUI(parent context.Context, l *uiLaunch) error {
 	srv := &http.Server{Handler: l.server, ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// UC-12:mpx ui 进程顺手当境内探测端,页面开着就轮转清欠账;
+	// 没接控制面(setup 模式)时调度自己等下一轮,不会报错退出。
+	go l.server.ReachRotation(ctx, func(format string, args ...any) {
+		fmt.Fprintf(os.Stderr, "mpx ui 探测: "+format+"\n", args...)
+	})
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 3*time.Second)

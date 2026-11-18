@@ -35,7 +35,8 @@ export interface SubscriptionSource {
   id: number; name: string; enabled: boolean; revision: number; interval_seconds: number;
   region?: string; url_masked?: string; refreshing: boolean; node_count: number;
   // nodes 是快照里的成员名单(显示名+协议),旧控制面没有时回退为空。
-  nodes?: { name: string; protocol: string }[];
+  // key 是对象身份(UC-12),excluded 标它当前是否被自动剔除。
+  nodes?: { name: string; protocol: string; key?: string; excluded?: boolean; kept?: boolean }[];
   // grants 是已授权用户名列表(按需新增字段),旧控制面未返回时前端降级从抽屉单独读。
   grants?: string[];
   // grant_all 为真时全员可见(含新建用户),旧控制面未返回时按 false 处理。
@@ -43,7 +44,7 @@ export interface SubscriptionSource {
   last_good_at?: string; last_error?: string; snapshot_stale?: boolean; input_format?: string;
   formats: Partial<Record<SourceFormat, { count: number; issues?: SourceIssue[] }>>; issues?: SourceIssue[];
 }
-export interface SubscriptionPreview { status: string; format: string; nodes: { name: string; protocol: string; source_id: number; source_name: string; groups: string[]; reasons?: string[] }[]; issues?: SourceIssue[] }
+export interface SubscriptionPreview { status: string; format: string; nodes: { name: string; protocol: string; source_id: number; source_name: string; groups: string[]; reasons?: string[]; excluded?: boolean }[]; issues?: SourceIssue[] }
 export interface RulesPageData {
   routing: RoutingState; rules: RulesSnapshot; groups: SavedProxyGroup[]; catalog: RuleCatalogEntry[];
   previews: Record<number, GroupPreview[] | null>; sources: SubscriptionSource[];

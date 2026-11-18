@@ -236,6 +236,7 @@ func (s *Server) routes() {
 	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
 	s.reachRoutes(api)
+	s.probeRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)
@@ -323,6 +324,8 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
 	// 设备接入不要 token(它就是来领 token 的),自带三道闸,见 connect.go。
 	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
+	// 探测点接入同理:join token 即凭据,见 probes.go。
+	s.mux.HandleFunc("POST /api/probes/hello", s.handleProbeHello)
 }
 
 // ---- 请求/响应工具 ----

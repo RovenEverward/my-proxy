@@ -4,21 +4,21 @@ import { Card, EmptyState, ErrorState, FlagText, Icon, LoadingTable, PageHeader,
 import { useApp, usePageTitle } from "../../runtime/app-context";
 import { write } from "../../runtime/api";
 import { usePageData } from "../../runtime/query";
-import type { User } from "../../runtime/types";
+import type { Settings, User } from "../../runtime/types";
 import { NODE_TABS, sinceText } from "../../domain/nodes";
 import { errorMessage, readSubscriptionUsers, sourcePath, type SubscriptionSource } from "../../domain/routing";
 import { SourceFormatsSummary, SourceGrantsSummary, sourceInterval, SourceStatus } from "./components";
 import { MixedPreviewModal } from "./MixedPreview";
 import { SourceDrawer, type SourceDrawerTab } from "./SourceEditor";
 
-interface SourcesData { sources: SubscriptionSource[]; users: User[] }
+interface SourcesData { sources: SubscriptionSource[]; users: User[]; excludeOn: boolean }
 
 export function SourcesPage() {
   const app = useApp();
   usePageTitle([{ label: "节点", href: "#nodes" }, { label: "外部订阅" }]);
   const page = usePageData<SourcesData>("sources", async read => {
-    const [sources, users] = await Promise.all([read<SubscriptionSource[]>("/api/sources"), readSubscriptionUsers(read)]);
-    return { sources, users };
+    const [sources, users, settings] = await Promise.all([read<SubscriptionSource[]>("/api/sources"), readSubscriptionUsers(read), read<Settings>("/api/settings").catch(() => null)]);
+    return { sources, users, excludeOn: !!settings?.reach_exclude };
   });
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [refreshing, setRefreshing] = useState<Set<number>>(() => new Set());
@@ -46,6 +46,17 @@ export function SourcesPage() {
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }
+
+  // UC-12:单个外部端点的保留豁免。成员行只在剔除生效时给操作位。
+  async function keepMember(member: { name: string; key?: string; kept?: boolean }) {
+    if (!member.key) return;
+    const next = !member.kept;
+    try {
+      await write("PUT", "/api/reach/keep", { subject: member.key, keep: next });
+      app.toast(next ? `${member.name} 已保留：不受剔除影响` : `${member.name} 撤销保留：按判定剔除`);
+      await page.refresh();
+    } catch (reason) { app.toast(errorMessage(reason), true); }
   }
 
   async function refreshSource(source: SubscriptionSource) {
@@ -161,11 +172,11 @@ export function SourcesPage() {
                         <span className="src-member-name"><FlagText>{member.name}</FlagText></span>
                         <span className="tag src-member-proto-m">{member.protocol}</span>
                       </td>
-                      <td><span className="sub">只读外部节点</span></td>
+                      <td>{member.excluded ? <span className="tag x-tag">已剔除</span> : member.kept ? <span className="tag k-tag">保留中</span> : <span className="sub">只读外部节点</span>}</td>
                       <td className="hide-m" />
                       <td className="hide-m"><span className="tag">{member.protocol}</span></td>
                       <td className="num sub hide-m" />
-                      <td />
+                      <td className="num">{page.data?.excludeOn && member.key && app.can("PUT", "/api/reach/keep") && <span className="row-btns"><Button size="sm" data-act="reach-keep-ext" data-key={member.key} onClick={event => { event.stopPropagation(); void keepMember(member); }}>{member.kept ? "撤销保留" : "保留"}</Button></span>}</td>
                     </tr>
                   )) : (
                     <tr className="src-member">

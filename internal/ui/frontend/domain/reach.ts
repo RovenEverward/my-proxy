@@ -12,8 +12,17 @@ export interface ReachRow {
 export interface ReachNodeCheck {
   node_id: number; node_name: string; checked_at: string; verdict: ReachVerdict;
   local?: ReachSource; cp?: ReachSource; rows?: ReachRow[];
+  // UC-12:excluded 表示该节点此刻被自动剔除出订阅;kept 表示设了保留豁免。
+  excluded?: boolean; kept?: boolean;
 }
-export interface ReachLast { checked_at: string; counts: Record<string, number>; nodes: ReachNodeCheck[] }
+// ExtCheck 是一个外部订阅端点的触达存档(UC-12)。
+export interface ExtCheck {
+  subject_key: string; source_id: number; source_name: string; name: string;
+  checked_at: string; verdict: ReachVerdict; address: string; port: number; protocol: string;
+  local?: ReachSource; cp?: ReachSource; rows?: ReachRow[];
+  excluded?: boolean; kept?: boolean;
+}
+export interface ReachLast { checked_at: string; counts: Record<string, number>; nodes: ReachNodeCheck[]; ext?: ExtCheck[]; exclude?: boolean }
 
 export const REACH_VERDICTS: [ReachVerdict, string][] = [
   ["ok", "双通"], ["blocked", "境内不通"], ["down", "都不通"], ["unknown", "未知"],

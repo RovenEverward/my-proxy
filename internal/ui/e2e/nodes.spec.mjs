@@ -856,7 +856,7 @@ test("节点页签切换:自建列表不混外部节点,外部订阅页签按来
     await login(page, env);
     await page.goto(env.origin + "/#nodes");
     await expect(page.locator("html[data-loading]")).toHaveCount(0);
-    await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅"]);
+    await expect(page.locator(".tabs a")).toHaveText(["自建节点", "外部订阅", "探测点"]);
     await expect(page.locator(".ext-nodes")).toHaveCount(0);
 
     // 切换到「外部订阅」页签
