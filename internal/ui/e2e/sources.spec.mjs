@@ -171,6 +171,37 @@ test("新增来源、展开列表、抽屉分段单次保存与混合预览弹�
   await expect(page.locator("[data-act=source-preview-open]")).toBeFocused();
 });
 
+test("按套餐授权:抽屉勾选套餐、保存带 plan_ids、列表显示套餐标签", async ({ page }) => {
+  // 上一个用例留下的「测试源」已授权 alice;这里再勾默认套餐,bob 跟着可见。
+  const plans = await getJSON("/api/plans");
+  const def = plans.find(p => p.is_default) || plans[0];
+  const sid = (await getJSON("/api/sources")).find(s => s.name === "测试源").id;
+  await open(page);
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await expect(drawer(page)).toBeVisible();
+  await expect(page.locator("#source-plan-grants-form")).toBeVisible();
+  await page.locator(`#source-plan-grants-form input[name=plan][value="${def.id}"]`).check();
+  await page.click("#source-save");
+  await expect(page.locator(".toast")).toContainText("接收用户已保存");
+  const put = env.takeLog().find(r => r.method === "PUT" && /\/api\/sources\/\d+\/grants$/.test(r.path));
+  expect(JSON.parse(put.body)).toEqual({ users: ["alice"], plan_ids: [def.id] });
+  const grants = await getJSON(`/api/sources/${sid}/grants`);
+  expect(grants.plans).toEqual([{ id: def.id, name: def.name }]);
+  await expect(rowOf(page, "测试源")).toContainText(`套餐：${def.name}`);
+  // bob 挂默认套餐:不用按人授权,预览里也能看到外部节点。
+  await openPreviewModal(page);
+  await page.selectOption("#source-preview-user", "bob");
+  await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await page.keyboard.press("Escape");
+  // 取消勾选,PUT 带空 plan_ids 清掉套餐授权。
+  await rowOf(page, "测试源").locator("[data-act=source-open]").click();
+  await page.locator(`#source-plan-grants-form input[name=plan][value="${def.id}"]`).uncheck();
+  await page.click("#source-save");
+  const put2 = env.takeLog().find(r => r.method === "PUT" && /\/api\/sources\/\d+\/grants$/.test(r.path));
+  expect(JSON.parse(put2.body)).toEqual({ users: ["alice"], plan_ids: [] });
+  expect((await getJSON(`/api/sources/${sid}/grants`)).plans).toEqual([]);
+});
+
 test("刷新失败:旧快照保留、错误上屏、订阅不受影响", async ({ page }) => {
   const list = await getJSON("/api/sources");
   const sid = list.find(s => s.name === "测试源").id;
@@ -383,7 +414,9 @@ test("视觉取证:桌面 1440 与手机 390,深浅两主题", async ({ page: _p
   const r = await cp("/api/sources", { method: "POST", body: JSON.stringify({ name: "测试源", url: env.upstreamURL, interval_seconds: 21600 }) });
   const created = await r.json();
   await settle(created.id);
-  await cp(`/api/sources/${created.id}/grants`, { method: "PUT", body: JSON.stringify({ users: ["alice"] }) });
+  const plans = await getJSON("/api/plans");
+  const def = (plans.find(p => p.is_default) || plans[0]).id;
+  await cp(`/api/sources/${created.id}/grants`, { method: "PUT", body: JSON.stringify({ users: ["alice"], plan_ids: [def] }) });
   mkdirSync(shotDir, { recursive: true });
 
   for (const [label, width, height, mobile] of [["desktop", 1440, 900, false], ["mobile", 390, 844, true]]) {
