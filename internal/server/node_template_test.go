@@ -166,3 +166,42 @@ func TestNodeTemplateDriftFollowsInboundChange(t *testing.T) {
 		t.Fatalf("入站变了应报模板漂移: %s", data)
 	}
 }
+
+// 模板哈希缓存按输入指纹失效(ISS-04):同一份输入两次结果一致且走缓存,
+// 入站一变指纹变、结果跟着变 —— 缓存不能返回过期值。
+func TestTemplateHashCacheInvalidatesOnInputChange(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("la", "203.0.113.10")
+	in := e.createInbound(n.ID, "vless-a", 443)
+
+	s1 := &Server{}
+	fp := templateInputsFingerprint(n, []model.Inbound{in}, nil)
+	if fp == "" {
+		t.Fatal("指纹为空")
+	}
+	if _, err := s1.cachedTemplateHash(fp, n, []model.Inbound{in}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// 命中同一指纹不再重渲染:直接改缓存里的值,第二次该拿到改过的。
+	s1.templateHashMu.Lock()
+	s1.templateHashCache[fp] = "tampered"
+	s1.templateHashMu.Unlock()
+	h2, _ := s1.cachedTemplateHash(fp, n, []model.Inbound{in}, nil)
+	if h2 != "tampered" {
+		t.Fatal("同一指纹没走缓存")
+	}
+	// 输入变了(多加一条入站)指纹跟着变,结果是真渲染的,不是缓存的旧值。
+	in2 := in
+	in2.ID, in2.Tag, in2.Port = 99, "vless-b", 8443
+	fp2 := templateInputsFingerprint(n, []model.Inbound{in, in2}, nil)
+	if fp2 == fp {
+		t.Fatal("入站变了指纹没变")
+	}
+	h3, err := s1.cachedTemplateHash(fp2, n, []model.Inbound{in, in2}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h3 == "tampered" || h3 == "" {
+		t.Fatalf("输入变了还拿到缓存旧值: %s", h3)
+	}
+}
