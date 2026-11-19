@@ -89,6 +89,33 @@ func (s *Server) reachTargets(nodeIDs []int64) ([]reach.Target, error) {
 				Subject: string(model.NodeSubjectKey(n.ID)),
 				TID:     "inbound:" + strconv.FormatInt(in.ID, 10),
 			})
+			// ISS-15:有独立对外地址的入口(Host.Address≠节点 IP,CDN 类
+			// 入口的形状)自己是一个探测对象 —— 节点 IP 被墙不等于 CDN
+			// IP 被墙,它不该随节点判定连坐。
+			hosts, err := s.store.ListHosts(in.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, h := range hosts {
+				if h.Address == "" || h.Address == n.Address {
+					continue
+				}
+				hlabel := names[subNameKey{in.ID, h.ID}].name
+				if hlabel == "" {
+					hlabel = label
+				}
+				port := h.Port
+				if port == 0 {
+					port = in.Port
+				}
+				targets = append(targets, reach.Target{
+					InboundID: in.ID, NodeID: n.ID, NodeName: n.Name, Label: hlabel,
+					Address: h.Address, Port: port,
+					Protocol: string(in.Protocol), Network: string(in.Network),
+					Subject: string(model.HostSubjectKey(h.ID)),
+					TID:     "host:" + strconv.FormatInt(h.ID, 10),
+				})
+			}
 		}
 	}
 	return targets, nil
@@ -472,6 +499,9 @@ func (s *Server) recomputeSubject(key model.ProbeSubjectKey) error {
 			if src, err := s.store.GetSource(id); err == nil {
 				ec.SourceName = src.Name
 			}
+		} else if _, ok := model.ParseHostSubjectKey(key); ok {
+			// ISS-15:host:<id> 是托管入口的独立判定对象,来源栏署名节点。
+			ec.SourceName = t.NodeName
 		}
 		report, _ = json.Marshal(ec)
 	}
@@ -508,7 +538,47 @@ func (s *Server) targetsForSubject(key model.ProbeSubjectKey) ([]reach.Target, e
 	if nodeID, ok := model.ParseNodeSubjectKey(key); ok {
 		return s.reachTargets([]int64{nodeID})
 	}
+	if hostID, ok := model.ParseHostSubjectKey(key); ok {
+		return s.reachHostTargets(hostID)
+	}
 	return s.reachExtTargets([]string{string(key)})
+}
+
+// reachHostTargets 把一个 host:<id> 对象摆成探测目标 —— 找它所在入站
+// 与节点,按 reachTargets 的同一形状给出一条目标。
+func (s *Server) reachHostTargets(hostID int64) ([]reach.Target, error) {
+	h, err := s.store.GetHost(hostID)
+	if err != nil {
+		return nil, nil // 已删除的 Host:名册没了,返回空让对象自然过期
+	}
+	in, err := s.store.GetInbound(h.InboundID)
+	if err != nil {
+		return nil, err
+	}
+	n, err := s.store.GetNode(in.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	names, _ := s.subscriptionNames()
+	label := names[subNameKey{in.ID, h.ID}].name
+	if label == "" {
+		label = in.Tag
+	}
+	port := h.Port
+	if port == 0 {
+		port = in.Port
+	}
+	addr := h.Address
+	if addr == "" {
+		addr = n.Address
+	}
+	return []reach.Target{{
+		InboundID: in.ID, NodeID: n.ID, NodeName: n.Name, Label: label,
+		Address: addr, Port: port,
+		Protocol: string(in.Protocol), Network: string(in.Network),
+		Subject: string(model.HostSubjectKey(h.ID)),
+		TID:     "host:" + strconv.FormatInt(h.ID, 10),
+	}}, nil
 }
 
 // ---- 剔除(UC-12) ----

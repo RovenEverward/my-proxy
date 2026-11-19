@@ -68,8 +68,8 @@ func (s *Server) poolFor(user *model.User, excl exclusionState, sources []model.
 		switch {
 		case rm.Draining:
 			pe.Excluded, pe.ExcludeReason = true, "节点排水中"
-		case excl.on && excl.nodes[rm.NodeID]:
-			pe.Excluded, pe.ExcludeReason = true, excl.excludeReason(string(model.NodeSubjectKey(rm.NodeID)))
+		case managedExcluded(rm, excl):
+			pe.Excluded, pe.ExcludeReason = true, managedExcludeReason(rm, excl)
 		}
 		set.Pool = append(set.Pool, pe)
 	}
@@ -191,4 +191,36 @@ func (s *Server) handlePool(w http.ResponseWriter, r *http.Request) {
 		"excluded": len(rows) - included,
 		"issues":   pool.Issues,
 	})
+}
+
+// managedExcluded 是托管端点剔除的端点级判定(ISS-15):
+//   - 有独立对外地址的入口(Host.Address≠节点 IP,CDN 类)不随节点
+//     「blocked」连坐 —— GFW 封的是节点 IP,CDN 边缘还能回源;它只随
+//     自己的 host:<id> 判定和节点「down」(回源真死)剔除。
+//   - 其余入口(默认入口、Host 与节点同址)仍随节点判定,与旧版一致。
+func managedExcluded(rm resolvedManaged, excl exclusionState) bool {
+	if !excl.on {
+		return false
+	}
+	if rm.HostID > 0 && rm.Address != "" && rm.Address != rm.NodeAddress {
+		if excl.exts[string(model.HostSubjectKey(rm.HostID))] {
+			return true
+		}
+		return excl.verdicts[string(model.NodeSubjectKey(rm.NodeID))] == "down"
+	}
+	return excl.nodes[rm.NodeID]
+}
+
+// managedExcludeReason 给出端点级剔除的说明文字,指明是谁判的。
+func managedExcludeReason(rm resolvedManaged, excl exclusionState) string {
+	if rm.HostID > 0 && rm.Address != "" && rm.Address != rm.NodeAddress {
+		hk := string(model.HostSubjectKey(rm.HostID))
+		if excl.exts[hk] {
+			return excl.excludeReason(hk)
+		}
+		if excl.verdicts[string(model.NodeSubjectKey(rm.NodeID))] == "down" {
+			return "自动剔除:节点不可用"
+		}
+	}
+	return excl.excludeReason(string(model.NodeSubjectKey(rm.NodeID)))
 }

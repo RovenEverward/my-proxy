@@ -37,6 +37,22 @@ func NodeSubjectKey(id int64) ProbeSubjectKey {
 	return ProbeSubjectKey("node:" + strconv.FormatInt(id, 10))
 }
 
+// HostSubjectKey 返回一个有独立对外地址的入口(Host)的对象身份 ——
+// ISS-15:CDN 类入口不随节点判定连坐,自己有自己的探测对象。
+func HostSubjectKey(id int64) ProbeSubjectKey {
+	return ProbeSubjectKey("host:" + strconv.FormatInt(id, 10))
+}
+
+// ParseHostSubjectKey 认出 "host:<id>" 形式的对象身份,返回 Host ID。
+func ParseHostSubjectKey(k ProbeSubjectKey) (int64, bool) {
+	s := string(k)
+	id, err := strconv.ParseInt(strings.TrimPrefix(s, "host:"), 10, 64)
+	if !strings.HasPrefix(s, "host:") || err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
 // ParseNodeSubjectKey 认出 "node:<id>" 形式的对象身份,返回节点 ID。
 func ParseNodeSubjectKey(k ProbeSubjectKey) (int64, bool) {
 	s := string(k)

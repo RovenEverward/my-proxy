@@ -362,8 +362,9 @@ func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]r
 // 节点、节点在不在排水 —— 池视图据这两点决定行的去留与标记。
 type resolvedManaged struct {
 	render.Endpoint
-	NodeID   int64
-	Draining bool
+	NodeID      int64
+	NodeAddress string
+	Draining    bool
 }
 
 // resolveManagedEndpoints 是清洗池的托管端点原始流:不过滤剔除与排水,
@@ -416,7 +417,7 @@ func (s *Server) resolveManagedEndpoints(user *model.User) ([]resolvedManaged, e
 	for _, n := range nodes {
 		eps := render.AddProtocolSuffix(render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user))
 		for _, ep := range eps {
-			out = append(out, resolvedManaged{Endpoint: ep, NodeID: n.ID, Draining: n.Draining})
+			out = append(out, resolvedManaged{Endpoint: ep, NodeID: n.ID, NodeAddress: n.Address, Draining: n.Draining})
 		}
 	}
 	return out, nil
