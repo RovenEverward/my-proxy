@@ -1,7 +1,7 @@
 /* Extracted verbatim from assets/app.css (rules unchanged). */
 textarea.tpl{min-height:calc(100vh - 260px);white-space:pre;overflow:auto}textarea.tpl.short{min-height:300px}
 .ed{position:relative;display:flex;overflow:hidden;border-radius:10px;background:var(--panel);font:var(--ui-font-size-body)/19px var(--mono);font-variant-ligatures:none}
-.ed:focus-within{box-shadow:0 0 0 3px var(--ring)}
+.ed:focus-within{box-shadow:0 0 0 3px var(--in-ring)}
 .ed-g{flex:none;padding:10px 0;min-width:46px;text-align:right;color:var(--faint);background:var(--stone);user-select:none;font-variant-numeric:tabular-nums;will-change:transform}
 .ed-g span{display:block;padding:0 10px 0 8px;height:19px}.ed-g span.bad{color:var(--bad);background:var(--bad-bg);font-weight:600}
 .ed-m{position:relative;flex:1;min-width:0;overflow:hidden}
