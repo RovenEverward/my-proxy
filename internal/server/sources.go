@@ -28,6 +28,7 @@ func (s *Server) sourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /api/sources/{id}/plan-grants/{plan}", s.handleSourcePlanGrant)
 	api.HandleFunc("DELETE /api/sources/{id}/plan-grants/{plan}", s.handleSourcePlanGrant)
 	api.HandleFunc("GET /api/proxy-groups/{id}/sources", s.handleGetGroupSources)
+	api.HandleFunc("GET /api/pool", s.handlePool)
 	api.HandleFunc("PUT /api/proxy-groups/{id}/sources", s.handleSetGroupSources)
 	api.HandleFunc("GET /api/users/{username}/subscription-preview", s.handleSubscriptionPreview)
 }
@@ -380,55 +381,6 @@ type endpointSet struct {
 	Issues    []source.Issue
 }
 
-// subscriptionEndpointsFor is the sole merge boundary. It never fetches upstream.
-func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientFormat) (endpointSet, error) {
-	excl, err := s.exclusion()
-	if err != nil {
-		return endpointSet{}, err
-	}
-	managed, err := s.managedEndpointsFor(user, excl)
-	if err != nil {
-		return endpointSet{}, err
-	}
-	set := endpointSet{Endpoints: managed, Issues: []source.Issue{}}
-	if user.Status(time.Now()) != model.StatusActive {
-		return set, nil
-	}
-	sources, err := s.store.ListSourcesForUser(user.ID)
-	if err != nil {
-		return set, err
-	}
-	extMeta, err := s.store.ListExternalMetadata(0)
-	if err != nil {
-		return set, err
-	}
-	for _, src := range sources {
-		var eps []render.Endpoint
-		if len(src.Snapshot) == 0 {
-			continue
-		}
-		if err := json.Unmarshal(src.Snapshot, &eps); err != nil {
-			set.Issues = append(set.Issues, source.Issue{Name: src.Name, Reason: "来源快照无法读取，请刷新该来源"})
-			continue
-		}
-		for i, ep := range eps {
-			ep.SourceID, ep.SourceRegion = src.ID, src.Region
-			ep.Remark = resolveExternalRemark(src.Name, extMeta, ep)
-			ep.AutoRemark = false
-			if excl.on && excl.excluded(string(ep.Key())) {
-				continue // UC-12:不通的外部端点不进入订阅
-			}
-			if err := render.Compatible(ep, format); err != nil {
-				set.Issues = append(set.Issues, source.Issue{Index: i + 1, Name: ep.Remark, Reason: err.Error()})
-				continue
-			}
-			set.Endpoints = append(set.Endpoints, ep)
-		}
-	}
-	set.Endpoints = render.DedupeRemarks(set.Endpoints)
-	return set, nil
-}
-
 func previewFormat(w http.ResponseWriter, r *http.Request) (model.ClientFormat, bool) {
 	f := model.ClientFormat(r.URL.Query().Get("format"))
 	if f == "" {
@@ -529,33 +481,21 @@ func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Reques
 			}
 			nodes = append(nodes, n)
 		}
-		// UC-12:被自动剔除的对象不渲染,但要留在预览里说明为什么不在。
+		// UC-12/19:剔除行直接读清洗池 —— 池里带着每个对象为什么不在订阅
+		// 里的原因(活性判定或排水),预览不再自己重算一遍探测目标。
 		if excl, err := s.exclusion(); err == nil && excl.on {
-			for id := range excl.nodes {
-				targets, err := s.reachTargets([]int64{id})
-				if err != nil || len(targets) == 0 {
-					continue
+			if pool, err := s.poolEndpointsFor(u, excl); err == nil {
+				for _, pe := range pool.Pool {
+					if !pe.Excluded {
+						continue
+					}
+					nodes = append(nodes, subscriptionPreviewNode{
+						Name: pe.Remark, Protocol: render.ProtocolShort(pe.Endpoint),
+						SourceID: pe.SourceID, SourceName: names[pe.SourceID],
+						Reasons: []string{pe.ExcludeReason}, Excluded: true,
+						Groups: []string{},
+					})
 				}
-				key := string(model.NodeSubjectKey(id))
-				nodes = append(nodes, subscriptionPreviewNode{
-					Name: targets[0].NodeName, SourceName: names[0],
-					Reasons: []string{excl.excludeReason(key)}, Excluded: true,
-					Groups: []string{},
-				})
-			}
-			for key := range excl.exts {
-				targets, err := s.reachExtTargets([]string{key})
-				if err != nil || len(targets) == 0 {
-					continue
-				}
-				t := targets[0]
-				var srcID int64
-				_, _ = fmt.Sscanf(key, "s:%d:", &srcID)
-				nodes = append(nodes, subscriptionPreviewNode{
-					Name: t.Label, Protocol: t.Protocol, SourceID: srcID,
-					SourceName: names[srcID], Groups: []string{},
-					Reasons: []string{excl.excludeReason(key)}, Excluded: true,
-				})
 			}
 		}
 	}

@@ -330,11 +330,46 @@ func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
 
 // managedEndpointsFor 与 endpointsFor 同逻辑,剔除视图由调用方给:
 // subscriptionEndpointsFor 自建与外部共用同一份判定,算一次就够。
+// UC-19:剔除过滤仍在函数内 —— 它的消费方要的就是「可渲染」集合;
+// 清洗池要「含剔除行」的全集,走 resolveManagedEndpoints。
 func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]render.Endpoint, error) {
 	if status := user.Status(time.Now()); status != model.StatusActive {
 		return []render.Endpoint{placeholderEndpoint(user, status)}, nil
 	}
+	resolved, err := s.resolveManagedEndpoints(user)
+	if err != nil {
+		return nil, err
+	}
+	var eps []render.Endpoint
+	for _, rm := range resolved {
+		// 排水中的节点不再出现在订阅里:已连上的用户会随下一次刷新订阅自然漂
+		// 走,不主动掐线。
+		if rm.Draining {
+			continue
+		}
+		// UC-12:自动剔除同理 —— 判定为不通且未被保留的节点不进订阅。
+		if excl.on && excl.nodes[rm.NodeID] {
+			continue
+		}
+		eps = append(eps, rm.Endpoint)
+	}
+	// 节点名唯一的约束落在整份订阅这一层:同一个入站的不同入口、以及不同节点上
+	// 恰巧取了一样的名字,都只有把所有人的入口放在一起看才知道撞没撞。
+	return render.DedupeRemarks(eps), nil
+}
 
+// resolvedManaged 是托管端点过 ResolveNamed 之后的一行,带着它来自哪台
+// 节点、节点在不在排水 —— 池视图据这两点决定行的去留与标记。
+type resolvedManaged struct {
+	render.Endpoint
+	NodeID   int64
+	Draining bool
+}
+
+// resolveManagedEndpoints 是清洗池的托管端点原始流:不过滤剔除与排水,
+// 产出 (Endpoint, NodeID, Draining) 让调用方按自己的视图筛。UC-12 的
+// 排水与剔除只是「这个端点为什么不在订阅里」的两种原因,池里都要留行。
+func (s *Server) resolveManagedEndpoints(user *model.User) ([]resolvedManaged, error) {
 	nodes, err := s.store.ListNodes()
 	if err != nil {
 		return nil, err
@@ -376,22 +411,15 @@ func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]r
 		byInbound[h.InboundID] = append(byInbound[h.InboundID], h)
 	}
 
-	var eps []render.Endpoint
+	var out []resolvedManaged
+	// 协议后缀要落在原始流这一层:池视图和订阅视图看到的名字必须同一个。
 	for _, n := range nodes {
-		// 排水中的节点不再出现在订阅里:已连上的用户会随下一次刷新订阅自然漂
-		// 走,不主动掐线。
-		if n.Draining {
-			continue
+		eps := render.AddProtocolSuffix(render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user))
+		for _, ep := range eps {
+			out = append(out, resolvedManaged{Endpoint: ep, NodeID: n.ID, Draining: n.Draining})
 		}
-		// UC-12:自动剔除同理 —— 判定为不通且未被保留的节点不进订阅。
-		if excl.on && excl.nodes[n.ID] {
-			continue
-		}
-		eps = append(eps, render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user)...)
 	}
-	// 节点名唯一的约束落在整份订阅这一层:同一个入站的不同入口、以及不同节点上
-	// 恰巧取了一样的名字,都只有把所有人的入口放在一起看才知道撞没撞。
-	return render.DedupeRemarks(render.AddProtocolSuffix(eps)), nil
+	return out, nil
 }
 
 // placeholderEndpoint 是一个连不通、但各家客户端都肯接受的节点。
