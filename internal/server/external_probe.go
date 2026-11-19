@@ -259,6 +259,19 @@ func (s *Server) probeExternalEndpoint(ctx context.Context, src *model.Subscript
 	return q, nil
 }
 
+// bareExternalKey 只接受端点指纹(SourceKey)。视图 nodes[].key 是路由身份
+// "s:<source_id>:<source_key>";如果调用方把整串直接传进来,静默 404 会
+// 掩盖格式错误,这里显式拒绝并说明正确形状。
+func bareExternalKey(w http.ResponseWriter, r *http.Request) (string, bool) {
+	key := r.PathValue("key")
+	if strings.HasPrefix(key, "s:") {
+		writeError(w, http.StatusBadRequest,
+			"端点 key 不能带 \"s:<source_id>:\" 前缀,请用 nodes[].key 里的指纹部分")
+		return "", false
+	}
+	return key, true
+}
+
 // handleProbeExternalQuality 对一个外部端点跑降级探测。与节点探测共用
 // qualitySlot:两类探测打的是同一批第三方配额,不能各自放开并发。
 func (s *Server) handleProbeExternalQuality(w http.ResponseWriter, r *http.Request) {
@@ -266,7 +279,10 @@ func (s *Server) handleProbeExternalQuality(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	key := r.PathValue("key")
+	key, ok := bareExternalKey(w, r)
+	if !ok {
+		return
+	}
 	ep, found := snapshotEndpoint(src, key)
 	if !found {
 		writeError(w, http.StatusNotFound, "这个端点不在当前快照里")
@@ -296,7 +312,10 @@ func (s *Server) handleGetExternalQuality(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	key := r.PathValue("key")
+	key, ok := bareExternalKey(w, r)
+	if !ok {
+		return
+	}
 	list, err := s.store.ListExternalQuality(src.ID)
 	if err != nil {
 		s.writeStoreError(w, err, "外部质量记录")
@@ -352,7 +371,10 @@ func (s *Server) handlePatchExternalMetadata(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	key := r.PathValue("key")
+	key, ok := bareExternalKey(w, r)
+	if !ok {
+		return
+	}
 	ep, found := snapshotEndpoint(src, key)
 	if !found {
 		writeError(w, http.StatusNotFound, "这个端点不在当前快照里")

@@ -157,6 +157,11 @@ func TestProbeExternalQuality(t *testing.T) {
 	if code != 404 {
 		t.Fatalf("ghost: %d", code)
 	}
+	// 带路由身份前缀的 key → 400(格式错误显式报出,不再静默 404)
+	code, raw = e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/s:%d:k1/quality", src.ID, src.ID), nil)
+	if code != 400 {
+		t.Fatalf("s: 前缀 key 应 400: %d %s", code, raw)
+	}
 }
 
 func TestRegradeIncludesExternal(t *testing.T) {
