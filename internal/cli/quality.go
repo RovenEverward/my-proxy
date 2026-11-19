@@ -198,6 +198,17 @@ func orDash(s string) string {
 	return s
 }
 
+// endpointKey 把视图 nodes[].key 还原成端点指纹:视图里外部端点的 key 是
+// "s:<source_id>:<source_key>" 路由身份,endpoint API 要裸 SourceKey。
+func endpointKey(key string) string {
+	if strings.HasPrefix(key, "s:") {
+		if i := strings.Index(key[2:], ":"); i >= 0 {
+			return key[2+i+1:]
+		}
+	}
+	return key
+}
+
 // extQualityWire 对应控制面返回的 model.ExternalQuality;键是 (来源,指纹)。
 type extQualityWire struct {
 	SourceID  int64               `json:"source_id"`
@@ -269,7 +280,7 @@ ipwho.is/ipapi.is/可选 AbuseIPDB 由控制面查询,不通过 SSH 也不依赖
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
-				raw, err := c.doWithin(30e9, "POST", fmt.Sprintf("/api/sources/%d/endpoints/%s/quality", src.ID, ref.Key), nil)
+				raw, err := c.doWithin(30e9, "POST", fmt.Sprintf("/api/sources/%d/endpoints/%s/quality", src.ID, endpointKey(ref.Key)), nil)
 				if err != nil {
 					results[i] = result{ref: ref, err: err}
 					return
@@ -513,7 +524,7 @@ func runSourceMeta(cmd *cobra.Command, args []string) error {
 	if changed("city") {
 		body["city"] = sourceMetaFlags.city
 	}
-	raw, err := cl.do("PATCH", fmt.Sprintf("%s/endpoints/%s", sourcePath(v.ID), n.Key), body)
+	raw, err := cl.do("PATCH", fmt.Sprintf("%s/endpoints/%s", sourcePath(v.ID), endpointKey(n.Key)), body)
 	if err != nil {
 		return err
 	}
