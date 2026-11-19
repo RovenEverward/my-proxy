@@ -86,7 +86,7 @@ func TestTickMarksNodeSampled(t *testing.T) {
 func TestRefreshOnlineStoresSnapshotThenRateLimits(t *testing.T) {
 	aliceChunk := `{"name":"user>>>alice>>>online","ips":{"198.51.100.7":1760000000,"203.0.113.9":1760000001}}`
 	r := &fakeRunner{replies: onlineReplies(`{"users":["user>>>alice>>>online"]}`, aliceChunk)}
-	c, st := newTestControl(t, r)
+	c, st := newLoggingControl(t, r, slog.New(slog.DiscardHandler))
 	n := addNode(t, st, "hk", "203.0.113.10")
 	addInbound(t, st, n.ID, "vless-ws", 8443)
 
@@ -133,7 +133,7 @@ func TestRefreshOnlineRateLimitsFailedAttempts(t *testing.T) {
 	r := &fakeRunner{replies: []reply{
 		{keyword: "statsquery", out: trafficReply()},
 	}}
-	c, st := newTestControl(t, r)
+	c, st := newLoggingControl(t, r, slog.New(slog.DiscardHandler))
 	n := addNode(t, st, "hk", "203.0.113.10")
 	addInbound(t, st, n.ID, "vless-ws", 8443)
 
@@ -183,7 +183,7 @@ func TestRefreshOnlineRateLimitsFailedAttempts(t *testing.T) {
 func TestRefreshOnlineForgetsOnError(t *testing.T) {
 	aliceChunk := `{"name":"user>>>alice>>>online","ips":{"198.51.100.7":1760000000}}`
 	r := &fakeRunner{replies: onlineReplies(`{"users":["user>>>alice>>>online"]}`, aliceChunk)}
-	c, st := newTestControl(t, r)
+	c, st := newLoggingControl(t, r, slog.New(slog.DiscardHandler))
 	n := addNode(t, st, "hk", "203.0.113.10")
 	addInbound(t, st, n.ID, "vless-ws", 8443)
 
@@ -229,5 +229,60 @@ func TestOnlineSnapshotsReturnsCopy(t *testing.T) {
 	c.ForgetOnline(n.ID)
 	if _, ok := c.OnlineSnapshots()[n.ID]; ok {
 		t.Fatal("ForgetOnline 之后不该还有这台节点的快照")
+	}
+}
+
+// refreshOnlineAll 把整轮在线刷新从 N×15s 的串行改成限并发(ISS-03):
+// 8 台节点、每台睡 150ms,串行要 ~1.2s,4 并发要 ~300ms。
+type sleepyRunner struct {
+	*fakeRunner
+	delay time.Duration
+}
+
+func (r *sleepyRunner) Run(ctx context.Context, n model.Node, script string) (string, error) {
+	select {
+	case <-time.After(r.delay):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return r.fakeRunner.Run(ctx, n, script)
+}
+
+func (r *sleepyRunner) RunWithInput(ctx context.Context, n model.Node, script string, stdin []byte) (string, error) {
+	select {
+	case <-time.After(r.delay):
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return r.fakeRunner.RunWithInput(ctx, n, script, stdin)
+}
+
+func TestRefreshOnlineAllParallelCapsAtWorkers(t *testing.T) {
+	r := &sleepyRunner{delay: 150 * time.Millisecond, fakeRunner: &fakeRunner{replies: onlineReplies(`{"users":[]}`)}}
+	c, st := newLoggingControl(t, r, slog.New(slog.DiscardHandler))
+	task := NewTask(c, st, nil, time.Hour)
+
+	nodes := make([]model.Node, 0, 8)
+	for i := 0; i < 8; i++ {
+		n := addNode(t, st, "n"+string(rune('a'+i)), "203.0.113.1"+string(rune('0'+i)))
+		addInbound(t, st, n.ID, "vless-ws", 8443)
+		nodes = append(nodes, n)
+	}
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	start := time.Now()
+	task.refreshOnlineAll(context.Background(), nodes, map[int64]bool{}, map[int64]bool{}, now)
+	elapsed := time.Since(start)
+	// 串行 ~1.2s;4 并发 ~300ms。取 800ms 当闸,留出 CI 抖动余量。
+	if elapsed > 800*time.Millisecond {
+		t.Fatalf("在线刷新没并行:8 台耗时 %v,接近串行", elapsed)
+	}
+	// skip/failed 的节点该被遗忘而不是去问。
+	skipNode := addNode(t, st, "skipme", "203.0.113.99")
+	c.onlineMu.Lock()
+	c.online = map[int64]model.OnlineSnapshot{skipNode.ID: {NodeID: skipNode.ID, At: now}}
+	c.onlineMu.Unlock()
+	task.refreshOnlineAll(context.Background(), []model.Node{skipNode}, map[int64]bool{skipNode.ID: true}, map[int64]bool{}, now)
+	if _, ok := c.OnlineSnapshots()[skipNode.ID]; ok {
+		t.Fatal("skip 的节点快照没被遗忘")
 	}
 }
