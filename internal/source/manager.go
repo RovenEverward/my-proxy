@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
@@ -89,8 +90,11 @@ func (m *Manager) start(id int64) (<-chan struct{}, error) {
 			}
 			err := m.store.CompleteSourceRefresh(src.ID, src.Revision, time.Now(), snapshot, report, failure)
 			if !errors.Is(err, store.ErrVersionConflict) {
-				if err == nil && m.changed != nil {
-					m.changed()
+				if err == nil {
+					m.syncExternalMetadata(src.ID, snapshot)
+					if m.changed != nil {
+						m.changed()
+					}
 				}
 				return
 			}
@@ -105,6 +109,53 @@ func (m *Manager) start(id int64) (<-chan struct{}, error) {
 }
 
 func (m *Manager) StartRefresh(id int64) error { _, err := m.start(id); return err }
+
+// syncExternalMetadata 在一次成功快照后对齐外部端点清洗层(UC-17):
+// 消失的端点记录删掉,新端点能从原名解析出地区就自动建一条 auto 记录。
+// 快照没换(失败或不落快照的成功)时不跑;同步失败只记日志,不回滚快照。
+func (m *Manager) syncExternalMetadata(sourceID int64, snapshot []byte) {
+	if len(snapshot) == 0 {
+		return
+	}
+	var eps []render.Endpoint
+	if err := json.Unmarshal(snapshot, &eps); err != nil {
+		return
+	}
+	keys := make([]string, 0, len(eps))
+	regions := map[string]string{}
+	for _, ep := range eps {
+		keys = append(keys, ep.SourceKey)
+		regions[ep.SourceKey] = model.RegionFromRemark(ep.Remark)
+	}
+	existingAll, err := m.store.ListExternalMetadata(sourceID)
+	if err != nil {
+		return
+	}
+	// ListExternalMetadata 的键带来源前缀("id\x00key");AssignExternalLetters
+	// 按裸指纹查 existing,先重键成 SourceKey。不转换的话 existing 永远查不中:
+	// graded 记录会被回填重排、旧字母又被占住,每刷一次字母往后挪一位。
+	existing := map[string]model.ExternalMetadata{}
+	for _, meta := range existingAll {
+		existing[meta.SourceKey] = meta
+	}
+	assigned := model.AssignExternalLetters(sourceID, keys, regions, existing)
+	// 只把「新增或变化」的记录写回去:已存在的 graded/auto 记录按原样
+	// 也在 assigned 里,重复写一遍无害,但只对快照键集合内的写。
+	upserts := make([]model.ExternalMetadata, 0, len(assigned))
+	for _, key := range keys {
+		if meta, ok := assigned[key]; ok {
+			prev, had := existing[key]
+			if had && prev.Kind == "graded" {
+				continue // 探测/重排写过的记录回填不动它
+			}
+			if had && prev.Region == meta.Region && prev.City == meta.City && prev.Letter == meta.Letter {
+				continue // 没变化不写,省一次事务
+			}
+			upserts = append(upserts, meta)
+		}
+	}
+	_ = m.store.SyncExternalMetadata(sourceID, keys, upserts)
+}
 
 func (m *Manager) Refresh(ctx context.Context, id int64) (RefreshResult, error) {
 	done, err := m.start(id)

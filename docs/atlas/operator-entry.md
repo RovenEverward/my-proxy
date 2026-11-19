@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-19 @ 8e11b21 + working tree
+verified: 2026-11-19 @ 509de43 + working tree
 ---
 # 本机入口：CLI、mpx ui、设备接入
 
@@ -10,7 +10,7 @@ verified: 2026-11-19 @ 8e11b21 + working tree
 
 ## 边界
 
-负责：把操作拼成请求、把结果显示给人；多控制面配置档；设备接入与吊销；本机才能做的事（切换 profile、接入另一套控制面、自检、relabel 查 IP 归属、首次安装向导）。IP 质量评级（`mpx node grade` / `mpx node regrade`、节点列表「IP 质量评级」弹窗）是两条控制面接口的普通客户端调用，不进 `/local`：探测走 `POST /api/nodes/{id}/quality`，预览与写库走 `POST /api/regrade`，uiAllow 里各有等价命令放行。
+负责：把操作拼成请求、把结果显示给人；多控制面配置档；设备接入与吊销；本机才能做的事（切换 profile、接入另一套控制面、自检、relabel 查 IP 归属、首次安装向导）。IP 质量评级（`mpx node grade` / `mpx node regrade`、节点列表「IP 质量评级」弹窗）是两条控制面接口的普通客户端调用，不进 `/local`：探测走 `POST /api/nodes/{id}/quality`（外部端点是 `mpx source grade` 打 `POST /api/sources/{id}/endpoints/{key}/quality`），预览与写库走 `POST /api/regrade`，uiAllow 里各有等价命令放行。
 
 不负责：碰数据库和节点（`mpx init` 是唯一例外，因为那时控制面还不存在，见 [安装与升级](install-update.md)）；长出控制面接口之外的能力。
 

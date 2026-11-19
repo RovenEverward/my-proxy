@@ -29,17 +29,20 @@ type regradePacket struct {
 }
 
 type serverRegradeRow struct {
-	ID      int64  `json:"id"`
-	Name    string `json:"name"`
-	Display string `json:"display,omitempty"`
-	Region  string `json:"region,omitempty"`
-	City    string `json:"city,omitempty"`
-	Score   *int   `json:"score,omitempty"`
-	Verdict string `json:"verdict"`
-	Old     string `json:"old"`
-	New     string `json:"new"`
-	Note    string `json:"note,omitempty"`
-	Changed bool   `json:"changed"`
+	Kind      string `json:"kind"`
+	ID        int64  `json:"id"`
+	SourceID  int64  `json:"source_id,omitempty"`
+	SourceKey string `json:"source_key,omitempty"`
+	Name      string `json:"name"`
+	Display   string `json:"display,omitempty"`
+	Region    string `json:"region,omitempty"`
+	City      string `json:"city,omitempty"`
+	Score     *int   `json:"score,omitempty"`
+	Verdict   string `json:"verdict"`
+	Old       string `json:"old"`
+	New       string `json:"new"`
+	Note      string `json:"note,omitempty"`
+	Changed   bool   `json:"changed"`
 }
 
 var nodeGradeCmd = &cobra.Command{
@@ -194,6 +197,138 @@ func orDash(s string) string {
 	return s
 }
 
+// extQualityWire 对应控制面返回的 model.ExternalQuality;键是 (来源,指纹)。
+type extQualityWire struct {
+	SourceID  int64               `json:"source_id"`
+	SourceKey string              `json:"source_key"`
+	CheckedAt string              `json:"checked_at"`
+	Verdict   string              `json:"verdict"`
+	Score     int                 `json:"score"`
+	Report    model.QualityReport `json:"report"`
+}
+
+var sourceGradeCmd = &cobra.Command{
+	Use:   "grade 来源",
+	Short: "对来源里的外部节点做降级 IP 质量探测(控制面侧,不走 SSH)",
+	Long: `对一个外部订阅源的全部端点做降级探测并打分。
+
+与 mpx node grade 同一套权重和判定,但探测在控制面侧执行:域名在控制面解析,
+ipwho.is/ipapi.is/可选 AbuseIPDB 由控制面查询,不通过 SSH 也不依赖节点上的 curl。
+分数反映端点声明地址的 IP 信誉,不代表机场真实出口质量或速度;域名/CDN 端点测
+到的是那个入口地址。结果存档,供 mpx node regrade 统一重排字母。
+
+  mpx source grade 星空奶酪`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		raw, err := c.do("GET", "/api/sources", nil)
+		if err != nil {
+			return err
+		}
+		sources, err := decode[[]sourceView](raw)
+		if err != nil {
+			return err
+		}
+		var src *sourceView
+		for i, sv := range sources {
+			if sv.Name == args[0] || strconv.FormatInt(sv.ID, 10) == args[0] {
+				src = &sources[i]
+				break
+			}
+		}
+		if src == nil {
+			return fmt.Errorf("找不到来源 %q", args[0])
+		}
+		raw, err = c.do("GET", fmt.Sprintf("/api/sources/%d", src.ID), nil)
+		if err != nil {
+			return err
+		}
+		full, err := decode[sourceView](raw)
+		if err != nil {
+			return err
+		}
+		if len(full.Nodes) == 0 {
+			fmt.Println("这个来源的快照里没有端点;先 mpx source refresh。")
+			return nil
+		}
+		type result struct {
+			ref sourceNodeView
+			q   extQualityWire
+			err error
+		}
+		results := make([]result, len(full.Nodes))
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 4)
+		for i, ref := range full.Nodes {
+			wg.Add(1)
+			go func(i int, ref sourceNodeView) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				raw, err := c.doWithin(30e9, "POST", fmt.Sprintf("/api/sources/%d/endpoints/%s/quality", src.ID, ref.Key), nil)
+				if err != nil {
+					results[i] = result{ref: ref, err: err}
+					return
+				}
+				q, err := decode[extQualityWire](raw)
+				results[i] = result{ref: ref, q: q, err: err}
+			}(i, ref)
+		}
+		wg.Wait()
+		if opts.output == outputJSON {
+			out := make([]extQualityWire, 0, len(results))
+			for _, r := range results {
+				if r.err == nil {
+					out = append(out, r.q)
+				}
+			}
+			return emitJSONValue(out)
+		}
+		rows := make([][]string, 0, len(results))
+		failed := 0
+		for _, r := range results {
+			name := r.ref.Name
+			if r.ref.RawName != "" && r.ref.RawName != r.ref.Name {
+				name = r.ref.Name + "(" + r.ref.RawName + ")"
+			}
+			if r.err != nil {
+				failed++
+				rows = append(rows, []string{name, "-", "-", "-", "-", "探测失败: " + r.err.Error()})
+				continue
+			}
+			rep := r.q.Report
+			score := "-"
+			marks := "-"
+			if r.q.Verdict != "untested" {
+				score = strconv.Itoa(r.q.Score)
+				marks = flagSummary(rep.Flags)
+				if rep.AbuseScore != nil && *rep.AbuseScore > 0 {
+					if marks == "-" {
+						marks = ""
+					}
+					marks += "滥用" + strconv.Itoa(*rep.AbuseScore) + "分"
+				}
+			}
+			verdict := map[string]string{"ok": "正常", "partial": "部分失败", "untested": "未测"}[r.q.Verdict]
+			if r.q.Verdict == "untested" && rep.Error != "" {
+				verdict = "未测:" + rep.Error
+			}
+			rows = append(rows, []string{name, orDash(rep.EgressIP), orDash(rep.Region), score, marks, verdict})
+		}
+		if err := writeTable([]string{"端点", "地址 IP", "地区", "分数", "标记", "判定"}, rows); err != nil {
+			return err
+		}
+		if failed > 0 {
+			return fmt.Errorf("%d 个端点探测失败", failed)
+		}
+		fmt.Println("按分重排字母:mpx node regrade")
+		return nil
+	},
+}
+
 var nodeRegradeFlags struct{ dryRun, yes bool }
 
 var nodeRegradeCmd = &cobra.Command{
@@ -241,7 +376,17 @@ var nodeRegradeCmd = &cobra.Command{
 			if oldName == "" {
 				oldName = r.Name
 			}
-			rows = append(rows, []string{strconv.FormatInt(r.ID, 10), r.Name, oldName, score, orDash(r.New), orDash(r.Note)})
+			id := strconv.FormatInt(r.ID, 10)
+			name := r.Name
+			if r.Kind == "external" {
+				id = "s" + strconv.FormatInt(r.SourceID, 10)
+				// 外部行的内部名是上游原名,太长会撑爆表格;保留前 20 个字符。
+				runes := []rune(r.Name)
+				if len(runes) > 20 {
+					name = string(runes[:20]) + "…"
+				}
+			}
+			rows = append(rows, []string{id, name, oldName, score, orDash(r.New), orDash(r.Note)})
 		}
 		if err := writeTable([]string{"ID", "内部名", "旧名", "分数", "新名", "备注"}, rows); err != nil {
 			return err
@@ -277,9 +422,14 @@ var nodeRegradeCmd = &cobra.Command{
 			return emitJSON(raw)
 		}
 		for _, r := range pkt.Rows {
-			if r.Changed {
-				fmt.Printf("节点 %d(%s)→ %s\n", r.ID, r.Name, r.New)
+			if !r.Changed {
+				continue
 			}
+			if r.Kind == "external" {
+				fmt.Printf("来源 %d 端点(%s)→ %s\n", r.SourceID, r.Name, r.New)
+				continue
+			}
+			fmt.Printf("节点 %d(%s)→ %s\n", r.ID, r.Name, r.New)
 		}
 		return nil
 	},
@@ -291,4 +441,7 @@ func init() {
 	f.BoolVar(&nodeRegradeFlags.dryRun, "dry-run", false, "只打印对照表,不写入")
 	f.BoolVar(&nodeRegradeFlags.yes, "yes", false, "不再询问,直接写入")
 	nodeCmd.AddCommand(nodeGradeCmd, nodeRegradeCmd)
+	// source grade 挂进来源命令树:newSourceCmd 在另一个 init 里建树,
+	// init 顺序不保证,这里只存命令,由 newSourceCmd 带上。
+	sourceCmdExtras = append(sourceCmdExtras, sourceGradeCmd)
 }

@@ -18,7 +18,10 @@ export interface NodeQuality {
   report?: QualityReport;
 }
 export interface RegradeRow {
-  id: number; name: string; display?: string;
+  // kind 区分托管节点与外部端点(UC-17);外部行带 source_id/source_key,id 为 0。
+  kind?: "node" | "external";
+  id: number; source_id?: number; source_key?: string;
+  name: string; display?: string;
   region?: string; city?: string;
   score?: number; verdict: string;
   old?: string; new?: string;

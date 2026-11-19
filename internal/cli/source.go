@@ -48,6 +48,17 @@ type sourceView struct {
 	InputFormat   string                  `json:"input_format"`
 	Issues        []sourceIssue           `json:"issues"`
 	Formats       map[string]sourceFormat `json:"formats"`
+	Nodes         []sourceNodeView        `json:"nodes"`
+}
+
+// sourceNodeView 是来源快照里一个端点的展示行:name 是清洗后的订阅名
+// (UC-17),raw_name 是上游原名;key 是端点指纹身份。
+type sourceNodeView struct {
+	Name     string `json:"name"`
+	RawName  string `json:"raw_name"`
+	Protocol string `json:"protocol"`
+	Key      string `json:"key"`
+	Excluded bool   `json:"excluded"`
 }
 
 // sourceIssue 是快照里被跳过条目的一条说明:位置、显示名与原因。
@@ -116,6 +127,10 @@ func (f *sourceFlags) bind(c *cobra.Command, forAdd bool) {
 		c.Flags().BoolVar(&f.urlStdin, "url-stdin", false, "从标准输入读新的订阅地址")
 	}
 }
+
+// sourceCmdExtras 是其他文件里注册的来源子命令(如 source grade);init 顺序
+// 不保证,所以各文件先 append 进来,newSourceCmd 建树时统一挂上。
+var sourceCmdExtras []*cobra.Command
 
 func newSourceCmd() *cobra.Command {
 	c := &cobra.Command{Use: "source", Short: "管理外部订阅源", Long: `外部订阅源:MPX 定时拉取一份订阅快照,授权给指定用户后,对方的原订阅地址里
@@ -529,7 +544,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 	_ = preview.MarkFlagRequired("user")
 	preview.Flags().StringVar(&previewFormat, "format", "clash-meta", "输出格式:links / base64-links / clash / clash-meta / sing-box / xray")
 	c.AddCommand(preview)
-
+	c.AddCommand(sourceCmdExtras...)
 	return c
 }
 

@@ -118,8 +118,8 @@ test("新增来源、展开列表、抽屉分段单次保存与混合预览弹�
   await expect(page.locator("tr.src-member")).toHaveCount(0);
   await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
   await expect(page.locator("tr.src-member")).toHaveCount(2);
-  await expect(page.locator("tr.src-member").first()).toContainText("ext-jp-tokyo");
-  await expect(page.locator("tr.src-member").nth(1)).toContainText("ext-sg");
+  await expect(page.locator("tr.src-member").first()).toContainText("日本 A");
+  await expect(page.locator("tr.src-member").nth(1)).toContainText("新加坡 A");
   await rowOf(page, "测试源").locator("[data-act=source-expand]").click();
   await expect(page.locator("tr.src-member")).toHaveCount(0);
 
@@ -137,8 +137,8 @@ test("新增来源、展开列表、抽屉分段单次保存与混合预览弹�
   await expect(nodesTab).toHaveAttribute("aria-selected", "true");
   await expect(nodesTab).toBeFocused();
   await expect(page.locator("#source-format-results")).toContainText("Clash Meta");
-  await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-jp-tokyo");
-  await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-sg");
+  await expect(page.locator("#source-snapshot-nodes")).toContainText("日本 A");
+  await expect(page.locator("#source-snapshot-nodes")).toContainText("新加坡 A");
 
   // 切回后草稿与未保存勾选仍在
   await page.keyboard.press("ArrowLeft");
@@ -159,12 +159,12 @@ test("新增来源、展开列表、抽屉分段单次保存与混合预览弹�
   await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "alice");
   await page.selectOption("#source-preview-format", "clash-meta");
-  await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
-  await expect(page.locator("#source-preview")).toContainText("ext-sg");
+  await expect(page.locator("#source-preview")).toContainText("日本 A");
+  await expect(page.locator("#source-preview")).toContainText("新加坡 A");
   await expect(page.locator("#source-preview")).toContainText("自建专线");
   await expect(page.locator("#source-preview")).toContainText("测试源 · SS"); // 协议短名:SS
   await page.selectOption("#source-preview-user", "bob");
-  await expect(page.locator("#source-preview")).not.toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-preview")).not.toContainText("日本 A");
   await expect(page.locator("#source-preview")).toContainText("自建专线");
   await page.keyboard.press("Escape");
   await expect(modal(page)).toHaveCount(0);
@@ -191,7 +191,7 @@ test("按套餐授权:抽屉勾选套餐、保存带 plan_ids、列表显示套�
   // bob 挂默认套餐:不用按人授权,预览里也能看到外部节点。
   await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "bob");
-  await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-preview")).toContainText("日本 A");
   await page.keyboard.press("Escape");
   // 取消勾选,PUT 带空 plan_ids 清掉套餐授权。
   await rowOf(page, "测试源").locator("[data-act=source-open]").click();
@@ -225,7 +225,7 @@ test("刷新失败:旧快照保留、错误上屏、订阅不受影响", async (
   await expect(page.locator('#drawer p.c-bad[role="alert"]')).toContainText("正在使用");
   // 订阅侧不受影响:alice 仍拿得到外部节点。
   const preview = await getJSON("/api/users/alice/subscription-preview?format=clash-meta");
-  expect(preview.nodes.some(n => n.name.includes("ext-jp-tokyo"))).toBe(true);
+  expect(preview.nodes.some(n => n.name.includes("日本 A"))).toBe(true);
   await page.keyboard.press("Escape");
 });
 
@@ -241,7 +241,7 @@ test("停用后订阅不再有外部节点,恢复后回来", async ({ page }) =>
 
   await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "alice");
-  await expect(page.locator("#source-preview")).not.toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-preview")).not.toContainText("日本 A");
   await page.keyboard.press("Escape");
 
   await rowOf(page, "测试源").locator("[data-act=source-open]").click();
@@ -251,7 +251,7 @@ test("停用后订阅不再有外部节点,恢复后回来", async ({ page }) =>
 
   await openPreviewModal(page);
   await page.selectOption("#source-preview-user", "alice");
-  await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-preview")).toContainText("日本 A");
   await page.keyboard.press("Escape");
 });
 
@@ -269,7 +269,7 @@ test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部",
   await expect(row).toContainText("自建节点 + 测试源");
   await expect(row).toContainText("自建专线");
   // 未选预览用户时外部节点不进预览(授权按人),行内只列自建。
-  await expect(row).not.toContainText("ext-jp-tokyo");
+  await expect(row).not.toContainText("日本 A");
 
   // 旧式整组 PUT(不带 sources 字段)不许清掉来源条件 —— AC-14。
   const model = await getJSON(`/api/proxy-groups/${g.id}`);
@@ -288,13 +288,13 @@ test("策略组来源筛选:界面勾选、旧 PUT 保留、清空等于全部",
   await page.selectOption("#gp-user", "alice");
   const admitted = (hasText) => page.locator("#gp-pv .pp-pvr:not(.miss)", { hasText });
   const missed = (hasText) => page.locator("#gp-pv .pp-pvr.miss", { hasText });
-  await expect(admitted("ext-jp-tokyo")).toHaveCount(1);
+  await expect(admitted("日本 A")).toHaveCount(1);
   // chip 的 input 是透明的(可访问性走 label),点 chip 文本。
   await page.locator(".chip", { hasText: "测试源" }).click();
   await expect(page.locator(`input[data-source-choice][value="source:${sid}"]`)).not.toBeChecked();
   // 被来源条件排除的节点仍列出并标原因(UC 要求看到为什么被排掉),只是不入选。
-  await expect(admitted("ext-jp-tokyo")).toHaveCount(0);
-  await expect(missed("ext-jp-tokyo")).toContainText("来源不符");
+  await expect(admitted("日本 A")).toHaveCount(0);
+  await expect(missed("日本 A")).toContainText("来源不符");
   await expect(admitted("自建专线")).toHaveCount(1);
   await page.click("#gp-save");
   await expect(page.locator(".toast")).toContainText("已保存");
@@ -403,7 +403,7 @@ test("窄屏 390:列表与展开可读、抽屉与预览弹窗不溢出", async 
   const mbox = await modal(page).boundingBox();
   expect(mbox.width).toBeLessThanOrEqual(390);
   await page.selectOption("#source-preview-user", "alice");
-  await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+  await expect(page.locator("#source-preview")).toContainText("日本 A");
   await page.keyboard.press("Escape");
   await cp(`/api/sources/${created.id}`, { method: "DELETE" });
 });
@@ -444,14 +444,14 @@ test("视觉取证:桌面 1440 与手机 390,深浅两主题", async ({ page: _p
         await page.mouse.move(1, 1);
         await page.screenshot({ path: `${shotDir}/source-drawer-config-desktop-light@2x.png` });
         await page.click('#drawer [data-act=source-tab][data-tab=nodes]');
-        await expect(page.locator("#source-snapshot-nodes")).toContainText("ext-jp-tokyo");
+        await expect(page.locator("#source-snapshot-nodes")).toContainText("日本 A");
         await page.mouse.move(1, 1);
         await page.screenshot({ path: `${shotDir}/source-drawer-nodes-desktop-light@2x.png` });
         await page.keyboard.press("Escape");
 
         await openPreviewModal(page);
         await page.selectOption("#source-preview-user", "alice");
-        await expect(page.locator("#source-preview")).toContainText("ext-jp-tokyo");
+        await expect(page.locator("#source-preview")).toContainText("日本 A");
         await expect(page.locator("#source-preview")).toContainText("自建专线");
         await page.mouse.move(1, 1);
         await page.screenshot({ path: `${shotDir}/source-preview-modal-desktop-light@2x.png` });

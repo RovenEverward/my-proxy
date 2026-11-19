@@ -395,10 +395,10 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	}
 	sid := fmt.Sprint(view.ID)
 
-	// 未授权时双方订阅都看不到外部节点。
+	// 未授权时双方订阅都看不到外部节点。清洗后的订阅名带"测试源 ·"前缀。
 	for username, tok := range map[string]string{"alice": aliceTok, "bob": bobTok} {
 		sub := e.subscription(tok, "clash-meta")
-		if strings.Contains(sub, "ext-jp") || strings.Contains(sub, "ext-sg") {
+		if strings.Contains(sub, "测试源 ·") || strings.Contains(sub, "ext-jp") {
 			t.Fatalf("未授权时 %s 的订阅不该有外部节点", username)
 		}
 	}
@@ -412,14 +412,15 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	}
 
 	// ---- alice 的订阅混合两类;bob 仍然只有自建 ----
+	// 外部节点在订阅里已经按 UC-17 清洗成「源名 · 旗帜 地区 字母」。
 	aliceClash := e.subscription(aliceTok, "clash-meta")
-	for _, want := range []string{"自建专线", "ext-jp", "ext-sg"} {
+	for _, want := range []string{"自建专线", "日本 A", "新加坡 A"} {
 		if !strings.Contains(aliceClash, want) {
 			t.Fatalf("alice 的 clash-meta 缺 %q:\n%s", want, aliceClash)
 		}
 	}
 	bobClash := e.subscription(bobTok, "clash-meta")
-	if strings.Contains(bobClash, "ext-jp") || strings.Contains(bobClash, "ext-sg") {
+	if strings.Contains(bobClash, "测试源 ·") || strings.Contains(bobClash, "ext-") {
 		t.Fatalf("bob 的订阅不该有外部节点:\n%s", bobClash)
 	}
 
@@ -429,10 +430,7 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	tags := singBoxTags(t, aliceSB)
 	var extCount, managedCount int
 	for _, tag := range tags {
-		if strings.Contains(tag, "ext-jp") {
-			extCount++
-		}
-		if strings.Contains(tag, "ext-sg") {
+		if strings.Contains(tag, "测试源 ·") {
 			extCount++
 		}
 		if strings.Contains(tag, "自建专线") {
@@ -447,7 +445,7 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	}
 	bobSB := e.subscription(bobTok, "sing-box")
 	for _, tag := range singBoxTags(t, bobSB) {
-		if strings.Contains(tag, "ext-") {
+		if strings.Contains(tag, "测试源 ·") {
 			t.Fatalf("bob 的 sing-box 不该有外部出站 %q", tag)
 		}
 	}
@@ -460,7 +458,7 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	}
 	// 策略组预览按用户:外部节点应进得了这个组。
 	previewOut := e.runOK("", "group", "preview", "混合组", "--user", "alice", "--format", "sing-box")
-	if !strings.Contains(previewOut, "ext-") {
+	if !strings.Contains(previewOut, "测试源 ·") {
 		t.Fatalf("按用户预览里外部节点应被收进混合组: %s", previewOut)
 	}
 	// 订阅里的组引用:混合组应把外部节点列进自己的成员。
@@ -483,7 +481,7 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	members := singBoxGroupMembers(t, aliceSB2, "混合组")
 	var refExt, refManaged int
 	for _, m := range members {
-		if strings.Contains(m, "ext-") {
+		if strings.Contains(m, "测试源 ·") {
 			refExt++
 		}
 		if strings.Contains(m, "自建专线") {
@@ -507,7 +505,7 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	userMap["note"] = "旧客户端原样写回"
 	userBody, _ := json.Marshal(userMap)
 	e.apiOK("PUT", "/api/users/alice", string(userBody))
-	if sub := e.subscription(aliceTok, "clash-meta"); !strings.Contains(sub, "ext-jp") {
+	if sub := e.subscription(aliceTok, "clash-meta"); !strings.Contains(sub, "测试源 ·") {
 		t.Fatalf("旧用户 PUT 后授权丢了:alice 的订阅缺外部节点")
 	}
 
@@ -531,13 +529,13 @@ func TestSourceLifecycleEndToEnd(t *testing.T) {
 	if view2.LastError == "" {
 		t.Fatalf("失败刷新没记 last_error: %s", showAfter)
 	}
-	if sub := e.subscription(aliceTok, "clash-meta"); !strings.Contains(sub, "ext-jp") {
+	if sub := e.subscription(aliceTok, "clash-meta"); !strings.Contains(sub, "测试源 ·") {
 		t.Fatalf("失败刷新后 alice 丢了外部节点(快照应保留)")
 	}
 
 	// ---- 撤权:alice 立即失去外部节点,bob 的权限模型没变 ----
 	e.runOK("", "source", "revoke", sid, "--user", "alice")
-	if sub := e.subscription(aliceTok, "clash-meta"); strings.Contains(sub, "ext-") {
+	if sub := e.subscription(aliceTok, "clash-meta"); strings.Contains(sub, "测试源 ·") {
 		t.Fatalf("撤权后 alice 的订阅仍有外部节点")
 	}
 

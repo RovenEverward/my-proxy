@@ -1,8 +1,8 @@
 ---
 kind: part
 parent: README.md
-code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go, internal/reach/, internal/cli/reach.go, internal/ui/reach.go, internal/probeagent/, internal/cli/probe.go, internal/control/quality.go, internal/server/quality.go, internal/cli/quality.go, internal/ui/frontend/domain/quality.ts, internal/ui/frontend/pages/nodes/GradeModal.tsx]
-verified: 2026-11-19 @ 8e11b21 + working tree
+code: [internal/diagnostics/, internal/fusion/, internal/control/capability.go, internal/control/checkup.go, internal/node/capability.go, internal/cli/doctor.go, internal/cli/capability.go, internal/reach/, internal/cli/reach.go, internal/ui/reach.go, internal/probeagent/, internal/cli/probe.go, internal/control/quality.go, internal/server/quality.go, internal/server/external_probe.go, internal/cli/quality.go, internal/ui/frontend/domain/quality.ts, internal/ui/frontend/pages/nodes/GradeModal.tsx, internal/model/external.go, internal/store/external.go, internal/server/external_names.go]
+verified: 2026-11-19 @ 509de43 + working tree
 ---
 # 体检与诊断
 
@@ -24,6 +24,7 @@ verified: 2026-11-19 @ 8e11b21 + working tree
 6. 探测点（UC-12）是控制面名册里的第一类实体，不是节点：`POST /api/probes` 发一次性接入命令（`mpx probe run --server <base> --join <token>`，HTTPS 另要 `--fp`），接入后按周期（默认 60 分钟，`reach_interval_minutes`）轮转——到期对象摊进整个周期分批探，不整批突扫（`probeagent.Tick` + `reach.DueSubjects/RotationBatch`）。`mpx ui` 开着时操作机也算一个境内来源。探测端只拿「读目标、回结果」两个权限（`GET /api/reach/targets`、`POST /api/reach/results`、`POST /api/reach/probe`、hello），凭据可轮换、可吊销；在线判定看 `last_seen_at` 是否在三小时内。
 7. 自动剔除只在订阅组装时读时算（`exclusion()`）：开关 `reach_exclude` 开、判定 blocked/down、且境内侧数据新鲜（≤24h）的对象进剔除集，`reach_keeps` 逐对象豁免。剔除不改存档，判定恢复或过期后对象自动回来；外部端点同样按对象剔除。节点列表挂「已剔除 / 保留中」标，外部订阅成员行同。
 8. 质量评级分两段（UC-14）：`POST /api/nodes/{id}/quality` 经 SSH 在节点上跑一段只读探测脚本（出口 IP → ipwho.is → ipapi.is → 可选 AbuseIPDB），把分段输出回传控制面解析打分，存 `node_quality`（每节点一行，重测覆盖）；`POST /api/regrade` 不探测，只用存档分数按（地区, 城市）分组排字母，预览与 `apply:true` 调同一份服务端计算并在 `metadataMu` 下事务写入。字母是订阅里用户看到的节点名的一部分，所以重排只出手动动作，没有周期任务；未测出分的节点保留原字母、占住原位。打分权重与「能力检测不出分数」的立场无关——分数在 `internal/model/quality.go`，用途只是排字母和界面分档，不进体检判定。
+9. 外部端点降级探测（UC-17）：`POST /api/sources/{id}/endpoints/{key}/quality`（`{key}` 为端点指纹）在控制面侧做同一套 IP 查询但不走 SSH——域名由控制面解析（`EgressIP` 是端点声明地址的解析结果，对域名/CDN 端点不等于机场真实出口），存 `external_quality`；`GET` 同名接口与 `GET /api/sources/{id}/quality` 只读存档。外部端点在 regrade 表里以 `kind:"external"`、`source_id`/`source_key` 标识，字母在（来源, 地区, 城市）组内重排——不同来源各自有 A。CLI 对应 `mpx source grade 来源名`，界面由「IP 质量评级」弹窗一并探测。
 
 ## 坑
 

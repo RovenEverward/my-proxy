@@ -62,9 +62,11 @@ type sourcePlanRef struct {
 }
 
 // sourceNodeRef 是外部节点的最小展示字段。Key 是对象身份(UC-12),
-// Excluded 标它当前是否被自动剔除。
+// Excluded 标它当前是否被自动剔除。Name 是清洗后的订阅名(UC-17),
+// RawName 保留上游原名,供界面展开与回溯。
 type sourceNodeRef struct {
 	Name     string `json:"name"`
+	RawName  string `json:"raw_name,omitempty"`
 	Protocol string `json:"protocol"`
 	Key      string `json:"key,omitempty"`
 	Excluded bool   `json:"excluded,omitempty"`
@@ -94,9 +96,15 @@ func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
 	v.NodeCount = len(eps)
 	v.Nodes = make([]sourceNodeRef, 0, len(eps))
 	excl, _ := s.exclusion() // 读不到设置时当没开:可见性是锦上添花,不能拖垮列表
+	extMeta, _ := s.store.ListExternalMetadata(src.ID)
 	for _, ep := range eps {
 		ep.SourceID = src.ID
-		ref := sourceNodeRef{Name: ep.Remark, Protocol: render.ProtocolShort(ep), Key: string(ep.Key())}
+		ref := sourceNodeRef{
+			Name:     resolveExternalRemark(src.Name, extMeta, ep),
+			RawName:  ep.Remark,
+			Protocol: render.ProtocolShort(ep),
+			Key:      string(ep.Key()),
+		}
 		ref.Excluded = excl.excluded(ref.Key)
 		v.Nodes = append(v.Nodes, ref)
 	}
@@ -390,6 +398,10 @@ func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientF
 	if err != nil {
 		return set, err
 	}
+	extMeta, err := s.store.ListExternalMetadata(0)
+	if err != nil {
+		return set, err
+	}
 	for _, src := range sources {
 		var eps []render.Endpoint
 		if len(src.Snapshot) == 0 {
@@ -401,7 +413,7 @@ func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientF
 		}
 		for i, ep := range eps {
 			ep.SourceID, ep.SourceRegion = src.ID, src.Region
-			ep.Remark = src.Name + " · " + ep.Remark
+			ep.Remark = resolveExternalRemark(src.Name, extMeta, ep)
 			ep.AutoRemark = false
 			if excl.on && excl.excluded(string(ep.Key())) {
 				continue // UC-12:不通的外部端点不进入订阅

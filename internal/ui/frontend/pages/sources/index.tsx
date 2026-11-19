@@ -169,7 +169,7 @@ export function SourcesPage() {
                   {isOpen && (members.length ? members.map((member, index) => (
                     <tr className="src-member" key={`${source.id}:${index}`}>
                       <td>
-                        <span className="src-member-name"><FlagText>{member.name}</FlagText></span>
+                        <span className="src-member-name" title={member.raw_name && member.raw_name !== member.name ? `上游原名：${member.raw_name}` : undefined}><FlagText>{member.name}</FlagText></span>
                         <span className="tag src-member-proto-m">{member.protocol}</span>
                       </td>
                       <td>{member.excluded ? <span className="tag x-tag">已剔除</span> : member.kept ? <span className="tag k-tag">保留中</span> : <span className="sub">只读外部节点</span>}</td>
