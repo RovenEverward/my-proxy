@@ -132,7 +132,13 @@ func capabilityRequests(targets []string) ([]capabilityRequest, error) {
 }
 
 func capabilityConfig(ep render.Endpoint) ([]byte, error) {
-	if strings.TrimSpace(ep.Address) == "" || ep.Port < 1 || ep.Port > 65535 || ep.AllowInsecure {
+	if strings.TrimSpace(ep.Address) == "" || ep.Port < 1 || ep.Port > 65535 {
+		return nil, fmt.Errorf("capability probe: invalid address, port, or insecure TLS endpoint")
+	}
+	// QUIC 入站(hy2/tuic)渲染时无条件 AllowInsecure:true —— mpx 给它们签
+	// 自签证书,客户端必须跳过校验;探测只关心出口能力,不验证证书链,
+	// 不该在这一层被拦(ISS-12)。
+	if !ep.Protocol.QUIC() && ep.AllowInsecure {
 		return nil, fmt.Errorf("capability probe: invalid address, port, or insecure TLS endpoint")
 	}
 	if ep.Protocol.QUIC() {

@@ -155,6 +155,9 @@ func TestProbeCapabilitiesQUICContract(t *testing.T) {
 		ep := capabilityEndpoint()
 		ep.Protocol, ep.Network, ep.Security = protocol, model.NetworkUDP, model.SecurityTLS
 		ep.Password, ep.CongestionControl = "secret'$(echo nope)\n\"listen_port\": 0", "cubic"
+		// ISS-12: render/ir.go 对 hy2/tuic 无条件 AllowInsecure:true(自签证书
+		// 必须跳验),探测只关心出口能力,不该在这一层被拦。
+		ep.AllowInsecure = true
 		r := &capabilityRunner{output: capabilityEnvelope("youtube", capabilityResponse{code: 204, url: capabilityYouTubeURL})}
 		if _, err := ProbeCapabilities(context.Background(), r, model.Node{}, ep, []string{"youtube"}); err != nil {
 			t.Fatal(err)
@@ -178,13 +181,12 @@ func TestProbeCapabilitiesQUICContract(t *testing.T) {
 			func(ep *render.Endpoint) { ep.Address = "" },
 			func(ep *render.Endpoint) { ep.Network = model.NetworkTCP },
 			func(ep *render.Endpoint) { ep.Security = model.SecurityNone },
-			func(ep *render.Endpoint) { ep.AllowInsecure = true },
 		} {
 			bad := ep
 			change(&bad)
 			runner := &capabilityRunner{}
 			if _, err := ProbeCapabilities(context.Background(), runner, model.Node{}, bad, []string{"egress"}); err == nil || runner.calls != 0 {
-				t.Fatal("invalid QUIC endpoint reached SSH")
+				t.Fatalf("invalid QUIC endpoint reached SSH: %+v", bad)
 			}
 		}
 		if protocol == model.ProtocolTUIC {
