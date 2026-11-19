@@ -112,16 +112,16 @@ func fetchIPAPI(ctx context.Context, ip, key string) (map[string]bool, string, s
 		u += "&key=" + url.QueryEscape(key)
 	}
 	var out struct {
-		ASN struct {
-			ASN int    `json:"asn"`
-			Org string `json:"org"`
-		} `json:"asn"`
-		IsDatacenter bool `json:"is_datacenter"`
-		IsVPN        bool `json:"is_vpn"`
-		IsProxy      bool `json:"is_proxy"`
-		IsTor        bool `json:"is_tor"`
-		IsAbuser     bool `json:"is_abuser"`
-		IsBogon      bool `json:"is_bogon"`
+		// ipapi.is 的 asn 字段两种形状:免费接口是数字,带 key 的付费
+		// 接口是 {asn,org} 对象。跟节点探测 diagnostics/ip_flags.go 一样
+		// 用 RawMessage 拆开判,不然一种响应把整步打 failed。
+		ASN          json.RawMessage `json:"asn"`
+		IsDatacenter bool            `json:"is_datacenter"`
+		IsVPN        bool            `json:"is_vpn"`
+		IsProxy      bool            `json:"is_proxy"`
+		IsTor        bool            `json:"is_tor"`
+		IsAbuser     bool            `json:"is_abuser"`
+		IsBogon      bool            `json:"is_bogon"`
 	}
 	if err := getJSON(ctx, u, &out); err != nil {
 		step.Status = "failed"
@@ -136,11 +136,25 @@ func fetchIPAPI(ctx context.Context, ip, key string) (map[string]bool, string, s
 		"is_abuser":     out.IsAbuser,
 		"is_bogon":      out.IsBogon,
 	}
-	asn := ""
-	if out.ASN.ASN > 0 {
-		asn = fmt.Sprintf("AS%d", out.ASN.ASN)
+	asn, org := "", ""
+	if len(out.ASN) > 0 && string(out.ASN) != "null" {
+		var num int64
+		var obj struct {
+			ASN int64  `json:"asn"`
+			Org string `json:"org"`
+		}
+		if err := json.Unmarshal(out.ASN, &num); err == nil {
+			if num > 0 {
+				asn = fmt.Sprintf("AS%d", num)
+			}
+		} else if err := json.Unmarshal(out.ASN, &obj); err == nil {
+			if obj.ASN > 0 {
+				asn = fmt.Sprintf("AS%d", obj.ASN)
+			}
+			org = obj.Org
+		}
 	}
-	return flags, asn, out.ASN.Org, step
+	return flags, asn, org, step
 }
 
 func fetchAbuse(ctx context.Context, ip, key string) (*int, model.QualityStep) {
