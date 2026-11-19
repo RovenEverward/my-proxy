@@ -95,10 +95,27 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"对外入口", strconv.Itoa(st.Counts.Hosts)},
 		{"用户", strconv.Itoa(st.Counts.Users)},
 		{"退避中的节点", backoff},
+		{"探测点", probeText(st, now)},
 		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
 		{"设备接入", deviceLoginText(st)},
 	}
+}
+
+// probeText 汇总境内探测点状态。没登记过返回 "-";全在线时写"N 台在线",
+// 有掉线的单独标出来——自动剔除依赖它们一直在,掉了得显眼。
+func probeText(st model.ControlStatus, now time.Time) string {
+	if st.ProbeTotal == 0 {
+		return "-"
+	}
+	base := fmt.Sprintf("%d/%d 离线", st.ProbeOffline, st.ProbeTotal)
+	if st.ProbeOffline == 0 {
+		base = fmt.Sprintf("%d 台在线", st.ProbeTotal)
+	}
+	if st.ProbeLastSeenAt != nil {
+		base += " · 最近上报 " + humanDuration(now.Sub(*st.ProbeLastSeenAt)) + "前"
+	}
+	return base
 }
 
 // versionText 写控制面报的版本。

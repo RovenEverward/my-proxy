@@ -459,16 +459,40 @@ func (s *Server) recomputeSubject(key model.ProbeSubjectKey) error {
 		report, _ = json.Marshal(nc)
 	} else {
 		t := targets[0]
-		report, _ = json.Marshal(reach.ExtCheck{
+		ec := reach.ExtCheck{
 			SubjectKey: string(key), Name: t.Label, CheckedAt: checked,
 			Verdict: verdict, Local: local, CP: remote,
 			Address: t.Address, Port: t.Port, Protocol: t.Protocol,
 			Rows: merged,
-		})
+		}
+		// 对象身份是 "s:<source_id>:<指纹>",顺手补上来源名,reach 列表
+		// 与订阅预览的署名才拿得出来(原来两栏恒空)。
+		if id, ok := parseExternalSubjectID(string(key)); ok {
+			ec.SourceID = id
+			if src, err := s.store.GetSource(id); err == nil {
+				ec.SourceName = src.Name
+			}
+		}
+		report, _ = json.Marshal(ec)
 	}
 	return s.store.SaveSubjectCheck(model.ReachSubjectCheck{
 		SubjectKey: key, CheckedAt: checked, Verdict: verdict, Report: report,
 	})
+}
+
+// parseExternalSubjectID 从外部对象身份 "s:<source_id>:<指纹>" 拆出来源 ID。
+// 不是这个形状或拆不出返回 ok=false。
+func parseExternalSubjectID(key string) (int64, bool) {
+	if !strings.HasPrefix(key, "s:") {
+		return 0, false
+	}
+	rest := key[2:]
+	i := strings.Index(rest, ":")
+	if i <= 0 {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(rest[:i], 10, 64)
+	return id, err == nil
 }
 
 func firstNodeName(targets []reach.Target) string {

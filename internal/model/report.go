@@ -133,4 +133,11 @@ type ControlStatus struct {
 
 	Counts   Counts        `json:"counts"`
 	Backoffs []NodeBackoff `json:"backoffs"`
+
+	// ProbeTotal / ProbeOffline 是 UC-18 境内探测点的健康面:自动剔除
+	// 依赖它们一直回数据,离线时剔除判断会停在过期结论上。
+	// ProbeLastSeenAt 是最近一次上报时刻(没上报过为 nil)。
+	ProbeTotal      int        `json:"probe_total"`
+	ProbeOffline    int        `json:"probe_offline"`
+	ProbeLastSeenAt *time.Time `json:"probe_last_seen_at,omitempty"`
 }
