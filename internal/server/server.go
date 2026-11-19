@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -124,7 +125,12 @@ type Server struct {
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
 	subCache subCache
-	ruleSets ruleSetCache // 「测试一个网址」用的上游规则集缓存,见 routing_match.go
+
+	// templateHashCache 缓存「输入指纹 → 渲染出的节点模板哈希」(ISS-04):
+	// 指纹由节点+入站+镜像算出,输入变指纹变,不需要主动失效。
+	templateHashMu    sync.Mutex
+	templateHashCache map[string]string
+	ruleSets          ruleSetCache // 「测试一个网址」用的上游规则集缓存,见 routing_match.go
 
 	// subPulls 是订阅拉取记录的写库节流状态(按 user id 记上次写入时间),
 	// 见 recordSubPull。只在内存里,重启即清空。

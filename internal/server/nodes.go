@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -57,10 +60,28 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
+	// ISS-04:模板漂移要的入站/镜像一次批量拿回来,不再逐台查两遍。
+	allInbounds, err := s.store.ListInbounds(0)
+	if err != nil {
+		return nil, err
+	}
+	allMirrors, err := s.store.ListSubMirrors(0)
+	if err != nil {
+		return nil, err
+	}
+	inboundsByNode := map[int64][]model.Inbound{}
+	for _, in := range allInbounds {
+		inboundsByNode[in.NodeID] = append(inboundsByNode[in.NodeID], in)
+	}
+	mirrorsByNode := map[int64][]model.SubMirror{}
+	for _, m := range allMirrors {
+		mirrorsByNode[m.NodeID] = append(mirrorsByNode[m.NodeID], m)
+	}
+
 	views := make([]model.NodeView, 0, len(nodes))
 	for _, n := range nodes {
 		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID], Display: model.NodeDisplay(meta[n.ID])}
-		s.markTemplateDrift(&v)
+		s.markTemplateDrift(&v, inboundsByNode[n.ID], mirrorsByNode[n.ID])
 		if st, ok := statuses[n.ID]; ok {
 			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
 			copied := st
@@ -71,33 +92,61 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	return views, nil
 }
 
-// markTemplateDrift 现算一台节点的模板漂移:按现在这版控制面的写法渲染出的模板
+// markTemplateDrift 算一台节点的模板漂移:按现在这版控制面的写法渲染出的模板
 // 哈希,和这台节点下发时记下的不一致,就置上 TemplateDrift。
 // 模板漂移:新版本改了节点配置的写法,应用一次才生效(和「有改动未应用」是两回事)。
 //
+// ISS-04:渲染结果按「节点+入站+镜像」的指纹缓存(templateHashCache),
+// 输入指纹不变就不重渲染 —— 节点页每次刷新都过一遍纯 CPU 渲染是白跑。
 // 没在这一版上下发过(存着的模板哈希是空串)不算飘移,否则每台节点升级控制面后
 // 都会先亮一次;读入站或渲染失败只记日志、留 false,不该让列出节点整个失败。
-func (s *Server) markTemplateDrift(v *model.NodeView) {
+func (s *Server) markTemplateDrift(v *model.NodeView, inbounds []model.Inbound, mirrors []model.SubMirror) {
 	if v.DeployedTemplateHash == "" {
 		return
 	}
-	inbounds, err := s.store.ListInbounds(v.ID)
-	if err != nil {
-		s.logger.Warn("算节点模板漂移失败:读不到它的入站", "node", v.Name, "error", err)
-		return
-	}
-	hash, err := func() (string, error) {
-		mirrors, merr := s.store.ListSubMirrors(v.Node.ID)
-		if merr != nil {
-			return "", merr
-		}
-		return control.TemplateHash(v.Node, inbounds, mirrors)
-	}()
+	fp := templateInputsFingerprint(v.Node, inbounds, mirrors)
+	hash, err := s.cachedTemplateHash(fp, v.Node, inbounds, mirrors)
 	if err != nil {
 		s.logger.Warn("算节点模板漂移失败:渲染不出配置模板", "node", v.Name, "error", err)
 		return
 	}
 	v.TemplateDrift = hash != v.DeployedTemplateHash
+}
+
+// templateInputsFingerprint 是模板渲染输入的指纹:节点对象、它的入站、
+// 它的订阅镜像三者任一变化,指纹就变,缓存自然失效 —— 不需要主动失效。
+// DeployedTemplateHash 这类「结果字段」也在指纹里:下发会改它,缓存重算一次。
+func templateInputsFingerprint(n model.Node, inbounds []model.Inbound, mirrors []model.SubMirror) string {
+	raw, _ := json.Marshal(struct {
+		N model.Node        `json:"n"`
+		I []model.Inbound   `json:"i"`
+		M []model.SubMirror `json:"m"`
+	}{n, inbounds, mirrors})
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// cachedTemplateHash 按输入指纹拿渲染出的模板哈希:命中直接用,没中才渲染。
+// 渲染是纯 CPU(不用 ssh、不用查库),缓存只为省 CPU;指纹就是失效键。
+func (s *Server) cachedTemplateHash(fp string, n model.Node, inbounds []model.Inbound, mirrors []model.SubMirror) (string, error) {
+	s.templateHashMu.Lock()
+	if s.templateHashCache == nil {
+		s.templateHashCache = map[string]string{}
+	}
+	if h, ok := s.templateHashCache[fp]; ok {
+		s.templateHashMu.Unlock()
+		return h, nil
+	}
+	s.templateHashMu.Unlock()
+
+	hash, err := control.TemplateHash(n, inbounds, mirrors)
+	if err != nil {
+		return "", err
+	}
+	s.templateHashMu.Lock()
+	s.templateHashCache[fp] = hash
+	s.templateHashMu.Unlock()
+	return hash, nil
 }
 
 // freshNodeStatus 现场查一次并落库。
@@ -206,7 +255,17 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	if m, err := s.store.GetLocationMetadata("nodes", n.ID); err == nil {
 		view.Display = model.NodeDisplay(m)
 	}
-	s.markTemplateDrift(&view)
+	inbounds, err := s.store.ListInbounds(n.ID)
+	if err != nil {
+		s.writeStoreError(w, err, "入站")
+		return
+	}
+	mirrors, err := s.store.ListSubMirrors(n.ID)
+	if err != nil {
+		s.writeStoreError(w, err, "订阅镜像")
+		return
+	}
+	s.markTemplateDrift(&view, inbounds, mirrors)
 	view.Capabilities, err = s.capabilityResults(*n, time.Now())
 	if err != nil {
 		s.writeStoreError(w, err, "节点能力")
