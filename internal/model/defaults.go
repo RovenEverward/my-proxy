@@ -1,6 +1,9 @@
 package model
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // 只在配置里留空、由使用方补默认值的字段,集中在这里给默认值,
 // 免得渲染、下发、CLI 三处各写一份。
@@ -88,4 +91,38 @@ func (i *Inbound) TagOrDefault() string {
 		return i.Tag
 	}
 	return string(i.Protocol) + "-" + strconv.Itoa(i.Port)
+}
+
+// DefaultTLSCertPaths 是 QUIC + TLS 入站没给证书路径时的默认值。
+//
+// 路径放在 /etc/mpx/sing-box 下(第二核心的领地,和 config.json 同级),文件名
+// 按 tag 来 —— tag 是入站在这台节点上的唯一身份,一眼能对回库里那条记录。
+// slug 只留安全字符:tag 是用户输入,别的东西原样进文件名,写出来的路径
+// 自己都可能认不出来。
+//
+// 只给 QUIC(hysteria2 / tuic)默认。非 QUIC 的 TLS(vless+tls 这类 CDN 入口)
+// 证书归 CDN 侧管,路径由操作者显式指定,控制面不替他挑。
+func (i *Inbound) DefaultTLSCertPaths() (cert, key string) {
+	base := "/etc/mpx/sing-box/" + slugify(i.TagOrDefault())
+	return base + "-cert.pem", base + "-key.pem"
+}
+
+// slugify 把任意 tag 收成文件名安全字符:字母数字和 . _ - 原样留,
+// 别的压成 -。收干净是空时(例如 tag 是空串)给一个兜底,免得文件名
+// 只剩扩展名。
+func slugify(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "inbound"
+	}
+	return b.String()
 }

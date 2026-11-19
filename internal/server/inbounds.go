@@ -98,6 +98,12 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.NodeID = old.NodeID
+	// 没给 tag 就沿用原来的:换了 tag 等于在节点上换了一个入站,老的那个不会被删。
+	// 归位放在校验之前:QUIC 的默认证书路径按最终 tag 分配(见 validateInbound),
+	// 校验时 tag 必须是落库的那一份。
+	if in.Tag == "" {
+		in.Tag = old.TagOrDefault()
+	}
 	if err := ensureReality(&in, old); err != nil {
 		s.writeStoreError(w, err, "REALITY 密钥")
 		return
@@ -109,10 +115,6 @@ func (s *Server) handleUpdateInbound(w http.ResponseWriter, r *http.Request) {
 	if msg := validateInbound(&in); msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
-	}
-	// 没给 tag 就沿用原来的:换了 tag 等于在节点上换了一个入站,老的那个不会被删。
-	if in.Tag == "" {
-		in.Tag = old.TagOrDefault()
 	}
 	if err := s.store.UpdateInbound(&in); err != nil {
 		s.writeStoreError(w, err, "入站")

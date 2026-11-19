@@ -865,6 +865,74 @@ func TestInboundValidation(t *testing.T) {
 	}
 }
 
+// QUIC 的 TLS 证书路径可以省略:控制面自签、按 tag 分一份默认路径。这是
+// 「mpx inbound add --protocol hysteria2 --security tls」不填 --cert-file 也
+// 能建出来的那条路;非 QUIC 的 TLS(vless+tls 这类 CDN 入口)仍要显式路径,
+// 证书归 CDN 侧管,控制面不替他挑。
+func TestInboundQUICAutoCertPaths(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("hk", "node.example.com")
+
+	t.Run("hy2 省略证书路径自动分配", func(t *testing.T) {
+		code, data := e.api("POST", "/api/inbounds", model.Inbound{
+			NodeID: n.ID, Protocol: model.ProtocolHysteria2, Port: 8444,
+			Network: model.NetworkUDP, Security: model.SecurityTLS, SNI: "www.apple.com",
+		})
+		if code != http.StatusCreated {
+			t.Fatalf("建 hy2 入站: got %d %s", code, data)
+		}
+		got := decodeJSON[model.Inbound](t, data)
+		if got.CertFile != "/etc/mpx/sing-box/hysteria2-8444-cert.pem" {
+			t.Errorf("cert 默认路径 = %q", got.CertFile)
+		}
+		if got.KeyFile != "/etc/mpx/sing-box/hysteria2-8444-key.pem" {
+			t.Errorf("key 默认路径 = %q", got.KeyFile)
+		}
+		if got.Tag != "hysteria2-8444" {
+			t.Errorf("tag = %q,应为协议-端口", got.Tag)
+		}
+	})
+
+	t.Run("tuic 省略证书路径自动分配", func(t *testing.T) {
+		code, data := e.api("POST", "/api/inbounds", model.Inbound{
+			NodeID: n.ID, Protocol: model.ProtocolTUIC, Port: 8445, Tag: "tuic-8445",
+			Network: model.NetworkUDP, Security: model.SecurityTLS, SNI: "www.apple.com",
+		})
+		if code != http.StatusCreated {
+			t.Fatalf("建 tuic 入站: got %d %s", code, data)
+		}
+		got := decodeJSON[model.Inbound](t, data)
+		if got.CertFile != "/etc/mpx/sing-box/tuic-8445-cert.pem" {
+			t.Errorf("cert 默认路径 = %q", got.CertFile)
+		}
+	})
+
+	t.Run("hy2 显式路径保留原样", func(t *testing.T) {
+		code, data := e.api("POST", "/api/inbounds", model.Inbound{
+			NodeID: n.ID, Protocol: model.ProtocolHysteria2, Port: 8446,
+			Network: model.NetworkUDP, Security: model.SecurityTLS,
+			CertFile: "/custom/cert.pem", KeyFile: "/custom/key.pem",
+		})
+		if code != http.StatusCreated {
+			t.Fatalf("建显式路径入站: got %d %s", code, data)
+		}
+		got := decodeJSON[model.Inbound](t, data)
+		if got.CertFile != "/custom/cert.pem" {
+			t.Errorf("显式路径被覆盖成 %q", got.CertFile)
+		}
+	})
+
+	t.Run("非 QUIC 的 TLS 仍要显式路径", func(t *testing.T) {
+		code, data := e.api("POST", "/api/inbounds", model.Inbound{
+			NodeID: n.ID, Protocol: model.ProtocolVLESS, Port: 8447,
+			Network: model.NetworkTCP, Security: model.SecurityTLS,
+		})
+		if code != http.StatusBadRequest {
+			t.Fatalf("vless+tls 无证书路径: got %d want 400: %s", code, data)
+		}
+	})
+}
+
 func TestUsernameValidation(t *testing.T) {
 	e := newEnv(t)
 	for _, name := range []string{"", "has space", "中文", strings.Repeat("a", 65), "a/b"} {

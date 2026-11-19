@@ -259,6 +259,16 @@ func PutFile(ctx context.Context, r Runner, n model.Node, p string, content []by
 	return err
 }
 
+// PutFileMode 同 PutFile,但把远端文件压成指定权限。
+//
+// 证书(0644)和私钥(0600)的权限是约定的一部分:sing-box 以专门账户跑时,
+// 证书要能读;私钥留在 root 手里。默认值(私钥)与旧 PutFile 的 umask 077 一致,
+// 显式写死是让权限不再吃调用处的 umask 运气。
+func PutFileMode(ctx context.Context, r Runner, n model.Node, p string, content []byte, mode string) error {
+	_, err := r.RunWithInput(ctx, n, putFileScript(p)+fmt.Sprintf(" && chmod %s %s", shellQuote(mode), shellQuote(p)), content)
+	return err
+}
+
 // putFileScript 是写远端文件用的那段脚本,PutFile 与 PutFileAs 共用一份。
 func putFileScript(p string) string {
 	return fmt.Sprintf("umask 077 && mkdir -p %s && cat > %s && mv %s %s",

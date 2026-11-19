@@ -25,11 +25,20 @@ func TestQUICValidation(t *testing.T) {
 			t.Fatalf("congestion: %+v", in)
 		}
 	}
+	// 不给证书路径的 QUIC + TLS 入站:合法,且当场按 tag 分配默认路径。
+	// 这是 UC-09 的「省略 --cert-file 也能建出来」的校验层。
+	for _, p := range []model.Protocol{model.ProtocolHysteria2, model.ProtocolTUIC} {
+		in := model.Inbound{NodeID: 1, Protocol: p, Port: 443}
+		if msg := validateInbound(&in); msg != "" {
+			t.Fatalf("QUIC 空证书路径被拒: %s", msg)
+		}
+		if in.CertFile == "" || in.KeyFile == "" {
+			t.Fatalf("QUIC 空证书路径未自动分配: %+v", in)
+		}
+	}
 	cases := []func(*model.Inbound){
 		func(in *model.Inbound) { in.Network = model.NetworkTCP },
 		func(in *model.Inbound) { in.Security = model.SecurityNone },
-		func(in *model.Inbound) { in.CertFile = "" },
-		func(in *model.Inbound) { in.KeyFile = "" },
 		func(in *model.Inbound) { in.Flow = "xtls-rprx-vision" },
 		func(in *model.Inbound) { in.Mux = true },
 		func(in *model.Inbound) { in.Fragment = true },
