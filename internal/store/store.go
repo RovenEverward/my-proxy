@@ -391,6 +391,10 @@ func (s *Store) migrate() error {
 	if err := s.migrateQuality(); err != nil {
 		return err
 	}
+	// UC-17 外部端点清洗层与降级探测存档。
+	if err := s.migrateExternal(); err != nil {
+		return err
+	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
 	return s.migratePlans()
 }

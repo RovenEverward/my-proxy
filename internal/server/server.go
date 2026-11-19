@@ -94,6 +94,9 @@ type Server struct {
 	logger        *slog.Logger
 	mux           *http.ServeMux
 	nodeOps       NodeOps
+	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
+	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
+	extProber     externalProber
 	status        StatusSource
 	backoff       BackoffOps
 	updates       UpdateSource

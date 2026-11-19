@@ -851,7 +851,7 @@ test("节点页签切换:自建列表不混外部节点,外部订阅页签按来
     await new Promise(r => setTimeout(r, 200));
   }
   expect(detail.node_count).toBe(2);
-  expect((detail.nodes || []).map(n => n.name)).toEqual(["ext-jp-tokyo", "ext-sg"]);
+  expect((detail.nodes || []).map(n => n.name)).toEqual(["页面源 · 🇯🇵 日本 A", "页面源 · 🇸🇬 新加坡 A"]);
   try {
     await login(page, env);
     await page.goto(env.origin + "/#nodes");
@@ -876,8 +876,8 @@ test("节点页签切换:自建列表不混外部节点,外部订阅页签按来
     await group.locator("[data-act=source-expand]").click();
     const members = page.locator("tr.src-member");
     await expect(members).toHaveCount(2);
-    await expect(members.first()).toContainText("ext-jp-tokyo");
-    await expect(members.nth(1)).toContainText("ext-sg");
+    await expect(members.first()).toContainText("日本 A");
+    await expect(members.nth(1)).toContainText("新加坡 A");
     await expect(members.nth(1)).toContainText(/ss/i);
     // 成员行不可点、不带节点动作。
     await expect(members.first().locator("[data-act]")).toHaveCount(0);

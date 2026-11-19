@@ -34,9 +34,10 @@ export type SourceFormat = typeof SOURCE_FORMATS[number][0];
 export interface SubscriptionSource {
   id: number; name: string; enabled: boolean; revision: number; interval_seconds: number;
   region?: string; url_masked?: string; refreshing: boolean; node_count: number;
-  // nodes 是快照里的成员名单(显示名+协议),旧控制面没有时回退为空。
+  // nodes 是快照里的成员名单:name 是清洗后的订阅名(UC-17),raw_name 是
+  // 上游原名(可回溯);旧控制面没有 nodes 时回退为空。
   // key 是对象身份(UC-12),excluded 标它当前是否被自动剔除。
-  nodes?: { name: string; protocol: string; key?: string; excluded?: boolean; kept?: boolean }[];
+  nodes?: { name: string; raw_name?: string; protocol: string; key?: string; excluded?: boolean; kept?: boolean }[];
   // grants 是已授权用户名列表(按需新增字段),旧控制面未返回时前端降级从抽屉单独读。
   grants?: string[];
   // plan_grants 是按套餐授权的 {id,name} 名单;旧控制面未返回时按空数组处理。

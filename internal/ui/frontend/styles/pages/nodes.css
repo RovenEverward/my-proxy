@@ -21,3 +21,5 @@ tr:hover .row-btns,tr:focus-within .row-btns{opacity:1}
 .reach-r{display:inline-flex;align-items:center;gap:6px;min-width:96px;flex:1;justify-content:flex-end}
 .reach-r .lat{font-family:var(--mono);font-size:var(--ui-font-size-meta);color:var(--muted)}
 .reach-legend{margin:14px 6px 0;padding-top:10px;border-top:1px solid var(--ui-border-subtle);font-size:var(--ui-font-size-caption);color:var(--muted);line-height:1.6}
+/* IP 质量评级对照表列多,420px 默认模态放不下「改名/备注」,放宽一档 */
+.modal:has(#rg-table){width:min(620px,calc(100vw - 32px))}
