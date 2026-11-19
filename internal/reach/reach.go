@@ -9,6 +9,9 @@
 //   - TCP:握手成功=可达,拒绝=不可达(拒绝),超时=不可达(超时),其余错误=未知。
 //   - UDP:收到应用回包=可达,ICMP 端口不可达=不可达,超时=未知 ——
 //     UDP 服务端收到不认识的包可以合法地沉默,所以 UDP 超时只能算未知,不能算不可达。
+//     QUIC 栈(TUIC/Hysteria2)例外:它们的探测负载是不支持版本号的 QUIC
+//     Initial,监听器必须回 Version Negotiation,所以「UDP 有回包」对这个
+//     家族就是确定性的存活信号,不再是「可能沉默」。
 package reach
 
 import (
@@ -72,7 +75,18 @@ func (t Target) udp() bool {
 		return true
 	}
 	switch t.Protocol {
-	case "hysteria2", "tuic", "wireguard", "shadowsocks":
+	case "hysteria2", "tuic", "wireguard":
+		return true
+	}
+	return false
+}
+
+// quic 说该目标底层是 QUIC 栈(TUIC / Hysteria2):裸 UDP 探针探不出活
+// ——服务端只回合法握手,扔随机字节过去永远静默,只有 QUIC 版本协商
+// 能逼它开口(见 probeUDP)。
+func (t Target) quic() bool {
+	switch t.Protocol {
+	case "tuic", "hysteria2":
 		return true
 	}
 	return false
@@ -298,9 +312,16 @@ func probeUDP(ctx context.Context, t Target, timeout, wait time.Duration) *Cell 
 	}
 	defer conn.Close()
 	start := time.Now()
+	// QUIC 栈(TUIC/hy2)探活:发一个带「不支持的版本号」的 QUIC Initial 头,
+	// 协议栈必须回 Version Negotiation —— 一次回包就够证明监听器活着,
+	// 不需要凭据、不引入 QUIC 依赖。random 负载它们只会静默丢,永远 unknown。
+	payload := udpPayload
+	if t.quic() {
+		payload = quicVNProbe()
+	}
 	// 写两次:有的栈要等第二次写才报 ICMP 端口不可达。
 	for i := 0; i < 2; i++ {
-		if _, err = conn.Write(udpPayload); err != nil {
+		if _, err = conn.Write(payload); err != nil {
 			return &Cell{Status: classifyDial(err), Error: err.Error()}
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -323,6 +344,22 @@ func probeUDP(ctx context.Context, t Target, timeout, wait time.Duration) *Cell 
 	default:
 		return &Cell{Status: CellUnknown, Error: err.Error()}
 	}
+}
+
+// quicVNProbe 造一个 QUIC Initial:long header + 版本 0x0a0a0a01(保留位、
+// 任何实现都不支持)+ 8 字节 DCID,补齐 1200 字节 —— RFC 9000 要求服务
+// 端丢弃小于 1200 的 Initial,不补满根本走不到版本协商。收到的栈必须用
+// Version Negotiation 答复:有监听器就有回包。
+func quicVNProbe() []byte {
+	buf := make([]byte, 0, 1200)
+	buf = append(buf, 0xC0)                                           // long header + fixed bit + type=Initial
+	buf = append(buf, 0x0a, 0x0a, 0x0a, 0x01)                         // unsupported version
+	buf = append(buf, 0x08)                                           // DCID len
+	buf = append(buf, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08) // DCID
+	buf = append(buf, 0x00)                                           // SCID len
+	buf = append(buf, 0x40, 0x40)                                     // packet number len (varint 0)
+	buf = append(buf, make([]byte, 1200-len(buf))...)
+	return buf
 }
 
 // classifyDial 把 dial 错误归到判定档。
