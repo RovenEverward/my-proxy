@@ -34,7 +34,8 @@ const tick = time.Minute
 // 自动剔除关着时(Exclude=false)境内侧不探 —— 判定不为任何人服务,
 // 白探只是给探测端与目标加无意义流量。控制面侧欠账照样清:
 // 那批数据也供展示,而且成本在控制面不在探测端。
-func Tick(ctx context.Context, call Caller) error {
+// logf 用来报非致命警告(如金丝雀判定路径被代理),nil 时静默。
+func Tick(ctx context.Context, call Caller, logf func(string, ...any)) error {
 	raw, err := call("GET", "/api/reach/targets", nil)
 	if err != nil {
 		return err
@@ -56,6 +57,14 @@ func Tick(ctx context.Context, call Caller) error {
 	if rt.Exclude {
 		due := reach.DueSubjects(rt.Targets, rt.Freshness, reach.SideDomestic, now, interval)
 		batch := reach.RotationBatch(len(due), interval, tick)
+		if batch > 0 && !reach.TrustedPath(ctx, 0) {
+			// ISS-14:金丝雀能探通说明本机出机路径被代理接管,境内侧结果
+			// 全是假的。整轮不写回,只告警 —— 静默产假数据比没数据更糟。
+			if logf != nil {
+				logf("境内探测路径被代理接管(金丝雀目标可达),这一轮境内结果不回存;检查本机代理/TUN")
+			}
+			batch = 0
+		}
 		var subjects []reach.SourceCheck
 		for _, key := range due[:min(batch, len(due))] {
 			res := reach.ProbeKeyed(ctx, bySubject[key], reach.Options{})
@@ -149,9 +158,10 @@ func cpRound(call Caller, keys []string) error {
 
 // Loop 是常驻轮转:先跑一轮,之后每 tick 一次,直到 ctx 结束。
 // 单轮出错只记日志不退出 —— 探测端的价值在「一直在」,不在「一次都不能错」。
-func Loop(ctx context.Context, call Caller, onError func(error)) {
+// logf 接 Tick 的非致命警告,nil 时静默。
+func Loop(ctx context.Context, call Caller, logf func(string, ...any), onError func(error)) {
 	for {
-		if err := Tick(ctx, call); err != nil && onError != nil {
+		if err := Tick(ctx, call, logf); err != nil && onError != nil {
 			onError(err)
 		}
 		select {

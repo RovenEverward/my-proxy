@@ -249,6 +249,34 @@ func ProbeKeyed(ctx context.Context, targets []Target, opts Options) map[string]
 	return results
 }
 
+// CanaryTargets 是境内探测端的金丝雀清单:境内直连不可能探通的目标。
+// 境内侧拨测若把其中任一目标探通,说明本机出机路径被代理接管,那一侧
+// 的「可达」结果不可信,不该回存 —— ISS-14。
+var CanaryTargets = []string{"www.google.com:443", "www.youtube.com:443"}
+
+// TrustedPath 检查本机出机路径是不是干净的境内直连:逐个对 CanaryTargets
+// 做 TCP 拨测,任一可达即不可信。只覆盖 TCP —— 接管代理对 UDP 的支持参差,
+// TCP 足够暴露「全量被接管」这一态;一个都探不通才算可信。
+func TrustedPath(ctx context.Context, timeout time.Duration) bool {
+	return trustedPath(ctx, timeout, CanaryTargets)
+}
+
+// trustedPath 与 TrustedPath 同义,金丝雀清单由调用方给(测试用)。
+func trustedPath(ctx context.Context, timeout time.Duration, addrs []string) bool {
+	if timeout <= 0 {
+		timeout = 2500 * time.Millisecond
+	}
+	for _, addr := range addrs {
+		d := net.Dialer{Timeout: timeout}
+		conn, err := d.DialContext(ctx, "tcp", addr)
+		if err == nil {
+			_ = conn.Close()
+			return false
+		}
+	}
+	return true
+}
+
 func probeTCP(ctx context.Context, t Target, timeout time.Duration) *Cell {
 	addr := net.JoinHostPort(t.Address, fmt.Sprint(t.Port))
 	d := net.Dialer{Timeout: timeout}

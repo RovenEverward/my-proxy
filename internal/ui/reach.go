@@ -241,7 +241,7 @@ func (s *Server) ReachRotation(ctx context.Context, logf func(string, ...any)) {
 		}
 		return reachCall[json.RawMessage](tr, up.String(), token, method, path, body)
 	}
-	probeagent.Loop(ctx, call, func(err error) {
+	probeagent.Loop(ctx, call, logf, func(err error) {
 		if logf != nil {
 			logf("轮转探测这一轮失败: %v", err)
 		}
