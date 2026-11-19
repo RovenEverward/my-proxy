@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -318,7 +319,13 @@ func (s *Server) handleReachResults(w http.ResponseWriter, r *http.Request) {
 			srcID = req.SourceID
 		}
 		if srcID == "" {
-			srcID = scope // 兼容:没报身份的来源按方位记账
+			// 探测点凭据报的结果按探测点身份记账(ISS-14):不能与其他
+			// 来源混记为方位名,否则操作机的假数据会覆盖真探测点的行。
+			if pid, ok := r.Context().Value(probeIDKey).(int64); ok && pid > 0 {
+				srcID = fmt.Sprintf("probe:%d", pid)
+			} else {
+				srcID = scope // 兼容:没报身份的来源按方位记账
+			}
 		}
 		key := model.ProbeSubjectKey(sc.SubjectKey)
 		sum := sc.Summary
@@ -437,6 +444,11 @@ func (s *Server) recomputeSubject(key model.ProbeSubjectKey) error {
 	remote := reach.FoldSources(cp)
 	verdict := reach.Verdict(local, remote)
 	merged := reach.MergeKeyed(targets, domRes, cpRes)
+	if checked.IsZero() {
+		// 全部来源行都过了新鲜窗:对象还在名册,落一条以现在为时间的
+		// unknown 存档,而不是因为缺时间写不进(ISS-14)。
+		checked = now
+	}
 
 	var report []byte
 	if nodeID, ok := model.ParseNodeSubjectKey(key); ok {

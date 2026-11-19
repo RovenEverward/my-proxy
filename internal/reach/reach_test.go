@@ -37,3 +37,23 @@ func TestProbeMapsBackToInboundID(t *testing.T) {
 		t.Errorf("入站 8 应探测不通: %+v", r)
 	}
 }
+
+// TestTrustedPathUsesCanary 验证金丝雀语义:清单里的目标能探通即路径不可信
+// (被代理接管),一个都探不通才可信(ISS-14)。
+func TestTrustedPathUsesCanary(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	live := ln.Addr().String()
+	// 占一个本机没监听的高位端口当「不通」目标。
+	dead := "127.0.0.1:1"
+	ctx := context.Background()
+	if trustedPath(ctx, time.Second, []string{dead, live}) {
+		t.Fatal("金丝雀里有一个能探通,路径应判不可信")
+	}
+	if !trustedPath(ctx, time.Second, []string{dead}) {
+		t.Fatal("金丝雀全探不通,路径应判可信")
+	}
+}

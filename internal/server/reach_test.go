@@ -436,3 +436,95 @@ func TestInterleavedResultShapesKeepBothSides(t *testing.T) {
 		t.Errorf("判定 = %q,想要 ok", got.Verdict)
 	}
 }
+
+// TestProbeResultsRecordedUnderProbeID 是 ISS-14 的回归:探测点凭据回存的
+// 结果必须按 probe:<id> 记账,不能混进方位名「domestic」—— 不然操作机
+// 的假数据会覆盖真探测点的行。
+func TestProbeResultsRecordedUnderProbeID(t *testing.T) {
+	e := newEnv(t)
+	n, in, _ := mkReachFixture(t, e)
+	key := string(model.NodeSubjectKey(n.ID))
+	tid := "inbound:" + strconv.FormatInt(in.ID, 10)
+
+	code, body := e.api("POST", "/api/probes", map[string]string{"name": "tencent"})
+	if code != http.StatusCreated {
+		t.Fatalf("登记探测点: %d %s", code, body)
+	}
+	var created struct {
+		JoinToken string `json:"join_token"`
+	}
+	_ = json.Unmarshal(body, &created)
+	code, body = e.request("POST", "/api/probes/hello", map[string]string{
+		"join_token": created.JoinToken}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("hello: %d %s", code, body)
+	}
+	var hi struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(body, &hi)
+
+	auth := map[string]string{"Authorization": "Bearer " + hi.Token}
+	code, body = e.request("POST", "/api/reach/results", map[string]any{
+		"checked_at": time.Now().UTC(), "scope": "domestic",
+		"subjects": []map[string]any{{"subject_key": key, "scope": "domestic",
+			"results": map[string]*reach.Result{tid: okResult()}}},
+	}, auth)
+	if code != http.StatusOK {
+		t.Fatalf("探测点回写: %d %s", code, body)
+	}
+	rows, err := e.st.ListSourceChecks(model.ProbeSubjectKey(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, r := range rows {
+		if r.SourceID == "probe:1" {
+			found = true
+		}
+		if r.SourceID == "domestic" {
+			t.Fatalf("探测点回写不该落到方位名 domestic 下")
+		}
+	}
+	if !found {
+		t.Fatalf("来源行里没有 probe:1: %+v", rows)
+	}
+}
+
+// TestRecomputeAllStaleWritesUnknown 是 ISS-14 的回归:对象仍在名册但全部
+// 来源行都过了新鲜窗时,重算应落 unknown 存档(以现在为时间),而不是 500。
+func TestRecomputeAllStaleWritesUnknown(t *testing.T) {
+	e := newEnv(t)
+	n, in, _ := mkReachFixture(t, e)
+	key := string(model.NodeSubjectKey(n.ID))
+	tid := "inbound:" + strconv.FormatInt(in.ID, 10)
+
+	old := time.Now().UTC().Add(-25 * time.Hour)
+	code, body := e.api("POST", "/api/reach/results", map[string]any{
+		"checked_at": old, "scope": "domestic",
+		"subjects": []map[string]any{{"subject_key": key, "scope": "domestic",
+			"results": map[string]*reach.Result{tid: okResult()}}},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("全过期来源回写: %d %s", code, body)
+	}
+	checks, err := e.st.ListSubjectChecks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *model.ReachSubjectCheck
+	for i := range checks {
+		if string(checks[i].SubjectKey) == key {
+			got = &checks[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("全过期时也应落存档")
+	}
+	if got.Verdict != "unknown" {
+		t.Fatalf("全过期判定 = %q,想要 unknown", got.Verdict)
+	}
+	if time.Since(got.CheckedAt) > time.Minute {
+		t.Fatalf("存档时间应是重算当下,得到 %v 前", time.Since(got.CheckedAt))
+	}
+}

@@ -63,7 +63,14 @@ var nodeCheckCmd = &cobra.Command{
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), reachCheckTimeout)
 		defer cancel()
-		local := reach.Probe(ctx, probe.Targets, reach.Options{})
+		// ISS-14:本机出机路径被代理接管时,本机侧探测全是假可达,
+		// 直接跳过,别拿假数据写回控制面。
+		var local map[int64]*reach.Result
+		if reach.TrustedPath(ctx, 0) {
+			local = reach.Probe(ctx, probe.Targets, reach.Options{})
+		} else {
+			fmt.Fprintln(cmd.ErrOrStderr(), "警告: 本机出机路径被代理接管(金丝雀目标可达),跳过本机侧探测;控制面侧结果照常,判定按一侧未知处理。")
+		}
 
 		// 按节点合并明细、算判定。
 		checks := make([]reach.NodeCheck, 0, len(nodes))

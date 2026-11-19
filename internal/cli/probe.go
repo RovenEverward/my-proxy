@@ -295,11 +295,14 @@ var probeRunCmd = &cobra.Command{
 		tr := pin.Transport(cfg.Fingerprint)
 		c := &probeHTTP{server: strings.TrimSuffix(cfg.Server, "/"), token: cfg.Token, http: &http.Client{Transport: tr}}
 		call := func(method, path string, body any) ([]byte, error) { return c.call(method, path, body) }
+		logf := func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "探测警告: "+format+"\n", args...)
+		}
 		if probeRunFlags.once {
-			return probeagent.Tick(cmd.Context(), call)
+			return probeagent.Tick(cmd.Context(), call, logf)
 		}
 		fmt.Printf("探测点已就绪,连的是 %s。按控制面周期轮转探测,Ctrl-C 结束。\n", cfg.Server)
-		probeagent.Loop(cmd.Context(), call, func(err error) {
+		probeagent.Loop(cmd.Context(), call, logf, func(err error) {
 			fmt.Fprintf(os.Stderr, "这一轮探测失败: %v\n", err)
 		})
 		return nil
