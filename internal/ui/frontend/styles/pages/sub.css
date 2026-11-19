@@ -101,7 +101,7 @@
 
 /* 第二段:订阅名里的「用户名」标签 */
 .b5-tok{display:block;height:auto;min-height:34px;padding:6px 10px;line-height:22px;white-space:pre-wrap;cursor:text}
-.b5-tok:focus{box-shadow:0 0 0 3px var(--ring);background:var(--canvas)}
+.b5-tok:focus{box-shadow:0 0 0 3px var(--in-ring);background:var(--canvas)}
 .tk{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;margin:0 1px;border-radius:6px;background:var(--ink);color:var(--canvas);font:550 var(--ui-font-size-control)/22px var(--sans);vertical-align:top;user-select:all}
 .tk-add{border:0;cursor:pointer;background:var(--stone);color:var(--ink);margin-left:4px}.tk-add:hover{background:var(--hover)}.tk-add svg{width:12px;height:12px}
 .b5-res{font-size:var(--ui-font-size-control);color:var(--ink2)}.b5-res b{color:var(--ink);font-weight:600}

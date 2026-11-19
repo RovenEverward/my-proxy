@@ -1,11 +1,11 @@
-ui-src 58f24f106a08bca2f96da3ad68bf50ddde52cc95bfd8b83c3c7670a659053f00
+ui-src c94e92ef087864105bafdcd6c0c35e29cf1ab72a43fd997f9cf6a580aa9bd866
 78c3488077343d5e  internal/ui/assets/styles/terminus/fonts.css
 b921242b4a54e7db  internal/ui/assets/styles/terminus/fonts/LICENSE-EB-Garamond.txt
 5dd548d31a85f756  internal/ui/assets/styles/terminus/fonts/LICENSE-Inter.txt
 b536adfa0f5746cf  internal/ui/assets/styles/terminus/fonts/garamond-600.ttf
 1b08e7fc267a5c7e  internal/ui/assets/styles/terminus/fonts/inter-400.ttf
 e7a1aaf7eda9f2fa  internal/ui/assets/styles/terminus/fonts/inter-600.ttf
-e91aa8d0d3d70cd7  internal/ui/assets/styles/tokens.css
+8d766c3e19493924  internal/ui/assets/styles/tokens.css
 5db007c2a0006bf8  internal/ui/frontend/app/App.tsx
 307321308271fe4c  internal/ui/frontend/app/AppShell.tsx
 2281b369e9aeecfb  internal/ui/frontend/app/ControlPlaneMenu.tsx
@@ -124,8 +124,8 @@ baa47a4f87d36169  internal/ui/frontend/runtime/query.ts
 6e67932299bc2639  internal/ui/frontend/styles/base.css
 9d2635f9711d6a99  internal/ui/frontend/styles/components/connections.css
 27fef52763b76111  internal/ui/frontend/styles/components/content.css
-9e3495d59124fa48  internal/ui/frontend/styles/components/controls.css
-e649f8af411f04b4  internal/ui/frontend/styles/components/editor.css
+d2843e6b0db61e95  internal/ui/frontend/styles/components/controls.css
+d5f4879ef0653006  internal/ui/frontend/styles/components/editor.css
 a51973c9b98ad056  internal/ui/frontend/styles/components/overlays.css
 557efc44b339f7ab  internal/ui/frontend/styles/components/wizard.css
 a8573eb4fcc8b1a2  internal/ui/frontend/styles/index.css
@@ -139,7 +139,7 @@ f52258adae629e21  internal/ui/frontend/styles/pages/probes.css
 b8cc3e28068f952e  internal/ui/frontend/styles/pages/rules.css
 94c42d06039a94fb  internal/ui/frontend/styles/pages/setup.css
 9893ff47cb491546  internal/ui/frontend/styles/pages/sources.css
-e7dffc68f78a60ed  internal/ui/frontend/styles/pages/sub.css
+1df13774d7679421  internal/ui/frontend/styles/pages/sub.css
 68c9c191249291d6  internal/ui/frontend/styles/pages/users.css
 f27b1bc5f1a69a08  internal/ui/frontend/styles/shadcn.css
 06c79b1f514bcd60  internal/ui/frontend/styles/shell.css

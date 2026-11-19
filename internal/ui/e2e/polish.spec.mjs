@@ -351,6 +351,8 @@ const RAW_TERMS = ["入站", "入口", "巡检", "下发", "排水", "核心", "
 test("D1 体检结论翻成人话:没有内部叫法和英文原话，原话收在「详情」里", async ({ page }) => {
   await page.route("**/api/nodes/1/diagnostics?from=node", r => r.fulfill({ json: { id: 1, node_id: 1, created_at: "2026-10-11T01:56:00Z", report: { summary: SUMMARY_CORPUS } } }));
   await go(page, "nodes/1");
+  // 等诊断数据真的渲染出来再读,不然路由快于取数时拿到空列表(ISS-13 D1 脆点)。
+  await expect(page.locator("ul.summary:not(.mono) li").first()).toBeVisible();
   const items = await page.locator("ul.summary:not(.mono) li").allTextContents();
   expect(items.length).toBeGreaterThan(15);
   const allowed = /^(Netflix|YouTube|ChatGPT|Disney|xray|sing|box|ping|IPv4|IPv6|Cloudflare|speedtest|example|com)$/;

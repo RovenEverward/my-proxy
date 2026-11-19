@@ -2,7 +2,7 @@
 .kbd{font:500 var(--ui-font-size-meta) var(--mono);padding:1px 5px;border-radius:5px;background:var(--stone);color:var(--muted)}
 .search{display:flex;align-items:center;gap:8px;height:32px;width:260px;padding:0 10px;border-radius:8px;background:var(--stone);color:var(--faint);font-size:var(--ui-font-size-body)}
 .search input{border:0;outline:0;background:none;flex:1;min-width:0;color:var(--ink)}
-.search:focus-within{box-shadow:0 0 0 3px var(--ring)}
+.search:focus-within{box-shadow:0 0 0 3px var(--in-ring)}
 .ib{display:inline-grid;place-items:center;width:var(--icon-button-size);height:var(--icon-button-size);border:0;border-radius:var(--control-radius);background:none;color:var(--muted);cursor:pointer}.ib:hover{background:var(--hover);color:var(--ink)}.ib svg{width:16px;height:16px}
 .btn{display:inline-flex;align-items:center;gap:6px;height:var(--control-height);padding:0 12px;border:0;border-radius:var(--control-radius);background:var(--stone);font-weight:520;font-size:var(--font-control);cursor:pointer;white-space:nowrap;transition:transform 140ms var(--ease),background 120ms}
 .btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}.btn svg{width:14px;height:14px}
@@ -21,7 +21,7 @@
 /* forms */
 .field{display:grid;gap:6px;margin-bottom:14px;align-content:start}.field label{font-size:var(--ui-font-size-control);font-weight:530}.field .h{font-size:var(--ui-font-size-caption);color:var(--muted)}
 .in{height:var(--field-height);padding:0 10px;border-radius:var(--field-radius);border:0;background:var(--stone);outline:0;width:100%;transition:box-shadow 120ms,background 120ms;font-size:var(--ui-font-size-body)}
-.in:focus{box-shadow:0 0 0 3px var(--ring);background:var(--canvas)}
+.in:focus{box-shadow:0 0 0 3px var(--in-ring);background:var(--canvas)}
 textarea.in{height:auto;padding:10px;font-family:var(--mono);font-size:var(--ui-font-size-body);line-height:1.6;resize:vertical}
 .chips{display:flex;flex-wrap:wrap;gap:6px}.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--stone);font-size:var(--ui-font-size-control);cursor:pointer}
 .chip.on{background:var(--ink);color:var(--canvas);font-weight:540}
