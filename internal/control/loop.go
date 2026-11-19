@@ -249,16 +249,44 @@ func (t *Task) Tick(ctx context.Context) {
 	// 并不存在的"落后",而真正需要警惕的(采样+收敛本身变慢)反而被掩盖。
 	t.finishTick(started)
 	// 在线名单不算进「一轮多久」:和巡检一样排在 finishTick 之后。
+	// ISS-03:逐台串行问,一台连不上就拖住整轮后面的 notifyUsers/
+	// checkUpdates/sweepNodeStatus。限并发 4 台并行,最坏耗时从
+	// N×15s 降到 ceil(N/4)×15s;refreshOnline 自己带锁与限频,安全。
+	t.refreshOnlineAll(ctx, nodes, skip, failed, t.now())
+	t.notifyUsers(ctx, t.now())
+	t.checkUpdates(ctx)
+	t.sweepNodeStatus(ctx, nodes, t.now())
+}
+
+// onlineWorkers 是后台并行刷新在线名单的并发上限(ISS-03):4 台同时问,
+// 节点再多也不会有一轮里堆满并行 ssh 的压力。
+const onlineWorkers = 4
+
+// refreshOnlineAll 并行刷新每台节点的在线名单,最多 onlineWorkers 台同时
+// 进行;跳过 skip/failed 的节点(行为与串行版一致,只是不再排队)。
+// refreshOnline 自带 onlineTried 限频与锁,多 goroutine 调用安全。
+func (t *Task) refreshOnlineAll(ctx context.Context, nodes []model.Node, skip, failed map[int64]bool, now time.Time) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, onlineWorkers)
 	for _, n := range nodes {
 		if skip[n.ID] || failed[n.ID] {
 			t.control.ForgetOnline(n.ID)
 			continue
 		}
-		t.control.refreshOnline(ctx, n, t.now())
+		n := n
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			t.control.refreshOnline(ctx, n, now)
+		}()
 	}
-	t.notifyUsers(ctx, t.now())
-	t.checkUpdates(ctx)
-	t.sweepNodeStatus(ctx, nodes, t.now())
+	wg.Wait()
 }
 
 // checkUpdates 顺手问一次有没有新发布。
