@@ -81,6 +81,11 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 		return err
 	}
 	hash := hashOf(cfg)
+	// 真要下发时证书必须在 sing-box check 之前就位:校验会打开配置里的
+	// certificate_path / key_path,缺文件的 sync 死在校验,服务还没动。
+	// certsEnsured 标记"这一轮已经查过",免得 verifyRemote 分支先补完、
+	// 走到下发前又查一遍 —— 一条 ssh 也是钱。
+	certsEnsured := false
 	if !force && hash == d.DeployedHash {
 		if !verifyRemote {
 			// 无 ssh 的快路径(周期收敛):渲染结果与"最后一次下发成功"的
@@ -91,8 +96,21 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 		// 结构级下发(node sync / 镜像增删)本来就发一把 ssh,顺手对一次
 		// 磁盘哈希:失败的下发、人工改文件都可能让磁盘与基准脱节,那正是
 		// node sync 该修的东西。对不上或读不到都继续往下走。
+		//
+		// 先把证书补齐再比对:配置没变但有人在节点上删了证书时,光对
+		// 哈希会判"不用发",而 sing-box check 会因为缺文件挂掉 —
+		// node sync 是唯一会来修它的入口,不能漏。
+		if err := node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
+			return err
+		}
+		certsEnsured = true
 		if onDisk, err := node.ConfigHash(ctx, c.runner, n, *d); err == nil && onDisk == hash {
 			return nil
+		}
+	}
+	if !certsEnsured {
+		if err := node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
+			return err
 		}
 	}
 	active, err := node.CoreIsActive(ctx, c.runner, n, *d)

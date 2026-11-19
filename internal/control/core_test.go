@@ -62,6 +62,9 @@ func newCoreTestRunner(t *testing.T) *coreTestRunner {
 	t.Helper()
 	r := &coreTestRunner{fakeRunner: &fakeRunner{replies: []reply{
 		{"systemctl is-active", "active"}, {"check -c", ""}, {"systemctl stop", ""}, {"systemctl start", ""}, {"sleep 1", ""}, {"if test -f", ""}, {"umask 077", ""},
+		// EnsureTLSCertificates 的探活脚本以 echo ok:N 为结果标记;这条让它
+		// 报「都在」。要测证书缺失的场景,在测试里把这条 reply 换成 missing:N。
+		{"echo ok:", "ok:0"},
 	}}, listener: bufconn.Listen(1024 * 1024), generation: strings.Repeat("1", 32), traffic: map[string]node.UserTraffic{}}
 	server := grpc.NewServer(grpc.ForceServerCodec(coreWireCodec{}), grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
 		method, _ := grpc.MethodFromServerStream(stream)
@@ -849,6 +852,75 @@ func TestSingBoxGenerationRaceDoesNotApplySamples(t *testing.T) {
 
 var _ node.StatsDialer = (*coreTestRunner)(nil)
 var _ node.Runner = (*coreTestRunner)(nil)
+
+// markCertsMissing 让假节点的证书探活报「不在」,模拟证书被人从节点上删掉。
+func markCertsMissing(t *testing.T, r *coreTestRunner, marks ...string) {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.replies {
+		if r.replies[i].keyword == "echo ok:" {
+			r.replies[i].out = strings.Join(marks, "\n")
+		}
+	}
+}
+
+// UC-09 的主流程:新建 TLS 入站、节点上没有证书文件时,下发前控制面自己
+// 签一对装上去 —— 证书必须赶在 sing-box check 打开 certificate_path 之前落位。
+func TestDeployNodeGeneratesCertsBeforeSingBoxCheck(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	addUser(t, st, activeUser("alice"))
+	markCertsMissing(t, r, "missing:0")
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	certAt, checkAt := r.indexOf("chmod '644'"), r.indexOf("check -c")
+	if certAt < 0 || checkAt < 0 {
+		t.Fatalf("证书写入和 sing-box check 都应当出现:%v", r.callList())
+	}
+	if certAt > checkAt {
+		t.Fatalf("证书写在 check 之后,校验会打不开 certificate_path:%v", r.callList())
+	}
+	// stdinFor 按「含关键字的脚本」找 stdin:cert 与 key 写入分别用 chmod 的
+	// 权限位当钥匙 —— 探活脚本里也带着文件路径,按路径找会抓到空的那条。
+	if !strings.Contains(r.stdinFor("chmod '644'"), "BEGIN CERTIFICATE") {
+		t.Errorf("cert 内容不是 PEM 证书")
+	}
+	if !strings.Contains(r.stdinFor("chmod '600'"), "BEGIN RSA PRIVATE KEY") {
+		t.Errorf("key 内容不是 PEM 私钥")
+	}
+	if !r.ran("chmod '600'") {
+		t.Errorf("私钥权限没压成 600:%v", r.callList())
+	}
+}
+
+// UC-09 的回归路径:有人在节点上删了证书而配置没变,node sync 必须把它
+// 装回来 —— 但又不能因为补了证书就多重启一次服务(配置压根没变)。
+func TestSyncRestoresDeletedCertsWithoutRestart(t *testing.T) {
+	c, st, r, n := coreFixture(t)
+	addUser(t, st, activeUser("alice"))
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	d, err := st.GetCoreDeployment(n.ID, model.CoreSingBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	r.calls, r.stdin = nil, nil
+	r.replies = append(r.replies, reply{"sha256sum", d.DeployedHash})
+	r.mu.Unlock()
+	markCertsMissing(t, r, "missing:0")
+	if err := c.DeployNode(context.Background(), n, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !r.ran("chmod '644'") || !r.ran("chmod '600'") {
+		t.Errorf("被删的证书没有补装:%v", r.callList())
+	}
+	if r.ran("systemctl stop") || r.ran("systemctl start") || r.ran("check -c") {
+		t.Errorf("配置没变只补证书,不该重启服务:%v", r.callList())
+	}
+}
 
 func TestSingBoxSkipsUnchangedWhileActive(t *testing.T) {
 	c, st, r, n := coreFixture(t)

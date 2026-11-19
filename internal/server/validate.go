@@ -255,8 +255,17 @@ func validateInbound(i *model.Inbound) string {
 	if i.Network == model.NetworkGRPC && i.GRPCService == "" {
 		return "gRPC 传输必须填 serviceName"
 	}
-	if i.Security == model.SecurityTLS && (i.CertFile == "" || i.KeyFile == "") {
-		return "TLS 必须填证书与私钥在节点上的路径"
+	if i.Security == model.SecurityTLS {
+		if i.Protocol.QUIC() {
+			// QUIC 的 TLS 是"撑起握手"的那层皮:客户端 AllowInsecure,
+			// 证书由控制面自签、随下发装到节点。操作者不给路径时按
+			// tag 分一份默认的;给了就照写,缺失由下发管线补齐。
+			if i.CertFile == "" || i.KeyFile == "" {
+				i.CertFile, i.KeyFile = i.DefaultTLSCertPaths()
+			}
+		} else if i.CertFile == "" || i.KeyFile == "" {
+			return "TLS 必须填证书与私钥在节点上的路径"
+		}
 	}
 	if i.Security == model.SecurityReality {
 		if i.RealityDest == "" || i.SNI == "" {

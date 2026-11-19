@@ -21,8 +21,10 @@ var inboundCmd = &cobra.Command{
 用入站自己的地址与端口(见 mpx host --help)。
 
 几个约束是服务端强制、本地看不出来的:REALITY 支持 tcp / xhttp / grpc,必须填 SNI 与
-回落目标;TLS 必须给证书与私钥在节点上的路径;flow 只有 VLESS 支持;gRPC 传输
-必须给 serviceName。REALITY 的密钥对由控制面自己生成,不用你填。
+回落目标;非 QUIC 的 TLS(vless+tls 这类 CDN 入口)必须给证书与私钥在节点上的路径;
+flow 只有 VLESS 支持;gRPC 传输必须给 serviceName。REALITY 的密钥对由控制面自己
+生成,不用你填。QUIC(hysteria2 / tuic)的 TLS 证书路径可省略:不给会按 tag 分配,
+sync 时控制面自签并装到节点上。
 
 建完入站记得 mpx node sync,否则改动只落在库里、没进节点上的 config.json。`,
 }
@@ -46,8 +48,8 @@ func init() {
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.sni, "sni", "", "TLS / REALITY 的 SNI")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.alpn, "alpn", "", "ALPN,逗号分隔")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.fingerprint, "fingerprint", "", "客户端 uTLS 指纹,空表示 chrome")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.certFile, "cert-file", "", "TLS 证书在节点上的路径")
-	inboundAddCmd.Flags().StringVar(&inboundAddFlags.keyFile, "key-file", "", "TLS 私钥在节点上的路径")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.certFile, "cert-file", "", "TLS 证书在节点上的路径;QUIC 可省略,自动分配")
+	inboundAddCmd.Flags().StringVar(&inboundAddFlags.keyFile, "key-file", "", "TLS 私钥在节点上的路径;QUIC 可省略,自动分配")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.realityDest, "reality-dest", "", "REALITY 回落目标,如 www.microsoft.com:443")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.shortIDs, "short-ids", "", "REALITY shortId,逗号分隔")
 	inboundAddCmd.Flags().StringVar(&inboundAddFlags.flow, "flow", "", "VLESS flow,如 xtls-rprx-vision")
@@ -72,8 +74,8 @@ func init() {
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.sni, "sni", "", "TLS / REALITY 的 SNI")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.alpn, "alpn", "", "ALPN,逗号分隔;给空串表示清空")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.fingerprint, "fingerprint", "", "客户端 uTLS 指纹")
-	inboundEditCmd.Flags().StringVar(&inboundEditFlags.certFile, "cert-file", "", "TLS 证书在节点上的路径")
-	inboundEditCmd.Flags().StringVar(&inboundEditFlags.keyFile, "key-file", "", "TLS 私钥在节点上的路径")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.certFile, "cert-file", "", "TLS 证书在节点上的路径;QUIC 可省略,自动分配")
+	inboundEditCmd.Flags().StringVar(&inboundEditFlags.keyFile, "key-file", "", "TLS 私钥在节点上的路径;QUIC 可省略,自动分配")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.realityDest, "reality-dest", "", "REALITY 回落目标,如 www.microsoft.com:443")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.shortIDs, "short-ids", "", "REALITY shortId,逗号分隔;给空串表示清空")
 	inboundEditCmd.Flags().StringVar(&inboundEditFlags.flow, "flow", "", "VLESS flow,如 xtls-rprx-vision")
