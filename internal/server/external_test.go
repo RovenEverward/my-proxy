@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -114,7 +115,7 @@ func subNames(t *testing.T, e *env, token string) []string {
 func TestProbeExternalQuality(t *testing.T) {
 	e := newEnv(t)
 	e.s.extProber = &fakeExtProber{rep: map[string]model.QualityReport{
-		"jp.example.test":  extReport("1.2.3.4", "JP", "Tokyo", 90),
+		"jp.example.test":   extReport("1.2.3.4", "JP", "Tokyo", 90),
 		"fail.example.test": {Error: "域名解析失败", Steps: []model.QualityStep{{Name: "resolve", Status: "failed", Reason: "域名解析失败"}}},
 	}}
 	src := seedExternalSource(t, e, "星空", []render.Endpoint{
@@ -297,5 +298,100 @@ func TestSourceViewShowsCleanedName(t *testing.T) {
 	json.Unmarshal(raw, &v)
 	if len(v.Nodes) != 1 || v.Nodes[0].Name != "星空 · 🇯🇵 东京 A" || v.Nodes[0].RawName != "日本 AWS 01" {
 		t.Fatalf("nodes: %+v", v.Nodes)
+	}
+}
+
+// TestPatchExternalMetadata:JMS 这种主机名备注解析不出地区时,人工写/清
+// 地区与城市;写进去的 kind=graded,刷新回填不动它;region 置空删记录。
+func TestPatchExternalMetadata(t *testing.T) {
+	e := newEnv(t)
+	user := e.createUser("alice")
+	ep := extEP("ext-raw", "JMS-1490255@c83s2.portablesubmarines.com:443", "c83s2.portablesubmarines.com")
+	src := seedExternalSource(t, e, "JMS", []render.Endpoint{ep})
+
+	path := fmt.Sprintf("/api/sources/%d/endpoints/%s", src.ID, ep.SourceKey)
+	do := func(body map[string]any) (int, *json.Decoder, []byte) {
+		code, data := e.api("PATCH", path, body)
+		return code, json.NewDecoder(bytes.NewReader(data)), data
+	}
+
+	// 写地区+城市:graded 记录落库,显示名带旗帜。
+	code, dec, body := do(map[string]any{"region": "JP", "city": "东京"})
+	if code != http.StatusOK {
+		t.Fatalf("PATCH=%d body=%s", code, body)
+	}
+	var out struct {
+		Metadata model.ExternalMetadata `json:"metadata"`
+	}
+	if err := dec.Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Metadata.Region != "JP" || out.Metadata.City != "东京" || out.Metadata.Letter != "A" || out.Metadata.Kind != "graded" {
+		t.Fatalf("metadata=%+v", out.Metadata)
+	}
+	if got := subNames(t, e, user.SubToken); len(got) == 0 || !strings.Contains(got[0], "日本") && !strings.Contains(got[0], "东京") {
+		t.Fatalf("subscription names after patch: %v", got)
+	}
+
+	// 中文地区写法也收。
+	code, dec, body = do(map[string]any{"region": "美国"})
+	if code != http.StatusOK {
+		t.Fatalf("PATCH zh=%d body=%s", code, body)
+	}
+	if err := dec.Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Metadata.Region != "US" {
+		t.Fatalf("region zh=%q", out.Metadata.Region)
+	}
+
+	// 认不出的地区给 400,不写库。
+	code, _, _ = do(map[string]any{"region": "火星"})
+	if code != http.StatusBadRequest {
+		t.Fatalf("PATCH bad=%d", code)
+	}
+
+	// 置空地区:删记录,订阅回退原名。
+	code, _, _ = do(map[string]any{"region": ""})
+	if code != http.StatusOK {
+		t.Fatalf("PATCH empty=%d", code)
+	}
+	if got := subNames(t, e, user.SubToken); len(got) == 0 || got[0] != "JMS · JMS-1490255@c83s2.portablesubmarines.com:443" {
+		t.Fatalf("subscription names after delete: %v", got)
+	}
+}
+
+// TestSourceDefaultRegionBackfillsMetadata:备注解析不出地区时,刷新回填
+// 用来源配置的默认地区建记录(JMS 主机名备注的形状);graded 记录不动。
+func TestSourceDefaultRegionBackfillsMetadata(t *testing.T) {
+	e := newEnv(t)
+	t.Cleanup(e.s.sources.Close)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "vless://11111111-1111-4111-8111-111111111111@c83s2.portablesubmarines.com:443#JMS-1490255@c83s2.portablesubmarines.com:443\n")
+	}))
+	defer upstream.Close()
+	code, data := e.api("POST", "/api/sources", map[string]any{"name": "JMS", "url": upstream.URL, "interval_seconds": 0, "region": "JP"})
+	if code != 201 {
+		t.Fatalf("create source: %d %s", code, data)
+	}
+	v := decodeJSON[sourceView](t, data)
+	v = awaitSource(t, e, v.ID)
+	if v.LastError != "" {
+		t.Fatalf("refresh failed: %s", v.LastError)
+	}
+	metas, err := e.st.ListExternalMetadata(v.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metas) != 1 {
+		t.Fatalf("默认地区应兜底出 1 条记录: %+v", metas)
+	}
+	for _, m := range metas {
+		if m.Region != "JP" || m.Letter != "A" || m.Kind != "auto" {
+			t.Fatalf("fallback meta: %+v", m)
+		}
+	}
+	if len(v.Nodes) != 1 || !strings.HasPrefix(v.Nodes[0].Name, "JMS · 🇯🇵 ") {
+		t.Fatalf("view node name: %+v", v.Nodes)
 	}
 }

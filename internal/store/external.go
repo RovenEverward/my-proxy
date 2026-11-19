@@ -241,3 +241,16 @@ func (s *Store) ListExternalQuality(sourceID int64) ([]model.ExternalQuality, er
 	}
 	return out, rows.Err()
 }
+
+// DeleteExternalMetadata 删一条清洗记录;不存在时返回 ErrNotFound。
+// 用于人工清空端点地区,回到「源名 · 原名」回退形态。
+func (s *Store) DeleteExternalMetadata(sourceID int64, sourceKey string) error {
+	res, err := s.db.Exec(`DELETE FROM external_metadata WHERE source_id=? AND source_key=?`, sourceID, sourceKey)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

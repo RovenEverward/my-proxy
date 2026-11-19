@@ -91,7 +91,7 @@ func (m *Manager) start(id int64) (<-chan struct{}, error) {
 			err := m.store.CompleteSourceRefresh(src.ID, src.Revision, time.Now(), snapshot, report, failure)
 			if !errors.Is(err, store.ErrVersionConflict) {
 				if err == nil {
-					m.syncExternalMetadata(src.ID, snapshot)
+					m.syncExternalMetadata(src.ID, src.Region, snapshot)
 					if m.changed != nil {
 						m.changed()
 					}
@@ -111,9 +111,10 @@ func (m *Manager) start(id int64) (<-chan struct{}, error) {
 func (m *Manager) StartRefresh(id int64) error { _, err := m.start(id); return err }
 
 // syncExternalMetadata 在一次成功快照后对齐外部端点清洗层(UC-17):
-// 消失的端点记录删掉,新端点能从原名解析出地区就自动建一条 auto 记录。
+// 消失的端点记录删掉,新端点能从原名解析出地区就自动建一条 auto 记录;
+// 解析不出时回退到来源配置的默认地区——JMS 这类纯主机名命名的上游靠它兜底。
 // 快照没换(失败或不落快照的成功)时不跑;同步失败只记日志,不回滚快照。
-func (m *Manager) syncExternalMetadata(sourceID int64, snapshot []byte) {
+func (m *Manager) syncExternalMetadata(sourceID int64, defaultRegion string, snapshot []byte) {
 	if len(snapshot) == 0 {
 		return
 	}
@@ -126,6 +127,9 @@ func (m *Manager) syncExternalMetadata(sourceID int64, snapshot []byte) {
 	for _, ep := range eps {
 		keys = append(keys, ep.SourceKey)
 		regions[ep.SourceKey] = model.RegionFromRemark(ep.Remark)
+		if regions[ep.SourceKey] == "" {
+			regions[ep.SourceKey] = defaultRegion
+		}
 	}
 	existingAll, err := m.store.ListExternalMetadata(sourceID)
 	if err != nil {

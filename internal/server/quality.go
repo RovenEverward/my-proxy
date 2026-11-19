@@ -37,6 +37,8 @@ func (s *Server) qualityRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/sources/{id}/endpoints/{key}/quality", s.handleProbeExternalQuality)
 	api.HandleFunc("GET /api/sources/{id}/endpoints/{key}/quality", s.handleGetExternalQuality)
 	api.HandleFunc("GET /api/sources/{id}/quality", s.handleListExternalQuality)
+	// 上游名解析不出地区时人工写/清端点地区(如 JMS 主机名备注)。
+	api.HandleFunc("PATCH /api/sources/{id}/endpoints/{key}", s.handlePatchExternalMetadata)
 }
 
 // handleProbeQuality 在节点上探测出口并计算质量分,存档后返回完整记录。

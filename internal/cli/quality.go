@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -436,6 +437,8 @@ var nodeRegradeCmd = &cobra.Command{
 }
 
 func init() {
+	sourceMetaCmd.Flags().StringVar(&sourceMetaFlags.region, "region", "", "两位国家码(US);空串清除记录")
+	sourceMetaCmd.Flags().StringVar(&sourceMetaFlags.city, "city", "", "城市名,可选")
 	nodeGradeCmd.Args = cobra.ArbitraryArgs
 	f := nodeRegradeCmd.Flags()
 	f.BoolVar(&nodeRegradeFlags.dryRun, "dry-run", false, "只打印对照表,不写入")
@@ -443,5 +446,100 @@ func init() {
 	nodeCmd.AddCommand(nodeGradeCmd, nodeRegradeCmd)
 	// source grade 挂进来源命令树:newSourceCmd 在另一个 init 里建树,
 	// init 顺序不保证,这里只存命令,由 newSourceCmd 带上。
-	sourceCmdExtras = append(sourceCmdExtras, sourceGradeCmd)
+	sourceCmdExtras = append(sourceCmdExtras, sourceGradeCmd, sourceMetaCmd)
+}
+
+// sourceMetaCmd 人工改/清一个外部端点的地区与城市(UC-17):上游名解析不出
+// 地区(如 JMS 的主机名备注)时靠它进清洗层。写进去的记录是 graded,
+// 刷新回填和探测都覆盖不了。空 --region 删记录,订阅回退到「源名 · 原名」。
+var sourceMetaCmd = &cobra.Command{
+	Use:   "meta 来源 端点名",
+	Short: "改/清一个外部端点的地区与城市(上游名解析不出时兜底)",
+	Long: `上游名解析不出地区时(比如 JMS 的主机名备注)手工告诉清洗层这个端点在
+哪个地区。端点名按上游原名或清洗名子串匹配,有歧义就列出来让你挑。写进去的
+记录不会被动重排;订阅名随之下一次生效。
+
+例子:
+  mpx source meta JMS c83s2 --region JP --city 东京   # 标成日本东京
+  mpx source meta JMS c83s2 --region ""             # 清掉记录,回退原名`,
+	Args: cobra.ExactArgs(2),
+	RunE: runSourceMeta,
+}
+
+var sourceMetaFlags struct {
+	region string
+	city   string
+}
+
+func runSourceMeta(cmd *cobra.Command, args []string) error {
+	cl, err := newClient()
+	if err != nil {
+		return err
+	}
+	v, err := findSource(cl, args[0])
+	if err != nil {
+		return err
+	}
+	want := strings.ToLower(strings.TrimSpace(args[1]))
+	var hit []sourceNodeView
+	for _, n := range v.Nodes {
+		if strings.Contains(strings.ToLower(n.Name), want) ||
+			(n.RawName != "" && strings.Contains(strings.ToLower(n.RawName), want)) {
+			hit = append(hit, n)
+		}
+	}
+	switch len(hit) {
+	case 0:
+		return fmt.Errorf("在 %s 的 %d 个端点里没找到 %q(见 mpx source show %s)", v.Name, len(v.Nodes), args[1], v.Name)
+	case 1:
+	default:
+		var b strings.Builder
+		for _, n := range hit {
+			fmt.Fprintf(&b, "\n  %s (key %s)", n.RawName, n.Key)
+		}
+		return fmt.Errorf("%q 在 %s 里匹配到 %d 个端点,写长一点区分:%s", args[1], v.Name, len(hit), b.String())
+	}
+	n := hit[0]
+	// region 默认空串:只在显式给 --region 时才发送,否则没带 flag 就跑会
+	// 把已有的清洗记录清掉。city 同理只在 Changed 时写。
+	body := map[string]any{}
+	changed := func(name string) bool { return cmd.Flags().Changed(name) }
+	if !changed("region") && !changed("city") {
+		return fmt.Errorf("要改什么?--region 两位国家码(空串清记录),--city 城市名")
+	}
+	if changed("region") {
+		body["region"] = sourceMetaFlags.region
+	}
+	if changed("city") {
+		body["city"] = sourceMetaFlags.city
+	}
+	raw, err := cl.do("PATCH", fmt.Sprintf("%s/endpoints/%s", sourcePath(v.ID), n.Key), body)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Deleted  bool   `json:"deleted"`
+		Name     string `json:"name"`
+		Metadata struct {
+			Region string `json:"region"`
+			City   string `json:"city"`
+			Letter string `json:"letter"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	shown := out.Name
+	if shown == "" {
+		shown = n.RawName
+	}
+	if shown == "" {
+		shown = n.Name
+	}
+	if out.Deleted {
+		fmt.Printf("已清除 %s 的清洗记录,订阅回退到 %s · 原名\n", shown, v.Name)
+		return nil
+	}
+	fmt.Printf("%s → %s %s %s(已写进清洗层)\n", shown, out.Metadata.Region, out.Metadata.City, out.Metadata.Letter)
+	return nil
 }

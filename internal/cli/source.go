@@ -807,6 +807,17 @@ func printSourceDetail(cl *Client, v *sourceView) error {
 			return err
 		}
 	}
+	// 成员端点名(UC-17):清洗名 + 上游原名;source meta 的端点名按这两列匹配。
+	if len(v.Nodes) > 0 {
+		fmt.Println("节点:")
+		rows := [][]string{}
+		for _, n := range v.Nodes {
+			rows = append(rows, []string{dash(n.Name), dash(n.RawName), dash(n.Protocol)})
+		}
+		if err := writeTable([]string{"清洗名", "上游原名", "协议"}, rows); err != nil {
+			return err
+		}
+	}
 	if len(v.Issues) > 0 {
 		fmt.Println("跳过的条目:")
 		rows := [][]string{}

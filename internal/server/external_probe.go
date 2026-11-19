@@ -113,8 +113,8 @@ func fetchIPAPI(ctx context.Context, ip, key string) (map[string]bool, string, s
 	}
 	var out struct {
 		ASN struct {
-			ASN  int    `json:"asn"`
-			Org  string `json:"org"`
+			ASN int    `json:"asn"`
+			Org string `json:"org"`
 		} `json:"asn"`
 		IsDatacenter bool `json:"is_datacenter"`
 		IsVPN        bool `json:"is_vpn"`
@@ -302,4 +302,94 @@ func snapshotEndpoint(src *model.SubscriptionSource, key string) (render.Endpoin
 		}
 	}
 	return render.Endpoint{}, false
+}
+
+// handlePatchExternalMetadata 人工写/清一个外部端点的地区与城市。
+// 上游名解析不出地区(如 JMS 的主机名备注)时靠它进清洗层:写入的记录
+// kind=graded,刷新回填与探测都覆盖不了它。空 region 删除记录,回退原名形态。
+func (s *Server) handlePatchExternalMetadata(w http.ResponseWriter, r *http.Request) {
+	src, ok := s.sourceFromPath(w, r)
+	if !ok {
+		return
+	}
+	key := r.PathValue("key")
+	ep, found := snapshotEndpoint(src, key)
+	if !found {
+		writeError(w, http.StatusNotFound, "这个端点不在当前快照里")
+		return
+	}
+	var in struct {
+		Region *string `json:"region"`
+		City   *string `json:"city"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	region, err := normalizeExternalRegion(in.Region)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	metadataMu.Lock()
+	defer metadataMu.Unlock()
+	if region == "" {
+		err = s.store.DeleteExternalMetadata(src.ID, key)
+		if err != nil {
+			s.writeStoreError(w, err, "外部端点元数据")
+			return
+		}
+		s.invalidateSubCache()
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+		return
+	}
+	existingAll, err := s.store.ListExternalMetadata(src.ID)
+	if err != nil {
+		s.writeStoreError(w, err, "外部端点元数据")
+		return
+	}
+	existing := map[string]model.ExternalMetadata{}
+	for _, m := range existingAll {
+		existing[m.SourceKey] = m
+	}
+	m, _ := existing[key]
+	m.SourceID, m.SourceKey = src.ID, key
+	m.Region = region
+	if in.City != nil {
+		m.City = strings.TrimSpace(*in.City)
+	}
+	if m.Letter == "" {
+		// graded 记录在 Assign 里原样透传,先不标 graded 让它把字母补了;
+		// existing 用全量,同组已占字母才不会撞。
+		existing[key] = m
+		assigned := model.AssignExternalLetters(src.ID, []string{key}, map[string]string{key: m.Region}, existing)
+		m = assigned[key]
+	}
+	m.Kind = "graded"
+	if err := s.store.SaveExternalMetadataBatch([]model.ExternalMetadata{m}); err != nil {
+		s.writeStoreError(w, err, "外部端点元数据")
+		return
+	}
+	s.invalidateSubCache()
+	writeJSON(w, http.StatusOK, map[string]any{"key": key, "name": ep.Remark, "metadata": m})
+}
+
+// normalizeExternalRegion 把手工输入归一成两位国家码:
+// 直接给 ISO(大小写都行)就收;不然当备注过一遍同一个解析器(「美国」「japan」都认)。
+// 传 nil 或解析不出都返回空串——空串语义是删记录。
+func normalizeExternalRegion(v *string) (string, error) {
+	if v == nil {
+		return "", nil
+	}
+	raw := strings.TrimSpace(*v)
+	if raw == "" {
+		return "", nil
+	}
+	up := strings.ToUpper(raw)
+	if model.RegionFlag(up) != "" {
+		return up, nil
+	}
+	if r := model.RegionFromRemark(raw); r != "" {
+		return r, nil
+	}
+	return "", fmt.Errorf("地区 %q 认不出来:两位国家码(如 US)或常见写法(美国/japan)都行", raw)
 }
