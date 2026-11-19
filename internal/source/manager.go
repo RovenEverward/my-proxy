@@ -22,12 +22,21 @@ type Manager struct {
 	store   *store.Store
 	client  *http.Client
 	changed func()
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	jobs    map[int64]chan struct{}
-	closed  bool
-	wg      sync.WaitGroup
+	// geoProbe 是给「备注解析不出、也没默认地区」的新端点兜底查地区用的:
+	// 控制面直连第三方(JMS 之类主机名备注靠它自救)。返回空串表示查不到。
+	// 由 server 注入;为空时这条兜底整个不跑。
+	geoProbe func(ctx context.Context, address string) (region, city string)
+	ctx      context.Context
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	jobs     map[int64]chan struct{}
+	closed   bool
+	wg       sync.WaitGroup
+}
+
+// SetGeoProbe 注入刷新兜底用的降级探针;nil 表示关掉这条路径。
+func (m *Manager) SetGeoProbe(fn func(ctx context.Context, address string) (string, string)) {
+	m.geoProbe = fn
 }
 
 type RefreshResult struct {
@@ -159,6 +168,66 @@ func (m *Manager) syncExternalMetadata(sourceID int64, defaultRegion string, sna
 		}
 	}
 	_ = m.store.SyncExternalMetadata(sourceID, keys, upserts)
+
+	// 解析不出地区也没默认地区的新端点,用降级探针按地址真查——JMS 换
+	// 主机名后新端点靠这条路径自己长出干净名,不等人手工 grade。
+	if m.geoProbe != nil {
+		var orphan []render.Endpoint
+		for _, ep := range eps {
+			if _, ok := existing[ep.SourceKey]; ok {
+				continue // 已有记录(含 graded)不碰
+			}
+			if regions[ep.SourceKey] == "" {
+				orphan = append(orphan, ep)
+			}
+		}
+		m.backfillOrphanGeo(sourceID, orphan)
+	}
+}
+
+// backfillOrphanGeo 串行慢查没进清洗层的新端点:地址解析 + ipwho.is,
+// 查到地区就按同组补一条 auto 记录。失败端点跳过,不影响刷新结果。
+func (m *Manager) backfillOrphanGeo(sourceID int64, eps []render.Endpoint) {
+	if len(eps) == 0 {
+		return
+	}
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		for _, ep := range eps {
+			if m.ctx.Err() != nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(m.ctx, 10*time.Second)
+			region, city := m.geoProbe(ctx, ep.Address)
+			cancel()
+			if region == "" {
+				continue
+			}
+			existingAll, err := m.store.ListExternalMetadata(sourceID)
+			if err != nil {
+				return
+			}
+			existing := map[string]model.ExternalMetadata{}
+			for _, meta := range existingAll {
+				existing[meta.SourceKey] = meta
+			}
+			if _, ok := existing[ep.SourceKey]; ok {
+				continue // 并发期间有人写过了
+			}
+			assigned := model.AssignExternalLetters(sourceID, []string{ep.SourceKey},
+				map[string]string{ep.SourceKey: region}, existing)
+			meta, ok := assigned[ep.SourceKey]
+			if !ok {
+				continue
+			}
+			meta.City = city
+			_ = m.store.SaveExternalMetadataBatch([]model.ExternalMetadata{meta})
+		}
+		if m.changed != nil {
+			m.changed()
+		}
+	}()
 }
 
 func (m *Manager) Refresh(ctx context.Context, id int64) (RefreshResult, error) {

@@ -96,11 +96,11 @@ type Server struct {
 	nodeOps       NodeOps
 	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
 	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
-	extProber     externalProber
-	status        StatusSource
-	backoff       BackoffOps
-	updates       UpdateSource
-	dbPath        string
+	extProber externalProber
+	status    StatusSource
+	backoff   BackoffOps
+	updates   UpdateSource
+	dbPath    string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
 	updateDir string
@@ -179,6 +179,12 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
 	}
 	s.sources = source.NewManager(st, s.invalidateSubCache)
+	// UC-17:备注解析不出地区的新端点(如 JMS 主机名轮换),由控制面直连
+	// ipwho.is 兜底查地址 geo,查到就自动建 auto 清洗记录。
+	s.sources.SetGeoProbe(func(ctx context.Context, address string) (string, string) {
+		region, city, _ := probeGeoOnly(ctx, address)
+		return region, city
+	})
 	s.resolveXray = s.defaultResolveXray
 	s.upgradeXray = s.defaultUpgradeXray
 	s.routes()

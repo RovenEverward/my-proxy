@@ -76,6 +76,32 @@ func (defaultExternalProber) ProbeExternal(ctx context.Context, address string, 
 	return rep
 }
 
+// probeGeoOnly 是刷新兜底用的轻量探针:只解析地址 + 查 ipwho.is 拿
+// 地区与城市,不碰 ipapi.is/AbuseIPDB 配额。查不到返回空串。
+func probeGeoOnly(ctx context.Context, address string) (region, city string, err error) {
+	addr := strings.TrimSpace(address)
+	if addr == "" {
+		return "", "", fmt.Errorf("端点没有地址")
+	}
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		ips, lerr := extResolver.LookupIP(ctx, "ip", addr)
+		if lerr != nil || len(ips) == 0 {
+			if lerr != nil {
+				return "", "", lerr
+			}
+			return "", "", fmt.Errorf("域名没有解析出 IP")
+		}
+		ip = ips[0]
+	}
+	geo, _ := fetchGeo(ctx, ip.String())
+	if geo == nil {
+		return "", "", fmt.Errorf("ipwho.is 没查到地区")
+	}
+	region = strings.ToUpper(strings.TrimSpace(geo.CountryCode))
+	return region, model.CityZh(strings.TrimSpace(geo.City)), nil
+}
+
 func firstErr(err error, fallback string) string {
 	if err != nil {
 		return err.Error()
