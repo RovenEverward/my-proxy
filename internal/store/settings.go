@@ -44,11 +44,11 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		`SELECT sub_url_prefix, profile_title, support_link, update_interval,
 		        webhook_url, notify_days_left, notify_usage_percent,
 		        rules, templates, ruleset_mode,
-		        reach_exclude, reach_interval_minutes, reach_keeps
+		        reach_exclude, reach_interval_minutes, reach_keeps, cdn_optimize
 		 FROM settings WHERE id = 1`).
 		Scan(&st.SubURLPrefix, &st.ProfileTitle, &st.SupportLink, &st.UpdateInterval,
 			&st.WebhookURL, &st.NotifyDaysLeft, &st.NotifyUsagePercent, &rules, &templates,
-			&st.RulesetMode, &st.ReachExclude, &st.ReachIntervalMinutes, &keeps)
+			&st.RulesetMode, &st.ReachExclude, &st.ReachIntervalMinutes, &keeps, &st.CDNOptimize)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultSettings(), nil
 	}
@@ -121,8 +121,8 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 		`INSERT INTO settings (id, sub_url_prefix, profile_title, support_link,
 		                      update_interval, webhook_url, notify_days_left,
 		                      notify_usage_percent, rules, templates, ruleset_mode,
-		                      reach_exclude, reach_interval_minutes, reach_keeps)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                      reach_exclude, reach_interval_minutes, reach_keeps, cdn_optimize)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			sub_url_prefix       = excluded.sub_url_prefix,
 			profile_title        = excluded.profile_title,
@@ -136,10 +136,11 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 			ruleset_mode         = excluded.ruleset_mode,
 			reach_exclude        = excluded.reach_exclude,
 			reach_interval_minutes = excluded.reach_interval_minutes,
-			reach_keeps          = excluded.reach_keeps`,
+			reach_keeps          = excluded.reach_keeps,
+			cdn_optimize         = excluded.cdn_optimize`,
 		st.SubURLPrefix, st.ProfileTitle, st.SupportLink, st.UpdateInterval,
 		st.WebhookURL, st.NotifyDaysLeft, st.NotifyUsagePercent, rules, templates,
-		st.RulesetMode, st.ReachExclude, st.ReachIntervalMinutes, keeps)
+		st.RulesetMode, st.ReachExclude, st.ReachIntervalMinutes, keeps, st.CDNOptimize)
 	if err != nil {
 		return fmt.Errorf("保存设置: %w", err)
 	}

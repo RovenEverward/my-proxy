@@ -81,6 +81,10 @@ type Settings struct {
 	// ReachKeeps 是按对象身份的剔除豁免名单:键为 ProbeSubjectKey,值为真
 	// 表示该对象不受自动剔除影响。
 	ReachKeeps map[string]bool `json:"reach_keeps,omitempty"`
+
+	// CDNOptimize 是 UC-21 CDN IP 优选总开关:开了探测点才领
+	// cdn-optimize 任务、控制面才把优选 IP 落成 Host。
+	CDNOptimize bool `json:"cdn_optimize"`
 }
 
 // DefaultReachIntervalMinutes 是探测周期的默认值。

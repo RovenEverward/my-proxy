@@ -395,6 +395,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateExternal(); err != nil {
 		return err
 	}
+	if err := s.migrateCDN(); err != nil {
+		return err
+	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
 	return s.migratePlans()
 }
@@ -406,6 +409,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"traffic_samples", "generation", `ALTER TABLE traffic_samples ADD COLUMN generation TEXT NOT NULL DEFAULT ''`},
 	{"node_status", "cores", `ALTER TABLE node_status ADD COLUMN cores TEXT NOT NULL DEFAULT '[]'`},
 	{"inbounds", "congestion_control", `ALTER TABLE inbounds ADD COLUMN congestion_control TEXT NOT NULL DEFAULT ''`},
+	{"hosts", "kind", `ALTER TABLE hosts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`},
+	{"settings", "cdn_optimize", `ALTER TABLE settings ADD COLUMN cdn_optimize INTEGER NOT NULL DEFAULT 0`},
+	{"settings", "cdn_last_run", `ALTER TABLE settings ADD COLUMN cdn_last_run INTEGER NOT NULL DEFAULT 0`},
 	{"traffic_samples", "core", `ALTER TABLE traffic_samples ADD COLUMN core TEXT NOT NULL DEFAULT 'xray'`},
 	{"users", "lifetime_used_traffic",
 		`ALTER TABLE users ADD COLUMN lifetime_used_traffic INTEGER NOT NULL DEFAULT 0`},

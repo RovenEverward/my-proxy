@@ -176,6 +176,9 @@ func endpoint(node model.Node, display string, in model.Inbound, h model.Host, u
 	}
 
 	ex := ResolveExposure(node, in, h)
+	// HOST_IP 是这条入口最终发出去的地址(可能是 Host.Address 覆盖
+	// 后的 CDN IP);优选 Host 的 remark 用它带 IP 区分同名入口。
+	vars["HOST_IP"] = ex.Address
 
 	remark := expand(h.Remark, vars, salt)
 	auto := remark == ""

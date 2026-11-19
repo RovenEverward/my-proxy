@@ -7,7 +7,7 @@ import (
 )
 
 // hostColumns 是 hosts 表的列顺序,扫描时按同一顺序取值。
-const hostColumns = `id, inbound_id, remark, address, port, sni, host, path, alpn`
+const hostColumns = `id, inbound_id, remark, address, port, sni, host, path, alpn, kind`
 
 func scanHost(sc rowScanner) (*model.Host, error) {
 	var (
@@ -15,7 +15,7 @@ func scanHost(sc rowScanner) (*model.Host, error) {
 		alpn string
 	)
 	if err := sc.Scan(&h.ID, &h.InboundID, &h.Remark, &h.Address, &h.Port,
-		&h.SNI, &h.Host, &h.Path, &alpn); err != nil {
+		&h.SNI, &h.Host, &h.Path, &alpn, &h.Kind); err != nil {
 		return nil, err
 	}
 	var err error
@@ -34,9 +34,9 @@ func (s *Store) CreateHost(h *model.Host) error {
 	}
 
 	res, err := s.db.Exec(
-		`INSERT INTO hosts (inbound_id, remark, address, port, sni, host, path, alpn)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		h.InboundID, h.Remark, h.Address, h.Port, h.SNI, h.Host, h.Path, alpn)
+		`INSERT INTO hosts (inbound_id, remark, address, port, sni, host, path, alpn, kind)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		h.InboundID, h.Remark, h.Address, h.Port, h.SNI, h.Host, h.Path, alpn, h.Kind)
 	if err != nil {
 		return fmt.Errorf("创建 Host %q: %w", h.Remark, err)
 	}
@@ -96,9 +96,9 @@ func (s *Store) UpdateHost(h *model.Host) error {
 
 	res, err := s.db.Exec(
 		`UPDATE hosts
-		 SET inbound_id = ?, remark = ?, address = ?, port = ?, sni = ?, host = ?, path = ?, alpn = ?
+		 SET inbound_id = ?, remark = ?, address = ?, port = ?, sni = ?, host = ?, path = ?, alpn = ?, kind = ?
 		 WHERE id = ?`,
-		h.InboundID, h.Remark, h.Address, h.Port, h.SNI, h.Host, h.Path, alpn, h.ID)
+		h.InboundID, h.Remark, h.Address, h.Port, h.SNI, h.Host, h.Path, alpn, h.Kind, h.ID)
 	if err != nil {
 		return fmt.Errorf("更新 Host %d: %w", h.ID, err)
 	}

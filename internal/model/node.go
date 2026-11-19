@@ -146,6 +146,10 @@ type Host struct {
 	Host    string   `json:"host,omitempty"` // ws/grpc 的 Host 头
 	Path    string   `json:"path,omitempty"`
 	ALPN    []string `json:"alpn,omitempty"`
+	// Kind 标记这条 Host 是谁管理的:''(空)是操作者手工配的,
+	//'cdn' 是 UC-21 CDN IP 优选自动生成的 —— 优选的汰换逻辑只动
+	// kind='cdn' 的行,手工配置永不被动。
+	Kind string `json:"kind,omitempty"`
 }
 
 // Exposure 是 Host 合并节点与入站之后,真正会发布到订阅里的那一组值。
@@ -159,6 +163,10 @@ type Exposure struct {
 	Host    string   `json:"host,omitempty"` // ws/grpc 的 Host 头
 	Path    string   `json:"path,omitempty"`
 	ALPN    []string `json:"alpn,omitempty"`
+	// Kind 标记这条 Host 是谁管理的:''(空)是操作者手工配的,
+	//'cdn' 是 UC-21 CDN IP 优选自动生成的 —— 优选的汰换逻辑只动
+	// kind='cdn' 的行,手工配置永不被动。
+	Kind string `json:"kind,omitempty"`
 }
 
 // HostView 是 Host 对外的返回形态:填写过的字段原样返回(空就是空),另外附上
@@ -249,3 +257,24 @@ const (
 	// CertFailDays 以内是故障:随时可能中断。
 	CertFailDays = 3
 )
+
+// CDNResult 是探测点回传的一个优选 IP 结果(internal/cdn.Result 的
+// 传输形状 —— server 收 API 用这套,不反向依赖 probe 包)。
+type CDNResult struct {
+	IP        string `json:"ip"`
+	Reachable bool   `json:"reachable"`
+	LatencyMs int    `json:"latency_ms"`
+	Edge      bool   `json:"edge"`
+	Colo      string `json:"colo,omitempty"`
+}
+
+// CDNIP 是优选池里的一行(cdn_pool 表),附首次/最近命中与连续 miss
+// 计数 —— miss 是「当轮优选名单里没有它」,累计超过阈值出池。
+type CDNIP struct {
+	IP        string    `json:"ip"`
+	LatencyMs int       `json:"latency_ms"`
+	Colo      string    `json:"colo"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+	Misses    int       `json:"misses"`
+}

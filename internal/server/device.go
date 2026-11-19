@@ -36,9 +36,12 @@ const probeIDKey ctxKey = 2
 // probeAllowed 是探测点凭据够得着的接口(UC-12):拉目标、回结果、让控制面
 // 代探。管理面其余接口它一律不可见。
 var probeAllowed = map[string]bool{
-	"GET /api/reach/targets":  true,
-	"POST /api/reach/results": true,
-	"POST /api/reach/probe":   true,
+	"GET /api/reach/targets":           true,
+	"POST /api/reach/results":          true,
+	"POST /api/reach/probe":            true,
+	// UC-21:CDN 优选,探测点领名单与回结果走同一对凭据可达接口。
+	"GET /api/cdn-optimize/targets":    true,
+	"POST /api/cdn-optimize/results":   true,
 }
 
 // deviceTouchEvery 是记"最近使用"的最小间隔:每个请求都写一次库没有意义。

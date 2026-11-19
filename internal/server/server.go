@@ -253,6 +253,7 @@ func (s *Server) routes() {
 	s.reachRoutes(api)
 	s.probeRoutes(api)
 	s.qualityRoutes(api)
+	s.cdnRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)

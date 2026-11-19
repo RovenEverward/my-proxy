@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/cdn"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/reach"
 )
@@ -80,6 +81,13 @@ func Tick(ctx context.Context, call Caller, logf func(string, ...any)) error {
 				return err
 			}
 		}
+	}
+
+	// UC-21:CDN 优选探测。与主名单同一轮 tick 里捎带做,控制面按
+	// cdn_optimize 开关与池状态决定给不给名单 —— 探测端不自己
+	// 判定该不该跑,只忠实执行拿到的任务。
+	if err := cdnOptimize(ctx, call, logf); err != nil && logf != nil {
+		logf("CDN 优选探测失败: %v", err)
 	}
 
 	// 控制面侧欠账:探测端把对象名单递过去,控制面自己探,探测端再按 cp 侧回存。
@@ -182,3 +190,56 @@ func min(a, b int) int {
 }
 
 // 包内无其他未用项;文件到此结束。
+
+// cdnOptimize 是一轮 CDN IP 优选:向控制面领候选名单,粗扫(TCP:443
+// ping)拿够 sweep_want 个合格候选,再按延迟升序逐个 TLS+HTTP 验证
+// 要 CF-RAY,凑够 verify_want 个真边缘回存。名单为空(开关关着)直接
+// 返回。金丝雀检查与 reach 主循环共用同一原则:境内路径被代理接管
+// 时这批优选结果全是假的,整轮跳过不回存。
+func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) error {
+	raw, err := call("GET", "/api/cdn-optimize/targets", nil)
+	if err != nil {
+		return err
+	}
+	var rt struct {
+		IPs           []string `json:"ips"`
+		SweepWant     int      `json:"sweep_want"`
+		VerifyWant    int      `json:"verify_want"`
+		PingTimeoutMs int      `json:"ping_timeout_ms"`
+	}
+	if err := json.Unmarshal(raw, &rt); err != nil {
+		return err
+	}
+	if len(rt.IPs) == 0 {
+		return nil
+	}
+	// 金丝雀:境内路径被接管时 CF-RAY 都可能「通」得出来(代理出口就
+	// 能连 Cloudflare),数据没有意义。
+	if !reach.TrustedPath(ctx, 0) {
+		if logf != nil {
+			logf("境内路径被代理接管(金丝雀可达),CDN 优选这一轮跳过不回存")
+		}
+		return nil
+	}
+	pingTimeout := 800 * time.Millisecond
+	if rt.PingTimeoutMs > 0 {
+		pingTimeout = time.Duration(rt.PingTimeoutMs) * time.Millisecond
+	}
+	candidates := cdn.ProbeTCP(ctx, rt.IPs, rt.SweepWant, pingTimeout)
+	if len(candidates) == 0 {
+		return nil
+	}
+	verified := cdn.Verify(ctx, candidates, rt.VerifyWant, 5*time.Second)
+	var results []model.CDNResult
+	for _, v := range verified {
+		results = append(results, model.CDNResult{
+			IP: v.IP, Reachable: v.Reachable, LatencyMs: v.LatencyMs,
+			Edge: v.Edge, Colo: v.Colo,
+		})
+	}
+	if len(results) == 0 {
+		return nil
+	}
+	_, err = call("POST", "/api/cdn-optimize/results", map[string]any{"results": results})
+	return err
+}
