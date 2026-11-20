@@ -315,7 +315,55 @@ func (s *Server) handleBandwidthResults(w http.ResponseWriter, r *http.Request) 
 	}
 	// 订阅名带实测带宽,新样本意味着旧名字过期。
 	s.invalidateSubCache()
+	if b.Status == "failed" {
+		s.maybePanicRefreshSource(b.SubjectKey)
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"saved": true})
+}
+
+// panicRefreshMinGap 是「该源端点全挂→加刷一次」的最小间隔:端点轮换是
+// 分钟级的事,加刷不必等下个整周期,但也不能对同一条 failed 样本重复刷。
+const panicRefreshMinGap = 15 * time.Minute
+
+// maybePanicRefreshSource 处理「外部源整批挂」的补救:同一条来源快照里
+// 所有端点都是 failed 说明上游没给可用的 IP(轮换/整体封锁),不等下个
+// interval,立刻加刷一次拉新端点。自查刷不出新端点时靠
+// panicRefreshMinGap 限速,不会变成写一次刷一次的循环。
+func (s *Server) maybePanicRefreshSource(key model.ProbeSubjectKey) {
+	srcID, ok := parseExternalSubjectID(string(key))
+	if !ok {
+		return
+	}
+	src, err := s.store.GetSource(srcID)
+	if err != nil || src.IntervalSeconds == 0 || s.sources.Running(srcID) {
+		return
+	}
+	if src.LastAttemptAt != nil && time.Since(*src.LastAttemptAt) < panicRefreshMinGap {
+		return
+	}
+	views, err := s.store.LatestBandwidthViews()
+	if err != nil {
+		return
+	}
+	var eps []render.Endpoint
+	if err := json.Unmarshal(src.Snapshot, &eps); err != nil || len(eps) == 0 {
+		return
+	}
+	alive := false
+	for _, ep := range eps {
+		ep.SourceID = srcID
+		v, ok := views[string(ep.Key())]
+		if !ok || v.Status != "failed" {
+			alive = true
+			break
+		}
+	}
+	if alive {
+		return
+	}
+	s.logger.Warn("外部源全部端点带宽测量失败,立刻加刷拉新端点",
+		"source_id", srcID, "source", src.Name, "endpoints", len(eps))
+	_ = s.sources.StartRefresh(srcID)
 }
 
 // ---- 孤儿指标清理 ----

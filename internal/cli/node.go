@@ -40,7 +40,7 @@ func init() {
 		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd, nodeRetryCmd, nodeBandwidthCmd)
 
 	nodeBandwidthCmd.Flags().StringVar(&bwTestURL, "url", "", "测速下载地址,空用默认(cloudflare speed)")
-	nodeBandwidthCmd.Flags().IntVar(&bwRounds, "rounds", 2, "同一端点重复下载次数,取最好一次")
+	nodeBandwidthCmd.Flags().IntVar(&bwRounds, "rounds", 3, "同一端点重复下载次数,取最好一次")
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
