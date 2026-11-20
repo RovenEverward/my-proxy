@@ -1035,6 +1035,21 @@ rules:
   - RULE-SET,pinterest,社交
   - RULE-SET,linkedin,社交
   - RULE-SET,vk,社交
+  # 国内媒体必须排在流媒体/大表前面:globalmedia、category-media 等大集合
+  # 会吞掉 snssdk.com 这类国内域名,先让国内媒体直连抢走。
+  - RULE-SET,bilibili,国内媒体
+  - RULE-SET,iqiyi,国内媒体
+  - RULE-SET,tencentvideo,国内媒体
+  - RULE-SET,youku,国内媒体
+  - RULE-SET,douyin,国内媒体
+  - RULE-SET,kuaishou,国内媒体
+  - RULE-SET,neteasemusic,国内媒体
+  - RULE-SET,acfun,国内媒体
+  - RULE-SET,douyu,国内媒体
+  - RULE-SET,huya,国内媒体
+  - RULE-SET,migu,国内媒体
+  - RULE-SET,kugoukuwo,国内媒体
+  - RULE-SET,chinamedia,国内媒体
   - RULE-SET,netflix,流媒体
   - RULE-SET,disney,流媒体
   - RULE-SET,hbo,流媒体
@@ -1083,21 +1098,7 @@ rules:
   - RULE-SET,figma,开发
   - RULE-SET,notion,开发
   - RULE-SET,slack,开发
-  # 六、国内媒体
-  - RULE-SET,bilibili,国内媒体
-  - RULE-SET,iqiyi,国内媒体
-  - RULE-SET,tencentvideo,国内媒体
-  - RULE-SET,youku,国内媒体
-  - RULE-SET,douyin,国内媒体
-  - RULE-SET,kuaishou,国内媒体
-  - RULE-SET,neteasemusic,国内媒体
-  - RULE-SET,acfun,国内媒体
-  - RULE-SET,douyu,国内媒体
-  - RULE-SET,huya,国内媒体
-  - RULE-SET,migu,国内媒体
-  - RULE-SET,kugoukuwo,国内媒体
-  - RULE-SET,chinamedia,国内媒体
-  # 七、境外:先按服务点名的,再上大表(排在直连表前面,冲突时以代理为准)
+  # 六、境外:先按服务点名的,再上大表(排在直连表前面,冲突时以代理为准)
   - RULE-SET,proxylite,全球代理
   - RULE-SET,wikipedia,全球代理
   - RULE-SET,wikimedia,全球代理
@@ -1120,7 +1121,7 @@ rules:
   - RULE-SET,greatfire,全球代理
   - RULE-SET,telegramcidr,全球代理,no-resolve
   - RULE-SET,proxy,全球代理
-  # 八、国内域名与 IP 直连
+  # 七、国内域名与 IP 直连
   - RULE-SET,direct,本地直连
   - RULE-SET,cncidr,本地直连,no-resolve
   - GEOIP,CN,本地直连

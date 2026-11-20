@@ -1101,6 +1101,24 @@
       },
       {
         "rule_set": [
+          "bilibili",
+          "iqiyi",
+          "tencent",
+          "youku",
+          "douyin",
+          "kuaishou",
+          "netease",
+          "acfun",
+          "douyu",
+          "huya",
+          "category-media-cn",
+          "kugou",
+          "kuwo"
+        ],
+        "outbound": "国内媒体"
+      },
+      {
+        "rule_set": [
           "netflix",
           "disney",
           "hbo",
@@ -1160,24 +1178,6 @@
           "slack"
         ],
         "outbound": "开发"
-      },
-      {
-        "rule_set": [
-          "bilibili",
-          "iqiyi",
-          "tencent",
-          "youku",
-          "douyin",
-          "kuaishou",
-          "netease",
-          "acfun",
-          "douyu",
-          "huya",
-          "category-media-cn",
-          "kugou",
-          "kuwo"
-        ],
-        "outbound": "国内媒体"
       },
       {
         "rule_set": [
