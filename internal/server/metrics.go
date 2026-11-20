@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -23,6 +24,7 @@ import (
 func (s *Server) metricRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/metrics", s.handleMetrics)
 	api.HandleFunc("GET /api/bandwidth/endpoint", s.handleBandwidthEndpoint)
+	api.HandleFunc("GET /api/bandwidth/targets", s.handleBandwidthTargets)
 	api.HandleFunc("POST /api/bandwidth/results", s.handleBandwidthResults)
 }
 
@@ -172,6 +174,58 @@ func (s *Server) handleBandwidthEndpoint(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, bandwidthEndpointResponse{Subject: subject, Endpoints: out, TestURL: testURL})
 }
 
+// bandwidthTargetsMaxPerRound 是探测端一轮 Tick 最多领走的欠测对象数。
+// 带宽测试一次约百 MB 流量,欠账按轮还,不一次清 —— CDN 池子换得比
+// 还账快得多的话宁可欠着也不让探测端被打爆。
+const bandwidthTargetsMaxPerRound = 2
+
+// handleBandwidthTargets 给探测端下发「带宽未测」的对象名单(UC-23)。
+// 只发 host:* —— 由 applyCDNHosts 换 IP 或操作者手工加的入口,新出现
+// 就自动排期;node:*/s:* 仍走操作者手动 mpx node bandwidth,不进队列。
+func (s *Server) handleBandwidthTargets(w http.ResponseWriter, r *http.Request) {
+	views, err := s.store.LatestBandwidthViews()
+	if err != nil {
+		s.writeStoreError(w, err, "带宽视图")
+		return
+	}
+	hosts, err := s.store.ListHosts(0)
+	if err != nil {
+		s.writeStoreError(w, err, "入口列表")
+		return
+	}
+	var testURL string
+	if settings, err := s.store.GetSettings(); err == nil {
+		testURL = settings.BandwidthTestURL
+	}
+	type target struct {
+		Subject   string                  `json:"subject"`
+		Endpoints []render.EndpointConfig `json:"endpoints"`
+	}
+	var out []target
+	for _, h := range hosts {
+		if len(out) >= bandwidthTargetsMaxPerRound {
+			break
+		}
+		key := string(model.HostSubjectKey(h.ID))
+		if v, ok := views[key]; ok && v.Status != "untested" {
+			continue // 测过了(无论 ok/failed),不重测
+		}
+		eps, err := s.bandwidthEndpoints(r.Context(), model.ProbeSubjectKey(key))
+		if err != nil || len(eps) == 0 {
+			continue
+		}
+		cfg := make([]render.EndpointConfig, 0, len(eps))
+		for _, ep := range eps {
+			cfg = append(cfg, render.WireEndpoint(ep))
+		}
+		out = append(out, target{Subject: key, Endpoints: cfg})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"targets":  out,
+		"test_url": testURL,
+	})
+}
+
 // bandwidthEndpoints 摆出一个对象的可测端点:node/host 走测量用户解析,
 // 外部端点直接读订阅快照(凭据在快照里)。
 func (s *Server) bandwidthEndpoints(ctx context.Context, key model.ProbeSubjectKey) ([]render.Endpoint, error) {
@@ -305,8 +359,13 @@ func (s *Server) handleBandwidthResults(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if b.SourceID == "" {
-		// 手动测量的来源固定记 operator,与探测点 source_id 区分开。
-		b.SourceID = "operator"
+		// 探测点凭据报的结果按 probe:<id> 记账(与 reach 同一口径,
+		// ISS-14);其他没报身份的来源(操作者手测)记 operator。
+		if pid, ok := r.Context().Value(probeIDKey).(int64); ok && pid > 0 {
+			b.SourceID = "probe:" + strconv.FormatInt(pid, 10)
+		} else {
+			b.SourceID = "operator"
+		}
 	}
 	b.CheckedAt = time.Now().UTC()
 	if err := s.store.SaveBandwidthSample(b); err != nil {

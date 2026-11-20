@@ -303,3 +303,57 @@ func TestBandwidthNoPanicRefreshWhileAlive(t *testing.T) {
 		t.Fatal("还有活端点不该加刷")
 	}
 }
+
+// UC-23:未测 host 进 targets,测过的(无论 ok/failed)不进。
+func TestBandwidthTargetsQueueUntestedOnly(t *testing.T) {
+	e := newEnv(t)
+	_, in, _ := mkReachFixture(t, e)
+	// 造两个入口:一个测过 ok,一个新挂着的。
+	h1 := model.Host{InboundID: in.ID, Address: "1.1.1.1", Port: 443, SNI: "a"}
+	h2 := model.Host{InboundID: in.ID, Address: "2.2.2.2", Port: 443, SNI: "a"}
+	if err := e.st.CreateHost(&h1); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.CreateHost(&h2); err != nil {
+		t.Fatal(err)
+	}
+	k1 := string(model.HostSubjectKey(h1.ID))
+	code, _ := e.api("POST", "/api/bandwidth/results",
+		map[string]any{"subject_key": k1, "status": "ok", "bytes_per_sec": 1e6})
+	if code != http.StatusCreated {
+		t.Fatalf("回写: %d", code)
+	}
+	code, raw := e.api("GET", "/api/bandwidth/targets", nil)
+	if code != http.StatusOK {
+		t.Fatalf("targets: %d %s", code, raw)
+	}
+	var resp struct {
+		Targets []struct {
+			Subject string `json:"subject"`
+		} `json:"targets"`
+		TestURL string `json:"test_url"`
+	}
+	_ = json.Unmarshal(raw, &resp)
+	k2 := string(model.HostSubjectKey(h2.ID))
+	var hasK1, hasK2 bool
+	for _, tg := range resp.Targets {
+		if tg.Subject == k1 {
+			hasK1 = true
+		}
+		if tg.Subject == k2 {
+			hasK2 = true
+		}
+	}
+	if hasK1 {
+		t.Fatal("测过的 host 不该再进队列")
+	}
+	if !hasK2 {
+		t.Fatalf("新 host %s 应该进队列: %+v", k2, resp.Targets)
+	}
+	// node:* 不进队列。
+	for _, tg := range resp.Targets {
+		if len(tg.Subject) >= 5 && tg.Subject[:5] == "node:" {
+			t.Fatal("node: 对象不该进自动队列")
+		}
+	}
+}

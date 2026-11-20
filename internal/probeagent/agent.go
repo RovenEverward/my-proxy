@@ -11,9 +11,11 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/bwtest"
 	"github.com/RovenEverward/my-proxy/internal/cdn"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/reach"
+	"github.com/RovenEverward/my-proxy/internal/render"
 )
 
 // Caller 是发一次控制面调用的抽象:method、路径、可选 JSON body,回原始响应体。
@@ -88,6 +90,13 @@ func Tick(ctx context.Context, call Caller, logf func(string, ...any)) error {
 	// 判定该不该跑,只忠实执行拿到的任务。
 	if err := cdnOptimize(ctx, call, logf); err != nil && logf != nil {
 		logf("CDN 优选探测失败: %v", err)
+	}
+
+	// UC-23:新出现的 CDN 入口自动补测带宽。换新 host 时它就是
+	// untested,下一轮 Tick 自然轮到 —— 不需要人工跑 mpx node
+	// bandwidth。
+	if err := bandwidthRound(ctx, call, logf); err != nil && logf != nil {
+		logf("带宽补测失败: %v", err)
 	}
 
 	// 控制面侧欠账:探测端把对象名单递过去,控制面自己探,探测端再按 cp 侧回存。
@@ -189,7 +198,56 @@ func min(a, b int) int {
 	return b
 }
 
-// 包内无其他未用项;文件到此结束。
+// bandwidthRound 是 UC-23 的自动补测:向控制面领「带宽未测」的
+// host:* 名单(每轮最多 bandwidthTargetsMaxPerRound 个),逐个用
+// bwtest.Measure 实测后 POST 回 /api/bandwidth/results。探测端本机
+// 是可信国内路径(金丝雀在 bwtest 里自查),source_id 由控制面
+// 按探测点凭据记 probe:<id>,与 reach 同一口径。
+func bandwidthRound(ctx context.Context, call Caller, logf func(string, ...any)) error {
+	raw, err := call("GET", "/api/bandwidth/targets", nil)
+	if err != nil {
+		return err
+	}
+	var rt struct {
+		Targets []struct {
+			Subject   string                  `json:"subject"`
+			Endpoints []render.EndpointConfig `json:"endpoints"`
+		} `json:"targets"`
+		TestURL string `json:"test_url"`
+	}
+	if err := json.Unmarshal(raw, &rt); err != nil {
+		return err
+	}
+	for _, t := range rt.Targets {
+		if len(t.Endpoints) == 0 {
+			continue
+		}
+		res := bwtest.Measure(ctx, t.Endpoints, bwtest.Options{
+			TestURL: rt.TestURL,
+			Rounds:  3,
+		})
+		body := map[string]any{
+			"subject_key":   t.Subject,
+			"status":        res.Status,
+			"bytes_per_sec": res.BytesPerSec,
+			"duration_ms":   res.DurationMs,
+			"bytes":         res.Bytes,
+			"test_url":      firstNonEmptyBW(rt.TestURL, bwtest.DefaultTestURL),
+			"error":         res.Error,
+		}
+		if _, err := call("POST", "/api/bandwidth/results", body); err != nil && logf != nil {
+			logf("带宽补测回写 %s 失败: %v", t.Subject, err)
+		}
+	}
+	return nil
+}
+
+func firstNonEmptyBW(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
 
 // cdnOptimize 是一轮 CDN IP 优选:向控制面领候选名单,粗扫(TCP:443
 // ping)拿够 sweep_want 个合格候选,再按延迟升序逐个 TLS+HTTP 验证
