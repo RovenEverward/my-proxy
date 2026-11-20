@@ -33,6 +33,6 @@ verified: 2026-11-18 @ HEAD + plan_source_grants 工作树
 - 策略组用「标签」条件 → v0.7.0 删掉用途后没有标签来源，匹配不到任何节点 → 改用地区、协议或能力检测筛选。
 - 订阅链接带 `?purpose=` → v0.7.0 起被忽略，返回完整订阅 → 不报错是有意的，老客户端不会坏。
 - UA 规则表为空 → 表示「没配过」，用内置默认，不是「关掉分流」。
-- 「国内媒体」必须排在「流媒体」前面 → media 组含 category-media/globalmedia 大集合，会吞掉 snssdk.com 等国内域名 → 排后面匹配不到，抖音评论区会走代理加载不出。
+- 「国内媒体」「苹果」等直连组必须排在大表之前 → globalmedia/category-media 等大集合会吞掉 snssdk.com 等国内域名 → 排后面匹配不到，抖音评论区会走代理加载不出。规整后的层序：lan/ads → 自定义 suffix → 直连组(apple/cnmedia) → 主题代理组(media/ai/google/ms/social/game/dev) → global 大表 → cn/geoip 兜底。例外:global 有意收 apple.com/mzstatic.com（海外 CDN 更稳），不纠正。
 - 节点名里写 `{USERNAME}` → 会被抹成空串，只在订阅名里生效 → 见 [缺口与待定项] 第 3 条。
 - 订阅走明文 HTTP → token 可被链路窃听 → 已接受的代价，换地址用 `/sub/{token}/rotate`。
