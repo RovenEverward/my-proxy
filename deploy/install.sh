@@ -315,7 +315,7 @@ done
 build_binary() {
 	local root="$1" out="$2"
 	if command -v go >/dev/null; then
-		( cd "$root" && go build -trimpath -o "$out" ./cmd/mpx )
+		( cd "$root" && go build -trimpath -tags "with_utls,with_quic" -o "$out" ./cmd/mpx )
 	elif [[ -n "${SUDO_USER:-}" ]] && sudo -u "$SUDO_USER" bash -lc 'command -v go' >/dev/null 2>&1; then
 		note "root 的 PATH 里没有 go,借 $SUDO_USER 的编"
 		sudo -u "$SUDO_USER" bash -lc "cd '$root' && go build -trimpath -o '$out' ./cmd/mpx"

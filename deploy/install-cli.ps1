@@ -141,7 +141,7 @@ try {
 		$built = Join-Path $Tmp 'mpx-built.exe'
 		Push-Location $root
 		try {
-			& go build -trimpath -o $built ./cmd/mpx
+			& go build -trimpath -tags "with_utls,with_quic" -o $built ./cmd/mpx
 			if ($LASTEXITCODE -ne 0) { Die "$(T '\u7f16\u8bd1\u5931\u8d25\u3002')" }
 		} finally {
 			Pop-Location

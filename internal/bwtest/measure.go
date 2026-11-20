@@ -18,13 +18,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/reach"
 	"github.com/RovenEverward/my-proxy/internal/render"
 )
 
 // DefaultTestURL 是测速下载的默认目标:字节数由调用方拼上,
 // 默认按 ~16MiB 取(两次各取一半,单次上限 20s 内能下完的量)。
-const DefaultTestURL = "https://speed.cloudflare.com/__down?bytes=16777216"
+const DefaultTestURL = "http://proof.ovh.net/files/100Mb.dat"
 
 // Options 是一次测量的输入。
 type Options struct {
@@ -107,7 +108,7 @@ func Measure(ctx context.Context, eps []render.EndpointConfig, opt Options) Resu
 	// 全部端点都不可测或都失败:区分「协议不支持」与「真的失败」。
 	if allUnsupported(eps) {
 		res.Status = "unsupported"
-		res.Error = "协议不支持带宽测量(wireguard 或仅支持 UDP 的协议走不了 HTTP 下载)"
+		res.Error = "协议/传输不支持带宽测量(wireguard 与 xray 专有传输没有 sing-box 客户端实现)"
 	} else {
 		res.Error = lastErr
 	}
@@ -130,15 +131,19 @@ func (o *Options) normalize() Options {
 
 func (o *Options) verifyPath() bool { return o.VerifyPath == nil || *o.VerifyPath }
 
-// measurable 说这个端点能不能走 HTTP 下载测带宽:UDP-only 的协议
-// (hysteria2/tuic/wireguard)与 bare TCP 不行之外的都按 sing-box outbound 试。
+// measurable 说这个端点能不能走 HTTP 下载测带宽:wireguard 不承载 HTTP,
+// xray 专有传输(xhttp/splithttp/httpupgrade)sing-box 客户端说不出
+// (渲染层本来就把它们隐藏,见 render.transportToSingbox)。
+// 其余(tcp/ws/grpc/quic 系)都按 sing-box outbound 试。
 func measurable(ep render.Endpoint) bool {
 	switch ep.Protocol {
 	case "wireguard":
 		return false
 	}
-	// sing-box outbound 里能承载 TCP 的协议都能测;quic 系(hysteria2/tuic)
-	// 也是 TCP over QUIC 之上的 TCP,照样能走 mixed inbound 的 socks。
+	switch ep.Network {
+	case model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkHTTPUpgrade:
+		return false
+	}
 	return ep.Protocol.Valid()
 }
 
@@ -239,12 +244,18 @@ func downloadOnce(ctx context.Context, c *http.Client, testURL string, timeout t
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("组请求: %w", err)
 	}
+	// 公共测速端点(如 speed.cloudflare.com)会拦不带浏览器 UA 的客户端,
+	// 测的是节点吞吐不是协议指纹,用通用 UA 过这一关。
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 	start := time.Now()
 	resp, err := c.Do(req)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("下载: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, 0, time.Since(start).Milliseconds(), fmt.Errorf("测速地址返回 %s", resp.Status)
+	}
 	n, err = io.Copy(io.Discard, resp.Body)
 	ms = time.Since(start).Milliseconds()
 	if err != nil && !errorsIsDeadline(err) {

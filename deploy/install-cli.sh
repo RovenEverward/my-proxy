@@ -219,7 +219,7 @@ try_build() {
 		root="$TMP/src"
 	fi
 	echo "==> 用本机的 Go 编译(这要一会儿)"
-	if ! ( cd "$root" && go build -trimpath -o "$TMP/mpx-built" ./cmd/mpx ); then
+	if ! ( cd "$root" && go build -trimpath -tags "with_utls,with_quic" -o "$TMP/mpx-built" ./cmd/mpx ); then
 		note "编译失败"
 		return 1
 	fi
