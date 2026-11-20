@@ -95,7 +95,7 @@ function NodeListPage() {
     const bt = bandwidthText(m?.bandwidth);
     const busy = bw.measuring === nodeSubject(node.id);
     return <td className="reach-col" data-act="metric-cell"><span className="st" title={st.title}>{st.text}</span>
-      <span className="sub mono reach-lat" title={bt.title}>{bt.text}{m?.bandwidth?.measured_at ? ` · ${sinceText(m.bandwidth.measured_at)}` : ""}</span></td>;
+      <div className="sub mono reach-lat" title={bt.title}>{bt.text}{m?.bandwidth?.measured_at ? ` · ${sinceText(m.bandwidth.measured_at)}` : ""}</div></td>;
   };
   const measure = async (node: NodeView) => {
     try { await bw.start(nodeSubject(node.id)); } catch (error) { app.toast(errorMessage(error), true); }
