@@ -220,6 +220,35 @@ func (s *Server) handleBandwidthTargets(w http.ResponseWriter, r *http.Request) 
 		}
 		out = append(out, target{Subject: key, Endpoints: cfg})
 	}
+	// 外部端点(UC-18 扩展):kitty/JMS 这些 s: 源内的 endpoint 同样进
+	// 队列。每个端点是一个对象,新快照轮换进来的条目自动排到。
+	srcs, err := s.store.ListSources()
+	if err == nil {
+		for _, src := range srcs {
+			if len(out) >= bandwidthTargetsMaxPerRound {
+				break
+			}
+			if !src.Enabled || len(src.Snapshot) == 0 {
+				continue
+			}
+			var eps []render.Endpoint
+			if err := json.Unmarshal(src.Snapshot, &eps); err != nil {
+				continue
+			}
+			for i := range eps {
+				if len(out) >= bandwidthTargetsMaxPerRound {
+					break
+				}
+				eps[i].SourceID = src.ID
+				key := string(eps[i].Key())
+				if v, ok := views[key]; ok && v.Status != "untested" {
+					continue
+				}
+				cfg := []render.EndpointConfig{render.WireEndpoint(eps[i])}
+				out = append(out, target{Subject: key, Endpoints: cfg})
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"targets":  out,
 		"test_url": testURL,
