@@ -313,6 +313,8 @@ func (s *Server) handleBandwidthResults(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 订阅名带实测带宽,新样本意味着旧名字过期。
+	s.invalidateSubCache()
 	writeJSON(w, http.StatusCreated, map[string]any{"saved": true})
 }
 

@@ -132,7 +132,38 @@ func (s *Server) subscriptionEndpointsFor(user *model.User, format model.ClientF
 		set.Endpoints = append(set.Endpoints, ep)
 	}
 	set.Endpoints = render.DedupeRemarks(set.Endpoints)
+
+	// UC-20:把实测带宽写进订阅节点名 —— 客户端列表直接能看到速度。
+	// 只在有 ok 样本的对象上标;读一次表,渲染层不碰 store。
+	if bw, err := s.store.LatestBandwidthViews(); err == nil && len(bw) > 0 {
+		for i := range set.Endpoints {
+			if v := bandwidthOf(set.Endpoints[i], bw); v != "" {
+				set.Endpoints[i].Remark += " · " + v
+			}
+		}
+	}
 	return set, nil
+}
+
+// bandwidthOf 给一个端点挑展示用的带宽标签:入口(host)实测过用入口的,
+// 节点实测过用节点的,外部端点按 s: 身份查。都只认最近一次 ok 的存档值。
+func bandwidthOf(ep render.Endpoint, bw map[string]model.BandwidthView) string {
+	keys := []string{}
+	if ep.SourceID > 0 {
+		keys = append(keys, string(ep.Key()))
+	} else {
+		if ep.HostID > 0 {
+			keys = append(keys, string(model.HostSubjectKey(ep.HostID)))
+		}
+		keys = append(keys, string(model.NodeSubjectKey(ep.NodeID)))
+	}
+	for _, k := range keys {
+		v := bw[k]
+		if v.Status == "ok" && v.BytesPerSec > 0 {
+			return model.FormatBps(v.BytesPerSec)
+		}
+	}
+	return ""
 }
 
 // ---- 池可视化 ----

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strconv"
+	"time"
+)
 
 // ReachSourceSample 是一次活性探测的样本(对象 × 来源),UC-20 境内稳定度的
 // 原料。reach_source_checks 只存每个(对象,来源)的最新一行,滚动指标要历史,
@@ -46,6 +49,16 @@ type BandwidthSample struct {
 	Bytes       int64           `json:"bytes,omitempty"`
 	TestURL     string          `json:"test_url,omitempty"`
 	Error       string          `json:"error,omitempty"`
+}
+
+// FormatBps 把字节/秒按订阅名与界面通用的短式排版:
+// ≥1Mbps 取整为 Mbps,慢到不足 1Mbps 显 Kbps —— 这种节点值本身就值得警告。
+func FormatBps(bps int64) string {
+	kbps := bps / 125 // 字节/秒 → Kbps(十进制,订阅名里的惯例口径)
+	if kbps >= 1000 {
+		return strconv.FormatInt(kbps/1000, 10) + "Mbps"
+	}
+	return strconv.FormatInt(kbps, 10) + "Kbps"
 }
 
 // BandwidthStatuses 是带宽样本状态的合法值。
