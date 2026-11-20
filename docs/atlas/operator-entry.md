@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-19 @ 509de43 + working tree
+verified: 2026-11-20 @ 605d676 + working tree
 ---
 # 本机入口：CLI、mpx ui、设备接入
 
@@ -10,7 +10,7 @@ verified: 2026-11-19 @ 509de43 + working tree
 
 ## 边界
 
-负责：把操作拼成请求、把结果显示给人；多控制面配置档；设备接入与吊销；本机才能做的事（切换 profile、接入另一套控制面、自检、relabel 查 IP 归属、首次安装向导）。IP 质量评级（`mpx node grade` / `mpx node regrade`、节点列表「IP 质量评级」弹窗）是两条控制面接口的普通客户端调用，不进 `/local`：探测走 `POST /api/nodes/{id}/quality`（外部端点是 `mpx source grade` 打 `POST /api/sources/{id}/endpoints/{key}/quality`），预览与写库走 `POST /api/regrade`，uiAllow 里各有等价命令放行。
+负责：把操作拼成请求、把结果显示给人；多控制面配置档；设备接入与吊销；本机才能做的事（切换 profile、接入另一套控制面、自检、relabel 查 IP 归属、首次安装向导）。IP 质量评级（`mpx node grade` / `mpx node regrade`、节点列表「IP 质量评级」弹窗）是两条控制面接口的普通客户端调用，不进 `/local`：探测走 `POST /api/nodes/{id}/quality`（外部端点是 `mpx source grade` 打 `POST /api/sources/{id}/endpoints/{key}/quality`），预览与写库走 `POST /api/regrade`，uiAllow 里各有等价命令放行。带宽测量(UC-20)是本机才能做的事:控制面不下网,`mpx node bandwidth` 与 `mpx ui` 的「测速」按钮各取 `GET /api/bandwidth/endpoint` 的端点配置,用 `internal/bwtest`(内嵌 sing-box,mixed inbound + 出站拨号)本机下载测速后 `POST /api/bandwidth/results` 回写;操作机被代理接管时先跑 `reach.TrustedPath` 金丝雀,不通则绑物理接口(`bind_interface`/`IP_BOUND_IF`)绕行,绕不了报错提示加白名单;wireguard 端点标 `unsupported`。`mpx ui` 侧走 `/local/bandwidth/measure` 本地 job(与 `/local/reach/check` 同形状:POST 起、GET 轮询),结果由 job 直接回写,uiAllow 不放 POST —— `GET /api` 前缀已覆盖 `/api/metrics` 与端点下发。
 
 不负责：碰数据库和节点（`mpx init` 是唯一例外，因为那时控制面还不存在，见 [安装与升级](install-update.md)）；长出控制面接口之外的能力。
 
@@ -37,7 +37,7 @@ flowchart LR
    路由按目标视图立即切换标题、面包屑和加载框架，`main` 的 `aria-busy` 随框架一起输出；切换视图归零滚动，同一视图刷新保留位置。失败留在目标页重试，过期响应丢弃；后台轮询失败只提示并保留数据，手动刷新失败保留页面错误与重试。分流加载框架保留标签和规则作用域，只将列表换为骨架。异步抽屉先显示目标标题和读取状态，再通过 `usePageData` 补全内容；关闭、换页或换抽屉后不再提交旧结果。覆盖层关闭与路由变化分开处理，换页关闭旧抽屉不改写目标地址。订阅同页锚点保留草稿并立即定位，控制面切换先显示连接中，成功后重载。守卫见 `nav-loading.spec.mjs`。
    异步交互通过 `Button loading` 与局部忙态立即显示进行中状态，原生控件值不冒充保存成功；失败恢复原选择并保留原页面错误提示。`usePageData` 加载器的 `read` 只在明确的局部刷新中复用当前页面成功整页读取的快照，键包含完整接口路径、查询参数、方法和只读请求体；作用域与筛选不会串用。只有当前代次的完整读取可替换快照，局部读取返回副本且不回写。写开始、完成均失效相关资源；用户列表、计数和套餐人数一起失效。手动刷新、切页和每 30 秒轮询仍读远端，不复用旧请求快照；切页重新读取，完整成功后更新请求快照；展示缓存先呈现。`node scripts/ui-interaction-audit.mjs` 在现有 e2e 路径中加入 150–300ms 响应延迟，输出交互反馈、完成和接口耗时表；正式延迟守卫在 `interaction-latency.spec.mjs`。
    本机转发与 CLI 的连接池每主机保留最多 16 个空闲连接，证书钉住和 HTTP/1.1 不变；控制面仅对已鉴权管理 JSON 协商 gzip，大于等于 1KB 才压缩，解压字节保持原样。备份流和订阅不经过 JSON 压缩。相关守卫见 `data-reuse.spec.mjs`。
-   外部订阅与自建节点共同收纳在「节点」页的二级页签（`自建节点 | 外部订阅 | 探测点`，对应 `#nodes` / `#nodes/sources` / `#nodes/probes`，旧地址 `#sources` 跳到外部订阅）；订阅页第三张卡仍保留跳转入口。「探测点」页签（UC-12）放自动剔除开关与周期（写 `settings.reach_exclude` / `reach_interval_minutes`）和探测点名册（增删、凭据轮换，接入命令只在创建时给一次）；剔除开着时节点列表顶部挂提示条，行内「已剔除 / 保留中」标与「保留」按钮对应 `PUT /api/reach/keep`。页面通过来源接口在单张可展开来源表内展示接收用户与状态，行内按需展开只读节点成员，点来源进入分段详情抽屉（`配置与授权` / `节点与格式` 单次保存；接收用户分按人、按套餐两块勾选，保存同发 `users` 与 `plan_ids`），混合订阅预览按需弹窗查看。对应命令为 `mpx source`，`grant`/`revoke` 同时接受 `--user` 与 `--plan`（套餐名唯一，按名定位）。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
+   外部订阅与自建节点共同收纳在「节点」页的二级页签（`自建节点 | 外部订阅 | 探测点`，对应 `#nodes` / `#nodes/sources` / `#nodes/probes`，旧地址 `#sources` 跳到外部订阅）；订阅页第三张卡仍保留跳转入口。节点列表在有指标数据时长出「境内」列(稳定度成功率·时延 + 带宽展示值·测量时间),行尾「测速」与源成员行同列指标同按钮;节点详情维护卡加「境内指标」行,触达抽屉加「境内指标」段(UC-20)。「探测点」页签（UC-12）放自动剔除开关与周期（写 `settings.reach_exclude` / `reach_interval_minutes`）和探测点名册（增删、凭据轮换，接入命令只在创建时给一次）；剔除开着时节点列表顶部挂提示条，行内「已剔除 / 保留中」标与「保留」按钮对应 `PUT /api/reach/keep`。页面通过来源接口在单张可展开来源表内展示接收用户与状态，行内按需展开只读节点成员，点来源进入分段详情抽屉（`配置与授权` / `节点与格式` 单次保存；接收用户分按人、按套餐两块勾选，保存同发 `users` 与 `plan_ids`），混合订阅预览按需弹窗查看。对应命令为 `mpx source`，`grant`/`revoke` 同时接受 `--user` 与 `--plan`（套餐名唯一，按名定位）。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
 3. 设备接入：控制面自签证书，CLI 记指纹。
 4. 桌面程序。
 

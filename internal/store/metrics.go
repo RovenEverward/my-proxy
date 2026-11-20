@@ -158,27 +158,57 @@ func (s *Store) ListBandwidthSamples(subject model.ProbeSubjectKey, limit int) (
 	return scanBandwidthSamples(rows)
 }
 
-// ListAllBandwidth 返回全部对象最近一次带宽记录(每对象取最新一条)。
-// 用于列表页一次性补齐;逐对象细节仍走 ListBandwidthSamples。
-func (s *Store) ListAllBandwidth() (map[string]model.BandwidthSample, error) {
+// LatestBandwidthViews 返回每对象的带宽展示视图:最近一次状态 +
+// 最近一次 ok 的实测值。失败不清旧值是刻意的产品口径(UC-20):
+// 带宽测出来后就一直用,复测失败只是说明这次没测成。
+func (s *Store) LatestBandwidthViews() (map[string]model.BandwidthView, error) {
+	// 两条子查询:每对象最新一行(任意状态)+ 最新一行 ok。
+	// 同秒多次回写按 id 定胜负,不让并列的行互相覆盖。
 	rows, err := s.db.Query(`SELECT b.subject_key, b.source_id, b.checked_at, b.status,
- b.bytes_per_sec, b.duration_ms, b.bytes, b.test_url, b.error
+ b.bytes_per_sec, b.error, 0 AS kind
  FROM bandwidth_samples b
- JOIN (SELECT subject_key, MAX(checked_at) AS mx FROM bandwidth_samples GROUP BY subject_key) t
-   ON t.subject_key=b.subject_key AND t.mx=b.checked_at`)
+ WHERE b.id = (SELECT id FROM bandwidth_samples x WHERE x.subject_key=b.subject_key
+   ORDER BY x.checked_at DESC, x.id DESC LIMIT 1)
+ UNION ALL
+ SELECT b.subject_key, b.source_id, b.checked_at, b.status,
+ b.bytes_per_sec, b.error, 1 AS kind
+ FROM bandwidth_samples b
+ WHERE b.status='ok' AND b.id = (SELECT id FROM bandwidth_samples x
+   WHERE x.subject_key=b.subject_key AND x.status='ok'
+   ORDER BY x.checked_at DESC, x.id DESC LIMIT 1)`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]model.BandwidthSample{}
-	items, err := scanBandwidthSamples(rows)
-	if err != nil {
-		return nil, err
+	out := map[string]model.BandwidthView{}
+	for rows.Next() {
+		var key, srcID, status, serr string
+		var at, bps, kind int64
+		if err := rows.Scan(&key, &srcID, &at, &status, &bps, &serr, &kind); err != nil {
+			return nil, err
+		}
+		v := out[key]
+		t := time.Unix(at, 0).UTC()
+		if kind == 0 {
+			v.Status = status
+			v.SourceID = srcID
+			v.Error = serr
+		} else {
+			v.BytesPerSec = bps
+			v.MeasuredAt = &t
+			if v.Status == "" {
+				v.Status = "ok"
+			}
+			if srcID != "" {
+				v.SourceID = srcID
+			}
+		}
+		if v.Status == "" {
+			v.Status = "untested"
+		}
+		out[key] = v
 	}
-	for _, it := range items {
-		out[string(it.SubjectKey)] = it
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func scanBandwidthSamples(rows interface {

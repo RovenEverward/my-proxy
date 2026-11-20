@@ -85,6 +85,10 @@ type Settings struct {
 	// CDNOptimize 是 UC-21 CDN IP 优选总开关:开了探测点才领
 	// cdn-optimize 任务、控制面才把优选 IP 落成 Host。
 	CDNOptimize bool `json:"cdn_optimize"`
+
+	// BandwidthTestURL 是带宽测量(UC-20)的测速下载地址;空值由测量侧
+	// 用内置默认(cloudflare speed 定量下载)。
+	BandwidthTestURL string `json:"bandwidth_test_url"`
 }
 
 // DefaultReachIntervalMinutes 是探测周期的默认值。

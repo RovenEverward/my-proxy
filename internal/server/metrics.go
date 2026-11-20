@@ -45,7 +45,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "稳定度样本")
 		return
 	}
-	bw, err := s.store.ListAllBandwidth()
+	bw, err := s.store.LatestBandwidthViews()
 	if err != nil {
 		s.writeStoreError(w, err, "带宽样本")
 		return
@@ -68,7 +68,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		out = append(out, model.SubjectMetrics{
 			SubjectKey: model.ProbeSubjectKey(key),
 			Stability:  aggregateStability(bySubject[key], stabilityWindowDays),
-			Bandwidth:  bandwidthView(bw[key], bw[key].CheckedAt.Unix() > 0),
+			Bandwidth:  withUntested(bw[key]),
 		})
 	}
 	// 只有带宽没有稳定度样本的对象(从没被境内探过但手动测过)也要出现。
@@ -77,7 +77,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			out = append(out, model.SubjectMetrics{
 				SubjectKey: model.ProbeSubjectKey(key),
 				Stability:  aggregateStability(nil, stabilityWindowDays),
-				Bandwidth:  bandwidthView(bw[key], bw[key].CheckedAt.Unix() > 0),
+				Bandwidth:  withUntested(bw[key]),
 			})
 		}
 	}
@@ -124,14 +124,10 @@ func aggregateStability(samples []model.ReachSourceSample, windowDays int) model
 	return m
 }
 
-// bandwidthView 把一条样本记录整理成展示形状:最近一次 ok 的值 + 最近状态。
-func bandwidthView(b model.BandwidthSample, ok bool) model.BandwidthView {
-	if !ok {
-		return model.BandwidthView{Status: "untested"}
-	}
-	v := model.BandwidthView{Status: b.Status, MeasuredAt: &b.CheckedAt, SourceID: b.SourceID, Error: b.Error}
-	if b.Status == "ok" {
-		v.BytesPerSec = b.BytesPerSec
+// withUntested 给没有带宽记录的对象补 untested 状态。
+func withUntested(v model.BandwidthView) model.BandwidthView {
+	if v.Status == "" {
+		v.Status = "untested"
 	}
 	return v
 }
@@ -143,8 +139,10 @@ func bandwidthView(b model.BandwidthSample, ok bool) model.BandwidthView {
 // bandwidthEndpointResponse 一次测量可用的全部端点:自建节点是多入站的候选
 // 集合,外部端点就是一条。measure 侧逐个尝试直到拿到可用值。
 type bandwidthEndpointResponse struct {
-	Subject   string              `json:"subject"`
+	Subject   string                  `json:"subject"`
 	Endpoints []render.EndpointConfig `json:"endpoints"`
+	// TestURL 是设置里的测速地址;空表示用测量端内置默认。
+	TestURL string `json:"test_url,omitempty"`
 }
 
 func (s *Server) handleBandwidthEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +165,11 @@ func (s *Server) handleBandwidthEndpoint(w http.ResponseWriter, r *http.Request)
 	for _, ep := range eps {
 		out = append(out, render.WireEndpoint(ep))
 	}
-	writeJSON(w, http.StatusOK, bandwidthEndpointResponse{Subject: subject, Endpoints: out})
+	var testURL string
+	if settings, err := s.store.GetSettings(); err == nil {
+		testURL = settings.BandwidthTestURL
+	}
+	writeJSON(w, http.StatusOK, bandwidthEndpointResponse{Subject: subject, Endpoints: out, TestURL: testURL})
 }
 
 // bandwidthEndpoints 摆出一个对象的可测端点:node/host 走测量用户解析,

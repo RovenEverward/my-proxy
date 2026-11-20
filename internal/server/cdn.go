@@ -19,10 +19,10 @@ import (
 const (
 	cdnInterval     = time.Hour // 优选周期:服务端节流,探测端每轮领名单
 	cdnSweepWant    = 64        // 每轮粗扫拿到多少 TCP 合格候选后早停
-	cdnVerifyWant   = 20  // 每轮验证凑够多少真边缘后停(池目标规模)
-	cdnScanBatch    = 512 // 每轮新抽多少 IP 加入候选(渐进覆盖全段)
-	cdnMaxMisses    = 2   // 池内 IP 连续几轮不在名单后出池(保留一轮观察)
-	cdnPerInbound   = 3   // 每个 CDN 入站最多挂几个优选 Host
+	cdnVerifyWant   = 20        // 每轮验证凑够多少真边缘后停(池目标规模)
+	cdnScanBatch    = 512       // 每轮新抽多少 IP 加入候选(渐进覆盖全段)
+	cdnMaxMisses    = 2         // 池内 IP 连续几轮不在名单后出池(保留一轮观察)
+	cdnPerInbound   = 3         // 每个 CDN 入站最多挂几个优选 Host
 	cdnPingTimeout  = 800 * time.Millisecond
 	cdnVerifyTimout = 5 * time.Second
 )

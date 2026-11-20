@@ -448,6 +448,8 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN reach_interval_minutes INTEGER NOT NULL DEFAULT 60`},
 	{"settings", "reach_keeps",
 		`ALTER TABLE settings ADD COLUMN reach_keeps TEXT NOT NULL DEFAULT '{}'`},
+	{"settings", "bandwidth_test_url",
+		`ALTER TABLE settings ADD COLUMN bandwidth_test_url TEXT NOT NULL DEFAULT ''`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

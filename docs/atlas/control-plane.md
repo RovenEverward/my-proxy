@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/, internal/store/, internal/model/, internal/backup/]
-verified: 2026-11-19 @ 509de43 + working tree
+verified: 2026-11-20 @ 605d676 + working tree
 ---
 # 控制面与数据
 
@@ -38,6 +38,7 @@ sequenceDiagram
 7. 订阅镜像(UC-10)经 `GET/POST/PUT/DELETE /api/mirrors` 管理，`sub_mirrors` 表挂 `nodes` 外键级联。`mpx serve --sub-addr`(或 `MPX_SUB_ADDR`)能另开一个只路由 `/sub` 的纯 HTTP 监听；把镜像指到它时 `/api` 不会出现在镜像端口,比把镜像指到主监听(同端口 TLS 嗅探分流)更干净。上游解析顺序:`--upstream` → `settings.SubURLPrefix` → 请求 Host,非 host:port 或推不出来时回警告。
 8. IP 质量评分(UC-14)存 `node_quality` 表(节点外键级联，一节点一行,重测覆盖)；`POST /api/regrade` 在 `metadataMu` 下重算分组字母后经 `SaveLocationMetadataBatch` 事务批量写 `node_metadata`——不走逐节点 PUT 元数据，否则交换两个字母时第一笔下冲突 409。写完 `invalidateSubCache()` 让新订阅立即用新显示名。
 9. 外部端点清洗(UC-17)分两层:快照 (`source_snapshots.endpoints`) 永远留上游原始 `Remark` 供回溯；清洗结果存 `external_metadata` 表（`source_id+source_key` 复合主键、来源外键级联，`kind` 区分 `auto` 回填与 `graded` 重排）。订阅装配与来源视图只读清洗层：`resolveExternalRemark` 拼 `源名 · 旗帜 城市/地区 字母`，无记录的端点回退 `源名 · 上游原名`。身份键是连接参数指纹 (`Endpoint.SourceKey`)，上游改名不换键。快照刷新成功后 `Manager.syncExternalMetadata` 解析地区、`AssignExternalLetters` 补字母（同地区继承已排记录的城市保持同组），`SyncExternalMetadata` 事务删去消失键并差量 upsert；地区解析顺序是旗帜 emoji → token 级 ISO 短码 → 写法表子串 → 来源「默认地区」兜底（`subscription_sources.region`），都不中不建记录。还不中的新端点由 `Manager.backfillOrphanGeo` 后台串行用 `SetGeoProbe` 注入的降级探针（resolve + ipwho.is，`probeGeoOnly`）按地址真查，查到地区自动建 `auto` 记录——JMS 轮换主机名后新端点自己长出干净名，不等人手工 grade；已有记录（含 `graded`）不碰。它永不覆盖 `graded` 行；`PATCH /api/sources/{id}/endpoints/{key}` 人工写地区/城市（输入经 `normalizeExternalRegion` 归一：ISO 或常见写法都收），写成 `graded`，空 region 删记录回退原名。降级评分存 `external_quality`（同键级联、重测覆盖），`POST /api/sources/{id}/endpoints/{key}/quality` 由控制面直连 ipwho.is/ipapi.is/可选 AbuseIPDB（不走 SSH，复用 `QualityScore` 权重与 `qualitySlot` 并发闸），结果并入 `POST /api/regrade` 的同一排序循环，apply 时 `SaveExternalMetadataBatch` 与 `SaveLocationMetadataBatch` 在同一个 `metadataMu` 区间写入。端点消失只清 `external_metadata`，`external_quality` 记录保留。
+10. 境内指标(UC-20)分两条只读线:稳定度存 `reach_source_samples`(对象×来源×轮,`SaveSourceCheck` 同事务追加 `AppendSourceSample`,按对象×来源留 50 轮/7 天),带宽存 `bandwidth_samples`(自增 id,每对象留 30 条)。`GET /api/metrics` 读径聚合:境内样本出成功率/中位时延(不足 3 轮标 `insufficient`),带宽展示值取「最近状态 + 最近 ok 值」两层(`LatestBandwidthViews` 按 `checked_at,id` 破并列,失败不清旧值)。`GET /api/bandwidth/endpoint` 下发 `EndpointConfig`(snake_case DTO,`render.Endpoint` 本体无 json 标签,加标签会破坏存量 `source_snapshots` 编码);node 对象经 `ensureMeasureUser` 建 `mpx-probe` 计量用户,`s:` 对象直接用快照凭据。三接口都不在 `probeAllowed`,探测点凭据 403。删除路径(`DeleteSubjectResults`/`ByPrefix`/`DeleteProbePoint`)与孤儿清理(`pruneOrphanMetrics`,名册来自 `reachTargets`+`reachExtTargets`,`handleReachTargets` 每小时节流触发)都收这两张表。
 
 ## 为什么这样设计
 

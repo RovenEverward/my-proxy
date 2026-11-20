@@ -41,8 +41,8 @@ func quicInbound(sni, cert, key string) model.Inbound {
 func TestEnsureTLSCertificatesWritesMissingPair(t *testing.T) {
 	n := &certNode{t: t}
 	var writes []struct {
-		path  string
-		body  string
+		path   string
+		body   string
 		script string
 	}
 	n.fn = func(script string) (string, error) {
@@ -58,8 +58,8 @@ func TestEnsureTLSCertificatesWritesMissingPair(t *testing.T) {
 		dest := script[strings.LastIndex(script, " ")+1:]
 		_ = mv
 		writes = append(writes, struct {
-			path  string
-			body  string
+			path   string
+			body   string
 			script string
 		}{strings.Trim(dest, "'"), string(stdin), script})
 		return nil
@@ -75,8 +75,8 @@ func TestEnsureTLSCertificatesWritesMissingPair(t *testing.T) {
 		t.Fatalf("应当写两个文件,实际 %d: %+v", len(writes), writes)
 	}
 	var certW, keyW struct {
-		path  string
-		body  string
+		path   string
+		body   string
 		script string
 	}
 	for _, w := range writes {

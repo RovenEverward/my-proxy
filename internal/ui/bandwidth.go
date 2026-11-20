@@ -122,6 +122,7 @@ func (s *Server) runBandwidth(job *bwJob, upstream, token string, tr http.RoundT
 		var ep struct {
 			Subject   string                  `json:"subject"`
 			Endpoints []render.EndpointConfig `json:"endpoints"`
+			TestURL   string                  `json:"test_url"`
 		}
 		raw, err := reachCall[json.RawMessage](tr, upstream, token, "GET",
 			"/api/bandwidth/endpoint?subject="+url.QueryEscape(subject), nil)
@@ -132,7 +133,7 @@ func (s *Server) runBandwidth(job *bwJob, upstream, token string, tr http.RoundT
 			return bwtest.Result{}, fmt.Errorf("解析端点: %w", err)
 		}
 		job.set("measure")
-		res := bwtest.Measure(ctx, ep.Endpoints, bwtest.Options{})
+		res := bwtest.Measure(ctx, ep.Endpoints, bwtest.Options{TestURL: ep.TestURL})
 
 		job.set("save")
 		if _, err := reachCall[json.RawMessage](tr, upstream, token, "POST",

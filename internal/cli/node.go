@@ -1106,6 +1106,7 @@ var nodeBandwidthCmd = &cobra.Command{
 		}
 		var ep struct {
 			Endpoints []render.EndpointConfig `json:"endpoints"`
+			TestURL   string                  `json:"test_url"`
 		}
 		if err := json.Unmarshal(raw, &ep); err != nil {
 			return fmt.Errorf("解析测量端点: %w", err)
@@ -1117,8 +1118,9 @@ var nodeBandwidthCmd = &cobra.Command{
 		// 2) 本机测量
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
+		testURL := firstNonEmpty(bwTestURL, ep.TestURL)
 		res := bwtest.Measure(ctx, ep.Endpoints, bwtest.Options{
-			TestURL: bwTestURL,
+			TestURL: testURL,
 			Rounds:  bwRounds,
 		})
 		if res.Interface != "" {
@@ -1132,7 +1134,7 @@ var nodeBandwidthCmd = &cobra.Command{
 			"bytes_per_sec": res.BytesPerSec,
 			"duration_ms":   res.DurationMs,
 			"bytes":         res.Bytes,
-			"test_url":      firstNonEmpty(bwTestURL, bwtest.DefaultTestURL),
+			"test_url":      firstNonEmpty(testURL, bwtest.DefaultTestURL),
 			"error":         res.Error,
 		}); err != nil {
 			return fmt.Errorf("回存结果: %w", err)
@@ -1178,4 +1180,3 @@ func humanBps(bps int64) string {
 	}
 	return fmt.Sprintf("%.0f Kbps", float64(bps*8)/1000)
 }
-
