@@ -249,6 +249,9 @@ func (s *Server) handleReachTargets(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err, "触达结果")
 		return
 	}
+	// UC-20:名册就在这里,顺带清掉对象已消失的指标样本(节流后低频)。
+	s.pruneOrphanMetrics()
+
 	writeJSON(w, http.StatusOK, reachTargetsResponse{
 		FetchedAt:      time.Now().UTC(),
 		Interval:       settings.ReachInterval(),

@@ -129,6 +129,11 @@ type Server struct {
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
 	subCache subCache
 
+	// orphanLast/orphanMu 是孤儿指标清理的节流(UC-20):探测端每轮都会
+	// 拉 /api/reach/targets,顺带清一次即可,不需要单独周期。
+	orphanMu   sync.Mutex
+	orphanLast time.Time
+
 	// templateHashCache 缓存「输入指纹 → 渲染出的节点模板哈希」(ISS-04):
 	// 指纹由节点+入站+镜像算出,输入变指纹变,不需要主动失效。
 	templateHashMu    sync.Mutex
@@ -251,6 +256,7 @@ func (s *Server) routes() {
 	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
 	s.reachRoutes(api)
+	s.metricRoutes(api)
 	s.probeRoutes(api)
 	s.qualityRoutes(api)
 	s.cdnRoutes(api)

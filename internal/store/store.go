@@ -398,6 +398,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateCDN(); err != nil {
 		return err
 	}
+	if err := s.migrateMetrics(); err != nil {
+		return err
+	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。
 	return s.migratePlans()
 }

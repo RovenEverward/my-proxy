@@ -116,6 +116,7 @@ type Server struct {
 	allow   []rule
 	job     *setupJob
 	reach   *reachJob
+	bw      *bwJob
 	all     updateAllState
 	// prefetch 是桌面端后台预下载的状态;懒建,见 prefetch.go。
 	prefetch *prefetcher
@@ -268,6 +269,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/local/reach") {
 		s.serveReach(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/local/bandwidth") {
+		s.serveBandwidth(w, r)
 		return
 	}
 	if r.URL.Path == "/local/app/theme" {

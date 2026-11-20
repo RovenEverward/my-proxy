@@ -160,6 +160,13 @@ func singboxNodes(eps []Endpoint) ([]any, []string, error) {
 	return out, tags, nil
 }
 
+// SingBoxOutbound 把单个端点渲染成 sing-box outbound(UC-20 带宽测量用)。
+// 与 singboxNodes 的差别:单端点不需要参与 selector/urltest,tag 由调用方定,
+// 不生成固定出口。
+func SingBoxOutbound(ep Endpoint, tag string) (map[string]any, error) {
+	return singboxNode(ep, tag)
+}
+
 // singboxNode 把一个端点渲染成 outbound。
 func singboxNode(ep Endpoint, tag string) (map[string]any, error) {
 	if ep.Protocol.QUIC() {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +15,9 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/RovenEverward/my-proxy/internal/bwtest"
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/render"
 )
 
 var nodeCmd = &cobra.Command{
@@ -34,7 +37,10 @@ var nodeCmd = &cobra.Command{
 
 func init() {
 	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
-		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd, nodeRetryCmd)
+		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeCheckCmd, nodeRetryCmd, nodeBandwidthCmd)
+
+	nodeBandwidthCmd.Flags().StringVar(&bwTestURL, "url", "", "测速下载地址,空用默认(cloudflare speed)")
+	nodeBandwidthCmd.Flags().IntVar(&bwRounds, "rounds", 2, "同一端点重复下载次数,取最好一次")
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
 	nodeAddCmd.Flags().IntVar(&nodeAddFlags.sshPort, "ssh-port", 0, "SSH 端口,0 表示 22")
@@ -1058,3 +1064,118 @@ func (c createdNode) printLocate(w io.Writer) {
 		fmt.Fprintf(w, "提示:%s\n", c.LocateNote)
 	}
 }
+
+// nodeBandwidthCmd 手动测一台节点(或一个外部端点/Host)的带宽(UC-20):
+// 控制面下发端点配置,本机起内嵌 sing-box 客户端下载测速,结果回写。
+//
+// 与 node status 的分工:status 问节点还活着吗;bandwidth 问经这台节点
+// 的真实吞吐是多少。测量是手动的一次性行为,不做周期 —— 节点带宽不
+// 太会变化,测一次一直用,需要更新时再跑一次。
+var nodeBandwidthCmd = &cobra.Command{
+	Use:   "bandwidth <节点>",
+	Short: "手动测一次节点(或端点)的带宽并备注",
+	Long: `手动测一次带宽:控制面给出该对象的端点配置(含凭据),本机起一个
+临时的内嵌 sing-box 客户端做下载测速,结果写回控制面,在节点列表的
+「境内」列显示。
+
+对象写法:
+  mpx node bandwidth jp-1        节点(用它的入站测)
+  mpx node bandwidth 3           同上,用节点 ID
+  mpx node bandwidth s:2:xxxx    外部订阅端点
+  mpx node bandwidth host:5      托管入口(Host)
+
+本机出机被代理(TUN/Clash)接管时,会尝试绑物理接口绕行;绕不了会提示
+把节点地址加进白名单。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		subject, err := resolveBandwidthSubject(args[0])
+		if err != nil {
+			return err
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("正在测量 %s ...\n", subject)
+
+		// 1) 取端点配置
+		raw, err := c.doWithin(30*time.Second, "GET",
+			"/api/bandwidth/endpoint?subject="+url.QueryEscape(subject), nil)
+		if err != nil {
+			return err
+		}
+		var ep struct {
+			Endpoints []render.EndpointConfig `json:"endpoints"`
+		}
+		if err := json.Unmarshal(raw, &ep); err != nil {
+			return fmt.Errorf("解析测量端点: %w", err)
+		}
+		if len(ep.Endpoints) == 0 {
+			return fmt.Errorf("对象没有可用端点")
+		}
+
+		// 2) 本机测量
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		res := bwtest.Measure(ctx, ep.Endpoints, bwtest.Options{
+			TestURL: bwTestURL,
+			Rounds:  bwRounds,
+		})
+		if res.Interface != "" {
+			fmt.Printf("  出机被代理接管,已绑物理接口 %s 绕行\n", res.Interface)
+		}
+
+		// 3) 回写
+		if _, err := c.doWithin(30*time.Second, "POST", "/api/bandwidth/results", map[string]any{
+			"subject_key":   subject,
+			"status":        res.Status,
+			"bytes_per_sec": res.BytesPerSec,
+			"duration_ms":   res.DurationMs,
+			"bytes":         res.Bytes,
+			"test_url":      firstNonEmpty(bwTestURL, bwtest.DefaultTestURL),
+			"error":         res.Error,
+		}); err != nil {
+			return fmt.Errorf("回存结果: %w", err)
+		}
+
+		switch res.Status {
+		case "ok":
+			fmt.Printf("带宽: %s(经 %s,用时 %.1fs,下行 %s)\n",
+				humanBps(res.BytesPerSec), res.Protocol,
+				float64(res.DurationMs)/1000, humanBytes(res.Bytes))
+			return nil
+		case "unsupported":
+			fmt.Printf("不支持测量: %s\n", res.Error)
+			return nil
+		default:
+			return fmt.Errorf("测量失败: %s", res.Error)
+		}
+	},
+}
+
+var (
+	bwTestURL string
+	bwRounds  int
+)
+
+// resolveBandwidthSubject 把命令行参数翻成对象身份:带 ":" 的按原样当
+// subject(s:/host:/node:),否则按节点名/ID 解析成 node:<id>。
+func resolveBandwidthSubject(arg string) (string, error) {
+	if strings.Contains(arg, ":") {
+		return arg, nil
+	}
+	id, err := resolveNodeID(arg, true)
+	if err != nil {
+		return "", err
+	}
+	return "node:" + strconv.FormatInt(id, 10), nil
+}
+
+func humanBps(bps int64) string {
+	const m = 1_000_000
+	if bps >= m {
+		return fmt.Sprintf("%.1f Mbps", float64(bps*8)/float64(m))
+	}
+	return fmt.Sprintf("%.0f Kbps", float64(bps*8)/1000)
+}
+

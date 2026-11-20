@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
+	"github.com/RovenEverward/my-proxy/internal/reach"
 )
 
 // ---- 探测点(UC-12) ----
@@ -172,6 +173,9 @@ func (s *Store) DeleteProbePoint(id int64) error {
 	if _, err := tx.Exec(`DELETE FROM reach_source_checks WHERE source_id=?`, fmt.Sprintf("probe:%d", id)); err != nil {
 		return err
 	}
+	if err := deleteSubjectMetrics(tx, "WHERE source_id=?", fmt.Sprintf("probe:%d", id)); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -229,6 +233,9 @@ func (s *Store) DeleteSubjectResults(key model.ProbeSubjectKey) error {
 			return err
 		}
 	}
+	if err := deleteSubjectMetrics(tx, "WHERE subject_key=?", string(key)); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -247,6 +254,9 @@ func (s *Store) DeleteSubjectResultsByPrefix(prefix string) error {
 		if _, err := tx.Exec(q, prefix+"%"); err != nil {
 			return err
 		}
+	}
+	if err := deleteSubjectMetrics(tx, "WHERE subject_key LIKE ?", prefix+"%"); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -269,10 +279,18 @@ func (s *Store) SaveSourceCheck(subjectKey model.ProbeSubjectKey, sourceID, scop
 	if len(results) > 0 {
 		res = sql.NullString{String: string(results), Valid: true}
 	}
-	_, err := s.db.Exec(`INSERT INTO reach_source_checks(subject_key,source_id,scope,checked_at,summary,results) VALUES(?,?,?,?,?,?)
+	if _, err := s.db.Exec(`INSERT INTO reach_source_checks(subject_key,source_id,scope,checked_at,summary,results) VALUES(?,?,?,?,?,?)
  ON CONFLICT(subject_key,source_id) DO UPDATE SET scope=excluded.scope,checked_at=excluded.checked_at,summary=excluded.summary,results=excluded.results`,
-		string(subjectKey), sourceID, scope, checkedAt.Unix(), string(summary), res)
-	return err
+		string(subjectKey), sourceID, scope, checkedAt.Unix(), string(summary), res); err != nil {
+		return err
+	}
+	// UC-20:同一摘要留成稳定度样本,reach_source_checks 仍是判定的最新行。
+	var sum reach.SourceSummary
+	if err := json.Unmarshal(summary, &sum); err != nil {
+		// 摘要本就校验过 json.Valid;坏形状时样本不追加但不阻断存档。
+		return nil
+	}
+	return s.AppendSourceSample(subjectKey, sourceID, scope, checkedAt, sum)
 }
 
 // ListSourceChecks 返回某对象的全部来源结果(subject 空串返回全表)。
