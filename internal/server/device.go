@@ -42,6 +42,11 @@ var probeAllowed = map[string]bool{
 	// UC-21:CDN 优选,探测点领名单与回结果走同一对凭据可达接口。
 	"GET /api/cdn-optimize/targets":  true,
 	"POST /api/cdn-optimize/results": true,
+	// UC-23:CDN 入口自动测速。targets 返回端点凭据 —— 探测点本就需要
+	// 靠它起 sing-box 实测,权界与 reach targets 下发目标凭据一致(探
+	// 测点是操作者自有资产,凭据丢了本身就意味着内网失守)。
+	"GET /api/bandwidth/targets":  true,
+	"POST /api/bandwidth/results": true,
 }
 
 // deviceTouchEvery 是记"最近使用"的最小间隔:每个请求都写一次库没有意义。
