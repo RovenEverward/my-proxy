@@ -225,3 +225,81 @@ func TestPruneMetricsDropsOrphanSubject(t *testing.T) {
 		t.Fatalf("孤儿带宽样本还在")
 	}
 }
+
+// UC-20:外部源整批 failed 时不等 interval,立刻加刷拉新端点。
+func TestBandwidthPanicRefreshAllFailedSource(t *testing.T) {
+	e := newEnv(t)
+	eps := []render.Endpoint{
+		{Protocol: "trojan", Address: "a.example.com", Port: 443, Password: "x", SourceKey: "k1"},
+		{Protocol: "trojan", Address: "b.example.com", Port: 443, Password: "x", SourceKey: "k2"},
+	}
+	raw, _ := json.Marshal(eps)
+	src := model.SubscriptionSource{Name: "机场", URL: "https://example.test/sub",
+		Enabled: true, GrantAll: true, IntervalSeconds: 21600}
+	if err := e.st.CreateSource(&src); err != nil {
+		t.Fatal(err)
+	}
+	// last_attempt_at 摆到 30 分钟前,越过 panicRefreshMinGap。
+	old := time.Now().Add(-30 * time.Minute)
+	if err := e.st.CompleteSourceRefresh(src.ID, src.Revision, old, raw, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range eps {
+		eps[i].SourceID = src.ID
+		key := string(eps[i].Key())
+		code, _ := e.api("POST", "/api/bandwidth/results",
+			map[string]any{"subject_key": key, "status": "failed", "error": "timeout"})
+		if code != http.StatusCreated {
+			t.Fatalf("回写 %d: %d", i, code)
+		}
+	}
+	// 全挂 → 触发加刷。fetch 是异步网络请求,不 predict 它什么时候
+	// 回来;只断言「刷新任务被启动过」。用 Running 观察。
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if e.s.sources.Running(src.ID) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("整批 failed 应触发一次加刷,source 没进入刷新")
+}
+
+// 反向:还有活的端点时不加刷。
+func TestBandwidthNoPanicRefreshWhileAlive(t *testing.T) {
+	e := newEnv(t)
+	eps := []render.Endpoint{
+		{Protocol: "trojan", Address: "a.example.com", Port: 443, Password: "x", SourceKey: "k1"},
+		{Protocol: "trojan", Address: "b.example.com", Port: 443, Password: "x", SourceKey: "k2"},
+	}
+	raw, _ := json.Marshal(eps)
+	src := model.SubscriptionSource{Name: "机场", URL: "https://example.test/sub",
+		Enabled: true, GrantAll: true, IntervalSeconds: 21600}
+	if err := e.st.CreateSource(&src); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-30 * time.Minute)
+	if err := e.st.CompleteSourceRefresh(src.ID, src.Revision, old, raw, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	for i, st := range eps {
+		eps[i].SourceID = src.ID
+		status := "failed"
+		if i == 1 {
+			status = "ok" // 一台活
+		}
+		body := map[string]any{"subject_key": string(st.Key()), "status": status}
+		if status == "ok" {
+			body["bytes_per_sec"] = 1e6
+		}
+		code, _ := e.api("POST", "/api/bandwidth/results", body)
+		if code != http.StatusCreated {
+			t.Fatalf("回写 %d: %d", i, code)
+		}
+	}
+	time.Sleep(200 * time.Millisecond)
+	if e.s.sources.Running(src.ID) {
+		t.Fatal("还有活端点不该加刷")
+	}
+}

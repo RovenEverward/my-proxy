@@ -14,7 +14,13 @@ verified: 2026-11-20 @ 605d676 + working tree
 传输(xhttp/splithttp/httpupgrade)走按需下载的官方 xray 二进制(缓存进
 `<配置目录>/mpx/xray/`,sockopt.interface 绑物理口),其余走内嵌
 sing-box;`MPX_BW_ENGINE=xray` 可强制全走 xray,排查握手嫌疑用。
-可测端点全是 hy2 等 UDP 路径时会被 UDP 环境卡死,这是真结论不是失败。默认测速地址是 proof.ovh.net(speed.cloudflare.com 拦非浏览器客户端与若干 VPS 出口 403,hetzner 对 QUIC 断流),`settings.bandwidth_test_url` 或 `--url` 可换。mpx 二进制编进去的标签固定 `with_utls,with_quic`(reality 指纹 + hysteria2 出站都要),发布/CI/安装脚本同口径;没编 quic 时 hy2 端点在「起 sing-box」就死,报 initialize outbound 错误。`mpx ui` 侧走 `/local/bandwidth/measure` 本地 job(与 `/local/reach/check` 同形状:POST 起、GET 轮询),结果由 job 直接回写,uiAllow 不放 POST —— `GET /api` 前缀已覆盖 `/api/metrics` 与端点下发。
+可测端点全是 hy2 等 UDP 路径时会被 UDP 环境卡死,这是真结论不是失败。
+外部源整批 failed(该 s: 源快照里所有端点都 failed)时,`POST
+/api/bandwidth/results` 不等 interval 立刻加刷一次拉新端点(端点轮换
+是分钟级);panicRefreshMinGap 15 分钟限速,IntervalSeconds=0 的手动
+源与刷新进行中不重复触发。
+`node bandwidth --rounds` 默认 3(取最好一次):CDN 入口对单轮波动
+很敏感,峰值口径在挑入口时才有意义。默认测速地址是 proof.ovh.net(speed.cloudflare.com 拦非浏览器客户端与若干 VPS 出口 403,hetzner 对 QUIC 断流),`settings.bandwidth_test_url` 或 `--url` 可换。mpx 二进制编进去的标签固定 `with_utls,with_quic`(reality 指纹 + hysteria2 出站都要),发布/CI/安装脚本同口径;没编 quic 时 hy2 端点在「起 sing-box」就死,报 initialize outbound 错误。`mpx ui` 侧走 `/local/bandwidth/measure` 本地 job(与 `/local/reach/check` 同形状:POST 起、GET 轮询),结果由 job 直接回写,uiAllow 不放 POST —— `GET /api` 前缀已覆盖 `/api/metrics` 与端点下发。
 
 不负责：碰数据库和节点（`mpx init` 是唯一例外，因为那时控制面还不存在，见 [安装与升级](install-update.md)）；长出控制面接口之外的能力。
 
