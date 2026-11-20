@@ -162,6 +162,13 @@ func xrayTemplateOutbounds(v any) ([]string, error) {
 }
 
 // xrayNode 把一个端点渲染成 xray 的 outbound。
+// XrayOutbound 把单个端点渲染成 xray 客户端 outbound。
+// bwtest 起外部 xray 二进制测速(xhttp 这类 xray 专有传输 sing-box 说不出)
+// 与将来任何 xray 客户端渲染都走这一个实现。
+func XrayOutbound(ep Endpoint, tag string) (map[string]any, error) {
+	return xrayNode(ep, tag)
+}
+
 func xrayNode(ep Endpoint, tag string) (map[string]any, error) {
 	if ep.Protocol.QUIC() {
 		return nil, fmt.Errorf("xray: 不支持 QUIC 协议 %q,请使用 sing-box 或 Clash.Meta", ep.Protocol)

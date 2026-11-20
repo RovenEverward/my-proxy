@@ -14,11 +14,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/reach"
 	"github.com/RovenEverward/my-proxy/internal/render"
 )
@@ -89,7 +89,12 @@ func Measure(ctx context.Context, eps []render.EndpointConfig, opt Options) Resu
 		if !measurable(ep) {
 			continue // 先不急着记 unsupported,后面有能测的协议再试
 		}
-		r := measureEndpoint(ctx, ep, res.Interface, opt)
+		var r Result
+		if engine(ep) == "xray" {
+			r = measureViaXray(ctx, ep, res.Interface, opt)
+		} else {
+			r = measureEndpoint(ctx, ep, res.Interface, opt)
+		}
 		if r.Status == "ok" {
 			if best == nil || r.BytesPerSec > best.BytesPerSec {
 				cp := r
@@ -108,7 +113,7 @@ func Measure(ctx context.Context, eps []render.EndpointConfig, opt Options) Resu
 	// 全部端点都不可测或都失败:区分「协议不支持」与「真的失败」。
 	if allUnsupported(eps) {
 		res.Status = "unsupported"
-		res.Error = "协议/传输不支持带宽测量(wireguard 与 xray 专有传输没有 sing-box 客户端实现)"
+		res.Error = "协议不支持带宽测量(wireguard 不承载 HTTP 下载)"
 	} else {
 		res.Error = lastErr
 	}
@@ -131,20 +136,27 @@ func (o *Options) normalize() Options {
 
 func (o *Options) verifyPath() bool { return o.VerifyPath == nil || *o.VerifyPath }
 
-// measurable 说这个端点能不能走 HTTP 下载测带宽:wireguard 不承载 HTTP,
-// xray 专有传输(xhttp/splithttp/httpupgrade)sing-box 客户端说不出
-// (渲染层本来就把它们隐藏,见 render.transportToSingbox)。
-// 其余(tcp/ws/grpc/quic 系)都按 sing-box outbound 试。
+// measurable 说这个端点能不能走 HTTP 下载测带宽:wireguard 不承载 HTTP;
+// xray 专有传输(xhttp/splithttp/httpupgrade)走外部 xray 二进制测(见
+// measureViaXray),其余(tcp/ws/grpc/quic 系)走内嵌 sing-box。
 func measurable(ep render.Endpoint) bool {
 	switch ep.Protocol {
 	case "wireguard":
 		return false
 	}
-	switch ep.Network {
-	case model.NetworkXHTTP, model.NetworkSplitHTTP, model.NetworkHTTPUpgrade:
-		return false
-	}
 	return ep.Protocol.Valid()
+}
+
+// engine 挑测量引擎:xray 专有传输必须 xray;MPX_BW_ENGINE=xray 可强制
+// (排查「sing-box 握手有疑」时有用),其余默认内嵌 sing-box。
+func engine(ep render.Endpoint) string {
+	if os.Getenv("MPX_BW_ENGINE") == "xray" {
+		return "xray"
+	}
+	if needsXray(ep) {
+		return "xray"
+	}
+	return "sing-box"
 }
 
 func allUnsupported(eps []render.EndpointConfig) bool {
@@ -202,7 +214,13 @@ func measureEndpoint(ctx context.Context, ep render.Endpoint, bindIface string, 
 	defer b.Close()
 	time.Sleep(300 * time.Millisecond) // 等 listener 起来
 
-	// 下载测速:经本机 socks,按 Rounds 重复取最好一次。
+	return downloadBest(ctx, res, port, opt)
+}
+
+// downloadBest 是两条引擎路径(sing-box / xray)共享的下载尾巴:经本机
+// mixed/socks 入口按 Rounds 重复下载,取最好一次。调用方已经把 res.Status
+// 初始化为 failed,这里只填 ok 或留失败。
+func downloadBest(ctx context.Context, res Result, port int, opt Options) Result {
 	socks := &url.URL{Scheme: "socks5", Host: "127.0.0.1:" + itoa(port)}
 	client := &http.Client{
 		Transport: &http.Transport{
