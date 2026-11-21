@@ -232,10 +232,6 @@ test("过期用户验收图：平台、主题、尺寸和处理状态", async ({
         Object.defineProperty(navigator, "platform", { value: platform === "mac" ? "MacIntel" : "Win32" });
         Object.defineProperty(navigator, "userAgentData", { value: { platform: platform === "mac" ? "macOS" : "Windows" } });
         localStorage.setItem("mpx-theme", theme);
-        if (platform === "win") document.addEventListener("DOMContentLoaded", () => {
-          document.documentElement.style.setProperty("--mygo-titlebar-inset-right", "138px");
-          document.documentElement.style.setProperty("--mygo-titlebar-height", "52px");
-        });
       }, { platform, theme });
       const page = await context.newPage();
       const nodes = ["东京 A", "新加坡 A", "法兰克福 A", "洛杉矶 A"].map((display, i) => ({ id: i + 1, name: `demo-${i}`, display, address: `203.0.113.${20 + i}`, status: { reachable: true, active: true } }));

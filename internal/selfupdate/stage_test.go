@@ -69,7 +69,7 @@ func newStageRig(t *testing.T) (*stageSrv, *Stager, string) {
 	t.Helper()
 	// 内容带随机字节,确保归档比「一半」大,断点续传有意义。
 	payload := strings.Repeat("mpx-stage-test-payload-", 200)
-	name := DesktopArchiveName("linux", "amd64")
+	name := ArchiveName("linux", "amd64")
 	archive := tarGz(t, map[string]string{"mpx": payload, "README.md": "说明"})
 	fs := &stageSrv{name: name, archive: archive}
 	fs.sums = sumsFor(map[string][]byte{name: archive})
@@ -77,7 +77,7 @@ func newStageRig(t *testing.T) (*stageSrv, *Stager, string) {
 	t.Cleanup(srv.Close)
 	st := &Stager{
 		Dir:    t.TempDir(),
-		Source: Source{Repo: testRepo, APIBase: srv.URL, DownloadBase: srv.URL, Client: srv.Client(), Desktop: true},
+		Source: Source{Repo: testRepo, APIBase: srv.URL, DownloadBase: srv.URL, Client: srv.Client()},
 		GOOS:   "linux",
 		GOARCH: "amd64",
 	}

@@ -37,7 +37,7 @@ const dependencies: Record<string, string[]> = {
   hosts: ["hosts", "inbounds", "nodes", "plans", "users", "proxy-groups"],
   settings: ["settings", "users"], sources: ["sources", "users", "proxy-groups", "routing"],
   rules: ["rules"], "proxy-groups": ["proxy-groups", "routing", "users"],
-  devices: ["devices"], "device-password": ["devices"],
+  acme: ["acme"],
 };
 function affected(path: string, target: string) {
   if (resource(path) === "settings") {

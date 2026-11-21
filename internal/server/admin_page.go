@@ -17,8 +17,8 @@ import (
 //   - /admin/           管理台 SPA 的静态树(嵌入的 internal/ui/assets;hash
 //     路由,入口就是 index.html,不需要 fallback)。
 //   - /flags、/fonts、/styles  前端产物里以绝对路径引用的共享资源:国旗
-//     (assets/flags.zip,与 mpx ui 读同一个 zip)、字体、样式表。挂在根上
-//     是因为 CSS 的 url() 没法相对到 /admin。
+//     (assets/flags.zip)、字体、样式表。挂在根上是因为 CSS 的 url()
+//     没法相对到 /admin。
 //   - GET /api/admin/meta  页首元信息,在 requireAuth 内:登录后会话 cookie
 //     与 Bearer 都能取;未登录 401,前端据此跳 #login。
 //
@@ -26,8 +26,8 @@ import (
 // 凭据管的是 /api。/admin 只受理 TLS 或回环请求(与登录接口同一道门),
 // 明文公网回提示不伺服页面。
 
-// adminCSP 与 internal/ui 的 csp 同源同值;该常量未导出,两边须保持同一条
-// 字符串,改一边时另一边同步改。
+// adminCSP 是管理台与其共享资源的唯一 CSP;internal/ui 的本机服务已退役,
+// 这是剩下的唯一一份,改动直接改这里。
 const adminCSP = "default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; " +
 	"img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
@@ -84,8 +84,8 @@ func subStatic(prefix, dir string) http.Handler {
 	return http.StripPrefix(prefix, http.FileServerFS(sub))
 }
 
-// handleFlag 与 mpx ui 的 /flags/<code>.svg 同口径:未登录也要能画出登录页
-// 与列表里的旗。内容不变,长期缓存。
+// handleFlag 伺服 /flags/<code>.svg:未登录也要能画出登录页与列表里的
+// 旗。内容不变,长期缓存。
 func (s *Server) handleFlag(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	if !strings.HasSuffix(code, ".svg") {
@@ -113,7 +113,7 @@ type adminMeta struct {
 	Username    string `json:"username,omitempty"`
 }
 
-// handleAdminMeta 是页首元信息(取代 mpx ui 的 /ui/meta),只放登录后界面
+// handleAdminMeta 是页首元信息(取代已退役的 /ui/meta),只放登录后界面
 // 起步需要的东西:版本、自签证书指纹(页面展示用;核对仍走 CLI)、管理员
 // 账号名(账户菜单显示)。它在 requireAuth 内,未登录拿到统一 401,不
 // 额外泄露「有没有账号」。

@@ -235,8 +235,8 @@ func connectAndSave(server string, trust trustDecision, username, password strin
 	return &res, nil
 }
 
-// connectAndSaveQuiet 是 connectAndSave 的安静版:同一件事,但不打印 —— mpx ui
-// 的「接入已有控制面」也走它,提示由页面自己给。
+// connectAndSaveQuiet 是 connectAndSave 的安静版:同一件事,但不打印 ——
+// 调用方要把结果包装成自己的输出(向导、脚本)时走它。
 func connectAndSaveQuiet(server string, trust trustDecision, username, password string) (loginResult, string, error) {
 	c := &Client{server: server, http: &http.Client{Transport: trustTransport(trust)}}
 	raw, err := postAdminLogin(c, username, password)
@@ -255,9 +255,9 @@ func connectAndSaveQuiet(server string, trust trustDecision, username, password 
 }
 
 // connectAndSaveProfile 是 connectAndSaveQuiet 的带档名版:存进名为 profile 的
-// **新**控制面并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
-// 它,不能把 default 或别的档里已有的 token 覆盖掉。不经过 saveProfile:那里写死
-// 了 --profile/default,而且会覆盖同名档。
+// **新**控制面并设为当前。档已存在时报错、不落盘 —— 不能把 default 或别的档里
+// 已有的 token 覆盖掉。不经过 saveProfile:那里写死 --profile/default,而且会覆
+// 盖同名档。
 func connectAndSaveProfile(server string, trust trustDecision, username, password, profile string) (loginResult, error) {
 	c := &Client{server: server, http: &http.Client{Transport: trustTransport(trust)}}
 	raw, err := postAdminLogin(c, username, password)

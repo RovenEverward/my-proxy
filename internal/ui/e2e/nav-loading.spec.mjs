@@ -27,10 +27,6 @@ async function platform(page, mode, theme = 'light') {
     Object.defineProperty(navigator, 'platform', { value: mode === 'mac' ? 'MacIntel' : 'Win32' });
     Object.defineProperty(navigator, 'userAgentData', { value: { platform: mode === 'mac' ? 'macOS' : 'Windows' } });
     localStorage.setItem('mpx-theme', theme);
-    if (mode === 'win') document.addEventListener('DOMContentLoaded', () => {
-      document.documentElement.style.setProperty('--mygo-titlebar-inset-right', '138px');
-      document.documentElement.style.setProperty('--mygo-titlebar-height', '52px');
-    });
   }, { mode, theme });
   // UC-26:meta 只剩版本/指纹/登录态,页面地址固定,不再注入服务器地址。
 
@@ -54,7 +50,7 @@ async function measure(page, selector, hash, title, overlay = false) {
     window.navTiming = new Promise(resolve => el.addEventListener('click', () => {
       const start = performance.now();
       const readySelector = {
-        overview: '.ov .stat', system: '#set-form', 'system/devices': '#dpw-form',
+        overview: '.ov .stat', system: '#set-form', 'system/acme': '#acme-form',
         'system/backup': '[data-act=backup]', 'system/update': '[data-act=update-open]',
       }[args.hash];
       const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility === 'visible';
@@ -111,7 +107,7 @@ for (const mode of ['mac', 'win']) test(`${mode} · 全站路由与详情立即�
   await measure(page, 'a[href="#users/plans"]', 'users/plans', '用户');
   await expect(page.locator('html[data-loading]')).toHaveCount(0);
   await ready(page, 'system');
-  for (const tab of ['devices', 'backup']) {
+  for (const tab of ['acme', 'backup']) {
     await measure(page, `a[href="#system/${tab}"]`, 'system/' + tab, '系统');
     await expect(page.locator('html[data-loading]')).toHaveCount(0);
   }

@@ -201,7 +201,7 @@ func applyCLI(cmd *cobra.Command) error {
 	}
 	saveCLIState(current, target, started, "ok", nil)
 
-	fmt.Printf("已升级到 %s；正在运行的 mpx ui 需重启后生效\n", target)
+	fmt.Printf("已升级到 %s\n", target)
 	warnControlAfterUpdate(cmd)
 	return nil
 }
@@ -227,20 +227,8 @@ func saveCLIState(from, to string, started time.Time, result string, cause error
 	saveCLIStateWithTrigger("manual", from, to, started, result, cause)
 }
 
-// saveCLIStateFromUI 记下 mpx ui 发起的一次本机 CLI 升级。
-//
-// 页面走的是 ui 包里的同一套下载与替换,但那条路不认识 cli 包;ui.Options.CLIUpdated
-// 把它交回这里,好让 mpx update show 看得到页面点出来的这次升级。成功与失败的
-// result 与命令行完全一致("ok"/"failed"),只有 trigger 不同。
-func saveCLIStateFromUI(from, to string, started time.Time, cause error) {
-	result := "ok"
-	if cause != nil {
-		result = "failed"
-	}
-	saveCLIStateWithTrigger("ui", from, to, started, result, cause)
-}
-
-// saveCLIStateWithTrigger 是 saveCLIState 与 saveCLIStateFromUI 的共同实现。
+// saveCLIStateWithTrigger 是 saveCLIState 的实现:自更新结果写进 update.json,
+// trigger 记录这次升级是谁发起的(命令行是 "manual")。
 func saveCLIStateWithTrigger(trigger, from, to string, started time.Time, result string, cause error) {
 	path, err := cliStatePath()
 	if err != nil {

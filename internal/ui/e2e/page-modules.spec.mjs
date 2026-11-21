@@ -123,7 +123,7 @@ function routes() {
     ["rules/groups", "分流", page => expect(page.locator(".rp-g").first()).toBeVisible()],
     ["doctor", "体检", page => expect(page.getByRole("button", { name: "开始体检", exact: true })).toBeVisible()],
     ["system", "系统", page => expect(page.getByLabel("用量提醒(%)", { exact: true })).toBeVisible()],
-    ["system/devices", "系统", page => expect(page.getByLabel("新密码", { exact: true })).toBeVisible()],
+    ["system/acme", "系统", page => expect(page.locator("#acme-form")).toBeVisible()],
     ["system/backup", "系统", page => expect(page.getByRole("button", { name: "下载备份", exact: true })).toBeVisible()],
     ["system/update", "系统", page => expect(page.getByRole("button", { name: "检查更新", exact: true })).toBeVisible()],
   ];
@@ -210,7 +210,7 @@ test("旧地址保持兼容，并加载正确页面", async ({ page }, testInfo)
       ["settings/general", "sub", "订阅"],
       ["settings/rules", "sub/clients", "订阅"],
       ["settings/templates", "sub/templates", "订阅"],
-      ["settings/devices", "system/devices", "系统"],
+      ["settings/devices", "system/acme", "系统"],
       ["settings/backup", "system/backup", "系统"],
       ["inbounds", "nodes", "节点"],
       [`inbounds/${nodeID}`, "nodes", "节点"],

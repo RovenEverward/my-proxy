@@ -5,11 +5,11 @@ import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
-  // 相对 base:入口 html 同时被两处伺服 —— mpx serve 挂在 /admin/,mpx ui
-  // 挂在 / —— 引用一律相对(./build/assets/x.js、boot.js、favicon.svg)。
+  // 相对 base:入口 html 由 mpx serve 挂在 /admin/ 下伺服,引用一律相对
+  // (./build/assets/x.js、boot.js、favicon.svg)。
   // chunks 由 output.*FileNames 放进 build.tmp/build/assets/ 下,package-ui
   // 把它原子换成 assets/build/(布局不变)。绝对引用只有 /flags、/fonts、
-  // /styles,两个挂载点都按根解析。
+  // /styles,控制面把它们挂在根上。
   base: "./",
   publicDir: false,
   plugins: [react(), tailwindcss()],

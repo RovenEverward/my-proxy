@@ -179,13 +179,22 @@ func TestSubsetCoversLevel2NameChars(t *testing.T) {
 	}
 }
 
-// 登录页也要用 Mona Sans VF,而且是字体栈里的第一个:会话失效的那一刻看到
-// 的就是它,字体要和主页面一致。
+// 登录页(React)与主界面同一张样式表:不再单独嵌一份 loginPage,字体链靠
+// base.css 的 @font-face 与 tokens.css 的 --sans 两个文件保证,这里把它们
+// 钉住,免得字体子集或变量名改了之后登录页先塌。
 func TestLoginPageUsesMonaSans(t *testing.T) {
-	if !strings.Contains(loginPage, `@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2");font-weight:200 900`) {
-		t.Error(`登录页没有指向本地 /fonts/MonaSansVF.woff2 的 "Mona Sans VF" @font-face`)
+	base, err := os.ReadFile("frontend/styles/base.css")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(loginPage, `font:14px/1.6 'Mona Sans VF',`) {
-		t.Error(`登录页的字体栈第一个应是 "Mona Sans VF"`)
+	if !strings.Contains(string(base), `@font-face{font-family:"Mona Sans VF";src:url(/fonts/MonaSansVF.woff2) format("woff2")`) {
+		t.Error(`base.css 没有指向本地 /fonts/MonaSansVF.woff2 的 "Mona Sans VF" @font-face`)
+	}
+	tokens, err := os.ReadFile("assets/styles/tokens.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(tokens), `--sans:"Mona Sans VF",`) {
+		t.Error(`--sans 的第一个字体应是 "Mona Sans VF"`)
 	}
 }

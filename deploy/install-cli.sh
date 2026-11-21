@@ -265,12 +265,13 @@ esac
 
 cat <<'EOF'
 
-接下来接上控制面:
+接下来接上控制面(管理员账号密码登录,按提示核对指纹):
 
-  mpx login --server http://127.0.0.1:8080 --token '<管理 token>'
+  mpx connect <控制面地址>:8080 --username admin
 
-控制面只监听回环,公网那台机器上先拉一条隧道:
+控制面只监听回环的话,从本机先拉一条隧道再 connect 回环地址:
 
   ssh -N -L 8080:127.0.0.1:8080 root@<控制面地址>
+  mpx connect 127.0.0.1:8080 --username admin
 
 EOF

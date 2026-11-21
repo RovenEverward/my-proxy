@@ -37,7 +37,7 @@ export function EmptyState({ icon, title, description, actions }: { icon: string
 export function ErrorState({ title, error, onRetry }: { title: string; error: Error | string; onRetry?: () => void }) {
   const message = typeof error === "string" ? error : error.message;
   const auth = typeof error === "object" && "status" in error && error.status === 401;
-  return <div className="empty" role="alert"><div className="ill bad"><Icon name="warn" /></div><h4>读不到{title}</h4><p>{message}</p>{auth && <p className="sub mt">登录状态已失效，请重新打开 MPX 并登录。</p>}{onRetry && <div className="mt"><Button size="sm" onClick={onRetry} data-act="reload"><Icon name="refresh" />重试</Button></div>}</div>;
+  return <div className="empty" role="alert"><div className="ill bad"><Icon name="warn" /></div><h4>读不到{title}</h4><p>{message}</p>{auth && <p className="sub mt">登录状态已失效，请重新登录。</p>}{onRetry && <div className="mt"><Button size="sm" onClick={onRetry} data-act="reload"><Icon name="refresh" />重试</Button></div>}</div>;
 }
 export function Field({ label, htmlFor, hint, error, children, className }: { label: ReactNode; htmlFor?: string; hint?: ReactNode; error?: ReactNode; children: ReactNode; className?: string }) {
   const generatedId = useId();

@@ -140,7 +140,7 @@ func init() {
 }
 
 // runInit 只负责交互侧的准备:校验参数、问密码,然后把一切装进 initParams 交给
-// runInitSteps。向导(mpx ui)不走这里,它自己组 initParams。
+// runInitSteps。
 func runInit() error {
 	host := strings.TrimSpace(initFlags.host)
 	if host == "" {

@@ -139,7 +139,7 @@
 }
 
 @media (max-width: 860px) {
-  .top { padding-left: 16px; padding-right: calc(12px + var(--mygo-titlebar-inset-right, 0px)); }
+  .top { padding-left: 16px; padding-right: 12px; }
   .page { padding: 20px 16px calc(90px + env(safe-area-inset-bottom, 0px)); }
   .p-overview .ov > .ph { flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .p-overview .ov > .ph > .sp { min-width: 0; }

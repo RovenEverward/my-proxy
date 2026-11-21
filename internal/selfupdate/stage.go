@@ -33,7 +33,7 @@ type Staged struct {
 // Stager 把发布件暂存到 Dir,供之后 Open 而不必现下现装。
 //
 // Dir 为空时用 os.UserCacheDir()/mpx/staged。Source、GOOS、GOARCH 的默认值与
-// Fetch 一致:Source.Desktop 决定取桌面安装包还是 CLI 发布件。
+// Fetch 一致。
 type Stager struct {
 	Dir    string
 	Source Source
@@ -71,9 +71,6 @@ func (s *Stager) now() time.Time {
 
 // archiveName 取这一平台要下载的文件名,与 Fetch 的选择规则相同。
 func (s *Stager) archiveName() string {
-	if s.Source.Desktop {
-		return DesktopArchiveName(s.goos(), s.goarch())
-	}
 	return ArchiveName(s.goos(), s.goarch())
 }
 

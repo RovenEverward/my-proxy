@@ -48,58 +48,6 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: go test -race ./...
 
-  # 桌面程序冒烟:在三个平台上编出 desktop 构建的 mpx(desktop=1,无参数启动就
-  # 开窗口),跑 desktop/smoke/app-smoke.sh:先无配置进安装向导、再连本地控制面
-  # 进主界面,两次都要求输出 APP_SMOKE_OK 且截图存在。
-  #
-  # 原来的 desktop-s1 job(S1 穿刺:单独编一个 s1 程序载入 mpx ui)已被这里的
-  # app 冒烟取代,CI 不再跑 s1;desktop/s1/ 目录保留,本地仍可手动跑。Windows
-  # 这里刻意不加 -H windowsgui:冒烟要看 stdout 里的 APP_SMOKE_OK,带 windowsgui
-  # 的构建没有控制台输出。
-  desktop-smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      # WebKitGTK 4.1 是 Linux 上 mygo 的 webview 后端;Xvfb 给无头 runner
-      # 一块虚拟屏。macOS/Windows 用系统自带的 WKWebView/WebView2,不用装。
-      - name: 安装 Linux 依赖
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-0 xvfb
-
-      - name: 编译桌面 mpx
-        run: |
-          set -eu
-          ext=""
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then ext=".exe"; fi
-          mkdir -p mpxbin
-          CGO_ENABLED=0 go build -trimpath -tags with_utls,with_quic \
-            -ldflags "-X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1" \
-            -o "mpxbin/mpx$ext" ./cmd/mpx
-          ls -l mpxbin
-
-      - name: 桌面冒烟(安装向导 + 主界面)
-        run: bash desktop/smoke/app-smoke.sh
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: app-${{ matrix.os }}
-          path: |
-            app-*.png
-            app-*.log
-
   # 安装器不能弄坏用户 PATH:用和发版同样的 NSIS(默认 1024 字符缓冲)打出 setup.exe,
   # 在 9000+ 字、带 %VAR% 和空条目的 REG_EXPAND_SZ PATH 上跑 setup.exe /S、卸载、
   # install-cli.ps1 -From,每一步都要求 PATH 原文和类型逐字不变(只多 / 少我们那一项)。
@@ -129,27 +77,3 @@ jobs:
       - name: 长 PATH 不被改坏
         shell: pwsh
         run: .\deploy\windows\path-check.ps1 -Setup "$PWD\mpx-test-setup.exe" -Exe "$PWD\mpx.exe"
-
-      - name: 编译桌面版 mpx.exe(带 winpath)
-        shell: bash
-        run: |
-          set -eu
-          cd cmd/mpx
-          go run github.com/tc-hib/go-winres@v0.3.3 simply \
-            --arch amd64 --icon ../../deploy/desktop/icon.ico --manifest gui
-          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui \
-            -X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1" \
-            -o ../../mpx-desktop.exe .
-          rm -f *.syso
-
-      - name: 打桌面 setup.exe
-        shell: pwsh
-        run: |
-          $mk = (Get-Command makensis -ErrorAction SilentlyContinue).Source
-          if (-not $mk) { $mk = 'C:\Program Files (x86)\NSIS\makensis.exe' }
-          & $mk -INPUTCHARSET UTF8 "-DVERSION=0.0.0" "-DSRCEXE=$PWD\mpx-desktop.exe" "-DICONFILE=$PWD\deploy\desktop\icon.ico" "-DOUTFILE=$PWD\mpx-desktop-test-setup.exe" deploy\windows\mpx-desktop.nsi
-          if ($LASTEXITCODE -ne 0) { throw "makensis 失败" }
-
-      - name: 桌面安装器同样不弄坏 PATH
-        shell: pwsh
-        run: .\deploy\windows\path-check.ps1 -Setup "$PWD\mpx-desktop-test-setup.exe" -Exe "$PWD\mpx-desktop.exe" -ExeName MPX.exe

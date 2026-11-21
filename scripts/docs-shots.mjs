@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// 给用户文档截 mpx ui 的界面图:浅色存 docs/public/ui/<name>.png,深色存 <name>-dark.png。
+// 给用户文档截管理台的界面图:浅色存 docs/public/ui/<name>.png,深色存 <name>-dark.png。
 // 用法:node scripts/docs-shots.mjs [--only a,b]
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { startEnv, startSetupEnv, login, cpFetch } from "../internal/ui/e2e/env.mjs";
+import { startEnv, login, cpFetch } from "../internal/ui/e2e/env.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "docs", "public", "ui");
@@ -85,40 +85,19 @@ async function seed(env) {
     support_link: "https://example.com/support",
     rules: null,
   });
-
-  // 设置·设备:设一个设备密码,用它让 laptop / phone 两台各接入一次(回环上
-  // 明文可受理),再用设备 token 打一次 /api/status,让「上次使用」有值。
-  const devPW = "Docs-Device-2026";
-  await req("PUT", "/api/device-password", { password: devPW });
-  for (const name of ["laptop", "phone"]) {
-    const r = await cpFetch(env.cpURL + "/api/connect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: devPW, device_name: name }),
-    });
-    if (!r.ok) throw new Error(`POST /api/connect(${name}) -> ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    const tok = (await r.json()).token;
-    const s = await cpFetch(env.cpURL + "/api/status", { headers: { Authorization: "Bearer " + tok } });
-    if (!s.ok) throw new Error(`GET /api/status(${name}) -> ${s.status}`);
-  }
 }
 
 // 截图前统一改写页面拿到的元数据,让图里是文档想展示的样子而不是测试环境的
-// 随机值:版本号去掉 +dirty、地址与指纹换成示例、节点状态显示运行中。拦的是
-// 页面自己的请求,r.fetch() 不走路由,不会递归。setup 模式没有控制面:地址、
-// 指纹与 /api/* 都是控制面相关的改写,一概不挂,只留版本号。
-async function polish(page, setup = false) {
-  await page.route("**/ui/meta", async r => {
+// 随机值:版本号去掉 +dirty、指纹换成示例、节点状态显示运行中。拦的是
+// 页面自己的请求,r.fetch() 不走路由,不会递归。
+async function polish(page) {
+  await page.route("**/api/admin/meta", async r => {
     const res = await r.fetch();
     const j = await res.json();
-    j.cli_version = "v0.9.5";
-    if (!setup) {
-      j.server = "203.0.113.10:8080";
-      j.fingerprint = EXAMPLE_FP;
-    }
+    j.version = "v0.9.5";
+    j.fingerprint = EXAMPLE_FP;
     await r.fulfill({ response: res, json: j });
   });
-  if (setup) return;
   await page.route("**/api/status", async r => {
     const res = await r.fetch();
     const j = await res.json();
@@ -184,17 +163,16 @@ const doctorReport = () => {
 
 // 更新弹窗的示例结论:桌面程序与控制面 v0.9.4 → v0.9.5 可升级,四个节点的
 // xray 都已在推荐版本上;notes 按 v0.9.5 起的发布说明结构写(弹窗只取「## 更新要点」)。
+// 更新弹窗的示例结论:控制面与四个节点的 xray 都有新版可升(UC-26 二层版:
+// 没有本机/桌面一层)。
 const UPDATE_INFO = {
-  desktop: true,
-  cli: { current: "v0.9.4", latest: "v0.9.5", available: true, release_url: "" },
-  control: { current: "v0.9.4", latest: "v0.9.5", available: true, release_url: "" },
+  control: { current: "v0.9.4", latest: "v0.9.5", behind: 1, available: true, release_url: "https://example.com/mpx/releases/v0.9.5", error: "" },
   nodes: [
-    { name: "tokyo-a", core: "xray", current: "26.3.27", target: "26.3.27" },
-    { name: "tokyo-b", core: "xray", current: "26.3.27", target: "26.3.27" },
-    { name: "frankfurt-a", core: "xray", current: "26.3.27", target: "26.3.27" },
-    { name: "sanjose-a", core: "xray", current: "26.3.27", target: "26.3.27" },
+    { id: 1, name: "tokyo-a", display: "🇯🇵 东京 A", core: "xray", current: "26.3.27", target: "26.4.1" },
+    { id: 2, name: "tokyo-b", display: "🇯🇵 东京 B", core: "xray", current: "26.3.27", target: "26.4.1" },
+    { id: 3, name: "frankfurt-a", display: "🇩🇪 法兰克福 A", core: "xray", current: "26.3.27", target: "26.4.1" },
+    { id: 4, name: "sanjose-a", display: "🇺🇸 圣何塞 A", core: "xray", current: "26.3.27", target: "26.4.1" },
   ],
-  notes: "## 更新要点\n\n- 首次安装向导不再问内部的「节点名」,显示名按 IP 自动识别\n- 装控制面、装节点前先检查端口,被占用时自动换一个空闲端口\n- 更新弹窗只列这一版的要点\n- 总览「用时」等改用中文单位\n\n### 修复\n- 切换控制面后会记住,下次打开仍连上次选的\n\n## 我该下哪个\n\n| 系统 | 文件 |\n| :--- | :--- |",
 };
 
 const SHOTS = [
@@ -282,22 +260,6 @@ const SHOTS = [
     },
   },
   {
-    // 顶栏控制面胶囊的浮层:列表用路由摆两套示例控制面(当前这套 + 给家人的一套)。
-    name: "profiles", crop: ".cp-pop",
-    routes: async page => {
-      await page.route("**/local/profiles", r => r.fulfill({ json: [
-        { name: "default", server: "https://203.0.113.10:8080", current: true },
-        { name: "family", server: "https://198.51.100.20:8080", current: false },
-      ] }));
-    },
-    run: async (page, env) => {
-      await page.goto(env.origin + "/#overview");
-      await page.click('[data-act="cp-toggle"]');
-      await page.waitForSelector(".cp-pop .pflist");
-      await page.waitForTimeout(300);
-    },
-  },
-  {
     // 节点详情 tokyo-a:巡检状态和在线用户都要现场连节点,测试环境拿不到,
     // 路由补示例(核心 26.3.27、配置一致、证书剩 47 天、在线用户 2)。只拍
     // 详情页本身,不开在线用户抽屉。
@@ -345,12 +307,12 @@ const SHOTS = [
     },
   },
   {
-    // 更新弹窗:/local/update 摆成示例结论,等右上角出现「更新」pill 后点开
+    // 更新弹窗:/api/update 摆成示例结论,等右上角出现「更新」pill 后点开
     // 弹窗。结论要在登录前就拦上:刷新 pill 有 30 秒节流,登录那一次 load
     // 拿到什么就定形了。
     // 裁整个 #modal(含底部「稍后 / 重启以更新」那一栏),视口拉高到 1000 免得弹窗被挤出视口。
     name: "update", crop: "#modal", height: 1000,
-    routes: async page => { await page.route("**/local/update", r => r.fulfill({ json: UPDATE_INFO })); },
+    routes: async page => { await page.route("**/api/update", r => r.fulfill({ json: UPDATE_INFO })); },
     run: async page => {
       await page.locator("#upd-pill").waitFor({ state: "visible" });
       await page.click("#upd-pill");
@@ -359,116 +321,20 @@ const SHOTS = [
     },
   },
   {
-    // 设置·设备:界面用的是管理 token,不是哪台设备的凭据,列表里不会有「这台」。
-    // 路由把 laptop 标成当前设备(于是它没有吊销按钮),最近 IP 换成文档段。
-    name: "settings-devices",
+    // 系统·域名与证书:摆一份已配置好、证书有效的状态图。
+    name: "settings-acme",
     routes: async page => {
-      await page.route("**/api/devices", async r => {
-        if (r.request().method() !== "GET") return r.continue();
-        const res = await r.fetch();
-        const j = await res.json();
-        const list = Array.isArray(j) ? j : j.devices || [];
-        const ips = { laptop: "198.51.100.7", phone: "198.51.100.23" };
-        for (const d of list) { d.current = d.name === "laptop"; if (d.last_ip) d.last_ip = ips[d.name] || "198.51.100.50"; }
-        await r.fulfill({ response: res, json: j });
-      });
+      await page.route("**/api/acme/status", r => r.fulfill({ json: {
+        domain: "cp.example.net", cf_token_set: true, staging: false,
+        cert_issued: true, cert_not_after: "2027-02-01T00:00:00Z",
+        cert_issued_at: "2026-11-01T08:00:00Z", issue_state: "done",
+      } }));
     },
-    run: async (page, env) => { await page.goto(env.origin + "/#system/devices"); await page.waitForSelector(".pill.on"); },
+    run: async (page, env) => { await page.goto(env.origin + "/#system/acme"); await page.waitForSelector("#acme-form"); },
   },
   { name: "settings-backup", run: async (page, env) => { await page.goto(env.origin + "/#system/backup"); } },
   { name: "system-notify", run: async (page, env) => { await page.goto(env.origin + "/#system"); } },
   { name: "settings-rules", run: async (page, env) => { await page.goto(env.origin + "/#sub/clients"); } },
-  // 首次安装(setup 模式:配置为空的 mpx ui)。
-  { name: "setup-welcome", setup: true, crop: ".scard", run: async page => { await page.waitForSelector("#s-start"); } },
-  {
-    name: "setup-host", setup: true, crop: ".scard",
-    run: async page => {
-      await page.click("#s-start");
-      await page.waitForSelector("#s-host");
-      await page.fill("#s-host", "203.0.113.10");
-      await page.fill("#s-port", "22");
-    },
-  },
-  {
-    // 第 2 步「检查」:控制面默认的 8080 被 nginx 占着,向导自动改用 28080 并说明。
-    name: "setup-check-port", setup: true, crop: ".scard",
-    routes: async page => {
-      await page.route("**/local/setup/check", async r => {
-        await new Promise(res => setTimeout(res, 2400)); // 耗时显示成约 2.4 秒
-        await r.fulfill({ json: { probe: {
-          os: "Linux", arch: "x86_64", uid: 0, fetch: "/usr/bin/curl",
-          api_port: 8080, api_busy: "nginx(进程 1234)", api_suggest: 28080,
-        } } });
-      });
-    },
-    run: async page => {
-      await page.click("#s-start");
-      await page.waitForSelector("#s-host");
-      await page.fill("#s-host", "203.0.113.10");
-      await page.fill("#s-port", "22");
-      await page.fill("#s-pw", "Example-Root-Pass");
-      await page.click("#s-check");
-      await page.waitForSelector("#s-ports");
-    },
-  },
-  {
-    // 第 3 步「设置」:检查结果用路由摆成示例(Linux / x86_64 / root / curl),
-    // 填好第一个用户和设备密码(节点名不用填,显示名按 IP 自动识别),停在「开始安装」前。
-    name: "setup-settings", setup: true, crop: ".scard",
-    routes: async page => {
-      await page.route("**/local/setup/check", r => r.fulfill({ json: { probe: { os: "Linux", arch: "x86_64", uid: 0, fetch: "/usr/bin/curl" } } }));
-    },
-    run: async page => {
-      await page.click("#s-start");
-      await page.waitForSelector("#s-host");
-      await page.fill("#s-host", "203.0.113.10");
-      await page.fill("#s-port", "22");
-      await page.fill("#s-pw", "Example-Root-Pass");
-      await page.click("#s-check");
-      await page.waitForSelector("#s-next");
-      await page.click("#s-next");
-      await page.waitForSelector("#s-username");
-      await page.fill("#s-username", "alice");
-      await page.fill("#s-dpw", "Docs-Device-2026-Example");
-      await page.dispatchEvent("#s-dpw", "input");
-      await page.fill("#s-dpw2", "Docs-Device-2026-Example");
-    },
-  },
-  {
-    // 「完成」页:装好后的结论用示例数据直接渲染(订阅链接、二维码、地址与指纹),
-    // 不真的装任何东西。
-    name: "setup-done", setup: true, crop: ".scard",
-    routes: async page => {
-      await page.route("**/api/users/*/links", r => r.fulfill({ json: { auto: EXAMPLE_SUB } }));
-      // 安装任务用假接口:一启动就报「完成」,带回示例结果。
-      await page.route("**/local/setup/run", r => r.fulfill({ status: 202, json: { id: "docs-example" } }));
-      await page.route("**/local/setup/jobs/**", r => r.fulfill({ json: { state: "done", seq: 1, steps: [], lines: [],
-        result: { connected: true, host_port: "203.0.113.10:8080", fingerprint: EXAMPLE_FP, username: "alice" } } }));
-    },
-    run: async page => {
-      await page.waitForSelector("#s-start");
-      await page.evaluate(() => window.setupStartRun({ host: "203.0.113.10", ssh_port: 22, ssh_user: "root", username: "alice" }));
-      await page.waitForSelector("img.qr");
-      await page.waitForTimeout(400);
-    },
-  },
-  {
-    // 接入已有控制面:取指纹的结果用路由摆成示例,不连任何真控制面。
-    name: "setup-connect", setup: true, crop: ".scard",
-    routes: async page => {
-      await page.route("**/local/setup/connect/probe", r => r.fulfill({ json: {
-        server: "https://203.0.113.10:8080", fingerprint: EXAMPLE_FP,
-      } }));
-    },
-    run: async page => {
-      await page.click("#s-connect");
-      await page.waitForSelector("#s-cp-addr");
-      await page.fill("#s-cp-addr", "203.0.113.10:8080");
-      await page.fill("#s-cp-name", "laptop");
-      await page.click("#s-cp-probe");
-      await page.waitForSelector("#s-cp-ok");
-    },
-  },
   {
     // 备选配图(宣传用,文档正文暂不引用):节点列表,示例数据、带国旗显示名。
     // 默认不截,用 --only alt-nodes 单独生成。
@@ -521,7 +387,7 @@ async function takeShot(browser, shot, env) {
     try {
       await context.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
       const page = await context.newPage();
-      await polish(page, !!shot.setup);
+      await polish(page);
       if (shot.routes) await shot.routes(page, env);
       await login(page, env);
       await shot.run(page, env);
@@ -553,23 +419,13 @@ if (!shots.length && !only?.includes("subscription-dashboard")) {
 const browser = await chromium.launch();
 try {
   mkdirSync(OUT, { recursive: true });
-  const withEnv = shots.filter(s => !s.setup);
-  const withSetup = shots.filter(s => s.setup);
   const wantSub = !only || only.includes("subscription-dashboard");
-  if (withEnv.length || wantSub) {
+  if (shots.length || wantSub) {
     const env = await startEnv();
     try {
       await seed(env);
-      for (const shot of withEnv) await takeShot(browser, shot, env);
+      for (const shot of shots) await takeShot(browser, shot, env);
       if (wantSub) await subPageShot(browser, env);
-    } finally {
-      await env.stop();
-    }
-  }
-  if (withSetup.length) {
-    const env = await startSetupEnv();
-    try {
-      for (const shot of withSetup) await takeShot(browser, shot, env);
     } finally {
       await env.stop();
     }

@@ -38,7 +38,8 @@ async function viaCLI(...args) {
   const before = await getSettings();
   env.takeLog();
   await env.cli(...args);
-  const reqs = normalize(env.takeLog(), [], { drop: ["bandwidth_test_url", "cdn_optimize"] });
+  // acme_* 字段在设置 JSON 里带着,但改它们走 /api/acme/config,不是设置 PUT —— 比较时剥掉。
+  const reqs = normalize(env.takeLog(), [], { drop: ["bandwidth_test_url", "cdn_optimize", "acme_domain", "acme_cf_token_set", "acme_staging"] });
   await putSettings(before);
   return { reqs, before };
 }
@@ -54,7 +55,7 @@ test("通用设置:只改一项,其余字段、规则、模板都不丢;与 sett
   await page.fill("#s-notify_days_left", "5");
   await page.click("#s-save");
   await expect(page.locator(".toast")).toContainText("已保存通知设置");
-  expect(normalize(env.takeLog(), [], { drop: ["bandwidth_test_url", "cdn_optimize"] })).toEqual(fromCLI);
+  expect(normalize(env.takeLog(), [], { drop: ["bandwidth_test_url", "cdn_optimize", "acme_domain", "acme_cf_token_set", "acme_staging"] })).toEqual(fromCLI);
   const after = await getSettings();
   expect(after).toEqual({ ...before, notify_days_left: 5 });
   expect(after.templates.xray).toBe(before.templates.xray);
@@ -160,30 +161,4 @@ test("备份:点一下就下载归档,内容是 gzip", async ({ page }) => {
   expect(dl.suggestedFilename()).toMatch(/\.tar\.gz$|\.tgz$|\.gz$/);
   const buf = readFileSync(await dl.path());
   expect([buf[0], buf[1]]).toEqual([0x1f, 0x8b]);
-});
-
-test("设备:列出、吊销要确认、这台不给吊销", async ({ page }) => {
-  await login(page, env);
-  const devices = [
-    { id: 1, name: "this-box", current: true, last_ip: "127.0.0.1", created_at: "2026-10-01T00:00:00Z", last_used_at: "2026-10-16T00:00:00Z" },
-    { id: 2, name: "old-laptop", current: false, last_ip: "", created_at: "2026-10-01T00:00:00Z", last_used_at: null },
-  ];
-  const deletes = [];
-  await page.route("**/api/devices", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(devices) }));
-  await page.route("**/api/devices/2", r => { deletes.push(r.request().method()); return r.fulfill({ status: 204, body: "" }); });
-  await page.goto(env.origin + "/#settings/devices");
-  const thisRow = page.locator(".row", { hasText: "this-box" });
-  const oldRow = page.locator(".row", { hasText: "old-laptop" });
-  await expect(thisRow).toContainText("这台");
-  await expect(oldRow.locator("[data-act=dev-revoke]")).toHaveCount(1);
-  await expect(thisRow.locator("[data-act=dev-revoke]")).toHaveCount(0);
-  // 吊销要走确认框,取消不发请求。
-  await oldRow.locator("[data-act=dev-revoke]").click();
-  await expect(page.locator("#modal.open")).toContainText("吊销设备 old-laptop？");
-  await page.click("[data-act=modal-cancel]");
-  expect(deletes).toEqual([]);
-  await oldRow.locator("[data-act=dev-revoke]").click();
-  await page.click("#okb");
-  await expect(page.locator(".toast")).toContainText("已吊销设备 old-laptop");
-  expect(deletes).toEqual(["DELETE"]);
 });

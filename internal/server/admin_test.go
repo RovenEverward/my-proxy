@@ -119,7 +119,7 @@ func TestAdminLoginKindCLI(t *testing.T) {
 	}
 	// kind 写错要 400,而不是悄悄当 web。
 	code, _ = e.request("POST", "/api/admin/login",
-		adminLoginRequest{Username: "ops", Password: adminPW, Kind: "desktop"}, nil)
+		adminLoginRequest{Username: "ops", Password: adminPW, Kind: "bogus"}, nil)
 	if code != http.StatusBadRequest {
 		t.Fatalf("kind 写错应 400,得到 %d", code)
 	}

@@ -24,7 +24,7 @@ test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有�
 
 for (const [from, to] of [
   ["plans", "users/plans"], ["sources", "nodes/sources"], ["settings", "sub"], ["settings/general", "sub"], ["settings/rules", "sub/clients"],
-  ["settings/templates", "sub/templates"], ["settings/devices", "system/devices"], ["settings/backup", "system/backup"],
+  ["settings/templates", "sub/templates"], ["settings/devices", "system/acme"], ["settings/backup", "system/backup"],
 ]) {
   test(`旧地址 #${from} 跳到 #${to}`, async ({ page }) => {
     await login(page, env);

@@ -12,10 +12,6 @@ async function overview(page, platform, theme, extreme = false) {
     Object.defineProperty(navigator, "platform", { value: platform === "mac" ? "MacIntel" : "Win32" });
     Object.defineProperty(navigator, "userAgentData", { value: { platform: platform === "mac" ? "macOS" : "Windows" } });
     localStorage.setItem("mpx-theme", theme);
-    if (platform === "win") document.addEventListener("DOMContentLoaded", () => {
-      const s = document.documentElement.style;
-      s.setProperty("--mygo-titlebar-inset-right", "138px"); s.setProperty("--mygo-titlebar-height", "52px");
-    });
   }, { platform, theme });
   const now = Date.now(), day = 864e5, iso = days => new Date(now + days * day).toISOString();
   const users = ["alice", "bob", "carol", "dave", "erin", "frank"].map((username, i) => ({

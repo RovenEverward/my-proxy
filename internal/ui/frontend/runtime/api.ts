@@ -36,7 +36,7 @@ export const api: Read = async <T,>(path: string, init: RequestInit & { asText?:
     let response: Response;
     try {
       response = await fetch(path, { credentials: "same-origin", ...init, headers: { Accept: "application/json", ...init.headers } });
-    } catch { if (!init.signal?.aborted) reportFailure(path, 0); throw new APIError(0, "连不上本地服务：MPX 可能已经退出，请重新打开"); }
+    } catch { if (!init.signal?.aborted) reportFailure(path, 0); throw new APIError(0, "连不上控制面，请检查网络后刷新重试"); }
     if (mutation) invalidate(path);
     if (response.status === 429 && response.headers.get("Retry-After") && attempt < 3) {
       await sleep(1000 * (Number(response.headers.get("Retry-After")) || 2));
