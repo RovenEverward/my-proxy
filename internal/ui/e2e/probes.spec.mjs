@@ -82,14 +82,25 @@ test("剔除开着时节点列表挂已剔除标,保留可撤销", async ({ page
   await env.seed("inbound", "add", "--node", "excl-down", "--protocol", "vless", "--port", String(port + 1),
     "--security", "reality", "--sni", "example.com", "--reality-dest", "example.com:443");
 
+  // UC-26:触达检查已迁到 CLI(mpx node check),页面只展示存档。这里直接
+  // POST /api/reach/results 造判定:excl-ok 两侧可达、excl-down 两侧不通。
+  const get = async p => (await cpFetch(env.cpURL + p, { headers: { Authorization: "Bearer " + env.token } })).json();
+  const post = (p, body) => cpFetch(env.cpURL + p, { method: "POST", headers: { Authorization: "Bearer " + env.token, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const nodes = await get("/api/nodes");
+  const ids = Object.fromEntries(nodes.map(n => [n.name, n.id]));
+  const inbounds = await get("/api/inbounds");
+  const keyOf = name => "inbound:" + inbounds.find(i => i.node_id === ids[name]).id;
+  const subject = (name, status) => ({ subject_key: "node:" + ids[name], results: { [keyOf(name)]: { tcp: { status, latency_ms: 40 } } } });
+  for (const scope of ["domestic", "cp"]) {
+    const r = await post("/api/reach/results", { checked_at: new Date().toISOString(), scope, source_id: `e2e-${scope}`,
+      subjects: [subject("excl-ok", "reachable"), subject("excl-down", "refused")] });
+    expect(r.status).toBeLessThan(300);
+  }
+
   await login(page, env);
   await page.goto(env.origin + "/#nodes");
   await expect(page.locator(".callout")).toContainText("自动剔除已开启");
-
-  // 跑一轮触达检查,等两列出来。
-  await page.click("[data-act=reach-check]");
-  await expect(page.locator("th", { hasText: "本机 → 节点" })).toBeVisible({ timeout: 30000 });
-  await expect(page.locator(".callout", { hasText: "正在检查" })).toHaveCount(0);
+  await expect(page.locator("th", { hasText: "控制面 → 节点" })).toBeVisible({ timeout: 30000 });
 
   const rowDown = page.locator("tr", { hasText: "excl-down" });
   await expect(rowDown.locator(".x-tag").first()).toHaveText("已剔除");

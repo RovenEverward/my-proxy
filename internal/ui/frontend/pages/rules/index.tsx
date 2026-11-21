@@ -22,7 +22,7 @@ export function RulesPage({ route }: PageProps) {
   const [scope, setScope] = useState(rememberedScope);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const previousScope = useRef<{ value: string; started: boolean } | null>(null);
-  const readSupport = useMemo<RoutingReadSupport>(() => ({ sources: "unknown" }), [app.meta.server, app.meta.profile]);
+  const readSupport = useMemo<RoutingReadSupport>(() => ({ sources: "unknown" }), []);
   const page = usePageData(`rules:${tab}:${scope}`, read => readRulesPage(read, scope, tab === "groups", readSupport));
   const { data } = page;
   const previousUsers = useRef<string[]>([]);

@@ -173,10 +173,6 @@ test("只有已过期筛选可多选，半选和切换筛选、分页清空", as
   await page.locator('.ut tbody [data-pick]').first().check();
   await page.click('[data-act=user-page][data-dir="-1"]');
   await expect(page.locator(".bulk")).not.toContainText("已选");
-  await page.route("**/ui/meta", async r => { const response = await r.fetch(); const j = await response.json(); await r.fulfill({ response, json: { ...j, allow: ["GET /api"] } }); });
-  await page.reload(); await page.goto(env.origin + "/#users"); await page.click("[data-status=expired]");
-  await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  await expect(page.locator(".td-pick")).toHaveCount(0);
 });
 
 test("批删确认、逐条请求、执行锁定与失败项重试", async ({ page }) => {
@@ -236,13 +232,8 @@ test("过期用户验收图：平台、主题、尺寸和处理状态", async ({
         Object.defineProperty(navigator, "platform", { value: platform === "mac" ? "MacIntel" : "Win32" });
         Object.defineProperty(navigator, "userAgentData", { value: { platform: platform === "mac" ? "macOS" : "Windows" } });
         localStorage.setItem("mpx-theme", theme);
-        if (platform === "win") document.addEventListener("DOMContentLoaded", () => {
-          document.documentElement.style.setProperty("--mygo-titlebar-inset-right", "138px");
-          document.documentElement.style.setProperty("--mygo-titlebar-height", "52px");
-        });
       }, { platform, theme });
       const page = await context.newPage();
-      await page.route("**/ui/meta", async r => { const response = await r.fetch(), j = await response.json(); await r.fulfill({ response, json: { ...j, server: "203.0.113.10:8080" } }); });
       const nodes = ["东京 A", "新加坡 A", "法兰克福 A", "洛杉矶 A"].map((display, i) => ({ id: i + 1, name: `demo-${i}`, display, address: `203.0.113.${20 + i}`, status: { reachable: true, active: true } }));
       await page.route("**/api/nodes", r => r.fulfill({ json: nodes }));
       await page.route("**/api/status", async r => { const response = await r.fetch(), j = await response.json(); await r.fulfill({ response, json: { ...j, version: "v0.9.13", counts: { ...j.counts, nodes: 4, inbounds: 4, hosts: 4 } } }); });

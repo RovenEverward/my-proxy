@@ -5,12 +5,19 @@
 ## 未发布
 
 ### 要点
+- **网页管理台(UC-26)**:控制面自己伺服管理界面,浏览器打开 `https://<域名或IP>/admin/`,管理员账号密码登录。未配域名时 `/admin/` 只受理 TLS 或回环,远程管走 SSH 隧道。
+- **域名与证书(UC-26)**:系统页新增「域名与证书」:填 Cloudflare 域名与 API token,DNS-01 自动签发续期,签好后 `https://<域名>/admin/` 在任意浏览器直接可开。`PUT/DELETE /api/acme/config`、`POST /api/acme/issue`、`GET /api/acme/status`;CLI 侧 `mpx acme` 命令组,`mpx connect` 对域名地址自动探测系统 CA 信任。
+- **管理员账号(UC-26)**:`mpx init` 现在会建管理员账号;`mpx connect <地址>` 用账号密码换 CLI 会话 token(取代设备密码);`mpx admin create|password` 在服务器上建号/改密码,改密码吊销全部会话与 CLI 凭据。
 - 订阅镜像(UC-10):在名单内一台节点上开放 /sub 入口,订阅地址可不止控制面一个 IP。节点侧是核心自带的 TCP 转发(dokodemo-door / sing-box direct),不装 MPX 组件;内容与鉴权以控制面为唯一真相。新增 `mpx mirror add|list|set|rm`,API `GET/POST/PUT/DELETE /api/mirrors`,`mpx serve --sub-addr` 可开一个只路由 /sub 的专用监听(节点镜像指到它时 /api 不出现在镜像端口)。订阅页与用户链接列出"镜像 · <节点>"入口。
 - 控制面迁移后,`mpx mirror set <id> --upstream <新控制面>:<端口>` 让既有镜像跟随新控制面。
 
-### 兼容性
-- 控制面 API 只增不破:新增 `/api/mirrors*` 与 `user links` 里的 `mirror-<节点>` 键,旧端点行为不变。
-- 数据库新增 `sub_mirrors` 表;`ServerConfig`/`SingBoxServerConfig` 增加 mirrors 参数,旧版本读库不受影响但请先用新版本备份。
+### 兼容性(破坏性变更,UC-26,没有并行期)
+- **退役**:`mpx ui` 本地服务、MPX 桌面程序、`mpx login`/设备密码/`POST /api/connect`/`/api/devices*` 全部移除;旧版 CLI 与旧界面**连不上新版控制面**。
+- **升级顺序**:先在操作机上装新版 `mpx`(`mpx-cli_*` 安装包或一行脚本),再从旧控制面跑 `mpx update apply control`;或者直接在服务器上跑 `deploy/install.sh` 升级。旧库升级后先在服务器上用 `MPX_TOKEN=... mpx admin create` 建管理员账号,再 `mpx connect` 接入。
+- **功能退化提醒**:`mpx ui` 退役后,触达检查不再有「操作机开着界面也算一个境内来源」,境内侧只剩专职探测点;裸 IP + 自签证书时浏览器打不开 `/admin/`(要走 SSH 隧道或配域名)。
+- 控制面 API 只增不破(除上述 UC-26 删除项):新增 `/api/admin/*`、`/api/acme/*`、`/api/mirrors*` 与 `user links` 里的 `mirror-<节点>` 键,其余旧端点行为不变。
+- 数据库新增 `admin_accounts`、`admin_sessions`、`sub_mirrors` 表,删除 `device_password` 表;`ServerConfig`/`SingBoxServerConfig` 增加 mirrors 参数,旧版本读库不受影响但请先用新版本备份。
+- 发布件变化:桌面安装包与 `MPX-*` 固定名副本不再产出;CLI 安装包改名 `mpx-cli_*`;`mpx_<os>_<arch>` 压缩包不变,旧版 `mpx update` 与安装脚本照常工作。
 
 ## v0.9.16 (2026-11-15)
 

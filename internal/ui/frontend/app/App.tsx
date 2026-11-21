@@ -1,10 +1,10 @@
 import { AppShell } from "./AppShell";
-import { reportTheme, useTitlebar } from "@/runtime/platform";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, } from "react";
 import { AppContext, type AppContextValue, type Crumb, type LeaveGuard } from "@/runtime/app-context";
-import { requestEvents } from "@/runtime/api";
+import { APIError, api, requestEvents } from "@/runtime/api";
 import { refreshPages, useQueryActivity } from "@/runtime/query";
 import { canonicalKey, navigation, routeOf } from "@/runtime/navigation";
+import { logout } from "@/runtime/auth";
 import { useOverlayManager } from "@/components/overlays";
 import type { Meta, PageProps } from "@/runtime/types";
 import { UsersPage } from "@/pages/users";
@@ -14,28 +14,73 @@ import { SubscriptionPage } from "@/pages/sub";
 import { SystemPage } from "@/pages/system";
 import { RulesPage } from "@/pages/rules";
 import { DoctorPage } from "@/pages/doctor";
-import { SetupPage, ConnectForm } from "@/pages/setup";
-import { ProfilesDialog } from "@/runtime/profiles";
 import { OverviewPage } from "@/pages/overview";
+import { LoginPage } from "@/pages/login";
+import { ErrorState, LoadingTable, PageHeader } from "@/components/primitives";
 import { UpdateDialog, useUpdateState } from "@/runtime/update";
 
 const pages: Record<string, ComponentType<PageProps>> = {
   overview: OverviewPage, users: UsersPage, plans: PlansPage, nodes: NodesPage, sub: SubscriptionPage,
-  system: SystemPage, rules: RulesPage, doctor: DoctorPage,
+  system: SystemPage, rules: RulesPage, doctor: DoctorPage, login: LoginPage,
 };
 const titleFor = (key: string) => navigation.find(item => item.key === key)?.label || (key === "plans" ? "套餐" : "MPX");
-export function App({ meta }: { meta: Meta }) {
+
+// App 的会话状态机(UC-26):启动先取 /api/admin/meta。
+//   - 200:已登录,进工作区。
+//   - 401:未登录,进登录页(hash 置 #login;登录成功由 login() 整页重载)。
+//   - 其他错:控制面连不上,给重试。
+// 运行中任何 /api 响应 401 都会广播 session-expired(api.ts),这里收到同样
+// 回登录页 —— 改密、吊销、过期三条路汇成一条。
+export function App() {
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [metaError, setMetaError] = useState<Error | null>(null);
+  const [loggedOut, setLoggedOut] = useState(() => canonicalKey(location.hash) === "login");
+  const load = useCallback(async () => {
+    try {
+      const m = await api<Meta>("/api/admin/meta");
+      setMeta(m);
+      setMetaError(null);
+      setLoggedOut(false);
+    } catch (cause) {
+      if (cause instanceof APIError && cause.status === 401) { setMeta(null); setLoggedOut(true); }
+      else setMetaError(cause instanceof Error ? cause : new Error(String(cause)));
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  // session-expired 由 api.ts 在 401 时广播;登录页自己的提交 401 已被过滤,
+  // 这里只管「原来登录着、现在失效了」这一种情形。
+  useEffect(() => {
+    const onExpired = () => setLoggedOut(true);
+    requestEvents.addEventListener("session-expired", onExpired);
+    return () => requestEvents.removeEventListener("session-expired", onExpired);
+  }, []);
+
+  if (loggedOut) return <LoginGate />;
+  if (metaError) return <div className="page"><PageHeader title="MPX" /><ErrorState title="控制面" error={metaError} onRetry={() => { setMetaError(null); void load(); }} /></div>;
+  if (!meta) return <div className="page"><PageHeader title="MPX" /><LoadingTable /></div>;
+  return <Shell meta={meta} />;
+}
+
+// LoginGate 让 hash 与登录态保持一致:进登录页时把 #login 写进地址栏(可分享、
+// 刷新停在登录页),登录后由 login() 清空 hash 并重载,回到总览。
+function LoginGate() {
+  useEffect(() => {
+    if (location.hash !== "#login") history.replaceState(null, "", "#login");
+  }, []);
+  return <div className="page"><LoginPage route={["login"]} /></div>;
+}
+
+function Shell({ meta }: { meta: Meta }) {
   const [key, setKey] = useState(() => canonicalKey(location.hash));
   const [navigationState, setNavigationState] = useState<Record<string, string>>({});
   const [crumbs, setCrumbs] = useState<Crumb[]>(() => [{ label: titleFor(routeOf(key)[0]) }]);
   const [busy, setBusy] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const overlays = useOverlayManager();
   const overlayRef = useRef(overlays); overlayRef.current = overlays;
   const keyRef = useRef(key); keyRef.current = key;
   const guardRef = useRef<LeaveGuard | null>(null);
   const activity = useQueryActivity();
-  const update = useUpdateState(meta.mode !== "setup");
+  const update = useUpdateState(true);
   const updateRef = useRef(update); updateRef.current = update;
   const route = useMemo(() => routeOf(key), [key]);
   const setLeaveGuard = useCallback((guard: LeaveGuard | null) => { guardRef.current = guard; }, []);
@@ -65,23 +110,20 @@ export function App({ meta }: { meta: Meta }) {
     if (allowed instanceof Promise) void allowed.then(value => { if (value) action(); });
     else if (allowed) action();
   }, []);
-  const openConnect = useCallback(() => { if (!overlayRef.current.isLocked()) { overlayRef.current.dismissOverlays(); setConnecting(true); } }, []);
-  const openProfiles = useCallback(() => { if (!overlayRef.current.isLocked()) overlayRef.current.openModal(<ProfilesDialog onAdd={openConnect} />); }, [openConnect]);
   const openUpdate = useCallback(() => {
     void updateRef.current.refresh().then(data => {
       if (data) overlayRef.current.openModal(<UpdateDialog data={data} onClose={overlayRef.current.closeModal} />);
     });
   }, []);
-  const can = useCallback((method: string, path: string) => meta.allow.some(rule => {
-    const [allowedMethod, prefix] = rule.split(" ");
-    return method === allowedMethod && (path === prefix || path.startsWith(prefix.replace(/\/$/, "") + "/"));
-  }), [meta.allow]);
+  // UC-26:管理台没有 mpx ui 的能力白名单,登录进来的就是管理员,can 恒真。
+  // 签名保留(~40 个调用点),语义改成「已登录 = 全允许」。
+  const can = useCallback((_method: string, _path: string) => true, []);
   const context = useMemo<AppContextValue>(() => ({
     meta, route, navigationState, can, navigate, runGuarded: guardedAction, refresh: refreshPages, setCrumbs, setBusy, setLeaveGuard,
     openDrawer: overlays.openDrawer, closeOverlays: overlays.closeOverlays, closeModal: overlays.closeModal,
     openModal: overlays.openModal, setModalLocked: overlays.setModalLocked, confirmBox: overlays.confirmBox,
-    toast: overlays.toast, openUpdate, openProfiles, openConnect,
-  }), [meta, route, navigationState, can, navigate, guardedAction, setLeaveGuard, overlays.openDrawer, overlays.closeOverlays, overlays.closeModal, overlays.openModal, overlays.setModalLocked, overlays.confirmBox, overlays.toast, openUpdate, openProfiles, openConnect]);
+    toast: overlays.toast, openUpdate, logout: () => void logout(),
+  }), [meta, route, navigationState, can, navigate, guardedAction, setLeaveGuard, overlays.openDrawer, overlays.closeOverlays, overlays.closeModal, overlays.openModal, overlays.setModalLocked, overlays.confirmBox, overlays.toast, openUpdate]);
   useEffect(() => {
     const onHash = () => {
       const next = canonicalKey(location.hash);
@@ -100,13 +142,10 @@ export function App({ meta }: { meta: Meta }) {
     return () => { removeEventListener("hashchange", onHash); document.removeEventListener("click", onLink); };
   }, [navigate]);
   useLayoutEffect(() => {
-    // workspace 是全应用的统一主题,不随路由切:总览之外也用它,否则 side/top/
-    // btn/page 外壳与面板底色会回到 classic 遗留值(ISS-11)。setup/connecting 仍走
-    // classic——向导页没迁到新体系。
-    document.documentElement.dataset.ui = meta.mode !== "setup" && !connecting ? "workspace" : "classic";
+    // workspace 是全应用的统一主题;登录页不在这里(它在 App 外层 LoginGate)。
+    document.documentElement.dataset.ui = "workspace";
     if (canonicalKey(location.hash) !== location.hash.slice(1)) history.replaceState(null, "", "#" + key);
-  }, [key, route, meta.mode, connecting]);
-  useEffect(() => { reportTheme(document.documentElement.dataset.theme || "light"); }, []);
+  }, [key, route]);
   useEffect(() => {
     if (activity.refreshing) document.documentElement.dataset.loading = "1";
     else delete document.documentElement.dataset.loading;
@@ -116,11 +155,9 @@ export function App({ meta }: { meta: Meta }) {
     requestEvents.addEventListener("background-error", notify);
     return () => requestEvents.removeEventListener("background-error", notify);
   }, [overlays.toast]);
-  useTitlebar();
   const Page = pages[route[0]] || OverviewPage;
   return <AppContext.Provider value={context}>
-    {meta.mode === "setup" ? <SetupPage /> : <AppShell crumbs={crumbs} busy={busy || activity.loading} updateAvailable={update.available}><Page route={route} /></AppShell>}
-    {connecting && <ConnectForm mode="add" onBack={() => setConnecting(false)} />}
+    <AppShell crumbs={crumbs} busy={busy || activity.loading} updateAvailable={update.available}><Page route={route} /></AppShell>
     {overlays.layers}
     {(busy || activity.refreshing) && <div id="ui-progress" className="ui-progress" role="status">正在处理…</div>}
   </AppContext.Provider>;

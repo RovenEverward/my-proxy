@@ -35,7 +35,7 @@ type APIError struct {
 	StatusCode int
 	Message    string
 	// UIHint 是控制面给界面的说法(回答里的 ui_hint,只增字段):同一件事,不提命令。
-	// 命令行照旧用 Message;mpx ui / 桌面窗口经 uiError 换成它。
+	// 命令行照旧用 Message;走界面语义的调用方经 uiError 换成它。
 	UIHint string
 	// Body 是控制面回答的原文(非 2xx 时),给需要读额外字段的调用方(如接入锁定的
 	// locked_until)。

@@ -159,10 +159,10 @@ test("最近拉过订阅的用户默认入选，下拉切换链接", async ({ pa
   await expect.poll(async () => (await (await cp("/api/sub-pulls")).json()).some(p => p.username === "bob")).toBe(true);
   await open(page);
   await expect(page.locator("#pv-user")).toHaveValue("bob");
-  const uiBob = await (await page.request.get(env.origin + "/api/users/bob/links")).json();
+  const uiBob = await (await page.request.get(new URL(env.page).origin + "/api/users/bob/links")).json();
   await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", uiBob.auto);
   await page.selectOption("#pv-user", "alice");
-  const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
+  const alice = await (await page.request.get(new URL(env.page).origin + "/api/users/alice/links")).json();
   await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await page.fill("#f-prefix", "https://new.example.com");
   await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", "https://new.example.com/sub/" + alice.auto.split("/sub/")[1]);
@@ -215,20 +215,6 @@ test("未填前缀的说明为中性灰，保留地址可见性提示", async ({
 });
 
 
-test("只读角色的字段只读，不出现写入口和保存条", async ({ page }) => {
-  await page.route("**/ui/meta", async r => {
-    const response = await r.fetch(), meta = await response.json();
-    await r.fulfill({ response, json: { ...meta, allow: ["GET /api"] } });
-  });
-  await open(page);
-  for (const id of ["f-prefix", "f-int", "f-help"]) await expect(page.locator("#" + id)).toHaveAttribute("readonly", "");
-  // 订阅名的编辑框也不能改,「+ 用户名」不出现。
-  await expect(page.locator("#f-title")).toHaveAttribute("contenteditable", "false");
-  await expect(page.getByRole("button", { name: "用户名" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "识别规则", exact: true })).toHaveCount(0);
-  await expect(page.locator("#sec-clients .b5-tr").first()).toBeVisible();
-  await expect(page.locator("#sb")).toBeEmpty();
-});
 
 test("保存先读最新设置，只覆盖改过的键和规则", async ({ page }) => {
   await open(page);
@@ -449,42 +435,6 @@ test("Go 正则允许完成，浏览器不支持的规则提示交由控制面�
   await expect(page.locator("#sb")).toContainText("规则正则不合法");
 });
 
-test("切换控制面先确认草稿，留下取消，不保存或保存后才切换", async ({ page }) => {
-  const calls = [];
-  await page.route("**/local/profiles", r => r.fulfill({ json: [
-    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
-  ] }));
-  await page.route("**/local/profiles/use", r => { calls.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
-  await page.route("**/api/devices", r => r.fulfill({ json: [{ name: "e2e-本机", current: true }] }));
-  await open(page);
-  const choose = async () => {
-    if (await page.locator(".profile[data-act=cp-toggle]").getAttribute("aria-expanded") !== "true") await page.click(".profile[data-act=cp-toggle]");
-    await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
-    await page.click('.pfitem[data-name="other"]');
-    await expect(page.locator("#modal.open h2")).toContainText("还没保存");
-  };
-  await setTitle(page, "切换前草稿");
-  await choose();
-  await page.getByRole("button", { name: "留下", exact: true }).click();
-  await expect(page.locator("#modal.open")).toHaveCount(0);
-  expect(calls).toEqual([]);
-  await expectTitle(page, "切换前草稿");
-  await choose();
-  const reloaded = page.waitForEvent("load");
-  await page.getByRole("button", { name: "不保存", exact: true }).click();
-  await expect.poll(() => calls.length).toBe(1);
-  await reloaded;
-  // 默认标题就是一块「用户名」标签:存进去的是 {USERNAME}。
-  await expectTitle(page, "{USERNAME}");
-  // 切换成功会整页刷新。等新页面把数据取完再往下点:刷新途中还会重画一次侧栏,
-  // 正好撞上时那个按钮会被换掉,点击就卡在那儿了。
-  await expect(page.locator("html[data-loading]")).toHaveCount(0);
-  await setTitle(page, "切换前保存");
-  await choose(); await page.getByRole("button", { name: "保存并离开", exact: true }).click();
-  await expect.poll(() => calls.length).toBe(2);
-  expect((await settings()).profile_title).toBe("切换前保存");
-});
-
 test("离页对话框声明名称，Tab 循环限制在内部并在关闭时还原焦点", async ({ page }) => {
   await open(page);
   await setTitle(page, "焦点测试");
@@ -533,47 +483,3 @@ test("保存新订阅地址后，重载回来前预览就换成新链接", async
   hold();
 });
 
-// 选「不保存」后先把页面画回已保存的值;切换控制面失败时,页面不留着已丢掉的草稿和保存条。
-test("切换控制面选不保存但切换失败：页面已画回保存的值", async ({ page }) => {
-  await page.route("**/local/profiles", r => r.fulfill({ json: [
-    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
-  ] }));
-  await page.route("**/local/profiles/use", r => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "连不上" }) }));
-  await open(page);
-  await setTitle(page, "要丢掉的草稿");
-  await page.click(".profile[data-act=cp-toggle]");
-  await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
-  await page.click('.pfitem[data-name="other"]');
-  await page.getByRole("button", { name: "不保存", exact: true }).click();
-  await expectTitle(page, "{USERNAME}");
-  await expect(page.locator("#sb")).toBeEmpty();
-});
-
-// 离页对话框开着时,慢回来的浮层列表不盖掉它的焦点约束;再点「添加控制面」后 Tab 不被拦回弹层。
-test("慢回来的浮层不干扰离页确认，添加控制面后 Tab 不被拦回", async ({ page }) => {
-  let release;
-  const held = new Promise(r => { release = r; });
-  await page.route("**/local/profiles", async r => { await held; await r.fulfill({ json: [
-    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com", current: false },
-  ] }); });
-  await open(page);
-  await setTitle(page, "陷阱测试");
-  await page.click(".profile[data-act=cp-toggle]");
-  await expect(page.locator(".cp-pop [role=status]")).toBeVisible();
-  await page.locator('.side a.nav[href="#nodes"]').click();
-  await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
-  const returned = page.waitForResponse(r => new URL(r.url()).pathname === "/local/profiles");
-  release(); await returned;
-  await expect(page.getByRole("dialog", { name: "有 1 处改动还没保存" })).toBeVisible();
-  await page.getByRole("button", { name: "留下", exact: true }).click();
-  // 刚才点导航的外侧点击把浮层收了;重开,慢回来的列表应在里面。
-  await page.click(".profile[data-act=cp-toggle]");
-  await expect(page.locator(".cp-pop .pfitem")).toHaveCount(2);
-  const btn = page.locator(".cp-pop [data-act=profile-add]");
-  if (await btn.count()) {
-    await btn.click();
-    await expect(page.locator(".cp-pop")).toHaveCount(0);
-    await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.querySelector(".cp-pop")?.contains(document.activeElement) ?? false)).toBe(false);
-  }
-});

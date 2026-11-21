@@ -109,7 +109,7 @@ pre::-webkit-scrollbar-track, .md div[class*="language-"] pre::-webkit-scrollbar
 pre::-webkit-scrollbar-thumb, .md div[class*="language-"] pre::-webkit-scrollbar-thumb { background:var(--line); border-radius:3px; }
 pre:hover::-webkit-scrollbar-thumb, .md div[class*="language-"] pre:hover::-webkit-scrollbar-thumb { background:var(--faint); }
 .VPNavBarTitle .logo.dark{display:none}[data-theme=dark] .VPNavBarTitle .logo.light{display:none}[data-theme=dark] .VPNavBarTitle .logo.dark{display:inline-block}
-/* 正文里的桌面窗口截图（Shot 组件）：整栏宽，浅深两张随主题切换 */
+/* 正文里的管理台截图（Shot 组件）：整栏宽，浅深两张随主题切换 */
 .md .win { margin:20px 0 28px; }
 .win .only-dark { display:none; }
 [data-theme=dark] .win .only-light { display:none; }

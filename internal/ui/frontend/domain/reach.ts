@@ -1,4 +1,5 @@
-// 触达检查(UC-06):本机与控制面各对每个入站探一次 TCP/UDP,合并成节点级判定。
+// 触达检查(UC-06):境内与控制面各对每个入站探一次 TCP/UDP,合并成节点级判定。
+// local 来源在服务端就是境内探测点(ScopeDomestic),UC-26 起页面统一叫「境内」。
 // 判定的显示口径与原型 G 一致:双通 / 境内不通 / 都不通 / 未知。
 export interface ReachCell { status: "reachable" | "timeout" | "refused" | "unreachable" | "unknown"; latency_ms?: number; error?: string }
 export interface ReachProtos { tcp?: ReachCell; udp?: ReachCell }
@@ -49,14 +50,8 @@ export function cellText(c?: ReachCell): { text: string; tone: string; latency?:
 }
 
 export const verdictLong: Record<ReachVerdict, string> = {
-  ok: "本机和控制面都能触达这台节点的端口。",
-  blocked: "本机探测不通，控制面可以触达——节点活着，本机这条路径被封了。",
-  down: "本机和控制面都连不上，更像是节点或机房故障，不只是境内路径问题。",
+  ok: "境内探测点和控制面都能触达这台节点的端口。",
+  blocked: "境内探测不通，控制面可以触达——节点活着，境内这条路径被封了。",
+  down: "境内和控制面都连不上，更像是节点或机房故障，不只是境内路径问题。",
   unknown: "至少一侧探测没有结果，不下结论。UDP 超时可能是对方收了没回，属于这一类。",
 };
-
-// jobSnapshot 是 /local/reach/check 的任务快照(POST 与 GET 同形)。
-export interface ReachJob {
-  id?: string; stage: "none" | "cp" | "local" | "save" | "done" | "error";
-  nodes?: number; counts?: Record<string, number>; error?: string;
-}

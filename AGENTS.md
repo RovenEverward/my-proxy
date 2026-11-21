@@ -1,12 +1,12 @@
 # MPX
-自建 xray / sing-box 多节点代理的控制面：一台控制面管住所有节点，操作者只在自己电脑上用 `mpx`、`mpx ui` 操作。
+自建 xray / sing-box 多节点代理的控制面：一台控制面管住所有节点，操作者在浏览器打开 `https://<控制面地址>/admin/` 管理，或在自己电脑上用 `mpx` 命令行操作。
 
 ## 地图
-- `cmd/mpx/`：唯一的二进制入口；CLI、控制面（`mpx serve`）、`mpx ui` 都是它
+- `cmd/mpx/`：唯一的二进制入口；CLI、控制面（`mpx serve`，内嵌 `/admin/` 网页管理台）都是它
 - `internal/server/`、`internal/store/`、`internal/model/`：控制面的接口、SQLite、领域对象
 - `internal/control/`、`internal/node/`：后台循环与 SSH 驱动节点
 - `internal/render/`：订阅渲染与节点配置渲染（两套，不共用）
-- `internal/cli/`、`internal/ui/`：本机入口；`deploy/`：安装脚本与 systemd 单元
+- `internal/cli/`：操作机命令行入口；`internal/ui/`：嵌入控制面的网页管理台资源与源码；`deploy/`：安装脚本与 systemd 单元
 - 整体怎么配合、每块的边界和坑见 [docs/atlas/README.md](docs/atlas/README.md)
 
 ## 验证
@@ -16,9 +16,9 @@
 - `python3 scripts/atlas_audit.py`：改 atlas 或新增文档时跑
 
 ## 硬约束
-- 控制面 API 只增不破：旧 CLI、旧 `mpx ui` 必须照常工作；要破坏兼容先停下来问主人
+- 控制面 API 只增不破：旧版 CLI 与管理台必须照常工作；要破坏兼容先停下来问主人
 - 节点上不装任何 MPX 组件，只用系统 `ssh` 和核心自带的 API
-- `mpx ui` 不长出控制面接口之外的能力，每个写操作要有等价命令；管理页不由控制面对外提供
+- 网页管理台不长出控制面接口之外的能力，每个写操作要有等价命令；`/admin/` 只受理 TLS 或回环，未配域名时不对公网开放
 - 改结构走 `node sync`（会重启），改名单走周期收敛（不重启）；不要让名单变化触发重启
 - 发布件保留压缩包：已发布的 `mpx update` 和安装脚本按固定文件名下载
 
@@ -34,7 +34,7 @@
 | 下发、收敛、巡检、核心安装（internal/control/*、internal/node/*、internal/render/xray.go） | [节点](docs/atlas/nodes.md) |
 | 用户、套餐、流量、重置（internal/model/plan.go、internal/store/user.go、internal/cli/user*.go） | [用户、套餐与计量](docs/atlas/users.md) |
 | 订阅、规则、策略组（internal/server/subscribe.go、internal/render/clash.go、singbox.go、routing*.go） | [订阅与分流](docs/atlas/subscription.md) |
-| CLI、`mpx ui`、设备接入（internal/cli/*、internal/ui/*、internal/pin/*） | [本机入口](docs/atlas/operator-entry.md)；界面修改另读 [UX 规范](internal/ui/ux/README.md) |
+| CLI、网页管理台、管理员账号（internal/cli/*、internal/ui/*、internal/server/admin*.go） | [本机入口](docs/atlas/operator-entry.md)；界面修改另读 [UX 规范](internal/ui/ux/README.md) |
 | 安装、升级、发版（internal/cli/init*.go、internal/cli/update*.go、internal/selfupdate/*、deploy/*） | [安装与升级](docs/atlas/install-update.md) |
 | 能力检测、体检、自检（internal/diagnostics/*、internal/fusion/*、internal/cli/doctor.go） | [体检与诊断](docs/atlas/diagnostics.md) |
 

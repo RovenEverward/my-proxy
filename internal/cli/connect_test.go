@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -32,20 +33,21 @@ func TestControlURL(t *testing.T) {
 	}
 }
 
-// TestConnectAndSaveProfile:mpx ui 正常模式「添加控制面」走它。两件事必须守住:
-// 存进指名的新档并设为当前;档已存在时报错不落盘 —— default 里好好的 token 不能
-// 被冲掉。
+// UC-26:mpx connect 登录的是 /api/admin/login,请求体必须带 kind=cli(不种
+// cookie 的 CLI 会话);token 落进指名的控制面档。
 func TestConnectAndSaveProfile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
+	var gotBody map[string]string
 	cp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/connect" {
+		if r.URL.Path != "/api/admin/login" {
 			t.Errorf("请求打到了 %s", r.URL.Path)
 		}
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = strings.NewReader(`{"device_id":7,"name":"pc","token":"tok-new"}`).WriteTo(w)
+		_, _ = strings.NewReader(`{"token":"tok-new","expires_at":"2030-01-01T00:00:00Z"}`).WriteTo(w)
 	}))
 	defer cp.Close()
 
@@ -54,12 +56,15 @@ func TestConnectAndSaveProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := connectAndSaveProfile(cp.URL, "SHA256:new", "device-password-1234", "pc", "work")
+	res, err := connectAndSaveProfile(cp.URL, trustDecision{fp: "SHA256:new"}, "admin", "admin-password-123", "work")
 	if err != nil {
 		t.Fatalf("connectAndSaveProfile: %v", err)
 	}
 	if res.Token != "tok-new" {
 		t.Fatalf("token 不对: %+v", res)
+	}
+	if gotBody["username"] != "admin" || gotBody["password"] != "admin-password-123" || gotBody["kind"] != "cli" {
+		t.Fatalf("登录请求体不对: %+v", gotBody)
 	}
 	cfg, err := loadConfig()
 	if err != nil {
@@ -76,7 +81,7 @@ func TestConnectAndSaveProfile(t *testing.T) {
 	}
 
 	// 重名报错,已有的档原样保留。
-	if _, err := connectAndSaveProfile(cp.URL, "SHA256:new", "device-password-1234", "pc", "work"); err == nil ||
+	if _, err := connectAndSaveProfile(cp.URL, trustDecision{fp: "SHA256:new"}, "admin", "admin-password-123", "work"); err == nil ||
 		!strings.Contains(err.Error(), "已存在") {
 		t.Fatalf("重名应报错,得到 %v", err)
 	}
@@ -89,9 +94,9 @@ func TestConnectAndSaveProfile(t *testing.T) {
 	}
 }
 
-// 接入撞上锁定:只发一次(不干等 Retry-After),说出本机几点解锁、还要等多久;
-// 密码不对:说出忘了密码怎么重设。窗口用 UIHint,不提命令。
-func TestPostConnectLockedAndWrong(t *testing.T) {
+// 登录撞上锁定:只发一次(不干等 Retry-After),说出本机几点解锁、还要等多久;
+// 密码不对:说出忘了密码怎么救援。窗口用 UIHint,不提命令。
+func TestPostAdminLoginLockedAndWrong(t *testing.T) {
 	calls := 0
 	until := time.Now().Add(10*time.Minute + 5*time.Second).UTC().Format(time.RFC3339)
 	locked := true
@@ -100,27 +105,27 @@ func TestPostConnectLockedAndWrong(t *testing.T) {
 		if locked {
 			w.Header().Set("Retry-After", "605")
 			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":"设备密码连续输错太多次,接入已锁定,10m0s后再试","locked_until":"` + until + `"}`))
+			_, _ = w.Write([]byte(`{"error":"用户名或密码连续输错太多次,登录已锁定,10m0s后再试","locked_until":"` + until + `"}`))
 			return
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"设备密码不对"}`))
+		_, _ = w.Write([]byte(`{"error":"用户名或密码不对"}`))
 	}))
 	defer srv.Close()
 	c := &Client{server: srv.URL, http: srv.Client()}
 	start := time.Now()
-	_, err := postConnect(c, "pw", "pc")
+	_, err := postAdminLogin(c, "admin", "pw")
 	if time.Since(start) > 2*time.Second || calls != 1 {
 		t.Fatalf("锁定不该重试/干等: calls=%d %v", calls, time.Since(start))
 	}
 	var ae *APIError
 	if !errors.As(err, &ae) || !strings.Contains(ae.Message, "解锁") || !strings.Contains(ae.Message, "11 分钟") ||
-		!strings.Contains(ae.UIHint, "设置 → 设备") || strings.Contains(ae.UIHint, "mpx ") {
+		!strings.Contains(ae.Message, "mpx admin password") || strings.Contains(ae.UIHint, "mpx ") {
 		t.Fatalf("锁定说法: %v / %+v", err, ae)
 	}
 	locked = false
-	_, err = postConnect(c, "pw", "pc")
-	if !errors.As(err, &ae) || !strings.Contains(ae.Message, "mpx device password") || !strings.Contains(ae.UIHint, "设置 → 设备") ||
+	_, err = postAdminLogin(c, "admin", "pw")
+	if !errors.As(err, &ae) || !strings.Contains(ae.Message, "mpx admin password") ||
 		strings.Contains(ae.UIHint, "mpx ") || ae.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("密码不对说法: %v / %+v", err, ae)
 	}

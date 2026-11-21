@@ -650,7 +650,7 @@ func (s *Server) exclusion() (exclusionState, error) {
 		return st, err
 	}
 	now := time.Now()
-	green := map[string]bool{}    // 有新鲜境内可达证据的对象
+	green := map[string]bool{}     // 有新鲜境内可达证据的对象
 	domFailed := map[string]bool{} // 境内探过且确定不通(原因文案用)
 	domSeen := map[string]bool{}   // 有任何新鲜境内数据的对象
 	bySubject := map[string][]reach.SourceSummary{}

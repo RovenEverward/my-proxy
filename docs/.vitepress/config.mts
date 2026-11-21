@@ -10,7 +10,7 @@ export default defineConfig({
 
   lang: 'zh-CN',
   title: 'MPX',
-  description: 'MPX：在自己电脑上管好几台代理 VPS。装机、加人、加服务器、升级都在桌面程序里点，不用登 VPS。',
+  description: 'MPX：在浏览器里管好几台代理 VPS。装机、加人、加服务器、升级都在网页管理台里点，不用登 VPS。',
   head: [
     ['link', { rel: 'icon', href: '/my-proxy/favicon.svg', type: 'image/svg+xml' }],
     ['link', { rel: 'icon', href: '/my-proxy/favicon.ico', sizes: 'any' }],
@@ -54,7 +54,7 @@ export default defineConfig({
           { text: '设置分流规则', link: '/guides/routing' },
           { text: '混合外部订阅', link: '/guides/external-sources' },
           { text: '让某个客户端拿到指定格式', link: '/guides/client-format' },
-          { text: '在多台设备上管理', link: '/guides/devices' },
+          { text: '管理台访问', link: '/guides/admin-access' },
           { text: '备份控制面', link: '/guides/backup' }
         ]
       },

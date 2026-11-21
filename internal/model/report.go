@@ -125,11 +125,11 @@ type ControlStatus struct {
 	Update UpdateInfo `json:"update"`
 	// TLSFingerprint 是控制面自签证书的公钥指纹(SHA256:...),CLI 按它认人。
 	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
-	// Devices 是接入的设备数;DevicePasswordSet 表示设备密码接入是否开着。
-	Devices           int  `json:"devices"`
-	DevicePasswordSet bool `json:"device_password_set"`
-	// ConnectLockedUntil 非空表示设备密码连续输错、接入锁定到这个时刻。
-	ConnectLockedUntil *time.Time `json:"connect_locked_until,omitempty"`
+	// AdminAccountSet 表示管理员账号是否已建(UC-26);install.sh 靠它决定
+	// 收尾时提示不提示建号。
+	AdminAccountSet bool `json:"admin_account_set"`
+	// LoginLockedUntil 非空表示管理台登录连续输错、锁定到这个时刻。
+	LoginLockedUntil *time.Time `json:"login_locked_until,omitempty"`
 
 	Counts   Counts        `json:"counts"`
 	Backoffs []NodeBackoff `json:"backoffs"`

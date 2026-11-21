@@ -66,6 +66,13 @@ var initFlags struct {
 	remark        string
 	subPrefix     string
 
+	// 管理员账号(UC-26):init 收尾时在 VPS 上经 MPX_TOKEN 建号,本机随即用它
+	// 接入。密码可交互输入,也可走 --admin-password / --admin-password-stdin;
+	// 不给则跳过建号与本机接入。
+	adminUser          string
+	adminPassword      string
+	adminPasswordStdin bool
+
 	// password 不是 flag:它要么来自 --ssh-password 的交互提示,要么来自 stdin。
 	// 刻意不提供「把密码写在命令行上」的选项 —— 那会进 shell 历史,也会出现在
 	// 本机的 ps 里。
@@ -84,9 +91,11 @@ var initCmd = &cobra.Command{
 它会依次做完这些事:装控制面(systemd 服务,监听 0.0.0.0:8080)、把控制面的公钥
 装进这台机器自己的 sshd、注册节点、建一个 VLESS+TCP+REALITY 入站、建对外入口、
 把订阅前缀指到本机、建一个用户,最后在节点上装 xray 核心并下发配置,打印订阅链接。
-一开始会让你设一个设备密码;装完后这台电脑自动接入控制面,并打印一行
-mpx connect 命令给别的设备用。之后不再需要登录 VPS。非交互运行时用环境变量
-MPX_DEVICE_PASSWORD 给出设备密码。
+一开始会让你设一个管理员账号;装完后在 VPS 上建好该账号(网页管理台与
+mpx connect 共用),这台电脑自动接入控制面,并打印一行 mpx connect 命令给别的
+设备用。之后不再需要登录 VPS。非交互运行时可用 --admin-password 或
+--admin-password-stdin 给出密码;都没给则跳过建号与接入,事后在服务器上
+mpx admin create 补建。
 
 它假设控制面与节点在同一台机器上(单机全包)。要分开部署,按 mpx node add、
 mpx inbound add、mpx host add 的 --help 一步步来。
@@ -125,10 +134,13 @@ func init() {
 	f.StringVar(&initFlags.realityDest, "reality-dest", bootstrapRealityDest, "REALITY 回落的目标")
 	f.StringVar(&initFlags.remark, "remark", "", "客户端里看到的节点名,默认用节点名")
 	f.StringVar(&initFlags.subPrefix, "sub-prefix", "", "订阅地址前缀,默认 http://<host>:<端口>")
+	f.StringVar(&initFlags.adminUser, "admin-user", "", "管理员用户名,默认 admin(网页管理台与 mpx connect 共用)")
+	f.StringVar(&initFlags.adminPassword, "admin-password", "", "管理员密码(脚本用;不给则交互输入,非交互且没给则跳过建号)")
+	f.BoolVar(&initFlags.adminPasswordStdin, "admin-password-stdin", false, "从 stdin 读管理员密码(脚本用)")
 }
 
 // runInit 只负责交互侧的准备:校验参数、问密码,然后把一切装进 initParams 交给
-// runInitSteps。向导(mpx ui)不走这里,它自己组 initParams。
+// runInitSteps。
 func runInit() error {
 	host := strings.TrimSpace(initFlags.host)
 	if host == "" {
@@ -154,29 +166,30 @@ func runInit() error {
 		initFlags.password = pw
 	}
 
-	// 设备密码放在一开始问:装了二十分钟才发现没法设,比现在多问一句糟得多。
-	devicePW, err := initDevicePassword()
+	// 管理员账号放在一开始问:装了二十分钟才发现没法建号,比现在多问一句糟得多。
+	adminUser, adminPW, err := initAdminCreds()
 	if err != nil {
 		return err
 	}
 
 	p := initParams{
-		Host:           host,
-		SSHUser:        initFlags.sshUser,
-		SSHPort:        initFlags.sshPort,
-		Password:       initFlags.password,
-		Identity:       initFlags.identity,
-		Binary:         initFlags.binary,
-		InstallScript:  initFlags.installScript,
-		Addr:           initFlags.addr,
-		APIPort:        apiPort,
-		Name:           initFlags.name,
-		Username:       initFlags.username,
-		SNI:            initFlags.sni,
-		RealityDest:    initFlags.realityDest,
-		Remark:         initFlags.remark,
-		SubPrefix:      initFlags.subPrefix,
-		DevicePassword: devicePW,
+		Host:          host,
+		SSHUser:       initFlags.sshUser,
+		SSHPort:       initFlags.sshPort,
+		Password:      initFlags.password,
+		Identity:      initFlags.identity,
+		Binary:        initFlags.binary,
+		InstallScript: initFlags.installScript,
+		Addr:          initFlags.addr,
+		APIPort:       apiPort,
+		Name:          initFlags.name,
+		Username:      initFlags.username,
+		SNI:           initFlags.sni,
+		RealityDest:   initFlags.realityDest,
+		Remark:        initFlags.remark,
+		SubPrefix:     initFlags.subPrefix,
+		AdminUser:     adminUser,
+		AdminPassword: adminPW,
 	}
 
 	_, err = runInitSteps(context.Background(), &p, cliProgress{})
@@ -338,20 +351,35 @@ func shellJoin(parts []string) string {
 	return strings.Join(quoted, " ")
 }
 
-// initDevicePassword 取设备密码:交互时输两次;非交互时读 MPX_DEVICE_PASSWORD。
-// 都没有就返回空串 —— 照样装,只是本机不自动接入,事后在任一已接入设备上
-// mpx device password 补设。
-func initDevicePassword() (string, error) {
-	if pw := os.Getenv("MPX_DEVICE_PASSWORD"); pw != "" {
-		if n := len([]rune(pw)); n < 12 {
-			return "", fmt.Errorf("MPX_DEVICE_PASSWORD 至少 12 个字符,这个只有 %d 个", n)
+// initAdminCreds 取管理员账号:用户名取 --admin-user(默认 admin);密码按
+// --admin-password > --admin-password-stdin > 交互输两次 的顺序取。
+// 都没有就返回空密码 —— 照样装,只是不建号、本机不自动接入,事后在服务器上
+// MPX_TOKEN mpx admin create 补建。
+func initAdminCreds() (user, pw string, err error) {
+	user = strings.TrimSpace(initFlags.adminUser)
+	if user == "" {
+		user = defaultAdminUser
+	}
+	switch {
+	case initFlags.adminPassword != "":
+		pw = initFlags.adminPassword
+	case initFlags.adminPasswordStdin:
+		pw, err = readLine(os.Stdin)
+		if err != nil {
+			return "", "", err
 		}
-		return pw, nil
+	case term.IsTerminal(int(os.Stdin.Fd())):
+		fmt.Fprintf(os.Stderr, "先设一个管理员密码:网页管理台与 mpx connect 都用账号 %s 加它登录(不是 VPS 的密码)。\n", user)
+		if pw, err = readAdminPassword("", false, "管理员密码(至少 12 个字符): "); err != nil {
+			return "", "", err
+		}
+		return user, pw, nil
+	default:
+		fmt.Fprintln(os.Stderr, "注意:非交互运行且没给 --admin-password/--admin-password-stdin,这次不建管理员账号。")
+		return user, "", nil
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "注意:非交互运行且没给 MPX_DEVICE_PASSWORD,这次不设设备密码。")
-		return "", nil
+	if n := len([]rune(pw)); n < 12 {
+		return "", "", fmt.Errorf("管理员密码至少 12 个字符,这个只有 %d 个", n)
 	}
-	fmt.Fprintln(os.Stderr, "先设一个设备密码:以后任何设备 mpx connect 接入时输入它(不是 VPS 的密码)。")
-	return readNewDevicePassword(false)
+	return user, pw, nil
 }

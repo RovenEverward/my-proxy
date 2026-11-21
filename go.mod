@@ -3,8 +3,6 @@ module github.com/RovenEverward/my-proxy
 go 1.27.1
 
 require (
-	github.com/egoist/mygo v0.5.5
-	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf
 	github.com/sagernet/sing-box v1.14.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
@@ -142,6 +140,7 @@ require (
 	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf // indirect
 	github.com/sagernet/nftables v0.3.0-mod.4 // indirect
 	github.com/sagernet/quic-go v0.61.0-sing-box-mod.12 // indirect
+	github.com/sagernet/sing v0.9.7-0.20261023115459-5dc452e537bf // indirect
 	github.com/sagernet/sing-cloudflared v0.1.4-0.20261021152903-2d40d788fcf6 // indirect
 	github.com/sagernet/sing-mux v0.3.10-0.20260929204512-caf09fe32475 // indirect
 	github.com/sagernet/sing-openconnect v0.1.1-0.20260929151225-cbd68c45de58 // indirect
@@ -181,6 +180,7 @@ require (
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

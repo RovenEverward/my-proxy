@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/acme"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/ruleset"
@@ -88,18 +89,20 @@ type Server struct {
 	token    string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
-	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
-	deviceTouched map[int64]time.Time
-	connect       *connectGuard
-	logger        *slog.Logger
-	mux           *http.ServeMux
-	nodeOps       NodeOps
+	// adminLogin 是管理台登录的限流闸(UC-26;设备接入已退役,登录是唯一
+	// 剩下的「无凭据换凭据」入口)。实现见 loginguard.go。
+	adminLogin *loginGuard
+	logger     *slog.Logger
+	mux        *http.ServeMux
+	nodeOps    NodeOps
 	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
 	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
 	extProber externalProber
 	status    StatusSource
 	backoff   BackoffOps
 	updates   UpdateSource
+	// acme 是 UC-26 的 ACME 证书管理器;nil 时签发类接口 503、只读接口照常。
+	acme      *acme.Manager
 	dbPath    string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
@@ -175,7 +178,7 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		mux:        http.NewServeMux(),
 		subLimiter: newSubLimiter(),
 		apiLimiter: newAPILimiter(),
-		connect:    newConnectGuard(),
+		adminLogin: newLoginGuard(),
 	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
@@ -337,18 +340,44 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/backup", s.handleBackup)
 	api.HandleFunc("POST /api/restore", s.handleRestore)
 
-	api.HandleFunc("GET /api/devices", s.handleListDevices)
-	api.HandleFunc("DELETE /api/devices/{id}", s.handleDeleteDevice)
-	api.HandleFunc("PUT /api/device-password", s.handleSetDevicePassword)
-	api.HandleFunc("DELETE /api/device-password", s.handleDisableDevicePassword)
+	// UC-26:管理台账号。建号(尚无账号时)与改名共用一个口;改口令单独一条,
+	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
+	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
+	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
+	api.HandleFunc("GET /api/admin/meta", s.handleAdminMeta)
+
+	// UC-26:管理台域名 + ACME 证书。acme_* 这组 settings 键只在这里改
+	// (PUT /api/settings 会原样保留它们,见 handleSaveSettings)。
+	api.HandleFunc("PUT /api/acme/config", s.handlePutACMEConfig)
+	api.HandleFunc("DELETE /api/acme/config", s.handleDeleteACMEConfig)
+	api.HandleFunc("GET /api/acme/status", s.handleACMEStatus)
+	api.HandleFunc("POST /api/acme/issue", s.handleStartACMEIssue)
+	api.HandleFunc("GET /api/acme/issue", s.handleACMEIssueProgress)
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
-	// 设备接入不要 token(它就是来领 token 的),自带三道闸,见 connect.go。
-	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
-	// 探测点接入同理:join token 即凭据,见 probes.go。
+	// 探测点接入不要 token:join token 即凭据,见 probes.go。
 	s.mux.HandleFunc("POST /api/probes/hello", s.handleProbeHello)
+	// UC-26:管理台登录/登出不要 token —— 登录正是来领凭据的;登出要让
+	// 已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
+	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
+	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
+
+	// UC-26 批 2:网页管理台静态面。/admin 只受理 TLS 或回环(与登录同一道
+	// 门);flags/fonts/styles 是产物里以绝对路径引用的共享资源,登录页也
+	// 要用,故不设凭据 —— 凭据管的是 /api。
+	admin := adminTLSOnly(adminSecurityHeaders(s.adminStatic()))
+	s.mux.Handle("GET /admin/", admin)
+	s.mux.Handle("HEAD /admin/", admin)
+	s.mux.Handle("GET /admin", adminTLSOnly(adminSecurityHeaders(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
+		}))))
+	s.mux.Handle("GET /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
+	s.mux.Handle("HEAD /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
+	s.mux.Handle("GET /fonts/", adminSecurityHeaders(subStatic("/fonts/", "fonts")))
+	s.mux.Handle("GET /styles/", adminSecurityHeaders(subStatic("/styles/", "styles")))
 }
 
 // ---- 请求/响应工具 ----

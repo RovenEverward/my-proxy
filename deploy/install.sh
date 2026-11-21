@@ -578,17 +578,18 @@ cat <<EOF
 同一个端口上:订阅走 HTTP,管理接口走 HTTPS(控制面的自签证书,指纹
 ${FP:-<稍后 mpx status 里看>})。
 
-用 mpx init 装的,init 会接着设设备密码并把你的电脑接上去。其他设备装好命令行
+用 mpx init 装的,init 会接着建管理员账号并把你的电脑接上去。其他设备装好命令行
 (deploy/install-cli.sh,Windows 用 deploy/install-cli.ps1)后:
 
   mpx connect $SHOWN --fp '${FP:-<证书指纹>}'
 
 EOF
 
-# 设备密码设没设只有控制面知道:服务刚重启起来,用本机 token 问一次 /api/status。
-# 已经设过的机器(重装/升级)不该再催人设一遍,所以先看 device_password_set 再决定
-# 打印哪段话;服务还没起来等查不到的情况给中性提示,不假装它已设好。
-# token 只经进程环境传给本机 mpx,不落到输出里。
+# UC-26:设备密码机制已撤,接入凭的是管理员账号。账号建没建只有控制面知道:
+# 服务刚重启起来,用本机 token 问一次 /api/status;已经建过的机器(重装/升级)
+# 不该再催人建号,所以先看 admin_account_set 再决定打印哪段话;服务还没起来等
+# 查不到的情况给中性提示,不假装它已建好。token 只经进程环境传给本机 mpx,
+# 不落到输出里。
 PW_JSON=""
 if [[ -f /etc/mpx/env ]]; then
 	for _ in 1 2 3 4 5; do
@@ -599,22 +600,22 @@ if [[ -f /etc/mpx/env ]]; then
 	done
 fi
 
-if grep -q '"device_password_set"[[:space:]]*:[[:space:]]*true' <<<"$PW_JSON"; then
+if grep -q '"admin_account_set"[[:space:]]*:[[:space:]]*true' <<<"$PW_JSON"; then
 	cat <<EOF
-设备密码已设,别的设备用上面的 mpx connect 接入即可。
+管理员账号已建,别的设备用上面的 mpx connect 登录接入即可。
 EOF
-elif grep -q '"device_password_set"[[:space:]]*:[[:space:]]*false' <<<"$PW_JSON"; then
+elif grep -q '"admin_account_set"[[:space:]]*:[[:space:]]*false' <<<"$PW_JSON"; then
 	cat <<EOF
-不是经 mpx init、而是直接跑本脚本装的,设备密码还没设,先在这台机器上设一个:
+不是经 mpx init、而是直接跑本脚本装的,管理员账号还没建,先在这台机器上建一个:
 
-  sudo sh -c 'MPX_TOKEN="\$(sed -n "s/^MPX_TOKEN=//p" /etc/mpx/env)" mpx --server http://127.0.0.1:${BOUND##*:} device password'
+  printf '你的密码\n' | sudo sh -c 'MPX_TOKEN="\$(sed -n "s/^MPX_TOKEN=//p" /etc/mpx/env)" mpx --server http://127.0.0.1:${BOUND##*:} admin create --username admin --password-stdin'
 
 EOF
 else
 	cat <<EOF
-设备密码没设的话,先在这台机器上设一个:
+管理员账号还没建的话,先在这台机器上建一个:
 
-  sudo sh -c 'MPX_TOKEN="\$(sed -n "s/^MPX_TOKEN=//p" /etc/mpx/env)" mpx --server http://127.0.0.1:${BOUND##*:} device password'
+  printf '你的密码\n' | sudo sh -c 'MPX_TOKEN="\$(sed -n "s/^MPX_TOKEN=//p" /etc/mpx/env)" mpx --server http://127.0.0.1:${BOUND##*:} admin create --username admin --password-stdin'
 
 EOF
 fi

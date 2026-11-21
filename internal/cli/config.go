@@ -20,6 +20,10 @@ type Profile struct {
 	// Fingerprint 是控制面自签证书的公钥指纹(SHA256:...)。https 地址必须有它:
 	// 控制面没有 CA 签的证书,CLI 只认这个指纹,做法同 SSH 的 known_hosts。
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// CA 为 true 表示这条 https 改走系统 CA 校验(控制面用 mpx acme 签了
+	// 受信证书),与 Fingerprint 互斥:connect 探到受信证书才置它,发 SNI 让
+	// 服务端出 ACME 证书。指纹钉仍是默认路径,CA 是它之上的可选升级。
+	CA bool `json:"ca,omitempty"`
 }
 
 // Config 是客户端自己记住的东西。
@@ -194,17 +198,43 @@ func resolveFingerprint(server string) (string, error) {
 	return pin.Normalize(fp)
 }
 
-// transportFor 造一个连 server 用的 HTTP 传输:https 地址必须带指纹并只认它,
+// resolveCA 报告这条 https 该不该走系统 CA 校验:--fp / MPX_FINGERPRINT 给了就
+// 不(显式指纹优先);否则看生效档,地址一致且 CA=true 才走 —— 和指纹同一套
+// 「server 换了就不沿用」的归属规则。
+func resolveCA(server string) (bool, error) {
+	if firstNonEmpty(opts.fingerprint, os.Getenv("MPX_FINGERPRINT")) != "" {
+		return false, nil
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return false, err
+	}
+	p, err := cfg.pick(firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE")))
+	if err != nil {
+		return false, err
+	}
+	return p.CA && strings.TrimSuffix(p.Server, "/") == strings.TrimSuffix(server, "/"), nil
+}
+
+// transportFor 造一个连 server 用的 HTTP 传输:https 地址要么钉指纹要么走 CA,
 // http 地址用默认传输。
 func transportFor(server string) (*http.Transport, error) {
 	fp, err := resolveFingerprint(server)
 	if err != nil {
 		return nil, err
 	}
-	if strings.HasPrefix(strings.ToLower(server), "https://") && fp == "" {
-		return nil, errors.New("控制面是 https 地址,但没有证书指纹:用 mpx connect 接入(会记下指纹),或加 --fp")
-	}
-	if !strings.HasPrefix(strings.ToLower(server), "https://") {
+	if strings.HasPrefix(strings.ToLower(server), "https://") {
+		if fp == "" {
+			ca, err := resolveCA(server)
+			if err != nil {
+				return nil, err
+			}
+			if ca {
+				return pin.Transport(""), nil // 无 TLSClientConfig:发 SNI、走系统根
+			}
+			return nil, errors.New("控制面是 https 地址,但没有证书指纹:用 mpx connect 接入(会记下指纹),或加 --fp")
+		}
+	} else {
 		fp = ""
 	}
 	return pin.Transport(fp), nil

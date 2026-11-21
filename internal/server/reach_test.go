@@ -388,7 +388,7 @@ func TestInterleavedResultShapesKeepBothSides(t *testing.T) {
 	e := newEnv(t)
 	n, in, _ := mkReachFixture(t, e)
 
-	// 旧形状:mpx ui 手动检查报节点级结果,两侧都可达。
+	// 旧形状:手动检查报节点级结果,两侧都可达。
 	code, body := e.api("POST", "/api/reach/results", map[string]any{
 		"checked_at": time.Now().UTC(),
 		"results": []reach.NodeCheck{{

@@ -92,7 +92,7 @@ export function ProbesPage() {
       </Card>
       <Card title="探测点">
         {!query.data.probes.length ? <EmptyState icon="nodes" title="还没有探测点"
-          description="mpx ui 开着时这台电脑也在探；装一台境内常驻探测点后，关机也不断档。"
+          description="装一台境内常驻探测点后，关机也不断档；本机也可以随时 mpx node check 手动探。"
           actions={writable && <Button size="sm" variant="primary" data-act="probe-add" onClick={addProbe}><Icon name="plus" />添加探测点</Button>} />
           : <div className="tw"><table><thead><tr><th>探测点</th><th>状态</th><th className="hide-m">最近上报</th><th className="hide-m">接入于</th><th /></tr></thead><tbody>
             {query.data.probes.map(p => <tr key={p.id}>
@@ -106,7 +106,7 @@ export function ProbesPage() {
               </span></td>
             </tr>)}
           </tbody></table></div>}
-        <div className="probe-note sub">探测点只拿「读目标、回结果」两个权限，凭据可单独吊销。这台电脑运行 mpx ui 时也算一个境内来源。</div>
+        <div className="probe-note sub">探测点只拿「读目标、回结果」两个权限，凭据可单独吊销。</div>
       </Card>
     </>}
   </>;

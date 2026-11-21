@@ -323,8 +323,8 @@ function pageProbes(){
     ${excl?`<div class="row-in"><div class="in-label"><b>探测周期</b><span class="sub">每个对象隔多久探一次;到期对象在周期内均匀铺开,不整批突扫</span></div><div class="seg"><button class="on">60 分钟</button><button>30 分钟</button><button>4 小时</button></div></div>`:""}
   </div>
   <div class="card"><div class="ch">探测点<small>境内常驻主机 · 每个探测端各自轮转</small></div>
-    <div class="tw"><table><thead><tr><th>探测点</th><th>状态</th><th class="hide-m">最近上报</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=4 class="sub" style="text-align:center;padding:26px">还没有探测点——mpx ui 开着时本机也探;装上探测点后关机也不断档</td></tr>'}</tbody></table></div>
-    <div class="row"><div class="grow"><div class="sub">探测点只拿「读目标、回结果」两个权限,凭据可单独吊销。这台电脑运行 <span class="mono">mpx ui</span> 时也算一个境内来源。</div></div></div>
+    <div class="tw"><table><thead><tr><th>探测点</th><th>状态</th><th class="hide-m">最近上报</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=4 class="sub" style="text-align:center;padding:26px">还没有探测点——操作机上跑 mpx node check 手动探;装上探测点后关机也不断档</td></tr>'}</tbody></table></div>
+    <div class="row"><div class="grow"><div class="sub">探测点只拿「读目标、回结果」两个权限,凭据可单独吊销。境内侧来源以专职探测点为准。</div></div></div>
   </div>`;
 }
 

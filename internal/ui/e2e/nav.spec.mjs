@@ -24,7 +24,7 @@ test("侧栏:总览 节点 用户 订阅 分流,分隔线,体检 系统;没有�
 
 for (const [from, to] of [
   ["plans", "users/plans"], ["sources", "nodes/sources"], ["settings", "sub"], ["settings/general", "sub"], ["settings/rules", "sub/clients"],
-  ["settings/templates", "sub/templates"], ["settings/devices", "system/devices"], ["settings/backup", "system/backup"],
+  ["settings/templates", "sub/templates"], ["settings/devices", "system/acme"], ["settings/backup", "system/backup"],
 ]) {
   test(`旧地址 #${from} 跳到 #${to}`, async ({ page }) => {
     await login(page, env);
@@ -59,22 +59,19 @@ test("用户页两个页签;套餐页签亮着「用户」", async ({ page }) =>
   await expect(page.locator("[data-act=pl-edit]").first()).toBeVisible();
 });
 
-test("控制面胶囊:顶栏点开是列表入口,详情区是地址、4 位一组的指纹、复制,再点收起", async ({ page }) => {
+test("控制面胶囊:顶栏点开是地址、版本、4 位一组的指纹、复制与退出登录,再点收起", async ({ page }) => {
   const FP = "SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg";
-  await page.route("**/ui/meta", async r => {
+  await page.route("**/api/admin/meta", async r => {
     const res = await r.fetch(); const j = await res.json();
-    await r.fulfill({ response: res, json: { ...j, fingerprint: FP, profiles: true } });
+    await r.fulfill({ response: res, json: { ...j, fingerprint: FP } });
   });
-  await page.route("**/api/devices", r => r.fulfill({ json: [{ name: "e2e-本机", current: true }] }));
-  await page.route("**/local/profiles", r => r.fulfill({ json: [
-    { name: "default", server: env.cpURL, current: true }, { name: "other", server: "https://other.example.com" },
-  ] }));
   await login(page, env);
   await page.goto(env.origin + "/#overview");
-  // 侧栏不再放控制面信息,胶囊在顶栏。
+  // 侧栏不放控制面信息,胶囊在顶栏。
   await expect(page.locator(".side .profile")).toHaveCount(0);
   const pill = page.locator(".top .profile[data-act=cp-toggle]");
   await expect(pill).toBeVisible();
+  await expect(pill).toContainText(env.admin.username);
   await expect(page.locator(".cp-pop")).toHaveCount(0);
   // 连上是墨色点,不是绿色。
   const dot = page.locator(".cp-menu .dot.ok");
@@ -83,14 +80,13 @@ test("控制面胶囊:顶栏点开是列表入口,详情区是地址、4 位一�
   expect(bg).toBe(ink);
   await pill.click();
   const pop = page.locator(".cp-pop");
-  await expect(pop.locator(".pfitem")).toHaveCount(2);
-  await expect(pop.locator("[data-act=profile-add]")).toHaveText(/添加控制面/);
-  await page.click("[data-act=cp-detail]");
   await expect(pop).toContainText("地址");
+  await expect(pop).toContainText("版本");
+  await expect(pop).toContainText("证书指纹");
   await expect(pop.locator(".fp i").first()).toHaveText("DU4S");
-  await expect(pop).toContainText("e2e-本机");
-  await expect(pop).toContainText("此凭据仅保存在本机");
-  await expect(pop.locator("[data-act=copy]")).toHaveAttribute("data-text", FP);
+  await expect(pop.locator("[data-act=copy]")).toBeVisible();
+  await expect(pop.locator("[data-act=logout]")).toHaveText("退出登录");
+  await expect(pop).toContainText("mpx admin password");
   await pill.click();
   await expect(page.locator(".cp-pop")).toHaveCount(0);
 });
@@ -148,73 +144,9 @@ test("系统 · 更新与版本:显示当前版本,按钮打开更新弹窗", as
   await expect(page.locator("[data-act=update-open]").last()).toBeVisible();
 });
 
-// Windows 自绘标题栏:最小化/最大化/关闭画在窗口右上角 138×52(--mygo-titlebar-*)。顶栏要和它们同一行、
-// 右边让出这块,内容卡片从标题栏下面开始,右上角不被压住。浏览器里用 CSS 变量模拟。
-test("Windows 标题栏:顶栏让出右侧按钮区,卡片在标题栏下方", async ({ page }) => {
-  // 桌面壳在页面加载时注入这两个变量;这里在 DOMContentLoaded 时设到 <html> 上(页面 CSP 不许内联 <style>)。
-  await page.addInitScript(() => {
-    const put = () => { const r = document.documentElement.style; r.setProperty("--mygo-titlebar-inset-right", "138px"); r.setProperty("--mygo-titlebar-height", "52px"); };
-    document.addEventListener("DOMContentLoaded", put);
-  });
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await login(page, env);
-  await expect(page.locator("html.tb-right")).toHaveCount(1);
-  // 量尺寸前先等壳子画出来:登录后到数据回来之间会整页重画,那一刻取 boundingBox 是 null。
-  await expect(page.locator(".top")).toBeVisible();
-  await expect(page.locator(".card").first()).toBeVisible();
-  const vw = 1280;
-  const top = await page.locator(".top").boundingBox();
-  expect(top.y).toBe(0);
-  expect(top.height).toBe(52);
-  // 顶栏里最右边的按钮(主题切换)离窗口右边至少 138px,且和三按钮垂直居中对齐(中线 26px)。
-  const theme = await page.locator(".top [data-act=theme]").boundingBox();
-  expect(theme.x + theme.width).toBeLessThanOrEqual(vw - 138);
-  expect(Math.abs(theme.y + theme.height / 2 - 26)).toBeLessThanOrEqual(1);
-  // 内容卡片从标题栏下面开始:右上角那块 138×52 里没有卡片。顶栏就是主内容区的第一行(.top 是
-  // main 里的吸顶行),所以卡片要在顶栏底边以下,不是只在 52px 以下。
-  const main = await page.locator("main").boundingBox();
-  expect(main.y).toBeGreaterThanOrEqual(52);
-  const card = await page.locator(".card").first().boundingBox();
-  expect(card.y).toBeGreaterThanOrEqual(top.y + top.height);
-});
 
 // 外层(html/body)不滚:WebView2 在外层出滚动条时是整页高的系统浅色条,压在窗口按钮下面。
 // 只让内容区 main 自己滚,长页面照样能滚到底;标题栏模式下也一样。
-for (const tb of [false, true]) test(`外层不滚动,内容区自己滚${tb ? " · Windows 标题栏" : ""}`, async ({ page }) => {
-  if (tb) await page.addInitScript(() => {
-    document.addEventListener("DOMContentLoaded", () => { const r = document.documentElement.style; r.setProperty("--mygo-titlebar-inset-right", "138px"); r.setProperty("--mygo-titlebar-height", "52px"); });
-  });
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "platform", { value: "Win32" });
-    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
-  });
-  await page.setViewportSize({ width: 1100, height: 420 });
-  await login(page, env);
-  await page.goto(env.origin + "/#overview");
-  await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
-  await expect(page.locator(".grid.g4 .card.stat").first()).toBeVisible();
-  if (tb) await expect(page.locator("html.tb-right")).toHaveCount(1);
-  const m = await page.evaluate(() => {
-    const se = document.scrollingElement, main = document.querySelector("main");
-    main.scrollTop = 120;
-    return {
-      htmlOv: getComputedStyle(document.documentElement).overflowY, bodyOv: getComputedStyle(document.body).overflowY,
-      outer: se.scrollHeight - innerHeight, mainOv: getComputedStyle(main).overflowY,
-      inner: main.scrollHeight - main.clientHeight, top: main.scrollTop, mainBottom: main.getBoundingClientRect().bottom,
-    };
-  });
-  expect(m.htmlOv).toBe("hidden");
-  expect(m.bodyOv).toBe("hidden");
-  expect(m.outer).toBeLessThanOrEqual(0);
-  expect(m.mainOv).toBe("auto");
-  expect(m.inner).toBeGreaterThan(0);  // 420 高放不下总览:内容区里有得滚
-  expect(m.top).toBeGreaterThan(0);
-  expect(m.mainBottom).toBeLessThanOrEqual(420);
-  // 滚过之后重画(自动刷新)不会跳回顶部。
-  await page.click("[data-act=reload]");
-  await expect(page.locator("html[data-loading]")).toHaveCount(0, { timeout: 20000 });
-  expect(await page.evaluate(() => document.querySelector("main").scrollTop)).toBeGreaterThan(0);
-});
 
 for (const theme of ["light", "dark"]) test(`内容区细滚动条：空闲和悬停内容时隐藏，滚动时显示，宽度不变 · ${theme}`, async ({ page }) => {
   await page.addInitScript(() => {
@@ -288,26 +220,3 @@ test("Mac 由 boot 选择系统滚动条，滚到底时内容宽度稳定", asyn
   expect(await measure()).toEqual(idle);
 });
 
-test("Windows 窄屏收起的抽屉无可见或可聚焦残留", async ({ page }) => {
-  await page.setViewportSize({ width: 640, height: 900 });
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "platform", { value: "Win32" });
-    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Windows" } });
-    document.addEventListener("DOMContentLoaded", () => {
-      document.documentElement.style.setProperty("--mygo-titlebar-inset-right", "138px");
-      document.documentElement.style.setProperty("--mygo-titlebar-height", "52px");
-    });
-  });
-  await login(page, env);
-  await expect(page.locator("html")).toHaveClass(/tb-right/);
-  const drawer = page.locator("#drawer");
-  // Radix unmounts closed content. A retained drawer must stay off screen.
-  await expect.poll(() => drawer.evaluateAll(elements => elements.every(element => element.getBoundingClientRect().top >= innerHeight))).toBe(true);
-  expect(await drawer.evaluateAll(elements => elements.every(element => {
-    if (element.contains(document.activeElement)) return false;
-    return [...element.querySelectorAll('a[href],button,input:not([type="hidden"]),select,textarea,[tabindex],[contenteditable="true"]')].every(control => {
-      if (control.closest('[inert]') || control.matches(':disabled') || !control.getClientRects().length || getComputedStyle(control).visibility !== 'visible') return true;
-      return control.hasAttribute('tabindex') && control.tabIndex < 0;
-    });
-  }))).toBe(true);
-});

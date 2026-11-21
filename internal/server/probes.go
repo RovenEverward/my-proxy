@@ -18,7 +18,7 @@ import (
 //	POST   /api/probes/{id}/rotate 吊销现有凭据、重发一次性接入 token。
 //
 // 接入本身走 POST /api/probes/hello:不挂在鉴权链里,join token 即凭据,
-// 与 POST /api/connect 同一模式。
+// 与 POST /api/admin/login 同一模式(来领凭据,故不设凭据)。
 func (s *Server) probeRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /api/probes", s.handleCreateProbe)
 	api.HandleFunc("GET /api/probes", s.handleListProbes)
@@ -49,7 +49,7 @@ func (s *Server) handleCreateProbe(w http.ResponseWriter, r *http.Request) {
 		writeErrorField(w, http.StatusBadRequest, "探测点名称须为 1–64 个字", "name")
 		return
 	}
-	join, err := newDeviceToken()
+	join, err := newToken()
 	if err != nil {
 		s.writeStoreError(w, err, "探测点")
 		return
@@ -130,7 +130,7 @@ func (s *Server) handleRotateProbe(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	join, err := newDeviceToken()
+	join, err := newToken()
 	if err != nil {
 		s.writeStoreError(w, err, "探测点")
 		return
@@ -148,7 +148,7 @@ func (s *Server) handleRotateProbe(w http.ResponseWriter, r *http.Request) {
 
 // handleProbeHello 是探测点的唯一接入点(UC-12):一次性 join token 换正式
 // token。它在 /api/ 之下但不走 requireAuth —— join token 本身就是凭据,
-// 和 POST /api/connect 同模式。
+// 和 POST /api/admin/login 同模式。
 func (s *Server) handleProbeHello(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		JoinToken string `json:"join_token"`
@@ -161,7 +161,7 @@ func (s *Server) handleProbeHello(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "接入 token 不正确或已用过;在控制面上重发接入命令")
 		return
 	}
-	token, err := newDeviceToken()
+	token, err := newToken()
 	if err != nil {
 		s.writeStoreError(w, err, "探测点")
 		return

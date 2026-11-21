@@ -16,11 +16,8 @@ name: release
 # tag 去掉 v(mpx_0.7.2_...)。都没有签名,安装包和压缩包一样只是同一份二进制换
 # 了个外壳,更新器和 install*.sh 仍然只认压缩包。
 #
-# 另有桌面程序包(desktop-* job):同一个 ./cmd/mpx 加 desktop=1 编译,双击即开
-# MPX 窗口。出 macOS 的 MPX.app / dmg、Windows 的按用户安装 setup.exe、Linux 的
-# mpx-desktop .deb 与带 install.sh 的 tar.gz(发布前统一改成 MPX-<ver>-* 对外名),
-# 以及给桌面自更新用的 mpx_desktop_*
-# 归档。桌面包同样不签名,和命令行包并存、互不替换。
+# UC-26 起只有命令行发布件:桌面程序与 `mpx ui` 已退役,管理台由 `mpx serve`
+# 在 /admin/ 伺服,不再有 MPX-* 桌面安装包与 Homebrew/winget 安装器。
 
 on:
   push:
@@ -80,85 +77,6 @@ jobs:
         with:
           name: mpx_${{ matrix.goos }}_${{ matrix.goarch }}
           path: mpx_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}
-
-  # 桌面程序二进制:同一个 ./cmd/mpx,多一个 desktop=1,无参数启动就开窗口。
-  # 一台 ubuntu 交叉编出五个平台(CGO_ENABLED=0,和 CLI 包同一套)。Windows 构建
-  # 前用 go-winres 把 icon.ico 与 GUI manifest 编进 cmd/mpx 下的临时 .syso ——
-  # 只在 CI 生成、不提交,也不影响 build job 里的 CLI 二进制。
-  #
-  # 自更新只认 mpx_ 开头的压缩包,所以这里先出 linux 与 windows 的
-  # mpx_desktop_<os>_<arch> 归档;macOS 的通用二进制在 desktop-macos 里 lipo 完
-  # 再打包。未打包的二进制以 dbin_ 开头留给后面三个打包 job,publish 的
-  # '{mpx_,pkg_}*' 匹配不到它,不会进 release 附件。
-  desktop-build:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { goos: linux, goarch: amd64, archive: tar.gz }
-          - { goos: linux, goarch: arm64, archive: tar.gz }
-          - { goos: darwin, goarch: amd64, archive: '' }
-          - { goos: darwin, goarch: arm64, archive: '' }
-          - { goos: windows, goarch: amd64, archive: zip }
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      # 只在 Windows 目标上生成:文件名带 _windows_amd64,别的平台构建不会用到它。
-      # go-winres 固定版本,避免上游升级悄悄改变资源格式。
-      - name: 生成 Windows 资源(图标 + GUI manifest)
-        if: matrix.goos == 'windows'
-        working-directory: cmd/mpx
-        run: |
-          go run github.com/tc-hib/go-winres@v0.3.3 simply \
-            --arch amd64 \
-            --icon ../../deploy/desktop/icon.ico \
-            --manifest gui
-
-      - name: 构建桌面二进制
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
-        # desktop=1 是「无参数启动就开窗口」的开关;版本号与 CLI 包同一口径。
-        # Windows 额外加 -H windowsgui,双击时不带一个黑色控制台窗口。
-        run: |
-          set -eu
-          mkdir -p dist
-          if [ "$GOOS" = "windows" ]; then out="dist/mpx.exe"; else out="dist/mpx"; fi
-          ldflags="-s -w -X github.com/RovenEverward/my-proxy/internal/buildinfo.version=${{ github.ref_name }} -X github.com/RovenEverward/my-proxy/internal/buildinfo.desktop=1"
-          if [ "$GOOS" = "windows" ]; then ldflags="$ldflags -H windowsgui"; fi
-          go build -trimpath -tags with_utls,with_quic -ldflags "$ldflags" -o "$out" ./cmd/mpx
-          ls -l "$out"
-
-      # macOS 的两个架构要等 desktop-macos 里 lipo,这里不出归档。
-      - name: 打自更新归档(linux / windows)
-        if: matrix.archive != ''
-        run: |
-          set -eu
-          name="mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}"
-          if [ "${{ matrix.archive }}" = "zip" ]; then
-            (cd dist && zip -q "${name}.zip" mpx.exe)
-          else
-            tar -czf "dist/${name}.tar.gz" -C dist mpx
-          fi
-          ls -l dist/mpx_desktop_*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dbin_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: dist/mpx${{ matrix.goos == 'windows' && '.exe' || '' }}
-
-      - uses: actions/upload-artifact@v4
-        if: matrix.archive != ''
-        with:
-          name: mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: dist/mpx_desktop_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.archive }}
-          if-no-files-found: error
 
   # Linux 安装包:同一份二进制分别打成 .deb 和 .rpm。deploy/nfpm.yaml 描述内容,
   # 这里只负责给 nfpm 传进 架构 / 版本 / 二进制路径。
@@ -296,191 +214,8 @@ jobs:
           path: mpx_${{ steps.ver.outputs.ver }}_darwin_universal.pkg
           if-no-files-found: error
 
-  # 桌面版 macOS:两个 darwin 桌面二进制 lipo 成通用二进制,手工拼 MPX.app
-  # (Info.plist 模板在 deploy/desktop/Info.plist.in),再 hdiutil 打成 dmg。
-  # 另外出一份只含通用二进制的 mpx_desktop_darwin_universal.tar.gz 给自更新用。
-  desktop-macos:
-    needs: desktop-build
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 算出去掉 v 的版本号
-        id: ver
-        env:
-          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
-          TAG: ${{ github.ref_name }}
-        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: dbin_darwin_*
-          path: bin
-
-      # macos runner 镜像自带 Xcode/Sim 占去大半磁盘,装完 artifacts 后容易在
-      # hdiutil 临时目录或 dmg 卷里写不下 32MB 的通用二进制(2026-11 实测报
-      # "No space left on device")。先清掉与打包无关的大头再动手。
-      - name: 腾磁盘空间
-        run: |
-          df -h / | tail -1
-          sudo rm -rf /Library/Developer/CoreSimulator/Volumes/*/Library/Developer/CoreSimulator/Profiles/Runtimes/*.simruntime \
-            ~/Library/Caches/Homebrew/downloads/* 2>/dev/null || true
-          df -h / | tail -1
-
-      - name: 合成通用二进制并拼 MPX.app
-        run: |
-          set -eu
-          ver="${{ steps.ver.outputs.ver }}"
-          chmod +x bin/dbin_darwin_amd64/mpx bin/dbin_darwin_arm64/mpx
-          lipo -create \
-            -output mpx \
-            bin/dbin_darwin_amd64/mpx bin/dbin_darwin_arm64/mpx
-          lipo -info mpx
-
-          app="MPX.app"
-          rm -rf "$app"
-          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-          cp mpx "$app/Contents/MacOS/mpx"
-          chmod +x "$app/Contents/MacOS/mpx"
-          cp deploy/desktop/icon.icns "$app/Contents/Resources/icon.icns"
-          # 模板里的 @VERSION@ 换成去掉 v 的版本号(CFBundleShortVersionString
-          # 与 CFBundleVersion 各一处)。
-          sed "s/@VERSION@/${ver}/g" deploy/desktop/Info.plist.in >"$app/Contents/Info.plist"
-          plutil -lint "$app/Contents/Info.plist"
-
-          tar -czf "mpx_desktop_darwin_universal.tar.gz" mpx
-          ls -l mpx_desktop_darwin_universal.tar.gz
-
-      - name: 打 dmg
-        run: |
-          set -eu
-          ver="${{ steps.ver.outputs.ver }}"
-          rm -rf dmg
-          mkdir -p dmg
-          cp -R MPX.app dmg/MPX.app
-          ln -s /Applications dmg/Applications
-          hdiutil create -volname "MPX" -srcfolder dmg -ov -format UDZO \
-            "mpx-desktop_${ver}_darwin_universal.dmg"
-          ls -l mpx-desktop_*.dmg
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pkg_desktop_macos
-          path: |
-            mpx-desktop_${{ steps.ver.outputs.ver }}_darwin_universal.dmg
-            mpx_desktop_darwin_universal.tar.gz
-          if-no-files-found: error
-
-  # 桌面版 Windows:按用户装到 $LOCALAPPDATA\Programs\MPX,不需要管理员。
-  # 细节(开始菜单/桌面快捷方式、HKCU 卸载项、卸载)都在
-  # deploy/windows/mpx-desktop.nsi 里。desktop-build 已经把 icon.ico 与 GUI
-  # manifest 编进那个 mpx.exe 了。
-  desktop-windows:
-    needs: desktop-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 算出去掉 v 的版本号
-        id: ver
-        env:
-          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
-          TAG: ${{ github.ref_name }}
-        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: dbin_windows_amd64
-          path: bin
-
-      - name: 安装 NSIS
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nsis
-
-      - name: 打桌面 setup.exe
-        run: |
-          set -eu
-          makensis -INPUTCHARSET UTF8 \
-            -DVERSION="${{ steps.ver.outputs.ver }}" \
-            -DSRCEXE="$PWD/bin/mpx.exe" \
-            -DICONFILE="$PWD/deploy/desktop/icon.ico" \
-            -DOUTFILE="$PWD/mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe" \
-            deploy/windows/mpx-desktop.nsi
-          ls -l mpx-desktop_*setup.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pkg_desktop_windows
-          path: mpx-desktop_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe
-          if-no-files-found: error
-
-  # 桌面版 Linux:.deb 装到 /opt/mpx(不碰 CLI 的 /usr/bin/mpx),另出一份带
-  # install.sh 的 tar.gz 给没有 .deb 的发行版。内容描述在
-  # deploy/desktop/nfpm-desktop.yaml。
-  desktop-linux:
-    needs: desktop-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 算出去掉 v 的版本号
-        id: ver
-        env:
-          # 走 env 传而不是把 ${{ }} 直接插进 shell,避免 tag 里的字符被 shell 解释。
-          TAG: ${{ github.ref_name }}
-        run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: dbin_linux_*
-          path: bin
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: 安装 nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
-
-      - name: 打 .deb 与 tar.gz 安装包
-        run: |
-          set -eu
-          ver="${{ steps.ver.outputs.ver }}"
-          for arch in amd64 arm64; do
-            chmod +x "bin/dbin_linux_${arch}/mpx"
-            NFPM_ARCH="$arch" NFPM_VERSION="$ver" NFPM_BIN="$PWD/bin/dbin_linux_${arch}/mpx" \
-            NFPM_DESKTOP="$PWD/deploy/desktop/mpx.desktop" \
-            NFPM_ICON256="$PWD/deploy/desktop/mpx-256.png" \
-            NFPM_ICON512="$PWD/deploy/desktop/mpx-512.png" \
-              "$(go env GOPATH)/bin/nfpm" package \
-                -f deploy/desktop/nfpm-desktop.yaml -p deb \
-                -t "mpx-desktop_${ver}_${arch}.deb"
-
-            # tar.gz 的目录固定叫 MPX/,里面的 mpx.desktop 是模板(Exec 指向
-            # /opt/mpx/mpx),install.sh 会把它改成用户目录下的路径。
-            rm -rf stage
-            mkdir -p stage/MPX
-            cp "bin/dbin_linux_${arch}/mpx" stage/MPX/mpx
-            chmod +x stage/MPX/mpx
-            cp deploy/desktop/mpx.desktop stage/MPX/mpx.desktop
-            cp deploy/desktop/mpx-256.png stage/MPX/mpx.png
-            cp deploy/desktop/install.sh stage/MPX/install.sh
-            chmod +x stage/MPX/install.sh
-            tar -czf "mpx-desktop_${ver}_linux_${arch}.tar.gz" -C stage MPX
-          done
-          ls -l mpx-desktop_*.deb mpx-desktop_*.tar.gz
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pkg_desktop_linux
-          path: |
-            mpx-desktop_${{ steps.ver.outputs.ver }}_*.deb
-            mpx-desktop_${{ steps.ver.outputs.ver }}_linux_*.tar.gz
-          if-no-files-found: error
-
   publish:
-    needs: [build, pkg-linux, pkg-windows, pkg-macos, desktop-build, desktop-macos, desktop-windows, desktop-linux]
+    needs: [build, pkg-linux, pkg-windows, pkg-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -496,9 +231,9 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      # 只要发布件:mpx_* 是压缩包(含桌面的 mpx_desktop_*),pkg_* 是安装包
-      # (含桌面的 pkg_desktop_*),dbin_* 是给打包 job 用的中间产物,排除掉。
-      # merge-multiple 把所有文件摊平进 dist/,供 SHA256SUMS 和上传使用。
+      # 只要发布件:mpx_* 是压缩包,pkg_* 是安装包,bin_* 是给打包 job 用的
+      # 中间产物,排除掉。merge-multiple 把所有文件摊平进 dist/,供 SHA256SUMS
+      # 和上传使用。
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -506,39 +241,26 @@ jobs:
           merge-multiple: true
 
       # 对外的安装包名在这里统一定下(各打包 job 仍按原来的中间名产出,只在发布前改):
-      #   桌面安装包:MPX-<ver>-macOS.dmg、MPX-<ver>-Windows-x64-setup.exe、
-      #               MPX-<ver>-Linux-amd64.deb / arm64.deb、MPX-<ver>-Linux-amd64.tar.gz / arm64.tar.gz
-      #   每个桌面安装包(含 tar.gz)另有一份不带版本号的固定名副本(MPX-macOS.dmg、MPX-Linux-amd64.tar.gz 等),
-      #   让 releases/latest/download/<固定名> 永远指向最新版;副本也进 SHA256SUMS。
       #   命令行安装包:前缀 mpx-cli_(mpx-cli_<ver>_windows_amd64_setup.exe 等)。
-      #   自更新用的压缩包 mpx_<os>_<arch>.tar.gz/.zip 与 mpx_desktop_* 名字不变:
+      #   自更新用的压缩包 mpx_<os>_<arch>.tar.gz/.zip 名字不变:
       #   更新器和 install*.sh 只认这些名字。
-      - name: 安装包改成对外名字,桌面安装包加固定名副本
+      - name: 安装包改成对外名字
         env:
           VER: ${{ steps.ver.outputs.ver }}
         run: |
           set -eu
           cd dist
           mvf() { [ -f "$1" ] || { echo "::error::缺少 $1"; exit 1; }; mv "$1" "$2"; }
-          mvf "mpx-desktop_${VER}_darwin_universal.dmg"        "MPX-${VER}-macOS.dmg"
-          mvf "mpx-desktop_${VER}_windows_amd64_setup.exe"     "MPX-${VER}-Windows-x64-setup.exe"
-          for a in amd64 arm64; do
-            mvf "mpx-desktop_${VER}_${a}.deb"                  "MPX-${VER}-Linux-${a}.deb"
-            mvf "mpx-desktop_${VER}_linux_${a}.tar.gz"         "MPX-${VER}-Linux-${a}.tar.gz"
-          done
-          for f in MPX-${VER}-macOS.dmg MPX-${VER}-Windows-x64-setup.exe MPX-${VER}-Linux-amd64.deb MPX-${VER}-Linux-arm64.deb MPX-${VER}-Linux-amd64.tar.gz MPX-${VER}-Linux-arm64.tar.gz; do
-            cp "$f" "MPX-${f#MPX-${VER}-}"
-          done
           mvf "mpx_${VER}_darwin_universal.pkg"                "mpx-cli_${VER}_darwin_universal.pkg"
           mvf "mpx_${VER}_windows_amd64_setup.exe"             "mpx-cli_${VER}_windows_amd64_setup.exe"
           for a in amd64 arm64; do for k in deb rpm; do
             mvf "mpx_${VER}_linux_${a}.${k}"                   "mpx-cli_${VER}_linux_${a}.${k}"
           done; done
-          leftover=$(ls | grep -E '^mpx-desktop_|^mpx_[0-9]' || true)
+          leftover=$(ls | grep -E '^mpx_[0-9]' || true)
           if [ -n "$leftover" ]; then echo "::error::还有没改名的安装包: $leftover"; exit 1; fi
           ls -l
 
-      # SHA256SUMS 覆盖全部发布件(压缩包、安装包、固定名副本),安装脚本与桌面自更新按它核对下载的文件。不做签名:决定与理由见
+      # SHA256SUMS 覆盖全部发布件(压缩包、安装包),安装脚本与自更新按它核对下载的文件。不做签名:决定与理由见
       # docs/internal/update-rfc.md(个人项目,保管密钥的成本不值)。
       # GitHub 的附件名不分大小写:v0.9.0-rc.1/rc.2 里桌面安装包叫 MPX_<ver>_windows_amd64_setup.exe,
       # 和命令行的 mpx_<ver>_windows_amd64_setup.exe 撞名,前者把后者顶掉了。这里先拦住。
@@ -554,12 +276,6 @@ jobs:
           cd dist
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
-          # 固定名副本必须和带版本号的那份逐字节相同,且都列进了 SHA256SUMS。
-          for f in macOS.dmg Windows-x64-setup.exe Linux-amd64.deb Linux-arm64.deb Linux-amd64.tar.gz Linux-arm64.tar.gz; do
-            a=$(sha256sum "MPX-$f" | cut -d' ' -f1); b=$(sha256sum "MPX-${{ steps.ver.outputs.ver }}-$f" | cut -d' ' -f1)
-            [ "$a" = "$b" ] || { echo "::error::MPX-$f 与带版本号的不一致"; exit 1; }
-            grep -q "  MPX-$f\$" SHA256SUMS || { echo "::error::SHA256SUMS 里没有 MPX-$f"; exit 1; }
-          done
 
       - name: 取出 tag 消息当发布说明
         id: notes
@@ -596,9 +312,8 @@ jobs:
       #   ## 更新要点   ← tag 消息(CHANGELOG)里「### 要点」那几条
       #   tag 消息其余部分(新增 / 改进 / 修复 / 兼容性)
       #   ## 我该下哪个 ← 下载表 + 未签名放行说明 + <details> 折叠的其他文件
-      # 下载表放最后:v0.9.3 及更早的桌面端更新弹窗会把正文前约 2000 字原样显示
-      # (表格不渲染,满屏 | --- |),要点放最前面,老弹窗打开先看到的是几行中文更新要点;
-      # 正文够长时下载表正好落在被截掉的部分。新弹窗只取「## 更新要点」。
+      # 「### 要点」提到最前面:v0.9.3 及更早的桌面端更新弹窗会把正文前约 2000 字
+      # 原样显示(表格不渲染),要点放最前面,老弹窗打开先看到的是几行中文更新要点。
       # 只在有 tag 消息时拼:轻量 tag 走自动生成正文那条路。文件名里的版本号去掉 v,
       # 与上面改名那步一致。
       - name: 正文开头加「我该下哪个」
@@ -608,35 +323,28 @@ jobs:
           cat > DL.md <<'EOF'
           ## 我该下哪个
 
+          管理台在控制面本机的 `/admin/`,浏览器打开即可,不用下载客户端;
+          这里的是 `mpx` 命令行(操作机用,或控制面机器自带)。
+
           | 你的电脑 | 下载 | 怎么装 |
           | --- | --- | --- |
-          | Windows(64 位) | [MPX-${{ steps.ver.outputs.ver }}-Windows-x64-setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Windows-x64-setup.exe) | 双击安装,不需要管理员。未签名,SmartScreen 提示时点「更多信息 → 仍要运行」 |
-          | macOS(Intel 与 Apple 芯片) | [MPX-${{ steps.ver.outputs.ver }}-macOS.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-macOS.dmg) | 打开后把 MPX 拖进「应用程序」。未签名,首次请右键 →「打开」 |
-          | Ubuntu / Debian(x86_64) | [MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb) | 双击安装,或 `sudo apt install ./MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb` |
-          | Ubuntu / Debian(ARM) | [MPX-${{ steps.ver.outputs.ver }}-Linux-arm64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/MPX-${{ steps.ver.outputs.ver }}-Linux-arm64.deb) | 同上 |
+          | Windows(64 位) | [mpx-cli_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/mpx-cli_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe) | 双击安装,需要管理员。未签名,SmartScreen 提示时点「更多信息 → 仍要运行」 |
+          | macOS(Intel 与 Apple 芯片) | [mpx-cli_${{ steps.ver.outputs.ver }}_darwin_universal.pkg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/mpx-cli_${{ steps.ver.outputs.ver }}_darwin_universal.pkg) | 双击安装。未签名,首次请右键 →「打开」 |
+          | Ubuntu / Debian(x86_64) | [mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb) | 双击安装,或 `sudo apt install ./mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb` |
+          | Ubuntu / Debian(ARM) | [mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.deb](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.deb) | 同上 |
 
-          这四个都是桌面程序:双击打开就是 MPX 窗口。下面的文件大多数人用不到。
+          也可以一行脚本装最新版:`deploy/install-cli.sh`(Linux/macOS)或 `deploy/install-cli.ps1`(Windows)。
 
           **第一次打开被系统拦住?** 安装包没有签名,放行一次就好:
 
           - **Windows(SmartScreen)**:出现「Windows 已保护你的电脑」时,点「更多信息」,再点「仍要运行」。
-          - **macOS(Gatekeeper)**:提示无法验证开发者时先关掉提示,然后在「应用程序」里右键(或按住 Control 点)MPX →「打开」,再点「打开」;
-            或打开「系统设置 → 隐私与安全性」,在下方关于 MPX 的提示旁点「仍要打开」。
+          - **macOS(Gatekeeper)**:pkg 未签名,在「系统设置 → 隐私与安全性」下方点「仍要打开」。
 
           <details>
-          <summary>其他 Linux、命令行安装包、压缩包和校验文件</summary>
-
-          ### 桌面程序(其他 Linux 发行版)
-
-          - `MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.tar.gz`(arm64 同理):解开后进 `MPX/` 跑 `./install.sh`,装到当前用户目录,
-            `./install.sh --uninstall` 卸载。需要系统的 WebKitGTK 4.1(`libwebkit2gtk-4.1-0`)。
-          - 不带版本号的 `MPX-macOS.dmg`、`MPX-Windows-x64-setup.exe`、`MPX-Linux-amd64.deb`、`MPX-Linux-arm64.deb`、`MPX-Linux-amd64.tar.gz`、`MPX-Linux-arm64.tar.gz`
-            与上面同名带版本号的文件逐字节相同,供 `releases/latest/download/<文件名>` 固定链接使用。
+          <summary>其余安装包、压缩包和校验文件</summary>
 
           ### 命令行安装包
 
-          - **macOS(通用)**:`mpx-cli_${{ steps.ver.outputs.ver }}_darwin_universal.pkg` —— 二进制落在 `/usr/local/bin/mpx`。
-          - **Windows(64 位)**:`mpx-cli_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe` —— 装到 `%ProgramFiles%\mpx` 并加进当前用户 `PATH`。
           - **Debian / Ubuntu**:`mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb`、`mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.deb` —— 二进制落在 `/usr/bin/mpx`。
           - **RHEL / Fedora 系**:`mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.rpm`、`mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.rpm`。
 
@@ -644,8 +352,7 @@ jobs:
 
           - `mpx_darwin_amd64.tar.gz`、`mpx_darwin_arm64.tar.gz`、`mpx_linux_amd64.tar.gz`、`mpx_linux_arm64.tar.gz`、`mpx_windows_amd64.zip`
 
-          `deploy/install.sh` 与 `deploy/install-cli.sh` 用的就是这些压缩包。
-          桌面程序的 `mpx_desktop_*` 归档给桌面自更新用,不用手工下载。
+          `deploy/install.sh`(控制面整机安装)与 `deploy/install-cli.sh`(只装 CLI)用的就是这些压缩包。
           所有文件的 `SHA256SUMS` 在同一发布里,可按它核对下载内容。
 
           </details>
@@ -732,86 +439,3 @@ jobs:
           done
           echo "发布完成,附件清单:"
           gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name'
-
-  # 发布完成后,把 Homebrew tap 的 cask 与 winget manifest 更新到这个版本。
-  # tap 是自家仓库(RovenEverward/homebrew-mpx),直接推;winget-pkgs 是微软的
-  # 仓库,走 fork + PR。两边都是写另一个仓库,内置 GITHUB_TOKEN 都够不着
-  # (v0.9.16 实测 tap push 403):统一走 WINGET_GITHUB_TOKEN secret(带
-  # public_repo 的 PAT),tap 那步再认一个 TAP_GITHUB_TOKEN 作覆盖。
-  # 未配置时对应一步跳过打 warning,不阻塞已完成的发布,见 deploy/installers/。
-  bump-installers:
-    needs: [publish]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 取版本号与 SHA256SUMS
-        id: sums
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -eu
-          echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
-          gh release download "$TAG" --repo "$REPO" --pattern SHA256SUMS --dir /tmp
-          DMG_SHA=$(grep "  MPX-macOS.dmg$" /tmp/SHA256SUMS | cut -d' ' -f1)
-          EXE_SHA=$(grep "  MPX-Windows-x64-setup.exe$" /tmp/SHA256SUMS | cut -d' ' -f1)
-          [ -n "$DMG_SHA" ] && [ -n "$EXE_SHA" ] || { echo "::error::SHA256SUMS 里没有 dmg 或 setup.exe"; exit 1; }
-          echo "dmg_sha=$DMG_SHA" >> "$GITHUB_OUTPUT"
-          echo "exe_sha=$EXE_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: 更新 Homebrew tap 的 cask
-        env:
-          # GITHUB_TOKEN 只对当前仓库有权限,推 tap 必须走 PAT:优先专用的
-          # TAP_GITHUB_TOKEN,没有就复用 winget 那份(同账号、同为 public_repo)。
-          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN || secrets.WINGET_GITHUB_TOKEN }}
-          TAP_REPO: RovenEverward/homebrew-mpx
-          TAG: ${{ github.ref_name }}
-          VER: ${{ steps.sums.outputs.ver }}
-          DMG_SHA: ${{ steps.sums.outputs.dmg_sha }}
-        run: |
-          set -eu
-          if [ -z "${TAP_TOKEN:-}" ]; then
-            echo "::warning::未配置 TAP_GITHUB_TOKEN 或 WINGET_GITHUB_TOKEN,跳过 tap 更新。手工补法见 deploy/installers/README.md"
-            exit 0
-          fi
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
-          cd tap
-          git config user.name github-actions
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          sed -i -e "s/^  version \".*\"$/  version \"${VER}\"/" \
-                  -e "s/^  sha256 \".*\"$/  sha256 \"${DMG_SHA}\"/" Casks/mpx.rb
-          if git diff --quiet; then
-            echo "cask 已是最新,不动"
-          else
-            git add Casks/mpx.rb
-            git commit -m "cask: mpx ${VER}"
-            git push
-            echo "tap 已更新到 ${VER}"
-          fi
-
-      - name: 更新 winget manifest(wingetcreate)
-        env:
-          TAG: ${{ github.ref_name }}
-          VER: ${{ steps.sums.outputs.ver }}
-          EXE_SHA: ${{ steps.sums.outputs.exe_sha }}
-          REPO: ${{ github.repository }}
-          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
-        run: |
-          set -eu
-          if [ -z "${WINGET_TOKEN:-}" ]; then
-            echo "::warning::未配置 WINGET_GITHUB_TOKEN,跳过 winget 提交。首次提交流程见 deploy/installers/winget.md"
-            exit 0
-          fi
-          case "$(uname -m)" in
-            x86_64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) echo "未知架构"; exit 1 ;;
-          esac
-          dl="https://github.com/microsoft/winget-cli/releases/latest/download/WinGet.Client.${arch}.zip"
-          curl -fsSL "$dl" -o /tmp/winget.zip
-          unzip -q /tmp/winget.zip -d /tmp/winget
-          WINGET=$(find /tmp/winget -name wingetcreate -type f | head -1)
-          [ -x "$WINGET" ] || { echo "::error::找不到 wingetcreate"; exit 1; }
-          url="https://github.com/${REPO}/releases/download/${TAG}/MPX-${VER}-Windows-x64-setup.exe"
-          "$WINGET" update RovenEverward.MPX --version "$VER" --urls "$url|x64" \
-            --submit --token "$WINGET_TOKEN"

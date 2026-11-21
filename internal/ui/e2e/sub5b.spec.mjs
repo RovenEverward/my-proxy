@@ -29,22 +29,22 @@ test.afterAll(async () => { await env?.stop(); });
 test.beforeEach(async () => { await putSettings({ sub_url_prefix: "", profile_title: "{USERNAME}", update_interval: 24, support_link: "", rules: null }); });
 
 // 完整链接按最后一个 /sub/ 切成「开头」和「每人自己的部分」;没填链接开头时开头就是这次请求的地址
-// (控制面按请求的 Host 拼;经 mpx ui 转发时 Host 是 mpx ui 的地址,端口与控制面不同),并有一条灰色说明。
+// (控制面按请求的 Host 拼;页面经记录转发打控制面时 Host 是转发的地址,端口与控制面不同),并有一条灰色说明。
 test("链接卡片给出完整链接;没填链接开头时用控制面地址开头并说明", async ({ page }) => {
   await open(page);
-  // 页面请求的那条(经 mpx ui)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
-  const alice = await (await page.request.get(env.origin + "/api/users/alice/links")).json();
+  // 页面请求的那条(经记录转发)核对链接卡片;再直接问一次控制面,比对每人自己的那一段。
+  const alice = await (await page.request.get(new URL(env.page).origin + "/api/users/alice/links")).json();
   const cpAlice = await (await cp("/api/users/alice/links")).json();
   await expect(page.locator(".r-li-link [data-act=copy]")).toHaveAttribute("data-text", alice.auto);
   await linkOf(page, alice.auto);
-  // 经 mpx ui 转发和直接问控制面拿到的主机不同(端口不同):控制面按请求的 Host 拼,转发过来的
+  // 经记录转发和直接问控制面拿到的主机不同(端口不同):控制面按请求的 Host 拼,转发过来的
   // 那一头不是控制面自己的地址。开头各是各的,每人自己的那一段(令牌)一样。
   const tokenOf = auto => auto.slice(auto.lastIndexOf("/sub/") + 5);
   expect(alice.auto.startsWith(alice.base + "/sub/")).toBe(true);
   expect(tokenOf(alice.auto)).toBe(tokenOf(cpAlice.auto));
-  // 只加的 base 字段就是这条链接的开头;直连控制面时它就是控制面的地址,经 mpx ui 时不是页面地址。
+  // 只加的 base 字段就是这条链接的开头;直连控制面时它就是控制面的地址,经转发时不是页面地址。
   expect(cpAlice.base).toBe(env.cpURL);
-  // 页面把开头按控制面这次用的那个画出来,经 mpx ui 时它不一定等于页面地址。
+  // 页面把开头按控制面这次用的那个画出来,经转发时它不一定等于页面地址。
   const pre = alice.auto.slice(0, alice.auto.lastIndexOf("/sub/"));
   await expect(page.locator(".lk-pre")).toHaveText(pre);
   await expect(page.locator(".lk-tail")).toHaveText(alice.auto.slice(pre.length));
@@ -141,10 +141,6 @@ test.describe("订阅页定稿", () => {
   test.use({ viewport: { width: 1024, height: 1400 }, deviceScaleFactor: 2 });
   test("四段平级，没有客户端预览，提示可以用键盘访问", async ({ page }) => {
     await putSettings({ sub_url_prefix: "http://203.0.113.10:8080", profile_title: "{USERNAME} 的订阅", update_interval: 12, support_link: "https://sub.example.com/support" });
-    await page.route("**/ui/meta", async r => {
-      const response = await r.fetch(), meta = await response.json();
-      await r.fulfill({ response, json: { ...meta, server: "203.0.113.10:8080" } });
-    });
     await open(page);
     // 三张卡:第一张装订阅链接与订阅信息行,第二张客户端格式,第三张外部订阅与底稿。
     await expect(page.locator(".r-page > .card")).toHaveCount(3);
@@ -230,11 +226,7 @@ test("订阅信息验收图：平台、主题、尺寸与只读", async ({ brows
         localStorage.setItem("mpx-theme", theme);
       }, { platform, theme });
       const page = await context.newPage();
-      let readonly = false;
-      await page.route("**/ui/meta", async r => {
-        const response = await r.fetch(), meta = await response.json();
-        await r.fulfill({ response, json: { ...meta, server: "https://203.0.113.10:8080", ...(readonly ? { allow: ["GET /api"] } : {}) } });
-      });
+      // UC-26:meta 不再有 server/allow,截图只看订阅页本身。
       await open(page);
       await page.evaluate(() => document.fonts.ready);
       const stem = `${out}/${platform === "MacIntel" ? "mac" : "win"}-${theme}`;
@@ -255,13 +247,6 @@ test("订阅信息验收图：平台、主题、尺寸与只读", async ({ brows
       await page.mouse.move(1, 1);
       await page.screenshot({ path: `${stem}-add-username.png`, fullPage: true });
       await page.locator("[data-act=s5-discard]").click();
-      readonly = true;
-      await page.reload();
-      await expect(page.locator("#f-title")).toHaveAttribute("contenteditable", "false");
-      await expect(page.locator("#sb")).toBeEmpty();
-      await page.evaluate(() => document.fonts.ready);
-      await page.setViewportSize({ width: 1280, height: await page.locator("main").evaluate(e => e.scrollHeight + e.getBoundingClientRect().top + 40) });
-      await page.screenshot({ path: `${stem}-readonly.png`, fullPage: true });
     } finally { await context.close(); }
   }
 });

@@ -1,16 +1,13 @@
 import type { ReactNode } from "react";
 
+// Meta 对应 GET /api/admin/meta 的应答(字段与 internal/server/admin_page.go 的
+// adminMeta 一一对应)。它在 requireAuth 内:401 即未登录,App 据此进登录页,
+// 不再像旧 /ui/meta 那样带一坨本机模式开关。
 export interface Meta {
-  server: string;
-  profile: string;
-  allow: string[];
-  cli_version?: string;
-  version?: string;
+  version: string;
   fingerprint?: string;
-  profiles?: boolean;
-  connect?: boolean;
-  relabel?: boolean;
-  mode?: "normal" | "setup";
+  admin_exists: boolean;
+  username?: string;
 }
 
 export type Read = <T>(path: string, init?: RequestInit & { asText?: boolean }) => Promise<T>;

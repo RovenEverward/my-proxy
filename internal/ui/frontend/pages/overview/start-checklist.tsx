@@ -8,8 +8,8 @@ import type { OverviewData } from ".";
 
 interface Step { title: string; done: boolean; detail: string; href?: string; action?: string; skip?: boolean; icon?: string; button?: string }
 export function useChecklist(data: OverviewData | null) {
-  const { meta, can } = useApp();
-  const storageKey = (key: string) => `mpx-cl-${key}:${meta.server || "-"}`;
+  const { can } = useApp();
+  const storageKey = (key: string) => `mpx-cl-${key}:${location.host}`;
   const get = (key: string) => { try { return localStorage.getItem(storageKey(key)) === "1"; } catch { return false; } };
   const [skipped, setSkipped] = useState(() => get("skip-sub"));
   const [hidden, setHidden] = useState(() => get("hide"));

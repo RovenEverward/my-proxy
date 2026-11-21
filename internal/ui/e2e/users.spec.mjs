@@ -166,7 +166,6 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
   await openUser(page, "ui-relink");
   await expect(page.locator("#send-pull")).toHaveText("还没有客户端导入过");
   const before = await page.locator(".send-link").getAttribute("title");
-  const qrBefore = await page.locator(".qr-tile img").getAttribute("src");
   // 客户端拉一次订阅 → 详情里写「Clash Verge 刚刚拉取过」。
   const pulled = await cpFetch(before.replace(/^https?:\/\/[^/]+/, env.cpURL), { headers: { "User-Agent": "clash-verge/v2.0.0" } });
   expect(pulled.status).toBe(200);
@@ -199,7 +198,6 @@ test("换一条新链接:确认框不是红色;取消不发请求;确认后 POST
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]).toContain("/api/users/ui-relink/revoke-sub");
   await expect(page.locator(".send-link")).not.toHaveAttribute("title", before);
-  await expect(page.locator(".qr-tile img")).not.toHaveAttribute("src", qrBefore);
   await expect(page.locator("#send-pull")).toHaveText("还没有客户端导入过");
   const old = await cpFetch(before.replace(/^https?:\/\/[^/]+/, env.cpURL));
   expect(old.status).toBe(404);
@@ -238,29 +236,20 @@ test("添加用户:套餐没有节点时灰色提示、创建置灰;换成全部
   await expect(page.locator("#drawer .created")).toContainText("已创建 ui-fresh");
   await expect(page.locator("#send h3")).toHaveText("发给他");
   await expect(page.locator("#send-pull")).toHaveText("还没有客户端导入过");
-  // 二维码:暗色主题下也放在白底上,图由本机按用户名画。
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
-  await expect(page.locator(".qr-tile")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /^\/local\/qr\.svg\?d=/);
-  const ok = await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; });
-  expect(ok).toBe(true);
   await expect(page.locator("#send [data-act=copy]").first()).toHaveText("复制订阅链接");
-  await expect(page.locator("#send a[download]")).toHaveAttribute("href", /^\/local\/qr\.svg\?d=http/);
   await page.click("#send details.fmts summary");
   await expect(page.locator("#send .fmt")).toHaveCount(6);
   // 再打开一次就没有「已创建」那行了。
   await page.reload();
   await expect(page.locator("#drawer.open h2")).toHaveText("ui-fresh");
   await expect(page.locator("#drawer .created")).toHaveCount(0);
-  // 本机向控制面取链接失败时,二维码改用页面手里的链接画,不留一张坏图。
-  await page.route(/\/local\/qr\.svg\?u=/, r => r.fulfill({ status: 502, contentType: "application/json", body: "{\"error\":\"x\"}" }));
-  // 退回的二维码也是本机画的:整个过程页面只请求本机界面,不碰任何外部服务。
+  // UC-26:管理台不再画二维码;页面只请求控制面自己,不碰任何外部服务。
   const hosts = new Set();
   page.on("request", q => hosts.add(new URL(q.url()).origin));
   await page.reload();
-  await expect(page.locator(".qr-tile img")).toHaveAttribute("src", /\/local\/qr\.svg\?d=http/);
-  expect(await page.evaluate(async () => { const i = document.querySelector(".qr-tile img"); await i.decode(); return i.naturalWidth > 0; })).toBe(true);
-  expect([...hosts]).toEqual([env.origin]);
+  await expect(page.locator(".send-link")).toBeVisible();
+  expect([...hosts]).toEqual([new URL(env.page).origin]);
 });
 
 test("抽屉窄视口:没设订阅前缀的提示一行显示,不折行且完整文案在 title", async ({ page }) => {
@@ -306,11 +295,14 @@ test("页面拿不到 token;未登录进不来", async ({ page, browser }) => {
   await login(page, env);
   const html = await page.content();
   expect(html).not.toContain(env.token);
-  const meta = await page.evaluate(() => fetch("/ui/meta").then(r => r.text()));
+  const meta = await page.evaluate(() => fetch("/api/admin/meta").then(r => r.text()));
   expect(meta).not.toContain(env.token);
   const ctx = await browser.newContext();
   const p2 = await ctx.newPage();
-  const r = await p2.goto(env.origin + "/");
-  expect(r.status()).toBe(401);
+  // 未登录打开管理台只给登录页;/api 没有会话一律 401。
+  await p2.goto(env.origin + "/");
+  await expect(p2.locator("#lg-user")).toBeVisible();
+  const api = await p2.evaluate(() => fetch("/api/status").then(x => x.status));
+  expect(api).toBe(401);
   await ctx.close();
 });

@@ -49,13 +49,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Users:    len(users),
 	}
 	out.TLSFingerprint = s.tlsFingerprint
-	if ds, err := s.store.ListDevices(); err == nil {
-		out.Devices = len(ds)
+	// UC-26:设备面字段退役;现在报「管理员账号建了没」与「登录锁没锁」,
+	// 供 install.sh 收尾文案与 mpx status 用。
+	if _, _, err := s.store.AdminAccount(); err == nil {
+		out.AdminAccountSet = true
 	}
-	if h, err := s.store.DevicePasswordHash(); err == nil {
-		out.DevicePasswordSet = h != ""
-	}
-	out.ConnectLockedUntil = s.connect.LockedUntil(time.Now())
+	out.LoginLockedUntil = s.adminLogin.LockedUntil(time.Now())
 	if ps, err := s.store.ListProbePoints(); err == nil {
 		out.ProbeTotal = len(ps)
 		for _, p := range ps {

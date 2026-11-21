@@ -4,7 +4,6 @@ import { Card, EmptyState, ErrorState, FlagText, Icon, LoadingTable, PageHeader,
 import { useApp, usePageTitle } from "../../runtime/app-context";
 import { write } from "../../runtime/api";
 import { usePageData } from "../../runtime/query";
-import { useBandwidth } from "../nodes/use-bandwidth";
 import type { Settings, User } from "../../runtime/types";
 import { NODE_TABS, sinceText } from "../../domain/nodes";
 import { errorMessage, readSubscriptionUsers, sourcePath, type SubscriptionSource } from "../../domain/routing";
@@ -24,10 +23,6 @@ export function SourcesPage() {
       // UC-20:成员行的境内指标;老控制面 404 时按没有处理。
       read<MetricsResponse>("/api/metrics").catch((error: unknown) => error instanceof APIError && error.status === 404 ? null : Promise.reject(error))]);
     return { sources, users, excludeOn: !!settings?.reach_exclude, metrics };
-  });
-  const bw = useBandwidth(job => {
-    if (job.stage === "done") { app.toast("带宽测量完成"); void page.refresh(); }
-    else if (job.stage === "error") app.toast(`带宽测量失败：${job.error || "未知错误"}`, true);
   });
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [refreshing, setRefreshing] = useState<Set<number>>(() => new Set());
@@ -187,7 +182,7 @@ export function SourcesPage() {
                       <td className="hide-m" />
                       <td className="hide-m"><span className="tag">{member.protocol}</span></td>
                       <td className="num sub hide-m" />
-                      <td className="num">{member.key && <span className="row-btns"><Button size="sm" data-act="bw-measure-ext" data-key={member.key} loading={bw.measuring === member.key} onClick={event => { event.stopPropagation(); void bw.start(member.key!); }}>测速</Button>{page.data?.excludeOn && app.can("PUT", "/api/reach/keep") && <Button size="sm" data-act="reach-keep-ext" data-key={member.key} onClick={event => { event.stopPropagation(); void keepMember(member); }}>{member.kept ? "撤销保留" : "保留"}</Button>}</span>}</td>
+                      <td className="num">{member.key && <span className="row-btns">{page.data?.excludeOn && app.can("PUT", "/api/reach/keep") && <Button size="sm" data-act="reach-keep-ext" data-key={member.key} onClick={event => { event.stopPropagation(); void keepMember(member); }}>{member.kept ? "撤销保留" : "保留"}</Button>}</span>}</td>
                     </tr>
                   )) : (
                     <tr className="src-member">

@@ -1,8 +1,10 @@
 const oldRoutes: Record<string, string> = {
   inbounds: "nodes", sources: "nodes/sources", settings: "sub", "settings/general": "sub", "settings/rules": "sub/clients",
-  "settings/templates": "sub/templates", "settings/devices": "system/devices", "settings/backup": "system/backup", plans: "users/plans",
+  "settings/templates": "sub/templates", "settings/devices": "system/acme", "system/devices": "system/acme", "settings/backup": "system/backup", plans: "users/plans",
 };
-const known = new Set(["overview", "nodes", "users", "sub", "rules", "doctor", "system"]);
+// login 不是主导航的一项,但它是一个合法页面键:canonicalKey 不能把它折回
+// overview,否则未登录访问会永远停在总览骨架上。
+const known = new Set(["overview", "nodes", "users", "sub", "rules", "doctor", "system", "login"]);
 export function canonicalKey(value: string) {
   const key = value.replace(/^#/, "") || "overview";
   const moved = oldRoutes[key] || (key.startsWith("inbounds/") ? "nodes" : key.startsWith("plans/") ? "users/" + key : key.startsWith("sources/") ? "nodes/sources" : key);

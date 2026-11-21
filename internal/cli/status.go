@@ -98,7 +98,7 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"探测点", probeText(st, now)},
 		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
-		{"设备接入", deviceLoginText(st)},
+		{"管理员账号", adminLoginText(st)},
 	}
 }
 
@@ -200,14 +200,13 @@ func humanDuration(d time.Duration) string {
 	return strings.Join(parts, " ")
 }
 
-// deviceLoginText 写一行设备接入的状况:几台设备、密码开没开、是否被锁。
-func deviceLoginText(st model.ControlStatus) string {
-	t := fmt.Sprintf("%d 台设备", st.Devices)
-	if !st.DevicePasswordSet {
-		return t + ",未设设备密码(新设备接不进来;mpx device password 设一个)"
+// adminLoginText 写一行管理员登录的状况:账号建没建、登录锁没锁。
+func adminLoginText(st model.ControlStatus) string {
+	if !st.AdminAccountSet {
+		return "未建(网页与 mpx connect 都登不进去;服务器上 MPX_TOKEN mpx admin create 建号)"
 	}
-	if st.ConnectLockedUntil != nil {
-		return t + ",密码连续输错,接入锁定到 " + st.ConnectLockedUntil.Format("15:04:05")
+	if st.LoginLockedUntil != nil {
+		return "已建,密码连续输错,登录锁定到 " + st.LoginLockedUntil.Format("15:04:05")
 	}
-	return t + ",设备密码已设"
+	return "已建"
 }

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
@@ -17,7 +18,9 @@ import (
 // fakeRemote 是 initRemote 的测试替身:只认 init 会发的那几条脚本,把它们的
 // 返回值调成用例想要的样子,并把每次调用记下来。
 type fakeRemote struct {
-	calls []string
+	calls       []string
+	stdins      []string // 每次 RunWithInput 收到的 stdin 内容
+	lastConnect struct{ user, password string }
 
 	osName      string
 	arch        string
@@ -73,8 +76,9 @@ func (f *fakeRemote) RunIO(ctx context.Context, n model.Node, a node.Auth, scrip
 
 func (f *fakeRemote) RunWithInput(ctx context.Context, n model.Node, a node.Auth, script string, stdin []byte) (string, error) {
 	f.record(script)
+	f.stdins = append(f.stdins, string(stdin))
 	if f.setPWErr != nil {
-		return "fake set password failed", f.setPWErr
+		return "fake admin create failed", f.setPWErr
 	}
 	return "", nil
 }
@@ -101,22 +105,25 @@ func runInitCapture(t *testing.T, setup func()) (stdout, stderr string, err erro
 
 	// 先把 flag 摆回默认值,免得用例之间互相污染。
 	initFlags = struct {
-		host          string
-		sshUser       string
-		sshPort       int
-		sshPassword   bool
-		identity      string
-		binary        string
-		installScript string
-		addr          string
-		apiPort       int
-		name          string
-		username      string
-		sni           string
-		realityDest   string
-		remark        string
-		subPrefix     string
-		password      string
+		host               string
+		sshUser            string
+		sshPort            int
+		sshPassword        bool
+		identity           string
+		binary             string
+		installScript      string
+		addr               string
+		apiPort            int
+		name               string
+		username           string
+		sni                string
+		realityDest        string
+		remark             string
+		subPrefix          string
+		adminUser          string
+		adminPassword      string
+		adminPasswordStdin bool
+		password           string
 	}{
 		sshUser:     "root",
 		sshPort:     22,
@@ -137,11 +144,12 @@ func runInitCapture(t *testing.T, setup func()) (stdout, stderr string, err erro
 
 	fake := &fakeRemote{osName: "Linux", arch: "x86_64", uid: "0", fetch: "/usr/bin/curl"}
 	initSSH = fake
-	initConnect = func(server, fp, password, name string) (*connectResult, error) {
+	initConnect = func(server string, trust trustDecision, username, password string) (*loginResult, error) {
 		if fake.connectErr != nil {
 			return nil, fake.connectErr
 		}
-		return &connectResult{DeviceID: 1, Name: name, Token: "fake-token"}, nil
+		fake.lastConnect.user, fake.lastConnect.password = username, password
+		return &loginResult{Token: "fake-token", ExpiresAt: time.Now().Add(30 * 24 * time.Hour)}, nil
 	}
 
 	setup()
@@ -213,21 +221,18 @@ func checkGolden(t *testing.T, name, got string) {
 // validFP 是 pin.Normalize 认得的指纹:43 个 base64 字符 = 32 字节。
 var validFP = "SHA256:" + strings.Repeat("A", 43)
 
-func setDevicePassword(t *testing.T, pw string) {
+// setAdminPassword 等价于传 --admin-password:init 不再读 MPX_DEVICE_PASSWORD,
+// 非交互时密码只能经 flag 进来。
+func setAdminPassword(t *testing.T, pw string) {
 	t.Helper()
-	if pw == "" {
-		t.Setenv("MPX_DEVICE_PASSWORD", "")
-		os.Unsetenv("MPX_DEVICE_PASSWORD")
-		return
-	}
-	t.Setenv("MPX_DEVICE_PASSWORD", pw)
+	initFlags.adminPassword = pw
 }
 
 func TestInitRemoteGolden(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("golden 里的安装脚本路径用 Unix 分隔符,Windows 上对不上")
 	}
-	const devicePW = "device-password-1234"
+	const adminPW = "device-password-1234"
 
 	cases := []struct {
 		name  string
@@ -236,7 +241,7 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "success",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, devicePW)
+				setAdminPassword(t, adminPW)
 				fake.fp = validFP
 				fake.bootstrapOK = true
 				return func() {
@@ -248,7 +253,7 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "uid-not-root",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, "")
+				setAdminPassword(t, "")
 				fake.uid = "1000"
 				return func() { initFlags.host = "203.0.113.10" }
 			},
@@ -256,7 +261,7 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "os-darwin",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, "")
+				setAdminPassword(t, "")
 				fake.osName = "Darwin"
 				fake.arch = "arm64"
 				return func() { initFlags.host = "203.0.113.10" }
@@ -265,7 +270,7 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "bootstrap-missing",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, devicePW)
+				setAdminPassword(t, adminPW)
 				fake.bootstrapOK = false
 				return func() { initFlags.host = "203.0.113.10" }
 			},
@@ -273,25 +278,25 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "fingerprint-empty",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, devicePW)
+				setAdminPassword(t, adminPW)
 				fake.fp = ""
 				fake.bootstrapOK = true
 				return func() { initFlags.host = "203.0.113.10" }
 			},
 		},
 		{
-			name: "no-device-password",
+			name: "no-admin-password",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, "")
+				setAdminPassword(t, "")
 				fake.fp = validFP
 				fake.bootstrapOK = true
 				return func() { initFlags.host = "203.0.113.10" }
 			},
 		},
 		{
-			name: "set-device-password-fails",
+			name: "create-admin-fails",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, devicePW)
+				setAdminPassword(t, adminPW)
 				fake.fp = validFP
 				fake.bootstrapOK = true
 				fake.setPWErr = fmt.Errorf("boom")
@@ -301,7 +306,7 @@ func TestInitRemoteGolden(t *testing.T) {
 		{
 			name: "connect-fails",
 			setup: func(t *testing.T, fake *fakeRemote) func() {
-				setDevicePassword(t, devicePW)
+				setAdminPassword(t, adminPW)
 				fake.fp = validFP
 				fake.bootstrapOK = true
 				fake.connectErr = fmt.Errorf("dial: connection refused")

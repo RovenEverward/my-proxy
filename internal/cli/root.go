@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
-	"github.com/RovenEverward/my-proxy/internal/pin"
 )
 
 // 输出格式的取值。
@@ -38,8 +37,8 @@ var rootCmd = &cobra.Command{
 --server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。
 
 第一次用:在你自己的电脑上跑 mpx init --host <VPS>,它经 SSH 把那台 VPS 装成控制面
-和节点,设好设备密码,并把这台电脑接上去。之后再也不用登录 VPS。
-别的设备:mpx connect <控制面地址>,输入设备密码即可接入。
+和节点,建好管理员账号,并把这台电脑接上去。之后再也不用登录 VPS。
+别的设备:mpx connect <控制面地址>,输入管理员用户名与密码即可接入。
 
 不知道下一步该敲什么,就先跑 mpx status 与 mpx doctor —— 这两条只读,不改动任何
 东西,它们会告诉你哪里不对。每个命令组(mpx node/inbound/host/user/settings)自己
@@ -72,7 +71,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个控制面(按保存时的名称),覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(loginCmd, serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd, probeCmd)
+	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd, probeCmd)
 
 	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
 	// 而这一行最该说清的恰恰是版本号本身是从哪来的。
@@ -88,15 +87,9 @@ func init() {
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
 //
-// args 是进程参数(不含程序名),main 已先用 DesktopArgs 摊派过;不传时 cobra
-// 照旧自己读 os.Args[1:],测试与其他调用方两种用法都能走。
+// args 是进程参数(不含程序名);不传时 cobra 照旧自己读 os.Args[1:],测试与
+// 其他调用方两种用法都能走。
 func Execute(args ...string) int {
-	// 桌面构建的 Windows 二进制是 GUI 进程,没有控制台。用户带着子命令
-	// 把它当 CLI 用时(例如 setup.exe 把它加进 PATH 之后),先把输出挂回
-	// 父终端;无参数开窗口的路径(main 摊派成 app)不经过这个分支。
-	if buildinfo.Desktop() && (len(args) > 0 || len(os.Args) > 1) {
-		attachParentConsole()
-	}
 	wireCompletion(rootCmd)
 	if len(args) > 0 {
 		rootCmd.SetArgs(args)
@@ -108,113 +101,10 @@ func Execute(args ...string) int {
 		if errors.Is(err, errDoctorFailed) {
 			return doctorFailExit
 		}
-		// 缺 WebView 的提示已经打过了(Windows 还弹过对话框),这里只负责退出码。
-		if errors.Is(err, errAppNoWebView) {
-			return appNoWebViewExit
-		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
-}
-
-// loginCmd 把一个控制面的地址与 token 记进某个控制面,省得每次敲 flag。
-var loginCmd = &cobra.Command{
-	Use:   "login",
-	Short: "保存控制面地址与 token(可保存多个控制面);不带参数时显示当前生效的值",
-	Long: `保存控制面地址与 token。
-
---profile 指定存到哪个控制面(默认 default),存完就把当前控制面切过去。配置文件里
-能同时放多套:临时起一个控制面试命令时用另一个档名,原来的连接原封不动,切回来
-是一次本地操作 —— token 只在服务器上,丢了要跑一趟机器。
-
-不带 --server/--token 时只显示当前生效的值,不写文件。`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
-		if err != nil {
-			return err
-		}
-		changedServer := cmd.Flags().Changed("server")
-		changedToken := cmd.Flags().Changed("token")
-		changedFP := cmd.InheritedFlags().Changed("fp")
-		// 三个 flag 都是根命令上的 persistent flag,所以要用 InheritedFlags 查 ——
-		// cmd.Flags() 只包含本命令自己注册的,查不到继承来的(恒为 false)。
-		changedProfile := cmd.InheritedFlags().Changed("profile")
-
-		// 什么都没给 = 看。给了 --profile 而没给地址/token 是"切换",不是"看":
-		// 切档本来就该只需要一个档名(令牌只在服务器上,切回来不该逼人去把它
-		// 翻出来),所以它不能落进"查看"这一支。
-		if !changedServer && !changedToken && !changedProfile && !changedFP {
-			return showLogin(cfg)
-		}
-
-		name := opts.profile
-		if name == "" {
-			name = defaultProfile
-		}
-		old, hadOld := cfg.Profiles[name]
-
-		// 切档要求这个档已经存在:否则一个拼错的档名会静静地建出一个空档,
-		// 之后每条命令都因为"没有控制面地址"失败,却看不出是拼错了。
-		if changedProfile && !changedServer && !changedToken && !hadOld {
-			return fmt.Errorf("没有名为 %q 的控制面,%s", name, cfg.profileHint())
-		}
-
-		// 只覆盖这次给了的项,没给的沿用该档里已有的值。
-		p := old
-		if changedServer {
-			p.Server = opts.server
-		}
-		if changedToken {
-			p.Token = opts.token
-		}
-		// 换了地址却没给指纹:旧指纹属于旧地址,留着只会在下次连接时报"不符"。
-		if changedServer && old.Server != p.Server {
-			p.Fingerprint = ""
-		}
-		if changedFP {
-			fp, err := pin.Normalize(opts.fingerprint)
-			if err != nil {
-				return err
-			}
-			p.Fingerprint = fp
-		}
-		if strings.HasPrefix(strings.ToLower(p.Server), "https://") && p.Fingerprint == "" {
-			return errors.New("https 地址必须带 --fp <证书指纹>;推荐直接用 mpx connect,它会显示指纹让你确认")
-		}
-		if cfg.Profiles == nil {
-			cfg.Profiles = map[string]Profile{}
-		}
-		cfg.Profiles[name] = p
-		cfg.Current = name
-
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-		path, err := configFile()
-		if err != nil {
-			return err
-		}
-		// 回显"从什么变成了什么"。这不是确认步骤(正常的换控制面不该被拦),
-		// 只是让覆盖旧地址这件事在屏幕上留一行,出事时一眼看得见。
-		if hadOld && old.Server != p.Server {
-			fmt.Printf("控制面 %s 的地址:%s → %s\n", name, dash(old.Server), dash(p.Server))
-		}
-		if hadOld && old.Fingerprint != p.Fingerprint {
-			fmt.Printf("控制面 %s 的证书指纹:%s → %s\n", name, dash(old.Fingerprint), dash(p.Fingerprint))
-		}
-		if hadOld && old.Token != p.Token {
-			fmt.Printf("控制面 %s 的 token:%s → %s\n", name, maskToken(old.Token), maskToken(p.Token))
-		}
-		// 纯切换时上面两行都不打,得说清楚切到哪了。
-		if old == p {
-			fmt.Printf("已切到控制面 %s(server: %s)\n", name, dash(p.Server))
-		} else {
-			fmt.Printf("已写入 %s(当前控制面 %s)\n", path, name)
-		}
-		return nil
-	},
 }
 
 // cliVersion 是 --version 打出来的那一行。
@@ -226,41 +116,6 @@ func cliVersion() string {
 		return v
 	}
 	return "未知(从源码直接编译,没带版本号;发布件会带)"
-}
-
-// showLogin 打印当前生效的控制面与 token,以及存在哪些控制面。
-func showLogin(cfg Config) error {
-	server, token, err := resolve()
-	if err != nil {
-		return err
-	}
-	fmt.Printf("server: %s\n", dash(server))
-	fmt.Printf("token:  %s\n", maskToken(token))
-	if fp, err := resolveFingerprint(server); err == nil && fp != "" {
-		fmt.Printf("指纹:   %s\n", fp)
-	}
-
-	names := cfg.names()
-	if len(names) == 0 {
-		return nil
-	}
-	// 生效档和文件里的 current 可能不同(--profile / MPX_PROFILE 会盖掉它),
-	// 所以标记跟着 resolve 的口径走,不能直接读 cfg.Current —— 否则打了
-	// "--profile scratch" 却把 * 标在 default 上。
-	current := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current)
-	fmt.Printf("已保存的控制面: ")
-	for i, name := range names {
-		if i > 0 {
-			fmt.Printf("  ")
-		}
-		mark := " "
-		if name == current {
-			mark = "*"
-		}
-		fmt.Printf("%s%s", mark, name)
-	}
-	fmt.Println()
-	return nil
 }
 
 // idArg 先把位置参数校验成本地能看懂的错,免得为一个手误跑一趟网络。

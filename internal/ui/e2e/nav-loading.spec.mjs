@@ -27,15 +27,9 @@ async function platform(page, mode, theme = 'light') {
     Object.defineProperty(navigator, 'platform', { value: mode === 'mac' ? 'MacIntel' : 'Win32' });
     Object.defineProperty(navigator, 'userAgentData', { value: { platform: mode === 'mac' ? 'macOS' : 'Windows' } });
     localStorage.setItem('mpx-theme', theme);
-    if (mode === 'win') document.addEventListener('DOMContentLoaded', () => {
-      document.documentElement.style.setProperty('--mygo-titlebar-inset-right', '138px');
-      document.documentElement.style.setProperty('--mygo-titlebar-height', '52px');
-    });
   }, { mode, theme });
-  await page.route('**/ui/meta', async r => {
-    const response = await r.fetch(), meta = await response.json();
-    await r.fulfill({ response, json: { ...meta, server: 'https://203.0.113.10:8080' } });
-  });
+  // UC-26:meta 只剩版本/指纹/登录态,页面地址固定,不再注入服务器地址。
+
 }
 async function delay(page) {
   let n = 0;
@@ -56,7 +50,7 @@ async function measure(page, selector, hash, title, overlay = false) {
     window.navTiming = new Promise(resolve => el.addEventListener('click', () => {
       const start = performance.now();
       const readySelector = {
-        overview: '.ov .stat', system: '#set-form', 'system/devices': '#dpw-form',
+        overview: '.ov .stat', system: '#set-form', 'system/acme': '#acme-form',
         'system/backup': '[data-act=backup]', 'system/update': '[data-act=update-open]',
       }[args.hash];
       const visible = element => !!element?.getClientRects().length && getComputedStyle(element).visibility === 'visible';
@@ -113,7 +107,7 @@ for (const mode of ['mac', 'win']) test(`${mode} · 全站路由与详情立即�
   await measure(page, 'a[href="#users/plans"]', 'users/plans', '用户');
   await expect(page.locator('html[data-loading]')).toHaveCount(0);
   await ready(page, 'system');
-  for (const tab of ['devices', 'backup']) {
+  for (const tab of ['acme', 'backup']) {
     await measure(page, `a[href="#system/${tab}"]`, 'system/' + tab, '系统');
     await expect(page.locator('html[data-loading]')).toHaveCount(0);
   }
@@ -217,23 +211,6 @@ test('长列表进入详情归零滚动，返回列表不继承详情偏移', as
   expect(await page.locator('main').evaluate(el => el.scrollTop)).toBe(0);
   await page.goBack(); await expect(page.locator('html[data-loading]')).toHaveCount(0);
   expect(await page.locator('main').evaluate(el => el.scrollTop)).toBe(0);
-});
-test('控制面列表与切换立即显示目标，失败可原地重试', async ({ page }) => {
-  await platform(page, 'mac');
-  await page.route('**/local/profiles', async r => {
-    await new Promise(resolve => setTimeout(resolve, 225));
-    await r.fulfill({ json: [{ name: 'demo', server: 'https://203.0.113.10:8080', current: true }, { name: 'test', server: 'https://198.51.100.10:8080' }] });
-  });
-  await page.route('**/local/profiles/use', async r => {
-    await new Promise(resolve => setTimeout(resolve, 225));
-    await r.fulfill({ status: 503, json: { error: '切换失败测试' } });
-  });
-  await login(page, env); await ready(page, 'nodes');
-  await measure(page, '.profile[data-act=cp-toggle]', 'nodes', '控制面', 'cp-pop');
-  await expect(page.locator('.pfitem')).toHaveCount(2);
-  await measure(page, '.pfitem[data-name=test]', 'nodes', '正在切换到 test', 'cp-pop');
-  await expect(page.locator('#prof-err')).toHaveText('切换失败测试');
-  await expect(page.locator('#profile-retry')).toBeVisible();
 });
 test('分流冷启动与标签切换的加载框架保留标签和规则作用域', async ({ page }) => {
   await platform(page, 'mac'); await delay(page); await login(page, env);

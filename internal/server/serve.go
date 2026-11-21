@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/acme"
 	"github.com/RovenEverward/my-proxy/internal/control"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
@@ -132,6 +133,23 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 		logger.Warn("写证书指纹文件失败(不影响服务)", "err", err)
 	}
 
+	// UC-26:ACME 管理器装上双证书 SNI —— SNI 命中 acme_domain 出 ACME 证书,
+	// 其余(无 SNI、IP、别的名字)一律回自签,CLI 的指纹钉因此永远有效。
+	// 配域名时把 settings 与 acme_state 都读给它;读不到按没证书处理,
+	// 自签兜底,不让一张坏证书挡死整个监听。
+	acmeDomain, acmeSt := "", (*store.AcmeState)(nil)
+	if st2, err := st.GetSettings(); err == nil {
+		acmeDomain = st2.ACMEDomain
+	}
+	if as, err := st.GetACMEState(); err == nil {
+		acmeSt = as
+	}
+	acmeMgr := acme.NewManager(st, cert, acmeDomain, acmeSt, logger)
+	srv.SetACME(acmeMgr)
+	acmeDone := make(chan struct{})
+	go func() { defer close(acmeDone); acmeMgr.Run(ctx) }()
+	defer func() { stopWorkers(); <-acmeDone }()
+
 	httpSrv := &http.Server{
 		Handler:           srv.plaintextAPIWarning(srv.Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -191,7 +209,7 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 		}
 		logger.Info("控制面已启动", "addr", opt.Addr, "db", opt.DBPath,
 			"auth", opt.Token != "", "fingerprint", fp)
-		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"http/1.1"},
+		tlsCfg := &tls.Config{GetCertificate: acmeMgr.GetCertificate, NextProtos: []string{"http/1.1"},
 			MinVersion: tls.VersionTLS12}
 		if err := httpSrv.Serve(newSniffListener(ln, tlsCfg)); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("监听 %s: %w", opt.Addr, err)

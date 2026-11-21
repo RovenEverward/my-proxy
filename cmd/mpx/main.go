@@ -7,12 +7,9 @@ package main
 import (
 	"os"
 
-	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 	"github.com/RovenEverward/my-proxy/internal/cli"
 )
 
 func main() {
-	// 桌面构建不带参数启动(或只带 macOS 的 -psn_*)时摊派成 `mpx app`,先于
-	// cobra 做;普通构建与给了参数的情况原样进入命令行。
-	os.Exit(cli.Execute(cli.DesktopArgs(buildinfo.Desktop(), os.Args[1:])...))
+	os.Exit(cli.Execute(os.Args[1:]...))
 }

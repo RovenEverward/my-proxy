@@ -2,7 +2,7 @@
 // TCP 握手和一次 UDP 探活,把结果分成 可达 / 不可达 / 未知 三档。
 //
 // 它只负责「发起探测的机器能看到什么」,不编排双来源、不碰数据库:
-// 操作机(mpx node check、mpx ui 的 /local/reach)与控制面(POST /api/reach/probe)
+// 操作机(mpx node check)与控制面(POST /api/reach/probe)
 // 跑的是同一份探针,各探各的、结果再合到一起。
 //
 // 判定口径(见 UC-06):

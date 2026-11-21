@@ -37,10 +37,6 @@ async function prepare(page, platform, theme) {
     "/api/settings": { sub_url_prefix: "https://sub.example.com", notify_usage_percent: 80, notify_days_left: 3 },
     "/api/sub-pulls": [{ username: "half", client: "clash-verge", first_pulled_at: now, last_pulled_at: now }],
   };
-  await page.route("**/ui/meta", async r => {
-    const response = await r.fetch(), meta = await response.json();
-    await r.fulfill({ response, json: { ...meta, server: "203.0.113.10:8080" } });
-  });
   await page.route("**/api/**", r => {
     const url = new URL(r.request().url()), p = url.pathname;
     if (p === "/api/users") {

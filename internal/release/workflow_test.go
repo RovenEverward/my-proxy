@@ -57,12 +57,8 @@ func intermediate() []string {
 	v := testVer
 	return []string{
 		"mpx_darwin_amd64.tar.gz", "mpx_darwin_arm64.tar.gz", "mpx_linux_amd64.tar.gz", "mpx_linux_arm64.tar.gz", "mpx_windows_amd64.zip",
-		"mpx_desktop_darwin_universal.tar.gz", "mpx_desktop_linux_amd64.tar.gz", "mpx_desktop_linux_arm64.tar.gz", "mpx_desktop_windows_amd64.zip",
 		"mpx_" + v + "_darwin_universal.pkg", "mpx_" + v + "_windows_amd64_setup.exe",
 		"mpx_" + v + "_linux_amd64.deb", "mpx_" + v + "_linux_arm64.deb", "mpx_" + v + "_linux_amd64.rpm", "mpx_" + v + "_linux_arm64.rpm",
-		"mpx-desktop_" + v + "_darwin_universal.dmg", "mpx-desktop_" + v + "_windows_amd64_setup.exe",
-		"mpx-desktop_" + v + "_amd64.deb", "mpx-desktop_" + v + "_arm64.deb",
-		"mpx-desktop_" + v + "_linux_amd64.tar.gz", "mpx-desktop_" + v + "_linux_arm64.tar.gz",
 	}
 }
 
@@ -104,14 +100,10 @@ func TestReleaseAssetNames(t *testing.T) {
 	sort.Strings(got)
 	v := testVer
 	want := []string{
-		"MPX-" + v + "-Linux-amd64.deb", "MPX-" + v + "-Linux-amd64.tar.gz", "MPX-" + v + "-Linux-arm64.deb", "MPX-" + v + "-Linux-arm64.tar.gz",
-		"MPX-" + v + "-Windows-x64-setup.exe", "MPX-" + v + "-macOS.dmg",
-		"MPX-Linux-amd64.deb", "MPX-Linux-amd64.tar.gz", "MPX-Linux-arm64.deb", "MPX-Linux-arm64.tar.gz", "MPX-Windows-x64-setup.exe", "MPX-macOS.dmg",
 		"SHA256SUMS",
 		"mpx-cli_" + v + "_darwin_universal.pkg", "mpx-cli_" + v + "_linux_amd64.deb", "mpx-cli_" + v + "_linux_amd64.rpm",
 		"mpx-cli_" + v + "_linux_arm64.deb", "mpx-cli_" + v + "_linux_arm64.rpm", "mpx-cli_" + v + "_windows_amd64_setup.exe",
 		"mpx_darwin_amd64.tar.gz", "mpx_darwin_arm64.tar.gz",
-		"mpx_desktop_darwin_universal.tar.gz", "mpx_desktop_linux_amd64.tar.gz", "mpx_desktop_linux_arm64.tar.gz", "mpx_desktop_windows_amd64.zip",
 		"mpx_linux_amd64.tar.gz", "mpx_linux_arm64.tar.gz", "mpx_windows_amd64.zip",
 	}
 	sort.Strings(want)
@@ -125,14 +117,6 @@ func TestReleaseAssetNames(t *testing.T) {
 		}
 		if !strings.Contains(string(sums), "  "+n+"\n") {
 			t.Errorf("SHA256SUMS 里没有 %s", n)
-		}
-	}
-	// 固定名副本与带版本号的那份内容相同。
-	for _, f := range []string{"macOS.dmg", "Windows-x64-setup.exe", "Linux-amd64.deb", "Linux-arm64.deb", "Linux-amd64.tar.gz", "Linux-arm64.tar.gz"} {
-		a, _ := os.ReadFile(filepath.Join(dist, "MPX-"+f))
-		b, _ := os.ReadFile(filepath.Join(dist, "MPX-"+v+"-"+f))
-		if string(a) != string(b) || len(a) == 0 {
-			t.Errorf("MPX-%s 与带版本号的不一致", f)
 		}
 	}
 }
@@ -162,8 +146,8 @@ func TestReleaseRenameFailsOnMissing(t *testing.T) {
 	dist := filepath.Join(root, "dist")
 	os.Mkdir(dist, 0o755)
 	for _, n := range intermediate() {
-		if strings.HasSuffix(n, ".dmg") {
-			continue // 少了 dmg:必须失败,不能悄悄发一个没有 macOS 安装包的版本
+		if strings.HasSuffix(n, ".pkg") {
+			continue // 少了 macOS 安装包:必须失败,不能悄悄发一个没有它的版本
 		}
 		os.WriteFile(filepath.Join(dist, n), []byte(n), 0o644)
 	}
@@ -180,13 +164,14 @@ func TestReleaseNotesTable(t *testing.T) {
 		t.Fatal("「我该下哪个」表要在折叠区之前")
 	}
 	table := run[i:j]
-	for _, f := range []string{"MPX-${{ steps.ver.outputs.ver }}-Windows-x64-setup.exe", "MPX-${{ steps.ver.outputs.ver }}-macOS.dmg", "MPX-${{ steps.ver.outputs.ver }}-Linux-amd64.deb", "MPX-${{ steps.ver.outputs.ver }}-Linux-arm64.deb"} {
+	// UC-26 起只有命令行安装包:桌面 MPX-* 系列已不存在。
+	for _, f := range []string{"mpx-cli_${{ steps.ver.outputs.ver }}_windows_amd64_setup.exe", "mpx-cli_${{ steps.ver.outputs.ver }}_darwin_universal.pkg", "mpx-cli_${{ steps.ver.outputs.ver }}_linux_amd64.deb", "mpx-cli_${{ steps.ver.outputs.ver }}_linux_arm64.deb"} {
 		if !strings.Contains(table, "/"+f+")") {
 			t.Errorf("表里没有链接 %s", f)
 		}
 	}
-	if strings.Contains(table, "mpx-cli_") || strings.Contains(table, "mpx_") {
-		t.Error("表里只该链接桌面安装包")
+	if strings.Contains(table, "MPX-") {
+		t.Error("表里不该再有桌面安装包")
 	}
 	for _, w := range []string{"仍要运行", "仍要打开", "隐私与安全性"} {
 		if !strings.Contains(run, w) {

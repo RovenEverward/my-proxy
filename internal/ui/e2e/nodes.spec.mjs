@@ -760,16 +760,9 @@ test("节点连不上:主按钮是刷新状态,应用到节点变灰带提示", 
 });
 
 // 只有读权限(GET /api)时,连不上的节点仍要能「刷新状态」——那是 GET ?fresh=1,不是写操作。
-test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
+test("节点连不上:仍能刷新状态", async ({ page }) => {
   test.setTimeout(60_000); // 现场刷新要等 SSH 那边超时
-  // 权限来自 /ui/meta,必须在页面第一次加载前就把写权限摘掉。
-  await page.route("**/ui/meta", async route => {
-    const got = await softJSON(route);
-    if (!got) return;
-    const m = got.body;
-    m.allow = (m.allow || []).filter(a => a.startsWith("GET "));
-    await route.fulfill({ response: got.res, json: m });
-  });
+  // UC-26:管理台没有只读角色,这个用例退化为「节点连不上时仍能刷新状态」。
   await page.route("**/api/nodes/2", async route => {
     const got = await softJSON(route);
     if (!got) return;
@@ -790,8 +783,6 @@ test("只读权限且节点连不上:仍能刷新状态", async ({ page }) => {
   // 菜单里不再重复放刷新项(主按钮已经换成「刷新状态」了)。
   await page.click("[data-act=node-menu]");
   await expect(page.locator("#node-menu [data-act=node-check]")).toHaveCount(0);
-  // 写操作按钮因为没写权限都不出现。
-  await expect(page.locator(".ph [data-act=node-sync]")).toHaveCount(0);
   await primary.click();
   await expect(page.locator(".toast")).toContainText("状态已刷新", { timeout: 30_000 });
 });

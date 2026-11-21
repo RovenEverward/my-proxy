@@ -363,10 +363,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateIdentity(); err != nil {
 		return err
 	}
-	if err := s.migrateDevices(); err != nil {
-		return err
-	}
-	if err := s.migrateDevicePassword(); err != nil {
+	// UC-26:设备模型退役,老库里的 devices / device_password 表就地清掉,
+	// 不留兼容期(见 legacy.go)。
+	if err := s.dropLegacyDevice(); err != nil {
 		return err
 	}
 	if err := s.migrateDiagnostics(); err != nil {
@@ -396,6 +395,13 @@ func (s *Store) migrate() error {
 		return err
 	}
 	if err := s.migrateCDN(); err != nil {
+		return err
+	}
+	// UC-26:网页管理台的账号与会话,以及 ACME 证书状态。
+	if err := s.migrateAdmin(); err != nil {
+		return err
+	}
+	if err := s.migrateACME(); err != nil {
 		return err
 	}
 	if err := s.migrateMetrics(); err != nil {
@@ -450,6 +456,15 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN reach_keeps TEXT NOT NULL DEFAULT '{}'`},
 	{"settings", "bandwidth_test_url",
 		`ALTER TABLE settings ADD COLUMN bandwidth_test_url TEXT NOT NULL DEFAULT ''`},
+	// UC-26 批:管理台域名 + ACME。cf_token 是有 DNS 编辑权限的 Cloudflare
+	// API token(敏感,落库明文 —— 与库内其它机密同一口径:整库即备份,
+	// 靠库文件的 FS 权限);staging 默认关。
+	{"settings", "acme_domain",
+		`ALTER TABLE settings ADD COLUMN acme_domain TEXT NOT NULL DEFAULT ''`},
+	{"settings", "acme_cf_token",
+		`ALTER TABLE settings ADD COLUMN acme_cf_token TEXT NOT NULL DEFAULT ''`},
+	{"settings", "acme_staging",
+		`ALTER TABLE settings ADD COLUMN acme_staging INTEGER NOT NULL DEFAULT 0`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

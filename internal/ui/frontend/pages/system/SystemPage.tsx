@@ -6,25 +6,26 @@ import { sleep } from "../../runtime/api";
 import { usePageData } from "../../runtime/query";
 import type { PageProps, Settings } from "../../runtime/types";
 import { NotificationForm } from "./NotificationForm";
-import { DevicesTab, type Device } from "./DevicesTab";
+import { AcmeTab, type ACMEStatus } from "./AcmeTab";
 
-const SYSTEM_TABS = [{ key: "", label: "通知", href: "#system" }, { key: "devices", label: "设备与接入", href: "#system/devices" }, { key: "backup", label: "备份与恢复", href: "#system/backup" }, { key: "update", label: "更新与版本", href: "#system/update" }];
-interface SystemData { settings?: Settings; devices?: Device[] }
+const SYSTEM_TABS = [{ key: "", label: "通知", href: "#system" }, { key: "acme", label: "域名与证书", href: "#system/acme" }, { key: "backup", label: "备份与恢复", href: "#system/backup" }, { key: "update", label: "更新与版本", href: "#system/update" }];
+interface SystemData { settings?: Settings; acme?: ACMEStatus }
 export function SystemPage({ route }: PageProps) {
   const { meta, setBusy, openUpdate } = useApp();
   const tab = SYSTEM_TABS.find(item => item.key === (route[1] || "")) || SYSTEM_TABS[0];
   usePageTitle([{ label: "系统", href: "#system" }, { label: tab.label }]);
   const query = usePageData<SystemData>("system/" + tab.key, async read => {
     if (tab.key === "update") return {};
+    if (tab.key === "acme") return { acme: await read<ACMEStatus>("/api/acme/status") };
     const settings = await read<Settings>("/api/settings");
-    return tab.key === "devices" ? { settings, devices: await read<Device[]>("/api/devices") } : { settings };
+    return { settings };
   });
   useEffect(() => { setBusy(query.loading); return () => setBusy(false); }, [query.loading, setBusy]);
-  return <><PageHeader title="系统" description="通知、设备、备份与版本" /><Tabs items={SYSTEM_TABS} value={tab.key} />
+  return <><PageHeader title="系统" description="通知、域名证书、备份与版本" /><Tabs items={SYSTEM_TABS} value={tab.key} />
     {query.data && query.error && <ErrorState title="系统" error={query.error} onRetry={() => void query.refresh()} />}
-    {tab.key === "update" ? <div className="card pad18"><b className="b6">当前版本</b><p className="sub mt6 mb14 mono">{meta.cli_version || "—"}</p><Button variant="primary" data-act="update-open" onClick={openUpdate}><Icon name="refresh" />检查更新</Button></div>
+    {tab.key === "update" ? <div className="card pad18"><b className="b6">当前版本</b><p className="sub mt6 mb14 mono">{meta.version || "—"}</p><Button variant="primary" data-act="update-open" onClick={openUpdate}><Icon name="refresh" />检查更新</Button></div>
       : !query.data ? query.error ? <ErrorState title="系统" error={query.error} onRetry={() => void query.refresh()} /> : <LoadingTable rows={6} columns={2} />
-      : tab.key === "devices" ? <DevicesTab devices={query.data.devices || []} refresh={() => query.refresh(false)} />
+      : tab.key === "acme" ? <AcmeTab status={query.data.acme || {}} refresh={() => query.refresh(false)} />
       : tab.key === "backup" ? <BackupTab />
       : query.data.settings ? <NotificationForm settings={query.data.settings} refresh={fresh => query.refresh(fresh ?? false)} /> : null}
   </>;

@@ -49,7 +49,7 @@ export function SubscriptionPage({ route }: PageProps) {
   return <SubscriptionWorkspace route={route} data={query.data} selected={selected} refresh={() => query.refresh(false)} readError={query.error} onReadRetry={() => void query.refresh()} />;
 }
 function SubscriptionWorkspace({ route, data, selected, refresh, readError, onReadRetry }: { route: string[]; data: SubscriptionData; selected: { current: string | undefined }; refresh: () => Promise<void>; readError: Error | null; onReadRetry: () => void }) {
-  const { meta, can, toast, navigate, openDrawer, openModal, closeModal } = useApp();
+  const { can, toast, navigate, openDrawer, openModal, closeModal } = useApp();
   const [state, setState] = useState<DraftState>(() => initialState(data.settings));
   const current = useRef(state); current.current = state;
   const [preview, setPreview] = useState(data.preview), previewSequence = useRef(0);
@@ -122,7 +122,7 @@ function SubscriptionWorkspace({ route, data, selected, refresh, readError, onRe
     try { const next = await subscriptionPreview(user); if (mounted.current && sequence === previewSequence.current) setPreview(next); } catch (cause) { if (mounted.current && sequence === previewSequence.current) toast(cause instanceof Error ? cause.message : String(cause), true); }
   };
   const rules = effectiveRules(state.draft.rules, data.builtin), originalRules = effectiveRules(state.original.rules, data.builtin);
-  const fallback = meta.server || location.origin, link = subscriptionLink(state.draft, state.original, preview, fallback), split = link.lastIndexOf("/sub/"), base = link.slice(0, split), tail = link.slice(split);
+  const fallback = location.origin, link = subscriptionLink(state.draft, state.original, preview, fallback), split = link.lastIndexOf("/sub/"), base = link.slice(0, split), tail = link.slice(split);
   const prefixBase = state.draft.sub_url_prefix || preview.appliedPrefix || fallback;
   const readOnly = !writable || state.saving;
   const customTemplates = TEMPLATE_FORMATS.filter(format => data.settings.templates?.[format]).length;
