@@ -6,11 +6,11 @@ verified: 2026-11-22 @ 605d676 + working tree
 ---
 # 控制面与数据
 
-> **30 秒版**：控制面是一台机器上跑的 `mpx serve`，持有 SQLite 里唯一一份真相（节点、入站、对外入口、用户、套餐、规则、设备），对外只开一个端口：HTTPS 给管理接口 `/api`，HTTP 给订阅 `/sub`。其余各块要么往这里写，要么从这里读。
+> **30 秒版**：控制面是一台机器上跑的 `mpx serve`，持有 SQLite 里唯一一份真相（节点、入站、对外入口、用户、套餐、规则、管理员会话），对外只开一个端口：HTTPS 给管理接口 `/api`，HTTP 给订阅 `/sub`。其余各块要么往这里写，要么从这里读。
 
 ## 边界
 
-负责：存数据、校验写入、提供管理接口和订阅接口、鉴权（主 token 加每设备 token）、限流、备份与恢复。
+负责：存数据、校验写入、提供管理接口和订阅接口、鉴权（管理员会话 cookie、CLI 会话 token、探测点凭据、env 救援 token）、限流、备份与恢复。
 
 不负责：碰节点（交给 [节点](nodes.md) 那一块的后台循环）；渲染订阅内容（交给 [订阅与分流](subscription.md)）；承载用户流量（控制面不进数据通路）。
 
@@ -18,7 +18,7 @@ verified: 2026-11-22 @ 605d676 + working tree
 
 ```mermaid
 sequenceDiagram
-  participant C as 本机 CLI / mpx ui
+  participant C as 浏览器管理台 / 本机 CLI
   participant S as server（单端口嗅探）
   participant DB as store（SQLite 单连接 + WAL）
   C->>S: TLS ClientHello（按指纹认自签证书）
@@ -47,7 +47,7 @@ sequenceDiagram
 
 ## 坑
 
-- 想给接口改字段语义 → 旧 CLI、旧 `mpx ui` 会静默出错 → 只加新字段或新路径；确实要破坏兼容，先停下来问主人。
+- 想给接口改字段语义 → 旧 CLI、旧管理台会静默出错 → 只加新字段或新路径；确实要破坏兼容，先停下来问主人。
 - 建用户时不带 `enabled` → 零值会被当成停用 → 必须显式传。
 - 节点和入口的地区元数据（region / city / letter）在 `metadata.go`（server、store）和 `model/location.go`，类型叫 `LocationMetadata`；v0.9.2 前这些文件叫 `purpose.go`。代码里剩下的 `purposes` 字样只在迁移和兼容旧报告的地方（`dropPurposes`、`LegacyPurposeCount`、`PurposeOutcome`），「用途」本身已在 v0.7.0 删除。
 - 仍是 `template` 分流模式的老库 → v0.7.0 起控制面拒绝启动 → 先用 v0.6.6 跑 `mpx rule migrate`（见 [CHANGELOG](../../CHANGELOG.md) v0.7.0）。

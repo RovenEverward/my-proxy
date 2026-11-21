@@ -1,12 +1,12 @@
 ---
 kind: part
 parent: README.md
-code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/cli/ui.go, internal/cli/console_windows.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, internal/ui/update_local.go, deploy/, deploy/installers/]
-verified: 2026-11-19 @ 8e11b21 + working tree
+code: [internal/cli/init.go, internal/cli/init_steps.go, internal/cli/bootstrap.go, internal/cli/update.go, internal/cli/update_apply.go, internal/cli/update_run.go, internal/selfupdate/, internal/release/, internal/updatecheck/, internal/buildinfo/, internal/xrayrelease/, internal/singboxbuild/, internal/server/update_nodes.go, deploy/]
+verified: 2026-11-22 @ 17f8e96 + working tree
 ---
 # 安装与升级
 
-> **30 秒版**：从一台能 root SSH 的裸 VPS 开始，`mpx init`（或 `mpx ui` 的首次安装向导）在你电脑上经 SSH 把控制面和第一个节点装好，最后打印订阅地址。之后升级也不用登录：`mpx update`（或 `mpx ui` 的「更新」入口）能升控制面、各节点核心和本机 CLI，失败自动回到上一版，本机也能手动回退。macOS 和 Windows 上也能用包管理器装：Homebrew tap（cask 装 MPX.app 并把 app 内 mpx 软链进 brew bin）与 winget（桌面 setup.exe 把安装目录加进用户 PATH）——两个渠道只有「装」这一层，升级仍走自更新，见 [deploy/installers](../../deploy/installers/README.md)。
+> **30 秒版**：从一台能 root SSH 的裸 VPS 开始，`mpx init` 在你电脑上经 SSH 把控制面和第一个节点装好，建管理员账号，最后打印订阅地址。之后升级也不用登录：`mpx update`（或管理台的「更新」入口）能升控制面和各节点核心，失败自动回到上一版，本机 CLI 用 `mpx update apply cli` 升。命令行安装包三个平台都有（`mpx-cli_*`），发布件与脚本见 [deploy/](../../deploy/)。
 
 ## 边界
 
@@ -22,8 +22,7 @@ verified: 2026-11-19 @ 8e11b21 + working tree
 4. **升节点核心**：`mpx update apply nodes` 让控制面对每台节点逐台升级。xray 包由节点自己从 GitHub 拉（控制面只递 URL 和取自官方 `.dgst` 的摘要），新核心先过 `xray run -test` 验现有配置再顶替，这台失败就回滚这台。目标版本钉在每个 MPX 版本里（`xrayrelease.RecommendedVersion`），不追上游 latest；有 sing-box 的节点由控制面按 `singboxbuild.DefaultVersion` 编译后推送（官方发布件不带 `with_v2ray_api`，撑不起按用户计量）。跳不跳过按**现场**版本判：缓存（上一轮巡检）说已是目标版本时仍会 SSH 问一次，问不到才退回缓存 —— 否则两次巡检之间被手工换过核心的节点会被一直 skip。
 
    **单台不拦整批**（v0.9.17 起）：跑之前先把两类节点筛出名单 —— 持久化 `NodeStatus.Reachable=false` 的、以及后台还在退避窗口里的 —— 各自记一条 skip 事件（"节点不可达"），不发 SSH。跑起来后任何一行失败只影响该行：连通类错误（`ssh: …`、`命令超时`）把这台剩余核心行记 skip（"本节点连接失败,剩余核心跳过"），不再对它重复付超时；升级逻辑错误（拉取、校验、回滚失败）则同节点下一个核心照跑。整轮结束按行级结果定状态：有任何 failed/rolled_back 就是 failed，否则 done；CLI 照常非零退出并逐行打出每台结果。
-5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。页面只放一个「更新」按钮，按 控制面 → 节点核心 → 本机 的顺序把三层升完，升完原进程 exec 新二进制重启，`mpx.prev` 留上一版。
-6. **本机升级留痕**：命令行与页面发起的本机 CLI 升级写同一份 `update.json`，`mpx update show` 才看得到上一次的结果。页面那条路不认识 cli 包，靠 [internal/ui](../../internal/ui/) 的 `Options.CLIUpdated` 回调把结果交回 cli 侧落盘；命令行的 trigger 记 `manual`，页面记 `ui`。
+5. **一键与进度**：节点核心升级是控制面里的任务，事件按 seq 增量拉取，单次响应 < 4KB，页面不可见时暂停轮询；`mpx update apply nodes` 在终端逐条打同样的进度。管理台只放一个「更新」按钮，按 控制面 → 节点核心 的顺序把两层升完；本机 CLI 升级是显式的 `mpx update apply cli`（写 `update.json`，`mpx update show` 看上一次结果，trigger 记 `manual`）。
 ## 坑
 
 - 从 v0.6.0 或更早升级 → 老布局没有版本目录和升级单元 → 先在 VPS 上跑一次 `install.sh --version v0.6.1` 或更新版本。
@@ -35,4 +34,4 @@ verified: 2026-11-19 @ 8e11b21 + working tree
 - 手动迁移控制面（装新机器再灌库）：`install.sh` 幂等——`/etc/mpx/env` 存在就不换 token、`id_ed25519` 存在就不重新生成，所以「先预置 token 与节点私钥 → 再装」是安全顺序；但落到 `/var/lib/mpx/.ssh/` 的私钥必须 `chown mpx:mpx`、目录 0700，否则服务以 `mpx` 用户读不到 → 全部节点 `Permission denied`。`POST /api/restore` 传大归档可能 `EOF`，走 `scp` 库文件到 `mpx.db.restore` 等价。`tls_identity` 在库里，迁移后指纹不变，已接入设备只需改 server。
 - 发布件文件名是升级程序写死的 → 老版本按固定名字下载压缩包 → 改发布格式时压缩包必须继续保留。
 - Homebrew cask 装出的 MPX.app 直接带 `com.apple.quarantine` → 未签名的二进制一执行就 `Killed: 9`(app 和 bin 软链都中招) → cask 必须有 postflight 去隔离,签名落地后才删。
-- 桌面版 Windows 二进制是 `-H windowsgui` 的 GUI 进程,没有控制台 → 它通过 PATH 当 `mpx` 用时靠 `internal/cli/console_windows.go` 挂回父终端才有输出 → 别在 Execute 前面做依赖 stdout 可见性的逻辑。
+

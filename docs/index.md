@@ -5,21 +5,21 @@ title: MPX
 
 <section class="wrap hero">
 <div class="hero-text">
-<p class="eyebrow">MPX · 桌面软件与 CLI</p>
+<p class="eyebrow">MPX · 网页管理台与 CLI</p>
 <h1>新一代<br>代理管理平台</h1>
-<p class="lede">MPX 是装在你电脑上的桌面软件，也提供 CLI。统一管理多台 VPS 及其上的代理通道。在其中选一台部署控制面，把代理通道转成订阅并分享。</p>
+<p class="lede">MPX 在 VPS 上跑一个控制面，自带网页管理台。统一管理多台 VPS 及其上的代理通道，把代理通道转成订阅并分享。操作在浏览器里完成，也提供 CLI。</p>
 <DownloadCta />
-<p class="dl-note">打开后填 VPS 的 IP 和 root 密码，装完直接给你订阅链接和二维码。ARM、其他 Linux 和命令行版见<a href="./tutorial/quickstart">快速开始</a>。安装包没有签名，第一次打开要放行一次，做法也在快速开始里。</p>
+<p class="dl-note">装好 `mpx` 后一条 `mpx init` 把 VPS 装好，直接给你订阅链接；管理台在浏览器打开 `https://<域名>/admin/`。各平台安装包与 ARM 版见<a href="./tutorial/quickstart">快速开始</a>。</p>
 </div>
-<figure class="tile hero-fig shot"><img class="only-light" src="/ui/setup-host.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码"><img class="only-dark" src="/ui/setup-host-dark.png" width="1280" height="820" alt="MPX 首次安装：填 VPS 的地址和 root 密码（深色）"><figcaption>首次安装：填 VPS<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile hero-fig shot"><img class="only-light" src="/ui/overview.png" width="1280" height="820" alt="MPX 管理台的总览页"><img class="only-dark" src="/ui/overview-dark.png" width="1280" height="820" alt="MPX 管理台的总览页（深色）"><figcaption>总览<span>MPX 网页管理台</span></figcaption></figure>
 </section>
 
 <section class="wrap band">
 <div class="cards cards-4">
-<div><h3>极简配置 VPS</h3><p>不用 SSH 登录 VPS。在窗口里填 IP 和密码，就能装机、添加节点和升级。</p></div>
+<div><h3>极简配置 VPS</h3><p>不用 SSH 登录 VPS。一条 `mpx init` 装好控制面，之后在网页里添加节点和升级。</p></div>
 <div><h3>AI 友好化</h3><p>CLI 命令和接口都有文档可查。可以用脚本调用，也方便 AI Agent 协助操作。</p></div>
 <div><h3>分享友好化</h3><p>分享订阅链接或二维码，就能导入常见客户端。用户还可以自助看用量、换订阅链接。</p></div>
-<div><h3>管理友好化</h3><p>多台 VPS 放在一个窗口里管，用户、流量和到期日放在一张表里看。分流规则和一键更新也在这里。</p></div>
+<div><h3>管理友好化</h3><p>多台 VPS 放在一个网页里管，用户、流量和到期日放在一张表里看。分流规则和一键更新也在这里。</p></div>
 </div>
 </section>
 
@@ -28,9 +28,9 @@ title: MPX
 <div class="showcase-text">
 <p class="eyebrow">管理员看到的</p>
 <h2>用户、用量、到期，一张表</h2>
-<p>MPX 桌面窗口的用户页。按状态和套餐筛选，快到期、快用完的人单独列在总览里。</p>
+<p>MPX 管理台的用户页。按状态和套餐筛选，快到期、快用完的人单独列在总览里。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/users.png" width="1280" height="820" alt="MPX 桌面窗口的用户页"><img class="only-dark" src="/ui/users-dark.png" width="1280" height="820" alt="MPX 桌面窗口的用户页（深色）"><figcaption>用户页<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/users.png" width="1280" height="820" alt="MPX 管理台的用户页"><img class="only-dark" src="/ui/users-dark.png" width="1280" height="820" alt="MPX 管理台的用户页（深色）"><figcaption>用户页<span>MPX 网页管理台</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-user">
 <div class="showcase-text">
@@ -52,7 +52,7 @@ title: MPX
 <h2>加一台服务器：填 IP 和密码</h2>
 <p>节点页点「添加节点」，填地址和 root 密码。装核心、建入站、起名一路做完，完成页告诉你这台进了哪些订阅。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/node-wizard.png" width="1280" height="820" alt="添加节点向导：填服务器地址和 SSH 密码"><img class="only-dark" src="/ui/node-wizard-dark.png" width="1280" height="820" alt="添加节点向导：填服务器地址、节点名和 SSH 密码（深色）"><figcaption>添加节点<span>MPX 网页管理台</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">
@@ -60,15 +60,15 @@ title: MPX
 <h2>哪些网站走代理，在界面里排</h2>
 <p>一张从上往下的规则表，每条选直连、拦截或者走哪组节点。可以给某个人单独加规则，也能输入一个网址，测它会走哪条。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/rules.png" width="1280" height="820" alt="分流规则页：规则从上往下匹配，右侧测试一个网址"><img class="only-dark" src="/ui/rules-dark.png" width="1280" height="820" alt="分流规则页：规则从上往下匹配，右侧测试一个网址（深色）"><figcaption>分流规则<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/rules.png" width="1280" height="820" alt="分流规则页：规则从上往下匹配，右侧测试一个网址"><img class="only-dark" src="/ui/rules-dark.png" width="1280" height="820" alt="分流规则页：规则从上往下匹配，右侧测试一个网址（深色）"><figcaption>分流规则<span>MPX 网页管理台</span></figcaption></figure>
 </div>
 <div class="showcase-row showcase-admin">
 <div class="showcase-text">
 <p class="eyebrow">升级</p>
 <h2>升级：点一次</h2>
-<p>有新版本时右上角出现「更新」。点一次，服务器、各节点和你电脑上的 MPX 按顺序升好，窗口自己刷新。</p>
+<p>有新版本时右上角出现「更新」。点一次，控制面和各节点按顺序升好，页面自己刷新。</p>
 </div>
-<figure class="tile shot"><img class="only-light" src="/ui/update.png" width="1280" height="820" alt="更新弹窗：列出桌面程序、控制面和各节点的当前版本与目标版本"><img class="only-dark" src="/ui/update-dark.png" width="1280" height="820" alt="更新弹窗：列出桌面程序、控制面和各节点的当前版本与目标版本（深色）"><figcaption>一键更新<span>MPX 桌面窗口</span></figcaption></figure>
+<figure class="tile shot"><img class="only-light" src="/ui/update.png" width="1280" height="820" alt="更新弹窗：列出控制面和各节点的当前版本与目标版本"><img class="only-dark" src="/ui/update-dark.png" width="1280" height="820" alt="更新弹窗：列出控制面和各节点的当前版本与目标版本（深色）"><figcaption>一键更新<span>MPX 网页管理台</span></figcaption></figure>
 </div>
 </section>
 
@@ -80,7 +80,7 @@ title: MPX
 <tr><td>加用户、发订阅</td><td><a href="./guides/add-users">添加用户并分发订阅</a></td><td>指南</td></tr>
 <tr><td>再加一台服务器</td><td><a href="./guides/add-nodes">添加节点</a> · <a href="./guides/plans">用套餐分配节点</a></td><td>指南</td></tr>
 <tr><td>决定哪些网站走代理</td><td><a href="./guides/routing">设置分流规则</a></td><td>指南</td></tr>
-<tr><td>在另一台电脑上管理</td><td><a href="./guides/devices">在多台设备上管理</a></td><td>指南</td></tr>
+<tr><td>登录、域名、忘密码、别的电脑接入</td><td><a href="./guides/admin-access">管理台访问</a></td><td>指南</td></tr>
 <tr><td>升级</td><td><a href="./guides/update">点一次更新</a></td><td>指南</td></tr>
 <tr><td>有东西不工作</td><td><a href="./guides/troubleshoot">用体检排查</a></td><td>指南</td></tr>
 <tr><td>查页面、设置项、订阅格式</td><td><a href="./reference/interface">界面</a> · <a href="./reference/settings">订阅设置</a> · <a href="./reference/subscription">订阅接口</a></td><td>参考</td></tr>

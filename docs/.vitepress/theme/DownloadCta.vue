@@ -2,61 +2,46 @@
 import { onMounted, ref } from 'vue'
 
 const releases = 'https://github.com/RovenEverward/my-proxy/releases/latest'
-const label = ref('下载')
-const href = ref(releases)
+// UC-26 起没有桌面安装包,只有 mpx 命令行:按访问者平台挑一行安装命令。
+const SH = 'curl -fsSL https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.sh | bash'
+const PS = 'irm https://raw.githubusercontent.com/RovenEverward/my-proxy/main/deploy/install-cli.ps1 | iex'
+const cmd = ref(SH)
 
 type UserAgentData = {
   platform?: string
   mobile?: boolean
-  getHighEntropyValues?: (hints: string[]) => Promise<{ architecture?: string }>
 }
 
-onMounted(async () => {
+onMounted(() => {
   const nav = navigator as Navigator & { userAgentData?: UserAgentData }
   const data = nav.userAgentData
-  const ua = nav.userAgent
-  // 手机和平板也能访问文档，但没有对应的桌面安装包。
-  if (data?.mobile || /android|iphone|ipad|ipod/i.test(ua) ||
-      (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1)) return
-
-  const platform = data?.platform || nav.platform || ua
-  const download = (file: string, text: string) => {
-    href.value = `${releases}/download/${file}`
-    label.value = text
-  }
-
-  if (/windows|^win/i.test(platform)) {
-    download('MPX-Windows-x64-setup.exe', '下载 Windows 版')
-  } else if (/mac|darwin/i.test(platform)) {
-    download('MPX-macOS.dmg', '下载 macOS 版')
-  } else if (/linux/i.test(platform)) {
-    const linux = (arm: boolean) => download(
-      `MPX-Linux-${arm ? 'arm64' : 'amd64'}.deb`, '下载 Linux 版（.deb）'
-    )
-    linux(/arm|aarch64/i.test(`${nav.platform} ${ua}`))
-    // Chromium 的 UA 可能隐藏架构；支持时再读取 Client Hints。
-    if (data?.getHighEntropyValues) {
-      try {
-        const { architecture } = await data.getHighEntropyValues(['architecture'])
-        if (architecture) linux(/arm|aarch64/i.test(architecture))
-      } catch {
-        // 拒绝提供 Client Hints 时，保留 UA / platform 的判断。
-      }
-    }
-  }
+  if (data?.mobile || /android|iphone|ipad|ipod/i.test(nav.userAgent)) return
+  const platform = data?.platform || nav.platform || nav.userAgent
+  if (/windows|^win/i.test(platform)) cmd.value = PS
 })
+
+const copied = ref(false)
+const copy = async () => {
+  try { await navigator.clipboard.writeText(cmd.value); copied.value = true; setTimeout(() => (copied.value = false), 1500) } catch { /* 剪贴板不可用时保持原样 */ }
+}
 </script>
 
 <template>
   <div class="cta">
-    <a class="btn btn-lg download-primary" :href="href">{{ label }}</a>
-    <a class="btn-ghost" :href="releases">其他平台</a>
+    <code class="cta-cmd">{{ cmd }}</code>
+    <button class="btn btn-lg" type="button" @click="copy">{{ copied ? '已复制' : '复制' }}</button>
+    <a class="btn-ghost" :href="releases">各平台安装包</a>
   </div>
 </template>
 
 <style scoped>
-.download-primary {
-  min-width: 220px;
-  justify-content: center;
+.cta-cmd {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 </style>

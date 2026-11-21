@@ -7,15 +7,16 @@
 全局 flag:`--server`(覆盖 `MPX_SERVER` 与配置文件)、`--token`(覆盖 `MPX_TOKEN`)、`--profile`(覆盖 `MPX_PROFILE` 与文件里的 `current`)、`-o table|json`。
 
 `--server` / `--token` 是**这一次**用这个地址,不碰配置文件 —— 临时对另一台控制面敲一条命令就靠它。
-要长期记住另一台,用 `login --profile <档名>`,不填档名就是 `default`。
+要长期记住另一台,用 `connect --profile <档名>`,不填档名就是 `default`。
 
 CLI **是 `/api` 的一个纯客户端**,自己不碰数据库,也不碰节点。所以下面每条命令都能用 `curl` 等价做出来;CLI 只是把参数拼成请求再把结果显示成人能看的样子。
 
 `init` 会 SSH 到一台机器上(它是在控制面存在之前运行的命令),但建对象的活交给 VPS 上的 `bootstrap`,后者仍是 `/api` 客户端。。`diagnose` 是本地诊断入口，不连接管理 API；`node diagnose` 和 `node diagnostics` 则是纯 API 客户端。
 
 ```
-login   [--profile 档名] [--server 地址] [--token token]
-                                         存控制面地址与 token;不带参数时显示当前生效的值
+connect <地址> [--username admin] [--fp <指纹>] [--profile 档名]
+                                         管理员账号密码登录,会话 token 与指纹存进本机档
+admin    create | password                建/改管理员账号(env + 回环救援路径,改密码吊销全部会话)
 init    --host <地址> [--ssh-password]   一条命令在单台 VPS 上装完控制面 + 节点 + 订阅(见下)
 serve                                    起控制面:--addr --db --interval(默认 30s)
 status                                   控制面心跳、对象数量、退避中的节点(读缓存,不碰节点)
@@ -95,7 +96,7 @@ light 可选的固定密钥环境变量仍为执行机器的 `MPX_ABUSEIPDB_KEY`
 
 ### 一键路径(`init` 与 `bootstrap`)
 
-`init` 在**操作机上**跑,只做 SSH 编排,顺序是:探测对面是什么(一次 ssh 问完 `os`/`arch`/`uid`/有没有 `curl`/有没有 `mpx`)→ 校验是 Linux 且 uid 是 0 → 上传 `deploy/install.sh`(优先用本机仓库里的那份,找不到才让 VPS 自己去 GitHub 取)→ 可选上传 `--binary` → 跑 `install.sh --addr 0.0.0.0:8080` → 确认装上的 `mpx` 认 `bootstrap` 子命令 → 远端跑 `bootstrap` → 从 `/etc/mpx/env` 读回 token → 打印订阅链接与 `mpx login` 命令。
+`init` 在**操作机上**跑,只做 SSH 编排,顺序是:探测对面是什么(一次 ssh 问完 `os`/`arch`/`uid`/有没有 `curl`/有没有 `mpx`)→ 校验是 Linux 且 uid 是 0 → 上传 `deploy/install.sh`(优先用本机仓库里的那份,找不到才让 VPS 自己去 GitHub 取)→ 可选上传 `--binary` → 跑 `install.sh --addr 0.0.0.0:8080` → 确认装上的 `mpx` 认 `bootstrap` 子命令 → 远端跑 `bootstrap` → 在 VPS 上建管理员账号(`mpx admin create`)→ 本机自动 `connect` 接入 → 打印订阅链接与 `mpx connect` 命令。
 
 带 `--ssh-password` 时,密码只用于**第一次**把操作机的公钥装进 VPS 的 `authorized_keys`(密码认证下 askpass 占着 stdin,没法同时给远端喂标准输入),之后全程走密钥。不带则直接用 `--identity` 指定的私钥。
 
@@ -116,25 +117,17 @@ light 可选的固定密钥环境变量仍为执行机器的 `MPX_ABUSEIPDB_KEY`
 
 `--addr` 默认 `0.0.0.0:8080`,意味着管理接口与订阅都在公网明文 HTTP 上,token 是唯一凭据。长期使用要把 TLS 反向代理放在前面,并把 `--sub-prefix` 换成 `https://` 的域名。
 
-### 连哪一台控制面(`login` 与配置档)
+### 连哪一台控制面(`connect` 与配置档)
 
-配置文件里能同时放多套控制面,各有一个档名:
+配置文件里能同时放多套控制面,各有一个档名。`connect` 用管理员账号密码登录(`POST /api/admin/login`,`kind: "cli"`),换回一枚 CLI 会话 token 存进本机:
 
 ```console
-$ mpx login --server https://a.example:8080 --token <token>     # 存进 default,并切过去
-已写入 /Users/me/Library/Application Support/mpx/config.json(当前配置档 default)
-
-$ mpx login --profile scratch --server http://127.0.0.1:18080 --token docstoken
-已写入 /Users/me/Library/Application Support/mpx/config.json(当前配置档 scratch)
-
-$ mpx login                                                     # 不带参数 = 看,不写文件
-server: http://127.0.0.1:18080
-token:  docsto…
-配置档:  default  *scratch
-
-$ mpx login --profile default                                   # 只给档名 = 切换
-已切到配置档 default(server: https://a.example:8080)
+$ mpx connect 203.0.113.10                                      # 核对指纹 + 输密码,存进 default
+$ mpx connect cp.example.net --username ops --profile work      # 域名 + 自定义档名
+$ echo 'correct horse' | mpx connect 203.0.113.10 --password-stdin
 ```
+
+`--fp` 显式给指纹时跳过 CA 探测直接钉指纹;不给时地址是域名先探系统信任(信则走公网 CA,记 `ca: true`),IP 或探测不信就摆指纹要你输 `yes` 确认。换档用 `mpx connect` 重新登录到目标档名;看当前档与地址用 `mpx status`(或 `mpx connect` 已写档的 `--profile` 指定名)。写档是原子替换。
 
 覆盖已有档时会先回显变化,方便出事时一眼看见:
 
@@ -266,9 +259,15 @@ CSV 的七列是 `用户名,流量上限,到期时间,可用性,重置策略,入
 
 ## 2. HTTP 管理接口
 
-全部挂 `/api/`,过一个 Bearer token。
+全部挂 `/api/`。凭据三类:浏览器会话 cookie(`POST /api/admin/login` 发,`Path=/`)、CLI 会话 token(`login` 带 `kind:"cli"` 时发 bearer)、env 救援 token(`/etc/mpx/env` 里的 `MPX_TOKEN`,只该在服务器上用)。探测点凭据另有一套最小权限面。`/admin/` 与 `/api/admin/login` 只受理 TLS 或回环;登录限速 + 连续失败锁 15 分钟。
 
 ```
+POST             /api/admin/login              账号密码换凭据:默认发 cookie,kind:"cli" 发 bearer
+POST             /api/admin/logout             吊销当前会话(不要凭据)
+POST             /api/admin/account            建号或改用户名(需已鉴权)
+PUT              /api/admin/password           验旧密码改新,成功吊销其他全部会话与 CLI token
+GET              /api/admin/meta               页首元信息:登录用户名、版本、指纹
+
 GET|POST         /api/nodes          GET|PUT|DELETE  /api/nodes/{id}
                                                      节点 + 最近一次状态(?fresh=1 现场查一次)
 GET              /api/doctor                         自检:控制面、每台节点、六种订阅格式、采样表
@@ -315,7 +314,7 @@ $ curl -H 'Authorization: Bearer demo-token' \
 
 `/api/acme/*`(UC-26,只增):`PUT /api/acme/config` 收 `{domain, cf_token, staging}`,**只改给到的字段**(`staging` 是布尔,要显式给 `false` 才表示关),三个键都缺时 400;`cf_token` 存 settings 表,`GET /api/settings` 不回明文,只回 `acme_cf_token_set: true`。domain 或 staging 的变化让「旧证书不该再服役」—— 换掉其中任一个会把 `acme_state` 里的证书、域名、失败计数一并清掉,账户私钥保留(CA 侧仍可复用),`handlePutACMEConfig` 换完就把新域名热装进 SNI 选择器。`DELETE /api/acme/config` 清三个 settings 键,不动已签证书(下次启动域名没了自然不装)。`POST /api/acme/issue` 缺域名或 token 时 400,签发进行中再来一次是 409;任务跑在后台,`GET /api/acme/issue?since=N` 只回序号更大的事件(`{job, state, seq, events:[{seq,msg}]}`),`state` 是 `idle|running|done|failed`。`GET /api/acme/status` 汇总 `{domain, cf_token_set, staging, cert_issued, cert_domain, not_after, last_error, last_attempt_at, failures, next_retry_at}`,没签过证书时只有前三个键有值。签发与续期失败按 `1m<<(failures-1)` 退避(封顶 12h)存 `next_retry_at`,**失败绝不清已有证书** —— 老证书一直服役到续期成功。
 
-`sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
+`sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。管理台「发给他」的拉取状态和总览「开始使用」第 4 步都读它;二维码由页面直接画,不再经 `/local`。
 
 `status` 给的是「控制面现在怎么样」:启动时间与运行时长、后台周期、上一轮 Tick 的时间与耗时、Tick 次数、节点/入站/对外入口/用户的数量,以及正在退避的节点(连续失败几次、什么时候再试)。它只读控制面内存里的心跳和库里的计数,**不查节点、不发 ssh**,所以节点卡住时它照样立刻回答;`mpx status` 读的就是这个接口,字段
 
@@ -389,7 +388,7 @@ $ curl ... /api/nodes
 
 **`GET /api/doctor` 是同一批检查的一次汇总**,回 `{ "checks": [ { "name", "status", "detail", "hint" } ] }`:`status` 取 `ok` / `warn` / `fail`,`hint` 是「接下来该做什么」,没有可做的就省略。v0.9.2 起每条还可带 `ui_hint`:同一句建议的界面版(只说界面操作,不出现命令),管理界面优先显示它,没有时退回 `hint`;`hint` 文字不变。检查控制面库与心跳、每台节点(现场查,走的就是上面那条 `?fresh=1` 的路)、六种订阅格式各渲染一次、采样表行数。一台节点只出一行结论,按最重的那条定。**v0.9.10 起,只增:** 每台节点的检查项都带 `node_id`(控制面里的节点 ID);有配置漂移时再多一个 `ui_action: "apply"`,界面靠它在该行放「应用到<节点>」按钮并跳到节点详情。已有字段和文案一字不改。
 
-**错误回答里的 `ui_hint`(v0.9.2 起,只增)**:错误一律是 `{ "error": "..." }`。少数错误的原话里带命令行提示(设备被吊销要重新接入、还没设设备密码、设备密码走了明文、识别地区失败),这些回答另带 `ui_hint`,是同一件事的界面说法;`error` 原话不变,CLI 照旧显示它,管理界面和桌面窗口优先显示 `ui_hint`。`POST /api/nodes` 的回答在已有的 `locate_note` 之外同样多一个 `locate_ui`。
+**错误回答里的 `ui_hint`(v0.9.2 起,只增)**:错误一律是 `{ "error": "..." }`。少数错误的原话里带命令行提示(重新登录、识别地区失败等),这些回答另带 `ui_hint`,是同一件事的界面说法;`error` 原话不变,CLI 照旧显示它,管理台优先显示 `ui_hint`。`POST /api/nodes` 的回答在已有的 `locate_note` 之外同样多一个 `locate_ui`。
 
 `mpx doctor` 有 fail 时退出码是 **3**(不是 1),只有 warn 时是 0 —— 。
 
