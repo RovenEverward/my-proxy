@@ -587,21 +587,29 @@ func (s *Server) reachHostTargets(hostID int64) ([]reach.Target, error) {
 // ---- 剔除(UC-12) ----
 
 // exclusionState 是订阅组装时的剔除视图:开关、豁免、当前应剔除的对象集合。
-// verdicts 记下每个应剔除对象的判定词(blocked/down),界面用它说明原因。
+// reasons 记下每个应剔除对象的原因码(blocked/down/nodata),界面用它说明原因;
+// verdicts 记下对象最新存档判定词,CDN 入口的「节点 down 连带」判定要用。
 type exclusionState struct {
 	on       bool
 	keeps    map[string]bool
 	nodes    map[int64]bool
 	exts     map[string]bool
+	reasons  map[string]string
 	verdicts map[string]string
 }
 
-// exclusion 读设置与触达存档,算出当前剔除集。开关关掉时所有集合为空,
-// 订阅输出与旧版逐字节一致。
+// exclusion 读设置与探测存档,算出当前剔除集(UC-25):
+// 订阅只留「境内侧在新鲜窗内实测可达」的对象 —— 名册里没有新鲜境内
+// 可达证据的一律剔除,豁免(keeps)照旧放行。判定用境内侧来源原始结论
+// (source_checks 的 domestic scope),不取对象 verdict:境内能通但
+// 控制面侧没数据的对象对用户照样可用,不该误杀。
+// 境内探测端整体失联时(全名册无一新鲜境内行)剔除集置空 —— 宁可
+// 全放也不因探测端宕机清空订阅。开关关掉时所有集合为空。
 func (s *Server) exclusion() (exclusionState, error) {
 	st := exclusionState{
 		keeps: map[string]bool{}, nodes: map[int64]bool{},
-		exts: map[string]bool{}, verdicts: map[string]string{},
+		exts: map[string]bool{}, reasons: map[string]string{},
+		verdicts: map[string]string{},
 	}
 	settings, err := s.store.GetSettings()
 	if err != nil {
@@ -614,32 +622,76 @@ func (s *Server) exclusion() (exclusionState, error) {
 	if !st.on {
 		return st, nil
 	}
-	fresh, err := s.subjectFreshness()
+
+	managed, err := s.reachTargets(nil)
 	if err != nil {
 		return st, err
 	}
+	ext, err := s.reachExtTargets(nil)
+	if err != nil {
+		return st, err
+	}
+	roster := map[string]bool{}
+	for _, t := range append(managed, ext...) {
+		roster[t.Subject] = true
+	}
+
+	// 最新存档判定词只用于原因与「节点 down 连带」,不参与进/出集判定。
 	checks, err := s.store.ListSubjectChecks()
 	if err != nil {
 		return st, err
 	}
-	now := time.Now()
 	for _, c := range checks {
-		if c.Verdict != "blocked" && c.Verdict != "down" {
+		st.verdicts[string(c.SubjectKey)] = c.Verdict
+	}
+
+	rows, err := s.store.ListSourceChecks("")
+	if err != nil {
+		return st, err
+	}
+	now := time.Now()
+	green := map[string]bool{}    // 有新鲜境内可达证据的对象
+	domFailed := map[string]bool{} // 境内探过且确定不通(原因文案用)
+	domSeen := map[string]bool{}   // 有任何新鲜境内数据的对象
+	bySubject := map[string][]reach.SourceSummary{}
+	for _, c := range rows {
+		if c.Scope != reach.ScopeDomestic {
+			continue
+		}
+		if now.Sub(c.CheckedAt) > reachStaleWindow {
+			continue
+		}
+		var sum reach.SourceSummary
+		if err := json.Unmarshal(c.Summary, &sum); err != nil {
 			continue
 		}
 		k := string(c.SubjectKey)
-		if st.keeps[k] {
+		bySubject[k] = append(bySubject[k], sum)
+		domSeen[k] = true
+	}
+	for k, sums := range bySubject {
+		fold := reach.FoldSources(sums)
+		if fold.Reachable {
+			green[k] = true
+		} else if fold.Probed && fold.Failed {
+			domFailed[k] = true
+		}
+	}
+	if len(domSeen) == 0 {
+		return st, nil // 境内侧整体失联:全放,不清空订阅
+	}
+	for k := range roster {
+		if st.keeps[k] || green[k] {
 			continue
 		}
-		f, ok := fresh[k]
-		if !ok || f.Domestic == nil {
-			continue // 没有境内侧新鲜数据的对象不参与剔除
+		if domFailed[k] {
+			st.reasons[k] = "blocked"
+		} else if st.verdicts[k] == "down" {
+			st.reasons[k] = "down"
+		} else {
+			st.reasons[k] = "nodata"
 		}
-		if now.Sub(*f.Domestic) > reachStaleWindow {
-			continue // 判定过期,回到未知
-		}
-		st.verdicts[k] = c.Verdict
-		if nodeID, isNode := model.ParseNodeSubjectKey(c.SubjectKey); isNode {
+		if nodeID, isNode := model.ParseNodeSubjectKey(model.ProbeSubjectKey(k)); isNode {
 			st.nodes[nodeID] = true
 		} else {
 			st.exts[k] = true
@@ -659,13 +711,15 @@ func (st exclusionState) excluded(key string) bool {
 	return st.exts[key]
 }
 
-// excludeReason 是被剔除对象在预览/清单里的原因说明。
+// excludeReason 是被剔除对象在预览/清单里的原因说明(UC-25)。
 func (st exclusionState) excludeReason(key string) string {
-	switch st.verdicts[key] {
+	switch st.reasons[key] {
 	case "blocked":
 		return "自动剔除:境内不通"
 	case "down":
 		return "自动剔除:不可用"
+	case "nodata":
+		return "自动剔除:境内侧暂无探测数据"
 	}
 	return "自动剔除"
 }

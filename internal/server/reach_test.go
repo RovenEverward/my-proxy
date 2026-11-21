@@ -528,3 +528,99 @@ func TestRecomputeAllStaleWritesUnknown(t *testing.T) {
 		t.Fatalf("存档时间应是重算当下,得到 %v 前", time.Since(got.CheckedAt))
 	}
 }
+
+// ---- UC-25:订阅只留境内实测可达 ----
+
+// TestGreenOnlyUnknownButDomesticReachableStays:境内实测可达、控制面没数据的
+// 端点(verdict=unknown)必须留在订阅里 —— 「全绿」判定的是境内可达证据,
+// 不是双源 verdict。
+func TestGreenOnlyUnknownButDomesticReachableStays(t *testing.T) {
+	e := newEnv(t)
+	_, _, u := mkReachFixture(t, e)
+
+	ep := render.Endpoint{Address: "green.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, SourceKey: "green01", Remark: "绿端点"}
+	src := addSourceWithSnapshot(t, e, []render.Endpoint{ep})
+	ep.SourceID = src.ID
+	key := string(ep.Key())
+
+	setExclude(t, e, true)
+	// 只有境内侧实测可达,控制面侧从没探过 —— verdict 会是 unknown。
+	postSubjectCheck(t, e, key, map[string]*reach.Result{key: okResult()}, "domestic")
+
+	eps, err := e.s.subscriptionEndpointsFor(&u, model.FormatLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, got := range eps.Endpoints {
+		if got.Address == "green.example.com" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("境内实测可达的端点被误剔(verdict 是 unknown,不该杀)")
+	}
+}
+
+// TestGreenOnlyNoDomesticDataExcluded:境内侧没有任何新鲜数据的对象(没探过/
+// 数据过期)一律剔除 —— 「全绿」是单向闸门,没有绿证据就不进。
+func TestGreenOnlyNoDomesticDataExcluded(t *testing.T) {
+	e := newEnv(t)
+	_, _, u := mkReachFixture(t, e)
+
+	good := render.Endpoint{Address: "proven.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, SourceKey: "good01", Remark: "有证据"}
+	blind := render.Endpoint{Address: "blind.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, SourceKey: "blind1", Remark: "没探过"}
+	src := addSourceWithSnapshot(t, e, []render.Endpoint{good, blind})
+	good.SourceID, blind.SourceID = src.ID, src.ID
+
+	setExclude(t, e, true)
+	// good 有境内可达证据;blind 什么数据都没有。
+	postSubjectCheck(t, e, string(good.Key()), map[string]*reach.Result{string(good.Key()): okResult()}, "domestic")
+
+	eps, err := e.s.subscriptionEndpointsFor(&u, model.FormatLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addrs := map[string]bool{}
+	for _, got := range eps.Endpoints {
+		addrs[got.Address] = true
+	}
+	if addrs["blind.example.com"] {
+		t.Fatal("没有境内数据的盲端点不该进订阅")
+	}
+	if !addrs["proven.example.com"] {
+		t.Fatal("有境内可达证据的端点被误剔")
+	}
+}
+
+// TestGreenOnlyProbeOutageKeepsAll:境内探测端整体失联(名册里没有一个对象
+// 有新鲜境内行)时剔除集为空 —— 宁可全放,不因探测端宕机清空订阅。
+func TestGreenOnlyProbeOutageKeepsAll(t *testing.T) {
+	e := newEnv(t)
+	n, _, u := mkReachFixture(t, e)
+
+	ep := render.Endpoint{Address: "out.example.com", Port: 443,
+		Protocol: model.ProtocolVLESS, SourceKey: "out01", Remark: "外部"}
+	src := addSourceWithSnapshot(t, e, []render.Endpoint{ep})
+	ep.SourceID = src.ID
+
+	// 摆一份「探过」的境内存档,但过期(25h > 24h 窗)——境内侧等于失联。
+	old := time.Now().UTC().Add(-25 * time.Hour)
+	sum, _ := json.Marshal(reach.SourceSummary{Probed: true, Failed: true})
+	if err := e.st.SaveSourceCheck(model.ProbeSubjectKey(model.NodeSubjectKey(n.ID)),
+		"probe:1", "domestic", old, sum, nil); err != nil {
+		t.Fatal(err)
+	}
+	setExclude(t, e, true)
+
+	eps, err := e.s.subscriptionEndpointsFor(&u, model.FormatLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eps.Endpoints) == 0 {
+		t.Fatal("境内侧整体失联时应全放,订阅不该被清空")
+	}
+}
