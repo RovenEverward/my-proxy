@@ -17,48 +17,41 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/pin"
 )
 
 // defaultControlPort 是地址里没写端口时用的端口:mpx init 装出来的控制面就在这。
 const defaultControlPort = 8080
 
+// defaultAdminUser 是 mpx init 与窗口向导建管理员账号时用的默认用户名。
+// mpx connect 的 --username 默认值与它一致:单机只有一个账号,不让每台设备
+// 记一个可能拼错的用户名。
+const defaultAdminUser = "admin"
+
 var connectFlags struct {
-	name          string
+	username      string
+	password      string
 	passwordStdin bool
-	upgrade       bool
 }
 
 var connectCmd = &cobra.Command{
 	Use:   "connect <地址>",
-	Short: "用设备密码把这台设备接入控制面(每台设备一枚自己的 token)",
-	Long: `把这台设备接入控制面:核对控制面的证书指纹,输入设备密码,换一枚这台设备
-专属的 token,连同地址与指纹保存在本机(--profile 指定名称,默认 default)。之后的命令
+	Short: "用管理员账号登录控制面,把这枚会话 token 存进本机",
+	Long: `登录控制面:核对控制面的证书指纹,输入管理员用户名与密码,换一枚 CLI 会话
+token,连同地址与指纹保存在本机(--profile 指定名称,默认 default)。之后的命令
 都走 HTTPS,并且只认这个指纹 —— 和 SSH 的 known_hosts 一个道理。
 
 地址写 IP 或域名即可,端口默认 8080。--fp 给了就只认它(mpx init 打印的那一行
 就带着);没给时会先把对方的指纹摆出来,要你输入 yes 确认。
 
-设备密码是 mpx init 时设的;忘了的话在任何一台已接入的设备上 mpx device
-password 重设。
-
---upgrade 用于老版本装的控制面:把当前配置里的 http:// 地址换成 https:// 并
-记下指纹,沿用原来的 token,不用密码。`,
+账号是 mpx init 时建的管理员账号(默认用户名 admin);忘了密码的话,登录控制面
+所在的服务器用 MPX_TOKEN 跑 mpx admin password 重设(见 mpx admin password
+--help 的救援说明)。`,
 	Example: `  mpx connect 203.0.113.10 --fp SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg
-  mpx connect 203.0.113.10:8080 --name office-pc --profile work
-  mpx connect --upgrade`,
-	Args: cobra.MaximumNArgs(1),
+  mpx connect 203.0.113.10:8080 --username ops --profile work
+  echo 'correct horse battery' | mpx connect 203.0.113.10 --fp SHA256:... --password-stdin`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if connectFlags.upgrade {
-			if len(args) > 0 {
-				return errors.New("--upgrade 不带地址:它改的是当前配置里那个控制面")
-			}
-			return runConnectUpgrade()
-		}
-		if len(args) != 1 {
-			return errors.New("要给控制面地址,例如 mpx connect 203.0.113.10")
-		}
 		server, hostport, err := controlURL(args[0])
 		if err != nil {
 			return err
@@ -67,27 +60,31 @@ password 重设。
 		if err != nil {
 			return err
 		}
+		user := strings.TrimSpace(connectFlags.username)
+		if user == "" {
+			user = defaultAdminUser
+		}
 		var pw string
-		if connectFlags.passwordStdin {
-			pw, err = readLine(os.Stdin)
-		} else {
-			pw, err = promptPassword("设备密码: ")
+		switch {
+		case connectFlags.password != "":
+			pw = connectFlags.password
+		case connectFlags.passwordStdin:
+			if pw, err = readLine(os.Stdin); err != nil {
+				return err
+			}
+		default:
+			if pw, err = promptPassword(fmt.Sprintf("%s 的管理员密码: ", user)); err != nil {
+				return err
+			}
 		}
-		if err != nil {
-			return err
-		}
-		name := strings.TrimSpace(connectFlags.name)
-		if name == "" {
-			name = defaultDeviceName()
-		}
-		_, err = connectAndSave(server, fp, pw, name)
+		_, err = connectAndSave(server, fp, user, pw)
 		return err
 	},
 }
 
 // controlURL 把用户给的地址整理成 https://host:port。接受 "1.2.3.4"、
 // "1.2.3.4:8080"、"[2001:db8::1]:8080"、"https://host:port";http:// 不接受 ——
-// 设备密码不走明文。
+// 账号密码不走明文。
 func controlURL(arg string) (server, hostport string, err error) {
 	s := strings.TrimSpace(arg)
 	if strings.Contains(s, "://") {
@@ -96,7 +93,7 @@ func controlURL(arg string) (server, hostport string, err error) {
 			return "", "", fmt.Errorf("地址 %q 看不懂", arg)
 		}
 		if u.Scheme != "https" {
-			return "", "", errors.New("设备接入只走 HTTPS;直接写 IP 或域名即可,例如 mpx connect 203.0.113.10")
+			return "", "", errors.New("接入只走 HTTPS;直接写 IP 或域名即可,例如 mpx connect 203.0.113.10")
 		}
 		s = u.Host
 	}
@@ -139,31 +136,39 @@ func confirmFingerprint(hostport string) (string, error) {
 	return fp, nil
 }
 
-// connectAndSave 拿设备密码换 token,存进控制面并切过去。mpx init 收尾时也走它。
-func connectAndSave(server, fp, password, name string) (*connectResult, error) {
-	res, profile, err := connectAndSaveQuiet(server, fp, password, name)
+// loginResult 是 POST /api/admin/login 的应答:一枚 CLI 会话 token 与它的
+// 到期时刻(会话 30 天固定 TTL,见控制面 admin.go)。
+type loginResult struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// connectAndSave 用账号密码换 token,存进控制面并切过去。mpx init 收尾时也走它。
+func connectAndSave(server, fp, username, password string) (*loginResult, error) {
+	res, profile, err := connectAndSaveQuiet(server, fp, username, password)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("已接入 %s:本设备「%s」(设备 %d),保存为控制面「%s」。\n", server, res.Name, res.DeviceID, profile)
+	fmt.Printf("已接入 %s(账号 %s,会话 %s 到期),保存为控制面「%s」。\n",
+		server, username, res.ExpiresAt.Local().Format("2006-01-02 15:04"), profile)
 	return &res, nil
 }
 
 // connectAndSaveQuiet 是 connectAndSave 的安静版:同一件事,但不打印 —— mpx ui
 // 的「接入已有控制面」也走它,提示由页面自己给。
-func connectAndSaveQuiet(server, fp, password, name string) (connectResult, string, error) {
+func connectAndSaveQuiet(server, fp, username, password string) (loginResult, string, error) {
 	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
-	raw, err := postConnect(c, password, name)
+	raw, err := postAdminLogin(c, username, password)
 	if err != nil {
-		return connectResult{}, "", err
+		return loginResult{}, "", err
 	}
-	res, err := decode[connectResult](raw)
+	res, err := decode[loginResult](raw)
 	if err != nil {
-		return connectResult{}, "", err
+		return loginResult{}, "", err
 	}
 	profile, err := saveProfile(Profile{Server: server, Token: res.Token, Fingerprint: fp})
 	if err != nil {
-		return connectResult{}, "", err
+		return loginResult{}, "", err
 	}
 	return res, profile, nil
 }
@@ -172,22 +177,22 @@ func connectAndSaveQuiet(server, fp, password, name string) (connectResult, stri
 // **新**控制面并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
 // 它,不能把 default 或别的档里已有的 token 覆盖掉。不经过 saveProfile:那里写死
 // 了 --profile/default,而且会覆盖同名档。
-func connectAndSaveProfile(server, fp, password, name, profile string) (connectResult, error) {
+func connectAndSaveProfile(server, fp, username, password, profile string) (loginResult, error) {
 	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
-	raw, err := postConnect(c, password, name)
+	raw, err := postAdminLogin(c, username, password)
 	if err != nil {
-		return connectResult{}, err
+		return loginResult{}, err
 	}
-	res, err := decode[connectResult](raw)
+	res, err := decode[loginResult](raw)
 	if err != nil {
-		return connectResult{}, err
+		return loginResult{}, err
 	}
 	cfg, err := loadConfig()
 	if err != nil {
-		return connectResult{}, err
+		return loginResult{}, err
 	}
 	if _, ok := cfg.Profiles[profile]; ok {
-		return connectResult{}, fmt.Errorf("控制面 %s 已存在,请换一个名字", profile)
+		return loginResult{}, fmt.Errorf("控制面 %s 已存在,请换一个名字", profile)
 	}
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]Profile{}
@@ -195,15 +200,9 @@ func connectAndSaveProfile(server, fp, password, name, profile string) (connectR
 	cfg.Profiles[profile] = Profile{Server: server, Token: res.Token, Fingerprint: fp}
 	cfg.Current = profile
 	if err := saveConfig(cfg); err != nil {
-		return connectResult{}, err
+		return loginResult{}, err
 	}
 	return res, nil
-}
-
-type connectResult struct {
-	DeviceID int64  `json:"device_id"`
-	Name     string `json:"name"`
-	Token    string `json:"token"`
 }
 
 // saveProfile 把 p 写进 --profile 指的控制面(默认 default)并设为当前。
@@ -224,63 +223,6 @@ func saveProfile(p Profile) (string, error) {
 	return name, saveConfig(cfg)
 }
 
-// runConnectUpgrade 把老控制面(http:// + 管理 token)换成 https:// + 指纹。
-//
-// 指纹是经旧的明文通道读回来的 —— 和此前每条命令走明文的风险相同,而且只发生
-// 这一次;之后的每次连接都按指纹核对。
-func runConnectUpgrade() error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	name := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current, defaultProfile)
-	p, ok := cfg.Profiles[name]
-	if !ok || p.Server == "" {
-		return fmt.Errorf("控制面 %s 不存在或没有地址;新设备直接 mpx connect <地址>", name)
-	}
-	u, err := url.Parse(p.Server)
-	if err != nil {
-		return err
-	}
-	if u.Scheme == "https" {
-		return fmt.Errorf("控制面 %s 已经是 https 地址,不用升级", name)
-	}
-	old := &Client{server: strings.TrimSuffix(p.Server, "/"), token: p.Token, http: &http.Client{}}
-	raw, err := old.do("GET", "/api/status", nil)
-	if err != nil {
-		return err
-	}
-	st, err := decode[model.ControlStatus](raw)
-	if err != nil {
-		return err
-	}
-	if st.TLSFingerprint == "" {
-		return errors.New("控制面没报证书指纹:它还是老版本,先升级控制面")
-	}
-	u.Scheme = "https"
-	server := strings.TrimSuffix(u.String(), "/")
-	// 换上之后马上按指纹走一次,确认真能连上再落盘。
-	check := &Client{server: server, token: p.Token, http: &http.Client{Transport: pin.Transport(st.TLSFingerprint)}}
-	if _, err := check.do("GET", "/api/status", nil); err != nil {
-		return fmt.Errorf("换成 %s 后连不上: %w", server, err)
-	}
-	p.Server, p.Fingerprint = server, st.TLSFingerprint
-	cfg.Profiles[name] = p
-	if err := saveConfig(cfg); err != nil {
-		return err
-	}
-	fmt.Printf("控制面 %s 已改走 %s,证书指纹 %s。\n", name, server, st.TLSFingerprint)
-	return nil
-}
-
-func defaultDeviceName() string {
-	h, err := os.Hostname()
-	if err != nil || h == "" {
-		return "device"
-	}
-	return h
-}
-
 // readLine 读一行并去掉行尾换行。
 func readLine(f *os.File) (string, error) {
 	s, err := bufio.NewReader(f).ReadString('\n')
@@ -290,125 +232,41 @@ func readLine(f *os.File) (string, error) {
 	return strings.TrimRight(s, "\r\n"), nil
 }
 
-// ---- mpx device password ---------------------------------------------------
-
-var devicePasswordFlags struct {
-	revokeAll     bool
-	disable       bool
-	passwordStdin bool
-}
-
-var devicePasswordCmd = &cobra.Command{
-	Use:   "password",
-	Short: "设置或修改设备密码(新设备 mpx connect 时要输入它)",
-	Long: `设置或修改设备密码。新设备用 mpx connect 接入时输入它,换一枚自己的 token。
-
-改密码不影响已经接入的设备;要把它们一并踢掉加 --revoke-all。--disable 关闭
-设备密码接入(已接入的设备照常)。密码至少 12 个字符。`,
-	Example: `  mpx device password
-  mpx device password --revoke-all
-  mpx device password --disable`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		if devicePasswordFlags.disable {
-			if _, err := c.do("DELETE", "/api/device-password", nil); err != nil {
-				return err
-			}
-			fmt.Println("已关闭设备密码接入;已接入的设备不受影响。")
-			return nil
-		}
-		pw, err := readNewDevicePassword(devicePasswordFlags.passwordStdin)
-		if err != nil {
-			return err
-		}
-		raw, err := c.do("PUT", "/api/device-password", map[string]any{"password": pw, "revoke_all": devicePasswordFlags.revokeAll})
-		if err != nil {
-			return err
-		}
-		res, err := decode[struct {
-			Revoked int64 `json:"revoked"`
-		}](raw)
-		if err != nil {
-			return err
-		}
-		if devicePasswordFlags.revokeAll {
-			fmt.Printf("设备密码已更新,吊销了 %d 台设备(包括这台的话,要重新 mpx connect)。\n", res.Revoked)
-			return nil
-		}
-		fmt.Println("设备密码已更新;已接入的设备不受影响。")
-		return nil
-	},
-}
-
-// readNewDevicePassword 读新设备密码:交互时输两次核对,stdin 时读一行。
-func readNewDevicePassword(fromStdin bool) (string, error) {
-	var pw string
-	var err error
-	if fromStdin {
-		pw, err = readLine(os.Stdin)
-	} else {
-		if pw, err = promptPassword("新的设备密码(至少 12 个字符): "); err != nil {
-			return "", err
-		}
-		again, err := promptPassword("再输一次: ")
-		if err != nil {
-			return "", err
-		}
-		if again != pw {
-			return "", errors.New("两次输入不一样")
-		}
-	}
-	if err != nil {
-		return "", err
-	}
-	if n := len([]rune(pw)); n < 12 {
-		return "", fmt.Errorf("设备密码至少 12 个字符,这个只有 %d 个", n)
-	}
-	return pw, nil
-}
-
 func init() {
-	connectCmd.Flags().StringVar(&connectFlags.name, "name", "", "这台设备叫什么,默认用主机名")
-	connectCmd.Flags().BoolVar(&connectFlags.passwordStdin, "password-stdin", false, "从 stdin 读设备密码(脚本用)")
-	connectCmd.Flags().BoolVar(&connectFlags.upgrade, "upgrade", false, "把当前控制面的 http:// 地址换成 https:// 并记下指纹(老安装用)")
-	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.revokeAll, "revoke-all", false, "同时吊销所有已接入的设备")
-	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.disable, "disable", false, "关闭设备密码接入")
-	devicePasswordCmd.Flags().BoolVar(&devicePasswordFlags.passwordStdin, "password-stdin", false, "从 stdin 读新密码(脚本用)")
-	deviceCmd.AddCommand(devicePasswordCmd)
+	connectCmd.Flags().StringVar(&connectFlags.username, "username", "", "管理员用户名,默认 admin(mpx init 建的那个账号)")
+	connectCmd.Flags().StringVar(&connectFlags.password, "password", "", "管理员密码(脚本用;不给则交互输入)")
+	connectCmd.Flags().BoolVar(&connectFlags.passwordStdin, "password-stdin", false, "从 stdin 读管理员密码(脚本用)")
 	rootCmd.AddCommand(connectCmd)
 }
 
-// devicesDocURL 是「在多台设备上管理」的文档页,忘了设备密码的重设做法在那里。
-const devicesDocURL = "https://roveneverward.github.io/my-proxy/guides/devices#忘了设备密码"
-
-// postConnect 拿设备密码换 token。只发一次:撞上限流或锁定(429)时等下去没有
-// 意义 —— 锁定要等 15 分钟,人在窗口或终端前干等 30 秒只会以为卡住了;直接把
-// 原因和该等多久说出来。密码不对与锁定的说法在 connectError 里补全。
-func postConnect(c *Client, password, name string) ([]byte, error) {
-	payload, err := json.Marshal(map[string]string{"password": password, "device_name": name})
+// postAdminLogin 拿账号密码换会话 token(POST /api/admin/login,kind=cli)。
+// 只发一次:撞上限流或锁定(429)时等下去没有意义 —— 锁定要等 15 分钟,人在
+// 终端前干等 30 秒只会以为卡住了;直接把原因和该等多久说出来。口令不对与锁定
+// 的说法在 loginError 里补全。
+func postAdminLogin(c *Client, username, password string) ([]byte, error) {
+	payload, err := json.Marshal(map[string]string{
+		"username": username, "password": password, "kind": "cli",
+	})
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
-	raw, _, err := c.doOnce(ctx, http.MethodPost, "/api/connect", payload, true)
+	raw, _, err := c.doOnce(ctx, http.MethodPost, "/api/admin/login", payload, true)
 	if err != nil {
-		return nil, connectError(err, time.Now())
+		return nil, loginError(err, time.Now())
 	}
 	return raw, nil
 }
 
-// connectError 把接入失败翻成说得清楚的话:
-//   - 密码不对:告诉人忘了密码怎么重设;
-//   - 已锁定:锁到本机几点、还要等多久,已接入的设备不受影响。
+// loginError 把登录失败翻成说得清楚的话:
+//   - 用户名或密码不对(401):告诉人忘了密码怎么救援;
+//   - 已锁定(带 locked_until):锁到本机几点、还要等多久,已有会话不受影响;
+//   - 还没账号(403):指路去建号。
 //
 // Message 是命令行的说法,UIHint 是窗口的说法(不提命令)。锁定时间按本机时区
 // 换算 —— 控制面不知道使用者在哪个时区,所以由客户端来算。
-func connectError(err error, now time.Time) error {
+func loginError(err error, now time.Time) error {
 	var ae *APIError
 	if !errors.As(err, &ae) {
 		return err
@@ -419,27 +277,33 @@ func connectError(err error, now time.Time) error {
 	_ = json.Unmarshal(ae.Body, &body)
 	if until, perr := time.Parse(time.RFC3339, body.LockedUntil); perr == nil && until.After(now) {
 		when := until.Local().Format("15:04")
-		wait := connectWaitText(until.Sub(now))
-		head := "设备密码连续输错太多次,接入已锁定,到 " + when + "(本机时间)解锁,还要等约 " + wait + "。已经接入的设备不受影响。"
-		uiHead := "设备密码连续输错太多次，接入已锁定，到 " + when + "（本机时间）解锁，还要等约 " + wait + "。已经接入的设备不受影响。"
+		wait := loginWaitText(until.Sub(now))
+		head := "用户名或密码连续输错太多次,登录已锁定,到 " + when + "(本机时间)解锁,还要等约 " + wait + "。已登录的会话不受影响。"
+		uiHead := "用户名或密码连续输错太多次，登录已锁定，到 " + when + "（本机时间）解锁，还要等约 " + wait + "。已登录的会话不受影响。"
 		return &APIError{StatusCode: ae.StatusCode, Body: ae.Body,
-			Message: head + "忘了密码的话,重设做法见 " + devicesDocURL,
-			UIHint:  uiHead + "忘了密码：在已经接入的设备上打开 设置 → 设备，改一个新的设备密码；一台已接入的设备都没有时，登录 VPS 重设，做法见文档「在多台设备上管理」。"}
+			Message: head + "忘了密码:在控制面所在的服务器上用 MPX_TOKEN 跑 mpx admin password 重设。",
+			UIHint:  uiHead + "忘了密码：需要到控制面所在的服务器上重设管理员密码后再登录。"}
 	}
 	if ae.StatusCode == http.StatusUnauthorized {
 		out := *ae
-		out.Message = "设备密码不对。忘了密码:在已接入的设备上运行 mpx device password(或在桌面程序里打开 设置 → 设备)改一个新的;" +
-			"一台已接入的设备都没有时,登录 VPS 重设,做法见 " + devicesDocURL
+		out.Message = "用户名或密码不对。忘了密码:登录控制面所在的服务器,用 MPX_TOKEN 跑 mpx admin password 重设(见 mpx admin password --help)。"
 		if out.UIHint == "" {
-			out.UIHint = "设备密码不对。忘了密码：在已经接入的设备上打开 设置 → 设备，改一个新的设备密码；一台已接入的设备都没有时，登录 VPS 重设，做法见文档「在多台设备上管理」。"
+			out.UIHint = "用户名或密码不对。忘了密码：需要到控制面所在的服务器上重设管理员密码后再登录。"
+		}
+		return &out
+	}
+	if ae.StatusCode == http.StatusForbidden {
+		out := *ae
+		if out.UIHint == "" {
+			out.UIHint = out.Message
 		}
 		return &out
 	}
 	return err
 }
 
-// connectWaitText 与控制面同一口径:不到一分钟按秒,其余按分钟向上取整。
-func connectWaitText(d time.Duration) string {
+// loginWaitText 与控制面同一口径:不到一分钟按秒,其余按分钟向上取整。
+func loginWaitText(d time.Duration) string {
 	if d < time.Minute {
 		sec := int((d + time.Second - 1) / time.Second)
 		if sec < 1 {

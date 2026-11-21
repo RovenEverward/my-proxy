@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/pin"
 	"github.com/RovenEverward/my-proxy/internal/ui"
@@ -13,6 +12,10 @@ import (
 // connectRunner 把页面的「接入已有控制面」接到 mpx connect 的同一条路径上:
 // 地址整理与取指纹共用 controlURL / pin.Probe,换 token 存控制面共用
 // connectAndSaveQuiet,没有第二份实现。
+//
+// UC-26:页面还没有用户名输入框(前端与 mpx ui 下批整体退役),用户名固定
+// defaultAdminUser —— 与 mpx init 建号默认一致;账号改过名的话这条路接不上,
+// 用 mpx connect --username。
 type connectRunner struct{}
 
 // Probe:整理地址、取回证书指纹。指纹只取来给人核对,这里不做任何判断 ——
@@ -29,17 +32,14 @@ func (connectRunner) Probe(ctx context.Context, addr string) (string, string, er
 	return server, fp, nil
 }
 
-// Connect:用设备密码换 token,存进控制面并切为当前;返回页面切到正常模式要用的
-// upstream/token/transport。name 为空时用主机名,与 mpx connect 一致。
-func (connectRunner) Connect(ctx context.Context, server, fingerprint, password, name string) (*ui.SetupResult, error) {
+// Connect:用管理员密码换会话 token,存进控制面并切为当前;返回页面切到正常
+// 模式要用的 upstream/token/transport。name 参数是设备时代留下的形状(mpx ui
+// 随前端一起退役前不动它),现在没有用处。
+func (connectRunner) Connect(ctx context.Context, server, fingerprint, password, _ string) (*ui.SetupResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = defaultDeviceName()
-	}
-	res, profile, err := connectAndSaveQuiet(server, fingerprint, password, name)
+	res, profile, err := connectAndSaveQuiet(server, fingerprint, defaultAdminUser, password)
 	if err != nil {
 		return nil, uiError(err)
 	}
@@ -61,15 +61,11 @@ func (connectRunner) Connect(ctx context.Context, server, fingerprint, password,
 // ConnectProfile:与 Connect 同一件事,但存进名为 profile 的**新**控制面 —— 页面
 // 正常模式的「添加控制面」用它。不覆盖已有档:名字被占用直接报错,让页面提示换名
 // (别把 default 里好好的 token 冲掉)。
-func (connectRunner) ConnectProfile(ctx context.Context, server, fingerprint, password, name, profile string) (*ui.SetupResult, error) {
+func (connectRunner) ConnectProfile(ctx context.Context, server, fingerprint, password, _, profile string) (*ui.SetupResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = defaultDeviceName()
-	}
-	res, err := connectAndSaveProfile(server, fingerprint, password, name, profile)
+	res, err := connectAndSaveProfile(server, fingerprint, defaultAdminUser, password, profile)
 	if err != nil {
 		return nil, uiError(err)
 	}

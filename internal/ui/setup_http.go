@@ -116,7 +116,7 @@ func (s *Server) setupRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.DevicePassword != "" && len(p.DevicePassword) < 12 {
-		writeError(w, http.StatusBadRequest, "设备密码至少 12 个字符")
+		writeError(w, http.StatusBadRequest, "管理员密码至少 12 个字符")
 		return
 	}
 	if p.SSHUser == "" {
@@ -266,7 +266,7 @@ func (s *Server) setupConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "缺少证书指纹,先取指纹并核对")
 		return
 	case body.Password == "":
-		writeError(w, http.StatusBadRequest, "请输入设备密码")
+		writeError(w, http.StatusBadRequest, "请输入管理员密码")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), connectLimit)

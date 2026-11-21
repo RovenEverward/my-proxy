@@ -199,11 +199,11 @@ func TestSetupRunAndSwitchToNormal(t *testing.T) {
 		!strings.Contains(w.Body.String(), "密码只在检查那一步用") {
 		t.Fatalf("run 带密码应 400,得到 %d %s", w.Code, w.Body)
 	}
-	// 设备密码太短。
+	// 管理员密码太短。
 	short := `{"host":"h","name":"n","username":"u","device_password":"short"}`
 	if w := doJSON(s, "POST", "/local/setup/run", c, short); w.Code != 400 ||
-		!strings.Contains(w.Body.String(), "设备密码至少 12 个字符") {
-		t.Fatalf("短设备密码应 400,得到 %d %s", w.Code, w.Body)
+		!strings.Contains(w.Body.String(), "管理员密码至少 12 个字符") {
+		t.Fatalf("短管理员密码应 400,得到 %d %s", w.Code, w.Body)
 	}
 	// 名字/用户名为空。
 	if w := doJSON(s, "POST", "/local/setup/run", c, `{"host":"h"}`); w.Code != 400 {

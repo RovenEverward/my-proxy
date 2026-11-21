@@ -174,7 +174,7 @@ func TestProfilesConnectValidation(t *testing.T) {
 	}{
 		{`{"fingerprint":"SHA256:abc","password":"x","profile":"gamma"}`, "缺少控制面地址"},
 		{`{"server":"https://x:8080","password":"x","profile":"gamma"}`, "缺少证书指纹"},
-		{`{"server":"https://x:8080","fingerprint":"SHA256:abc","profile":"gamma"}`, "请输入设备密码"},
+		{`{"server":"https://x:8080","fingerprint":"SHA256:abc","profile":"gamma"}`, "请输入管理员密码"},
 		{`{"server":"https://x:8080","fingerprint":"SHA256:abc","password":"x"}`, "起个名字"},
 		{`{"server":"https://x:8080","fingerprint":"SHA256:abc","password":"x","profile":"bad name"}`, "只能用字母"},
 		{`{"server":"https://x:8080","fingerprint":"SHA256:abc","password":"x","profile":"a.b"}`, "只能用字母"},
@@ -198,12 +198,12 @@ func TestProfilesConnectValidation(t *testing.T) {
 	// 实现方失败:502 原话,本进程仍停在原来的控制面上。
 	fc.mu.Lock()
 	fc.profileFn = func(ctx context.Context, server, fp, password, name, profile string) (*SetupResult, error) {
-		return nil, errors.New("设备密码不对")
+		return nil, errors.New("管理员密码不对")
 	}
 	fc.mu.Unlock()
 	if w := doJSON(s, "POST", "/local/profiles/connect", c,
 		`{"server":"https://x:8080","fingerprint":"SHA256:abc","password":"x","profile":"gamma"}`); w.Code != http.StatusBadGateway ||
-		!strings.Contains(w.Body.String(), "设备密码不对") {
+		!strings.Contains(w.Body.String(), "管理员密码不对") {
 		t.Fatalf("失败应 502 原话,得到 %d %s", w.Code, w.Body)
 	}
 	if r := do(s, "GET", "/api/x", c); !strings.Contains(r.Body.String(), `"who":"a"`) {

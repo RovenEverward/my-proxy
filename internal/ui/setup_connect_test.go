@@ -197,7 +197,7 @@ func TestSetupConnectValidation(t *testing.T) {
 	}{
 		{`{"fingerprint":"SHA256:abc","password":"x"}`, "缺少控制面地址"},
 		{`{"server":"https://x:8080","password":"x"}`, "缺少证书指纹"},
-		{`{"server":"https://x:8080","fingerprint":"SHA256:abc"}`, "请输入设备密码"},
+		{`{"server":"https://x:8080","fingerprint":"SHA256:abc"}`, "请输入管理员密码"},
 		{`not json`, "请求体不是合法的 JSON"},
 	}
 	for _, tc := range cases {
@@ -213,12 +213,12 @@ func TestSetupConnectValidation(t *testing.T) {
 	// Connect 失败:502 原话,仍是 setup 模式。
 	fc.mu.Lock()
 	fc.connectFn = func(ctx context.Context, server, fp, password, name string) (*SetupResult, error) {
-		return nil, errors.New("设备密码不对")
+		return nil, errors.New("管理员密码不对")
 	}
 	fc.mu.Unlock()
 	if w := doJSON(s, "POST", "/local/setup/connect", c,
 		`{"server":"https://x:8080","fingerprint":"SHA256:abc","password":"wrong-password"}`); w.Code != 502 ||
-		!strings.Contains(w.Body.String(), "设备密码不对") {
+		!strings.Contains(w.Body.String(), "管理员密码不对") {
 		t.Fatalf("connect 失败应 502 原话,得到 %d %s", w.Code, w.Body)
 	}
 	if w := do(s, "GET", "/ui/meta", c); !strings.Contains(w.Body.String(), `"mode":"setup"`) {

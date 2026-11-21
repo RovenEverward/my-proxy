@@ -68,7 +68,7 @@ type ConnectRunner interface {
 	// Probe 整理地址并取回证书指纹:addr 是人填的(IP / 域名 / https://host:port),
 	// server 是归一后的 https://host:port,fingerprint 形如 SHA256:…。
 	Probe(ctx context.Context, addr string) (server, fingerprint string, err error)
-	// Connect 用设备密码换 token、存控制面并切为当前,返回能让页面切到正常模式的
+	// Connect 用管理员密码换会话 token、存控制面并切为当前,返回能让页面切到正常模式的
 	// Upstream/Token/Transport/Profile。name 为空由实现方取默认(主机名)。
 	Connect(ctx context.Context, server, fingerprint, password, name string) (*SetupResult, error)
 }
@@ -80,7 +80,7 @@ type ConnectRunner interface {
 type ConnectNamedRunner interface {
 	ConnectRunner
 	// ConnectProfile 与 Connect 同一件事,但必须存成名为 profile 的**新**控制面:
-	// 档已存在时报错,绝不覆盖(默认的 default 档也不行)。name 仍是设备名。
+	// 档已存在时报错,绝不覆盖(默认的 default 档也不行)。name 是退役前的形状,实现方可忽略。
 	ConnectProfile(ctx context.Context, server, fingerprint, password, name, profile string) (*SetupResult, error)
 }
 

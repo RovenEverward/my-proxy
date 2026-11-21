@@ -1,5 +1,5 @@
 // 正常模式下的「添加控制面」:复用接入已有控制面的那套手续(先取指纹、人核对、
-// 设备密码换 token),只是把结果存成一个指名的新控制面再切过去。与 /local/setup/
+// 管理员密码换会话 token),只是把结果存成一个指名的新控制面再切过去。与 /local/setup/
 // connect 的区别:那两个接口只在首次安装(setup 模式)可用,这里随时可用 —— 窗口
 // 里加第二套控制面是正常操作,不该逼人回终端。
 package ui
@@ -91,7 +91,7 @@ func (s *Server) profileConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "缺少证书指纹,先取指纹并核对")
 		return
 	case body.Password == "":
-		writeError(w, http.StatusBadRequest, "请输入设备密码")
+		writeError(w, http.StatusBadRequest, "请输入管理员密码")
 		return
 	case profile == "":
 		writeError(w, http.StatusBadRequest, "请给这个控制面起个名字")

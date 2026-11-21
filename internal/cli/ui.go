@@ -54,10 +54,7 @@ var uiAllow = []string{
 	"PUT /api/settings",
 	"DELETE /api/settings/templates",
 	"POST /api/settings/test-webhook",
-	// 设备:device revoke;device password / --disable(设置页「设备密码」一节)
-	"DELETE /api/devices",
-	"PUT /api/device-password",
-	"DELETE /api/device-password",
+	// 管理员:改密码(mpx admin password 是 CLI 命令,uiAllow 不放)
 	// 分流规则:rule add / move / toggle / rm(整表 PUT 与 PATCH)/ final / test / migrate;
 	// group add / edit / rm / preview
 	"PUT /api/rules",
