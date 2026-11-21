@@ -109,6 +109,23 @@ func TestUDPProbeNonQUICStaysUnknown(t *testing.T) {
 	}
 }
 
+// TestQUICProbeTimeoutIsDead:QUIC 栈(TUIC/hy2)对版本协商 Initial 沉默
+// 就是「不通」——活着的监听器必须回 Version Negotiation,不存在「合法沉默」。
+// 死端点不能再被判 unknown 而永远留在订阅里(ISS-17)。
+func TestQUICProbeTimeoutIsDead(t *testing.T) {
+	ln, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	// 监听器什么都不回——模拟一个死掉的 QUIC 端点。
+	tgt := Target{Address: "127.0.0.1", Port: ln.LocalAddr().(*net.UDPAddr).Port, Protocol: "tuic"}
+	c := probeUDP(context.Background(), tgt, 500*time.Millisecond, 300*time.Millisecond)
+	if c.Status != CellTimeout {
+		t.Fatalf("QUIC 静默端 = %q, 想要 timeout(不通)", c.Status)
+	}
+}
+
 // TestSSNowTakesTCPCell:shadowsocks 从 UDP 类挪出,判定看 TCP 格——
 // 真机 UDP 格必然 unknown(服务端不认随机负载),吃 UDP 格会让双不通
 // 的死节点永远 unknown、永远剔除不了。

@@ -9,9 +9,9 @@
 //   - TCP:握手成功=可达,拒绝=不可达(拒绝),超时=不可达(超时),其余错误=未知。
 //   - UDP:收到应用回包=可达,ICMP 端口不可达=不可达,超时=未知 ——
 //     UDP 服务端收到不认识的包可以合法地沉默,所以 UDP 超时只能算未知,不能算不可达。
-//     QUIC 栈(TUIC/Hysteria2)例外:它们的探测负载是不支持版本号的 QUIC
-//     Initial,监听器必须回 Version Negotiation,所以「UDP 有回包」对这个
-//     家族就是确定性的存活信号,不再是「可能沉默」。
+//   - QUIC 栈(TUIC/Hysteria2):探测负载是不支持版本号的 QUIC Initial,
+//     活着的监听器必须回 Version Negotiation —— 有回包=可达,读超时=不可达
+//     (ISS-17),不再是「可能沉默」。裸 UDP 的 unknown 语义不变。
 package reach
 
 import (
@@ -34,10 +34,10 @@ type Cell struct {
 
 const (
 	CellReachable   = "reachable"   // 探到了
-	CellTimeout     = "timeout"     // TCP 超时 / UDP 超时(UDP 只算未知)
+	CellTimeout     = "timeout"     // TCP 超时;QUIC 端点 UDP 无回包(协议要求必须回,不回即不通,ISS-17)
 	CellRefused     = "refused"     // TCP 拒绝 / UDP 端口不可达
-	CellUnknown     = "unknown"     // 解析失败、网络错误、UDP 无回包
-	CellUnreachable = "unreachable" // 保留码位:网络不可达类错误
+	CellUnknown     = "unknown"     // 解析失败、网络错误、裸 UDP 无回包(裸 UDP 允许合法沉默)
+	CellUnreachable = "unreachable" // 保留码位:网络不可达类错误(ICMP 网络/主机不可达)
 )
 
 // Target 是要探的一个入站端口:对外地址 + 端口。自建节点按入站生成;
@@ -336,7 +336,12 @@ func probeUDP(ctx context.Context, t Target, timeout, wait time.Duration) *Cell 
 	case err == nil:
 		return &Cell{Status: CellReachable, LatencyMs: int(time.Since(start).Milliseconds())}
 	case isTimeout(err):
-		return &Cell{Status: CellUnknown} // UDP 超时不算不可达
+		if t.quic() {
+			// QUIC 栈必须回 Version Negotiation,读超时=协议层确定的「不通」,
+			// 不是裸 UDP 的「可能沉默」(ISS-17)。
+			return &Cell{Status: CellTimeout}
+		}
+		return &Cell{Status: CellUnknown} // 裸 UDP 允许合法沉默,超时不算不可达
 	case isRefused(err):
 		return &Cell{Status: CellRefused, Error: err.Error()}
 	case isUnreachable(err):
