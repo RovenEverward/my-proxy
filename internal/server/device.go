@@ -18,11 +18,14 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 鉴权认两类凭据:
+// 鉴权认四类凭据:
 //
 //   - 管理 token(/etc/mpx/env 的 MPX_TOKEN):主钥匙。不在设备列表里、不能吊销,
-//     是忘了设备密码时的应急入口。
+//     是忘了设备密码时的应急入口,也是 UC-26 建号/救援的凭据。
 //   - 设备 token:每台接入的设备一枚,库里只存 SHA-256,可逐台吊销。
+//   - 探测点 join token:只放行探测接口,见 probeAllowed。
+//   - 管理台会话(UC-26):浏览器 cookie 与 CLI Bearer 携带同一枚 token,存
+//     admin_sessions 表,30 天到期、可逐枚吊销;改密码时整表清空。
 //
 // 仍然没有角色和权限分级:谁接入了,谁就是这个控制面的主人。
 
@@ -32,6 +35,11 @@ const deviceIDKey ctxKey = 1
 
 // probeIDKey 把探测点身份挂进请求上下文;值为 0 表示这条请求不是探测点发的。
 const probeIDKey ctxKey = 2
+
+// authMasterKey 标记这次请求凭的是 env 主钥匙(MPX_TOKEN)。主钥匙不受任何
+// 吊销管理,是「忘了密码/丢了会话」时的救援凭据;改管理员口令时它免验旧密码
+// —— 那正是救援存在的意义(见 handleAdminPassword)。
+const authMasterKey ctxKey = 3
 
 // probeAllowed 是探测点凭据够得着的接口(UC-12):拉目标、回结果、让控制面
 // 代探。管理面其余接口它一律不可见。
@@ -52,7 +60,7 @@ var probeAllowed = map[string]bool{
 // deviceTouchEvery 是记"最近使用"的最小间隔:每个请求都写一次库没有意义。
 const deviceTouchEvery = time.Minute
 
-// requireAuth 校验管理接口的 Bearer token。管理 token 为空时不校验(只用于本机
+// requireAuth 校验管理接口凭据。管理 token 为空时不校验(只用于本机
 // 开发,启动时已保证这种情况只能绑回环)。
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,9 +68,20 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// UC-26:管理台会话是第四类凭据。cookie(浏览器)与 Bearer(CLI)携带
+		// 同一枚 token,查同一张 admin_sessions 表;命中未过期行即放行。
+		if tok := adminSessionToken(r); tok != "" {
+			if _, err := s.store.AdminSessionByTokenHash(hashToken(tok), time.Now()); err == nil {
+				next.ServeHTTP(w, r)
+				return
+			} else if !errors.Is(err, store.ErrNotFound) {
+				s.writeStoreError(w, err, "管理会话")
+				return
+			}
+		}
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if got != "" && tokenEqual(got, s.token) {
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authMasterKey, true)))
 			return
 		}
 		if got != "" {

@@ -91,6 +91,9 @@ type Server struct {
 	// deviceTouched 记每台设备上次写"最近使用"的时间,见 touchDevice。
 	deviceTouched map[int64]time.Time
 	connect       *connectGuard
+	// adminLogin 是管理台登录的限流闸,与 connect 同构但独立:登录撞锁不该
+	// 把正在接设备的通道也关掉。
+	adminLogin    *connectGuard
 	logger        *slog.Logger
 	mux           *http.ServeMux
 	nodeOps       NodeOps
@@ -176,6 +179,9 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		subLimiter: newSubLimiter(),
 		apiLimiter: newAPILimiter(),
 		connect:    newConnectGuard(),
+		// UC-26:管理台登录的独立闸。与 connect 同构但不共用:登录撞锁不该把
+		// 正在接设备的通道也带上。
+		adminLogin: newAdminLoginGuard(),
 	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
@@ -342,6 +348,11 @@ func (s *Server) routes() {
 	api.HandleFunc("PUT /api/device-password", s.handleSetDevicePassword)
 	api.HandleFunc("DELETE /api/device-password", s.handleDisableDevicePassword)
 
+	// UC-26:管理台账号。建号(尚无账号时)与改名共用一个口;改口令单独一条,
+	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
+	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
+	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
+
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
@@ -349,6 +360,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/connect", s.handleConnect)
 	// 探测点接入同理:join token 即凭据,见 probes.go。
 	s.mux.HandleFunc("POST /api/probes/hello", s.handleProbeHello)
+	// UC-26:管理台登录/登出不要 token —— 登录正是来领凭据的;登出要让
+	// 已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
+	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
+	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
 }
 
 // ---- 请求/响应工具 ----
