@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/RovenEverward/my-proxy/internal/acme"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/ruleset"
@@ -100,6 +101,8 @@ type Server struct {
 	status    StatusSource
 	backoff   BackoffOps
 	updates   UpdateSource
+	// acme 是 UC-26 的 ACME 证书管理器;nil 时签发类接口 503、只读接口照常。
+	acme      *acme.Manager
 	dbPath    string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
@@ -342,6 +345,14 @@ func (s *Server) routes() {
 	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
 	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
 	api.HandleFunc("GET /api/admin/meta", s.handleAdminMeta)
+
+	// UC-26:管理台域名 + ACME 证书。acme_* 这组 settings 键只在这里改
+	// (PUT /api/settings 会原样保留它们,见 handleSaveSettings)。
+	api.HandleFunc("PUT /api/acme/config", s.handlePutACMEConfig)
+	api.HandleFunc("DELETE /api/acme/config", s.handleDeleteACMEConfig)
+	api.HandleFunc("GET /api/acme/status", s.handleACMEStatus)
+	api.HandleFunc("POST /api/acme/issue", s.handleStartACMEIssue)
+	api.HandleFunc("GET /api/acme/issue", s.handleACMEIssueProgress)
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。

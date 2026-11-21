@@ -20,6 +20,9 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	// Label 不落库:读出来是空的,响应里按内置表补上给界面用。
 	v.Rules = model.WithBuiltinLabels(v.Rules)
+	// CF token 是敏感值,GET 不回明文:只回「配没配」。
+	v.ACMECFTokenSet = v.ACMECFToken != ""
+	v.ACMECFToken = ""
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -97,6 +100,13 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		writeErrorField(w, http.StatusBadRequest, "不支持的规则集分发方式", "ruleset_mode")
 		return
 	}
+	// acme_* 这组键只有一个写口(PUT/DELETE /api/acme/config):那里有
+	// 「换域名/CA 废证书」的副作用,整份 settings 的 PUT 绕过它会留下
+	// 域名与证书不符的状态。这里原样保留现值,而不是让调用方重发 ——
+	// CF token 明文也不会出现在 GET 响应里,客户端本来就拿不到它。
+	v.ACMEDomain = cur.ACMEDomain
+	v.ACMECFToken = cur.ACMECFToken
+	v.ACMEStaging = cur.ACMEStaging
 	if err := s.store.SaveSettings(&v); err != nil {
 		s.writeStoreError(w, err, "订阅设置")
 		return
