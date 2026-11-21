@@ -81,6 +81,50 @@ func TestAdminLoginFlow(t *testing.T) {
 	}
 }
 
+// kind=cli 是 mpx connect 的形状:发 'cli' 会话、不种 cookie,token 按
+// Bearer 用;写错 kind 趁早 400。
+func TestAdminLoginKindCLI(t *testing.T) {
+	e := newEnv(t)
+	relaxAdmin(e)
+	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
+
+	code, body := e.request("POST", "/api/admin/login",
+		adminLoginRequest{Username: "ops", Password: adminPW, Kind: "cli"}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("cli 登录 %d %s", code, body)
+	}
+	var lr adminLoginResponse
+	_ = json.Unmarshal(body, &lr)
+	if lr.Token == "" {
+		t.Fatal("没回 token")
+	}
+	if sess, err := e.st.AdminSessionByTokenHash(hashToken(lr.Token), time.Now()); err != nil || sess.Kind != "cli" {
+		t.Fatalf("会话 kind 应是 cli: %v %+v", err, sess)
+	}
+	// Bearer 直接可用。
+	if code, _ := e.request("GET", "/api/nodes", nil, bearer(lr.Token)); code != http.StatusOK {
+		t.Fatalf("cli 会话 Bearer 应放行,得到 %d", code)
+	}
+	// cli 登录不种 cookie。
+	resp, err := http.Post(e.srv.URL+"/api/admin/login", "application/json",
+		strings.NewReader(`{"username":"ops","password":"`+adminPW+`","kind":"cli"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	for _, c := range resp.Cookies() {
+		if c.Name == adminCookieName {
+			t.Fatalf("cli 登录不该种 cookie: %+v", c)
+		}
+	}
+	// kind 写错要 400,而不是悄悄当 web。
+	code, _ = e.request("POST", "/api/admin/login",
+		adminLoginRequest{Username: "ops", Password: adminPW, Kind: "desktop"}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("kind 写错应 400,得到 %d", code)
+	}
+}
+
 func TestAdminLoginSetsCookie(t *testing.T) {
 	e := newEnv(t)
 	relaxAdmin(e)
@@ -197,7 +241,7 @@ func TestAdminLoginLockout(t *testing.T) {
 	e := newEnv(t)
 	relaxAdmin(e)
 	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
-	for i := 0; i < connectLockAfter; i++ {
+	for i := 0; i < loginLockAfter; i++ {
 		if code, _ := e.adminLogin("ops", "nope nope nope"); code != http.StatusUnauthorized {
 			t.Fatalf("第 %d 次应 401,得到 %d", i+1, code)
 		}
@@ -243,10 +287,10 @@ func TestAdminOriginCheck(t *testing.T) {
 	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
 
 	bad := map[string]string{
-		"Origin":          "https://evil.example",
-		"Sec-Fetch-Site":  "cross-site",
-		"Authorization":   "Bearer " + testToken,
-		"Content-Type":    "application/json",
+		"Origin":           "https://evil.example",
+		"Sec-Fetch-Site":   "cross-site",
+		"Authorization":    "Bearer " + testToken,
+		"Content-Type":     "application/json",
 		"X-Requested-With": "test",
 	}
 	if code, _ := e.request("POST", "/api/admin/login", adminLoginRequest{Username: "ops", Password: adminPW}, bad); code != http.StatusForbidden {

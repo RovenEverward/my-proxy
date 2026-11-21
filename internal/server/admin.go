@@ -14,38 +14,32 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// UC-26:网页管理台的登录与账号接口。
+// UC-26:管理台的登录与账号接口(网页与 mpx connect 共用一个登录口)。
 //
 // 四条路径,两种挂法:
 //   - POST /api/admin/login:唯一不要凭据的新接口(它就是来领凭据的),挂在
-//     requireAuth 之外,自带三道闸 —— 与 /api/connect 同款的 IP 限速 + 全局
-//     限速 + 连续失败锁 15 分钟。锁是独立的一把:登录把闸锁上不该顺手把正在用
-//     设备密码接设备的人也关在外面。
+//     requireAuth 之外,自带三道闸 —— IP 限速 + 全局限速 + 连续失败锁 15
+//     分钟(见 loginguard.go)。kind=cli 的登录(mpx connect)不种 cookie,
+//     只回 token;kind=web(默认,浏览器)回 token 并种 cookie。
 //   - POST /api/admin/logout:也不要求凭据(过期的会话也该能退),同样单挂。
 //   - POST /api/admin/account、PUT /api/admin/password:在 api mux 里,走
 //     requireAuth —— 建号与改密本身就是管理操作,rescue 路径(MPX_TOKEN)天然在内。
 //
-// 浏览器会话与 CLI token 是同一枚凭据的两种携带方式:login 同时回 {token}
-// 并 Set-Cookie,requireAuth 里 cookie 与 Bearer 查的是同一张 admin_sessions
-// 表。会话 30 天固定 TTL(滚动续期留给后续批)。
+// 浏览器会话与 CLI 会话是同一枚凭据的两种携带方式:requireAuth 里 cookie 与
+// Bearer 查的是同一张 admin_sessions 表。会话 30 天固定 TTL(滚动续期留给后
+// 续批)。
 
 const (
 	// adminCookieName 是浏览器会话的 cookie 名。Path=/ 是硬要求:SPA 发的是
 	// 同源 /api/* 请求,path 定到 /admin 下会话根本带不上来。
 	adminCookieName = "mpx_admin"
-	// webSessionTTL 是 web 会话的固定有效期。
+	// webSessionTTL 是会话的固定有效期。
 	webSessionTTL = 30 * 24 * time.Hour
-	// sessionKindWeb 标记会话是浏览器登录领的;CLI 侧的 'cli' 留给后续批的
-	// mpx connect 用,本批只发 web。kind 不参与鉴权分支,只是来源记录。
+	// sessionKindWeb / sessionKindCLI 标记会话来源:kind 不参与鉴权分支,
+	// 只是来源记录(将来「踢掉某台 CLI」一类动作可以按它筛)。
 	sessionKindWeb = "web"
+	sessionKindCLI = "cli"
 )
-
-// adminLoginGuard 是登录限流,与 connectGuard 同构:每 IP 每桶、全局一桶、
-// 连续失败 connectLockAfter 次就整体锁 connectLockFor。直接复用类型,不另写
-// 一份只有常数不同的实现。
-func newAdminLoginGuard() *connectGuard {
-	return newConnectGuard()
-}
 
 // ---- Origin / Fetch-Site 校验 ----
 
@@ -135,6 +129,9 @@ func clearAdminCookie(w http.ResponseWriter) {
 type adminLoginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Kind 是会话来源标记:"web"(默认,浏览器登录,种 cookie)或 "cli"
+	// (mpx connect,只回 token、不种 cookie)。别的值一律 400。
+	Kind string `json:"kind,omitempty"`
 }
 
 type adminLoginResponse struct {
@@ -142,13 +139,12 @@ type adminLoginResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// adminResetHint 是密码不对/已锁定时给界面的指路:网页没有「已接入设备」这条
+// adminResetHint 是密码不对/已锁定时给界面的指路:网页没有别的凭据这条
 // 退路,救援只有一条 —— 去服务器上用环境变量 token 调 mpx admin。
 const adminResetHint = "忘记密码：登录控制面所在的服务器，用 MPX_TOKEN 跑 mpx admin password 重设；" +
 	"或先 mpx admin create 建号（仅在还没有账号时生效）。"
 
-// writeAdminLocked 是 writeConnectLocked 的登录版:只增字段的形状一样
-// (error + ui_hint + locked_until),说法是网页管理台的,不提设备密码。
+// writeAdminLocked 写登录锁定的应答:字段形状 error + ui_hint + locked_until。
 func writeAdminLocked(w http.ResponseWriter, code int, msg string, until time.Time, now time.Time) {
 	left := until.Sub(now)
 	if code == http.StatusTooManyRequests {
@@ -171,7 +167,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	g := s.adminLogin
 	if ok, retry := g.perIP.take(clientIP(r), now); !ok {
 		tooMany(w, retry, "试得太频繁,请稍后再试",
-			"试得太频繁：每台设备每分钟最多试 5 次，请 "+waitText(retry)+"后再试。")
+			"试得太频繁：每个来源每分钟最多试 5 次，请 "+waitText(retry)+"后再试。")
 		return
 	}
 	if ok, retry := g.global.take("*", now); !ok {
@@ -195,6 +191,15 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
 		return
 	}
+	// kind 只认空(web 默认)与 cli:写错的多半是拼错,趁早说清楚。
+	kind := req.Kind
+	if kind == "" {
+		kind = sessionKindWeb
+	}
+	if kind != sessionKindWeb && kind != sessionKindCLI {
+		writeErrorField(w, http.StatusBadRequest, "kind 只认 web 或 cli", "kind")
+		return
+	}
 
 	username, hash, err := s.store.AdminAccount()
 	if err != nil {
@@ -215,7 +220,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if subtleNameEqual(req.Username, username) != 1 {
 		phc = dummyAdminPHC
 	}
-	ok, verr := verifyDevicePassword(req.Password, phc)
+	ok, verr := verifyAdminPassword(req.Password, phc)
 	if verr != nil {
 		s.logger.Error("校验管理员口令失败", "err", verr)
 		writeError(w, http.StatusInternalServerError, "校验口令失败")
@@ -224,8 +229,8 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		s.logger.Warn("管理台登录失败", "remote", r.RemoteAddr, "user", req.Username)
 		if g.record(false, now) {
-			s.logger.Warn("登录连续失败,已锁定", "for", connectLockFor)
-			writeAdminLocked(w, http.StatusUnauthorized, "用户名或密码不对", now.Add(connectLockFor), now)
+			s.logger.Warn("登录连续失败,已锁定", "for", loginLockFor)
+			writeAdminLocked(w, http.StatusUnauthorized, "用户名或密码不对", now.Add(loginLockFor), now)
 			return
 		}
 		writeErrorHint(w, http.StatusUnauthorized, "用户名或密码不对",
@@ -234,18 +239,21 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	g.record(true, now)
 
-	tok, err := newDeviceToken()
+	tok, err := newToken()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "生成会话失败")
 		return
 	}
 	expires := now.Add(webSessionTTL)
-	if err := s.store.CreateAdminSession(hashToken(tok), sessionKindWeb, now, expires); err != nil {
+	if err := s.store.CreateAdminSession(hashToken(tok), kind, now, expires); err != nil {
 		s.writeStoreError(w, err, "管理会话")
 		return
 	}
-	s.logger.Info("管理台已登录", "remote", r.RemoteAddr)
-	setAdminCookie(w, tok, expires)
+	s.logger.Info("管理台已登录", "remote", r.RemoteAddr, "kind", kind)
+	// cli 会话不种 cookie:它按 Bearer 走,cookie 对它没有作用;web 才种。
+	if kind == sessionKindWeb {
+		setAdminCookie(w, tok, expires)
+	}
 	writeJSON(w, http.StatusOK, adminLoginResponse{Token: tok, ExpiresAt: expires})
 }
 
@@ -278,7 +286,7 @@ type adminAccountResponse struct {
 	Created  bool   `json:"created"`
 }
 
-// maxAdminNameLen 是用户名的长度上限;规则与设备名同级 —— 它出现在日志与登录
+// maxAdminNameLen 是用户名的长度上限 —— 它出现在日志与登录
 // 表单里,不是密钥。
 const maxAdminNameLen = 64
 
@@ -307,12 +315,12 @@ func (s *Server) handleAdminAccount(w http.ResponseWriter, r *http.Request) {
 	cur, _, err := s.store.AdminAccount()
 	switch {
 	case errors.Is(err, store.ErrNotFound):
-		// 建号:密码必填,长度口径与设备密码一致(它是同一套 argon2id 校验)。
-		if err := checkDevicePasswordStrength(req.Password); err != nil {
+		// 建号:密码必填,走同一套 argon2id 强度校验。
+		if err := checkAdminPasswordStrength(req.Password); err != nil {
 			writeErrorField(w, http.StatusUnprocessableEntity, err.Error(), "password")
 			return
 		}
-		hash, err := hashDevicePassword(req.Password)
+		hash, err := hashAdminPassword(req.Password)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "哈希口令失败")
 			return
@@ -349,7 +357,7 @@ type adminPasswordRequest struct {
 // —— 包括发起者自己:单账号模型下「全部重来」是最不容易出错的语义,发起者
 // 拿新密码重新登录一次即可。
 //
-// 旧密码只在「凭会话/设备」改时验:凭 env 主钥匙(MPX_TOKEN)来的请求免验,
+// 旧密码只在「凭会话」改时验:凭 env 主钥匙(MPX_TOKEN)来的请求免验,
 // 因为忘记密码的救援就是拿它改的 —— 旧密码已经丢了,验它没有意义。接口形状
 // 不变,old_password 照传,master 侧忽略其值。
 func (s *Server) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +380,7 @@ func (s *Server) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if master, _ := r.Context().Value(authMasterKey).(bool); !master {
-		ok, err := verifyDevicePassword(req.OldPassword, hash)
+		ok, err := verifyAdminPassword(req.OldPassword, hash)
 		if err != nil {
 			s.logger.Error("校验旧口令失败", "err", err)
 			writeError(w, http.StatusInternalServerError, "校验口令失败")
@@ -383,11 +391,11 @@ func (s *Server) handleAdminPassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := checkDevicePasswordStrength(req.NewPassword); err != nil {
+	if err := checkAdminPasswordStrength(req.NewPassword); err != nil {
 		writeErrorField(w, http.StatusUnprocessableEntity, err.Error(), "new_password")
 		return
 	}
-	newHash, err := hashDevicePassword(req.NewPassword)
+	newHash, err := hashAdminPassword(req.NewPassword)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "哈希口令失败")
 		return
@@ -415,9 +423,9 @@ func subtleNameEqual(a, b string) int {
 }
 
 // dummyAdminPHC 是用户名不匹配时拿去做空转的 PHC。常量固定一个合法形状 —
-// 参数与现行哈希一致,verifyDevicePassword 不会解析失败,也永远验不过。
+// 参数与现行哈希一致,verifyAdminPassword 不会解析失败,也永远验不过。
 var dummyAdminPHC = func() string {
-	h, err := hashDevicePassword("dummy-password-for-timing")
+	h, err := hashAdminPassword("dummy-password-for-timing")
 	if err != nil {
 		panic(err)
 	}

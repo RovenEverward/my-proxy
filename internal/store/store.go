@@ -363,10 +363,9 @@ func (s *Store) migrate() error {
 	if err := s.migrateIdentity(); err != nil {
 		return err
 	}
-	if err := s.migrateDevices(); err != nil {
-		return err
-	}
-	if err := s.migrateDevicePassword(); err != nil {
+	// UC-26:设备模型退役,老库里的 devices / device_password 表就地清掉,
+	// 不留兼容期(见 legacy.go)。
+	if err := s.dropLegacyDevice(); err != nil {
 		return err
 	}
 	if err := s.migrateDiagnostics(); err != nil {

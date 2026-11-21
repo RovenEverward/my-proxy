@@ -44,33 +44,33 @@ func checkUIHint(t *testing.T, body []byte, wantError string) {
 	}
 }
 
-func TestUIHintOnAuthAndConnect(t *testing.T) {
+func TestUIHintOnAuthAndLogin(t *testing.T) {
 	e := newEnv(t)
-	// 吊销 / 错 token。
+	// 过期 / 错凭据。
 	code, body := e.request("GET", "/api/users", nil, map[string]string{"Authorization": "Bearer nope"})
 	if code != http.StatusUnauthorized {
 		t.Fatalf("错 token 应 401,得到 %d", code)
 	}
-	checkUIHint(t, body, "token 不正确或这台设备已被吊销;重新 mpx connect")
+	checkUIHint(t, body, "凭据不正确或会话已过期;重新登录(浏览器)或重新 mpx connect(CLI)")
 
-	// 还没设设备密码。
-	relaxConnect(e)
-	r := httptest.NewRequest("POST", "/api/connect", strings.NewReader(`{"password":"`+goodPW+`","device_name":"x"}`))
+	// 还没建管理员账号。
+	relaxAdmin(e)
+	r := httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"ops","password":"`+adminPW+`"}`))
 	r.RemoteAddr = "127.0.0.1:5000"
 	w := httptest.NewRecorder()
 	e.s.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusForbidden {
-		t.Fatalf("没设设备密码应 403,得到 %d %s", w.Code, w.Body)
+		t.Fatalf("没建账号登录应 403,得到 %d %s", w.Code, w.Body)
 	}
-	checkUIHint(t, w.Body.Bytes(), "这个控制面还没设设备密码;在已接入的设备上跑 mpx device password")
+	checkUIHint(t, w.Body.Bytes(), "还没有管理员账号:在服务器上用 mpx admin create 建号(或由 mpx init 建)")
 
 	// 公网明文。
-	e.api("PUT", "/api/device-password", devicePasswordRequest{Password: goodPW})
-	r = httptest.NewRequest("POST", "/api/connect", strings.NewReader(`{"password":"`+goodPW+`","device_name":"x"}`))
+	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
+	r = httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"ops","password":"`+adminPW+`"}`))
 	r.RemoteAddr = "203.0.113.9:5000"
 	w = httptest.NewRecorder()
 	e.s.Handler().ServeHTTP(w, r)
-	checkUIHint(t, w.Body.Bytes(), "设备密码只能经 HTTPS 发送:用 mpx connect 接入(它走 HTTPS 并核对证书指纹)")
+	checkUIHint(t, w.Body.Bytes(), "账号密码只能经 HTTPS 登录")
 }
 
 func TestDoctorUIHint(t *testing.T) {

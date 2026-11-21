@@ -65,6 +65,9 @@ func newEnvWith(t *testing.T, ops NodeOps) *env {
 	return &env{t: t, st: st, s: s, srv: srv, dbPath: dbPath}
 }
 
+// bearer 拼一个 Bearer 头的用例参数。
+func bearer(tok string) map[string]string { return map[string]string{"Authorization": "Bearer " + tok} }
+
 // api 发一个带管理 token 的请求。body 为 nil 表示不带请求体。
 func (e *env) api(method, path string, body any) (int, []byte) {
 	e.t.Helper()
