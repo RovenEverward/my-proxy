@@ -70,7 +70,14 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		// UC-26:管理台会话是第四类凭据。cookie(浏览器)与 Bearer(CLI)携带
 		// 同一枚 token,查同一张 admin_sessions 表;命中未过期行即放行。
+		// 凭 cookie 进来的写请求(没带 Authorization)先过一次同源校验:
+		// SameSite=Lax 挡住了大多数跨站 POST,这里再把 Origin/Fetch-Site
+		// 也查掉,作为纵深;Bearer 形态(CLI)没有 Origin 一说,不查。
 		if tok := adminSessionToken(r); tok != "" {
+			if r.Header.Get("Authorization") == "" && !readMethod(r.Method) && !adminOriginOK(r) {
+				writeAdminOriginRejected(w)
+				return
+			}
 			if _, err := s.store.AdminSessionByTokenHash(hashToken(tok), time.Now()); err == nil {
 				next.ServeHTTP(w, r)
 				return

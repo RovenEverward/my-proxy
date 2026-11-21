@@ -80,6 +80,11 @@ func writeAdminOriginRejected(w http.ResponseWriter) {
 	writeError(w, http.StatusForbidden, "跨源请求被拒绝")
 }
 
+// readMethod 判这次请求是不是读操作;cookie 会话的同源校验只管写。
+func readMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
 // ---- 会话凭据的提取 ----
 
 // adminSessionToken 取出这次请求携带的会话凭据:先 Authorization Bearer,再

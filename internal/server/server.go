@@ -93,10 +93,10 @@ type Server struct {
 	connect       *connectGuard
 	// adminLogin 是管理台登录的限流闸,与 connect 同构但独立:登录撞锁不该
 	// 把正在接设备的通道也关掉。
-	adminLogin    *connectGuard
-	logger        *slog.Logger
-	mux           *http.ServeMux
-	nodeOps       NodeOps
+	adminLogin *connectGuard
+	logger     *slog.Logger
+	mux        *http.ServeMux
+	nodeOps    NodeOps
 	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
 	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
 	extProber externalProber
@@ -352,6 +352,7 @@ func (s *Server) routes() {
 	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
 	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
 	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
+	api.HandleFunc("GET /api/admin/meta", s.handleAdminMeta)
 
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
@@ -364,6 +365,21 @@ func (s *Server) routes() {
 	// 已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
 	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
 	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
+
+	// UC-26 批 2:网页管理台静态面。/admin 只受理 TLS 或回环(与登录同一道
+	// 门);flags/fonts/styles 是产物里以绝对路径引用的共享资源,登录页也
+	// 要用,故不设凭据 —— 凭据管的是 /api。
+	admin := adminTLSOnly(adminSecurityHeaders(s.adminStatic()))
+	s.mux.Handle("GET /admin/", admin)
+	s.mux.Handle("HEAD /admin/", admin)
+	s.mux.Handle("GET /admin", adminTLSOnly(adminSecurityHeaders(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
+		}))))
+	s.mux.Handle("GET /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
+	s.mux.Handle("HEAD /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
+	s.mux.Handle("GET /fonts/", adminSecurityHeaders(subStatic("/fonts/", "fonts")))
+	s.mux.Handle("GET /styles/", adminSecurityHeaders(subStatic("/styles/", "styles")))
 }
 
 // ---- 请求/响应工具 ----

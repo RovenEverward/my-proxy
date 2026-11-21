@@ -53,15 +53,26 @@ func EmbeddedSources() string {
 func Fonts() fs.FS {
 	sub, err := fs.Sub(assets, "assets/fonts")
 	if err != nil {
-		return emptyFonts{}
+		return emptyFS{}
 	}
 	return sub
 }
 
-// emptyFonts 是 Fonts 出错时的退化值:读什么都报不存在,而不是 panic。
-type emptyFonts struct{}
+// emptyFS 是各 fs 导出出错时的退化值:读什么都报不存在,而不是 panic。
+type emptyFS struct{}
 
-func (emptyFonts) Open(string) (fs.File, error) { return nil, fs.ErrNotExist }
+func (emptyFS) Open(string) (fs.File, error) { return nil, fs.ErrNotExist }
+
+// Admin 返回嵌进二进制的网页管理台资源:assets 整棵子树。
+// 控制面把它挂在 /admin/ 下伺服(见 internal/server/admin_page.go);
+// mpx ui 自己那份静态服务也用的是同一棵子树。
+func Admin() fs.FS {
+	sub, err := fs.Sub(assets, "assets")
+	if err != nil {
+		return emptyFS{}
+	}
+	return sub
+}
 
 // CSP 只放行同源脚本与样式。行内 style 属性(进度条宽度这类)单独放行;
 // 行内脚本、eval、外部资源一律不行。

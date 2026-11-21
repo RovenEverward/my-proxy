@@ -34,6 +34,24 @@ func flagsZip() (*zip.Reader, error) {
 	return flagAssets.z, flagAssets.err
 }
 
+// Flag 从内嵌 zip 里按两位代码取一面国旗 SVG;名字不合法或没有这面旗返回
+// (nil, false)。控制面网页管理台(/admin)的节点列表要画同一批旗,但它不
+// 经过 mpx ui 的处理器,所以把取旗这一步开放给它,两边仍共用同一个 zip。
+func Flag(name string) (io.ReadCloser, bool) {
+	if !flagName.MatchString(name) {
+		return nil, false
+	}
+	z, err := flagsZip()
+	if err != nil {
+		return nil, false
+	}
+	f, err := z.Open(name + ".svg")
+	if err != nil {
+		return nil, false
+	}
+	return f, true
+}
+
 // serveFlag 从内嵌 zip 里按需读出一个国旗 SVG。它不碰控制面、也不看会话:页面
 // 未登录时也可能要先画出登录页/向导里的旗帜。名字不合法与文件不存在都回 404。
 func (s *Server) serveFlag(w http.ResponseWriter, r *http.Request) {
