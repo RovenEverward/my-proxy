@@ -49,4 +49,5 @@ QUIC 入站(hysteria2 / tuic)走 sing-box,它的 `sing-box check` 会打开 `cer
 - 读数比上次小 → 说明节点上的 xray 重启过 → 记异常日志，不当成负用量。
 - ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短。
 - 直连出口没设 `domainStrategy` → 双栈网站会优先走 IPv6，VPS 的 v6 段常被限流 → v0.7.3 起默认 `UseIPv4v6`，节点可用 `outbound_ip` 覆盖。
+- 双栈节点「部分站点不通」：先查 IPv6 默认路由与网关（`ip -6 route`、ping6 网关），AAAA 域名被 glibc 优选 v6 而 v6 段死路时表现为整组站点超时；处理 = `mpx node edit N --outbound-ip v4` + `node sync`（xray freedom 改 UseIPv4），如需裸进程也优先 v4 再开节点 `/etc/gai.conf` 的 `precedence ::ffff:0:0/96 100`。`netplan apply` 会断 SSH 属正常；上游 v6 恢复后改回 `v4v6`。
 - 节点不通 → 每轮重试会拖慢整轮 → 按退避跳过：短期 30s 起翻倍封顶 5 分钟；持续不通一小时后放缓到每小时一探。修好了想立刻回来 → `mpx node retry <节点>` 或 `POST /api/nodes/{id}/backoff/retry` 当场跑一轮采样与收敛；`GET /api/nodes/{id}?fresh=1` 现场确认可达也会清退避。
