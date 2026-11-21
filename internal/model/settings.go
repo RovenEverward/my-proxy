@@ -89,6 +89,24 @@ type Settings struct {
 	// BandwidthTestURL 是带宽测量(UC-20)的测速下载地址;空值由测量侧
 	// 用内置默认(cloudflare speed 定量下载)。
 	BandwidthTestURL string `json:"bandwidth_test_url"`
+
+	// ACMEDomain 是网页管理台的公网域名(如 cp.example.net,UC-26)。空串
+	// 表示未配 —— 管理台没有受信证书,等于不公网可用。
+	//
+	// 这组 acme_* 键只由 PUT /api/acme/config 写:那里才有「换域名废证书」
+	// 的副作用;整份 settings 的 PUT 入口会原样保留它们(见 handleSaveSettings)。
+	ACMEDomain string `json:"acme_domain"`
+	// ACMECFToken 是有 DNS 编辑权限的 Cloudflare API token,ACME 的 DNS-01
+	// 靠它建 _acme-challenge TXT。敏感值:读接口只回 acme_cf_token_set,
+	// 不回明文;写接口里空串表示「保持现状」。
+	ACMECFToken string `json:"acme_cf_token,omitempty"`
+	// ACMECFTokenSet 是「token 配没配」的只读出参,GET 里由服务端派生,
+	// 不落库;PUT 时被忽略。
+	ACMECFTokenSet bool `json:"acme_cf_token_set"`
+	// ACMEStaging 用 Let's Encrypt 的 staging 目录签测试证书(不签发即
+	// 受信),默认 false。切换 staging/正式会废弃已签证书重签:staging 证书
+	// 浏览器不认,留着反而比没有更糟。
+	ACMEStaging bool `json:"acme_staging"`
 }
 
 // DefaultReachIntervalMinutes 是探测周期的默认值。

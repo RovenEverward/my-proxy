@@ -45,12 +45,12 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		        webhook_url, notify_days_left, notify_usage_percent,
 		        rules, templates, ruleset_mode,
 		        reach_exclude, reach_interval_minutes, reach_keeps, cdn_optimize,
-		        bandwidth_test_url
+		        bandwidth_test_url, acme_domain, acme_cf_token, acme_staging
 		 FROM settings WHERE id = 1`).
 		Scan(&st.SubURLPrefix, &st.ProfileTitle, &st.SupportLink, &st.UpdateInterval,
 			&st.WebhookURL, &st.NotifyDaysLeft, &st.NotifyUsagePercent, &rules, &templates,
 			&st.RulesetMode, &st.ReachExclude, &st.ReachIntervalMinutes, &keeps, &st.CDNOptimize,
-			&st.BandwidthTestURL)
+			&st.BandwidthTestURL, &st.ACMEDomain, &st.ACMECFToken, &st.ACMEStaging)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultSettings(), nil
 	}
@@ -124,8 +124,8 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 		                      update_interval, webhook_url, notify_days_left,
 		                      notify_usage_percent, rules, templates, ruleset_mode,
 		                      reach_exclude, reach_interval_minutes, reach_keeps, cdn_optimize,
-		                      bandwidth_test_url)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                      bandwidth_test_url, acme_domain, acme_cf_token, acme_staging)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			sub_url_prefix       = excluded.sub_url_prefix,
 			profile_title        = excluded.profile_title,
@@ -141,11 +141,14 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 			reach_interval_minutes = excluded.reach_interval_minutes,
 			reach_keeps          = excluded.reach_keeps,
 			cdn_optimize         = excluded.cdn_optimize,
-			bandwidth_test_url   = excluded.bandwidth_test_url`,
+			bandwidth_test_url   = excluded.bandwidth_test_url,
+			acme_domain          = excluded.acme_domain,
+			acme_cf_token        = excluded.acme_cf_token,
+			acme_staging         = excluded.acme_staging`,
 		st.SubURLPrefix, st.ProfileTitle, st.SupportLink, st.UpdateInterval,
 		st.WebhookURL, st.NotifyDaysLeft, st.NotifyUsagePercent, rules, templates,
 		st.RulesetMode, st.ReachExclude, st.ReachIntervalMinutes, keeps, st.CDNOptimize,
-		st.BandwidthTestURL)
+		st.BandwidthTestURL, st.ACMEDomain, st.ACMECFToken, boolToInt(st.ACMEStaging))
 	if err != nil {
 		return fmt.Errorf("保存设置: %w", err)
 	}
