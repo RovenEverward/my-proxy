@@ -398,6 +398,10 @@ func (s *Store) migrate() error {
 	if err := s.migrateCDN(); err != nil {
 		return err
 	}
+	// UC-26:网页管理台的账号与会话。
+	if err := s.migrateAdmin(); err != nil {
+		return err
+	}
 	if err := s.migrateMetrics(); err != nil {
 		return err
 	}
