@@ -200,22 +200,25 @@ func setupInitParams(p ui.SetupParams) (*initParams, error) {
 	}
 
 	return &initParams{
-		FromUI:         true,
-		AutoRemark:     true,
-		InboundPort:    p.InboundPort,
-		Host:           host,
-		SSHUser:        sshUser,
-		SSHPort:        sshPort,
-		Password:       p.Password,
-		Identity:       strings.TrimSpace(p.Identity),
-		Addr:           addr,
-		APIPort:        apiPort,
-		Name:           name,
-		Username:       username,
-		SNI:            sni,
-		RealityDest:    bootstrapRealityDest,
-		SubPrefix:      strings.TrimSpace(p.SubPrefix),
-		DevicePassword: p.DevicePassword,
+		FromUI:      true,
+		AutoRemark:  true,
+		InboundPort: p.InboundPort,
+		Host:        host,
+		SSHUser:     sshUser,
+		SSHPort:     sshPort,
+		Password:    p.Password,
+		Identity:    strings.TrimSpace(p.Identity),
+		Addr:        addr,
+		APIPort:     apiPort,
+		Name:        name,
+		Username:    username,
+		SNI:         sni,
+		RealityDest: bootstrapRealityDest,
+		SubPrefix:   strings.TrimSpace(p.SubPrefix),
+		// UC-26:表单里的 DevicePassword 字段改义为管理员密码(前端随 mpx ui
+		// 下批退役,字段名不再动);用户名固定 admin,与 mpx init 默认一致。
+		AdminUser:     defaultAdminUser,
+		AdminPassword: p.DevicePassword,
 	}, nil
 }
 

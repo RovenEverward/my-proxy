@@ -1,6 +1,6 @@
 stdout:
 stderr:
-注意:非交互运行且没给 MPX_DEVICE_PASSWORD,这次不设设备密码。
+注意:非交互运行且没给 --admin-password/--admin-password-stdin,这次不建管理员账号。
 ==> 看清这台机器
 err: 要用 root 登录(root 现在的 uid 是 1000):装 systemd 服务、写 /etc/mpx 都要 root
 calls:

@@ -9,8 +9,8 @@ stderr:
     用的是本机的 <TMPDIR>/install.sh
 ==> 在 VPS 上装控制面(监听 0.0.0.0:8080)
 ==> 建节点、入站、入口、订阅设置与用户
-==> 设置设备密码
-err: 设置设备密码失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):boom fake set password failed
+==> 建管理员账号
+err: 建管理员账号失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):boom fake admin create failed
 calls:
 printf 'os=%s\n' "$(uname -s)"
 printf 'arch=%s\n' "$(uname -m)"
@@ -30,5 +30,5 @@ mpx bootstrap --help >/dev/null 2>&1 && echo MPX_BOOTSTRAP_OK || echo MPX_BOOTST
 ---
 cat /var/lib/mpx/tls-fingerprint
 ---
-MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:8080 device password --password-stdin
+MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:8080 admin create --username 'admin' --password-stdin
 ---

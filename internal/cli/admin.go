@@ -124,7 +124,7 @@ var adminPasswordCmd = &cobra.Command{
 }
 
 // readAdminPassword 读一次密码:--password 直接给、--password-stdin 读一行、
-// 否则交互输两次核对。与设备密码同口径:至少 12 个字符。
+// 否则交互输两次核对。至少 12 个字符。
 func readAdminPassword(flag string, fromStdin bool, prompt string) (string, error) {
 	var pw string
 	var err error

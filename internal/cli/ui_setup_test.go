@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/ui"
 )
@@ -149,16 +150,14 @@ func setupTestEnv(t *testing.T, fake *fakeRemote, token string) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("MPX_DEVICE_PASSWORD", "device-password-1234")
-
 	oldSSH, oldConnect := initSSH, initConnect
 	t.Cleanup(func() { initSSH, initConnect = oldSSH, oldConnect })
 	initSSH = fake
-	initConnect = func(server, fp, password, name string) (*connectResult, error) {
+	initConnect = func(server, fp, username, password string) (*loginResult, error) {
 		if _, err := saveProfile(Profile{Server: server, Token: token, Fingerprint: fp}); err != nil {
 			return nil, err
 		}
-		return &connectResult{DeviceID: 1, Name: name, Token: token}, nil
+		return &loginResult{Token: token, ExpiresAt: time.Now().Add(30 * 24 * time.Hour)}, nil
 	}
 }
 
@@ -192,7 +191,7 @@ func TestSetupRunnerRun(t *testing.T) {
 	prog := &fakeSetupProgress{}
 	res, err := setupRunner{}.Run(context.Background(), ui.SetupParams{
 		Host:           "203.0.113.10",
-		DevicePassword: "device-password-1234",
+		DevicePassword: "admin-password-1234", // UC-26:字段改义为管理员密码
 	}, prog)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

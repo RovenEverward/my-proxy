@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/RovenEverward/my-proxy/internal/store"
 	"github.com/RovenEverward/my-proxy/internal/server"
+	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
 // adminEnv 起一个真控制面(httptest),把 MPX_SERVER/MPX_TOKEN 指过去。

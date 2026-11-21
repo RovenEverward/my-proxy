@@ -23,7 +23,9 @@ type initParams struct {
 	Identity, Binary, InstallScript, Addr               string
 	APIPort                                             int
 	Name, Username, SNI, RealityDest, Remark, SubPrefix string
-	DevicePassword                                      string
+	// AdminUser / AdminPassword 是 init 收尾时在 VPS 上建的管理员账号(UC-26):
+	// 网页管理台与 mpx connect 共用。AdminPassword 为空则不建号、本机不接入。
+	AdminUser, AdminPassword string
 	// FromUI:由窗口里的首次安装向导发起。报错与收尾提示改说界面操作,不提命令
 	// (窗口里显示的就是这些文字)。
 	FromUI bool
@@ -194,7 +196,7 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 		return nil, err
 	}
 
-	// ---- 收尾:设备密码 + 把本机接上去 --------------------------------------
+	// ---- 收尾:建管理员账号 + 把本机接上去 ---------------------------------
 
 	// 指纹是经 SSH 读回来的:SSH 这条路本身已经认过这台机器,所以这里不用再让人
 	// 对一遍指纹。
@@ -217,39 +219,48 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 			fmt.Fprintf(prog.Stdout(), "稍后在本机跑:mpx connect %s(它会显示指纹让你确认)\n", hostport)
 		}
 		return &initResult{HostPort: hostport, Server: server}, nil
-	case p.DevicePassword == "":
-		fmt.Fprintln(prog.Stdout(), "没设设备密码,本机没有自动接入。")
+	case p.AdminPassword == "":
+		fmt.Fprintln(prog.Stdout(), "没给管理员密码,这次不建账号、本机没有自动接入。")
+		fmt.Fprintln(prog.Stdout(), "建号:在 VPS 上跑 MPX_TOKEN=\"$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)\" "+
+			fmt.Sprintf("mpx --server http://127.0.0.1:%d admin create --username %s --password-stdin", p.APIPort, p.AdminUser))
 		return &initResult{HostPort: hostport, Server: server}, nil
 	}
 
-	prog.Step("设置设备密码")
-	// 在 VPS 本机经回环调接口:密码只走 SSH,不经公网。
-	setPW := fmt.Sprintf(`MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:%d device password --password-stdin`, p.APIPort)
+	prog.Step("建管理员账号")
+	// 在 VPS 本机经回环调接口:密码只走 SSH 喂给 --password-stdin,不经公网,
+	// 也不出现在远端命令行上(ps 看不到)。
+	adminUser := p.AdminUser
+	if adminUser == "" {
+		adminUser = defaultAdminUser
+	}
+	createAdmin := fmt.Sprintf(`MPX_TOKEN="$(sed -n 's/^MPX_TOKEN=//p' /etc/mpx/env)" mpx --server http://127.0.0.1:%d admin create --username %s --password-stdin`,
+		p.APIPort, node.ShellQuote(adminUser))
 	pwCtx, cancel := context.WithTimeout(ctx, initProbeTimeout)
 	defer cancel()
-	if out, err := initSSH.RunWithInput(pwCtx, n, auth, setPW, []byte(p.DevicePassword+"\n")); err != nil {
+	if out, err := initSSH.RunWithInput(pwCtx, n, auth, createAdmin, []byte(p.AdminPassword+"\n")); err != nil {
 		if p.FromUI {
-			return nil, fmt.Errorf("设置设备密码失败(VPS 上装的 MPX 可能比这个功能旧):%v %s", err, strings.TrimSpace(out))
+			return nil, fmt.Errorf("建管理员账号失败(VPS 上装的 MPX 可能比这个功能旧):%v %s", err, strings.TrimSpace(out))
 		}
-		return nil, fmt.Errorf("设置设备密码失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):%v %s", err, strings.TrimSpace(out))
+		return nil, fmt.Errorf("建管理员账号失败(装上的 mpx 可能比这个功能旧,可用 --binary 指本机编好的 linux mpx):%v %s", err, strings.TrimSpace(out))
 	}
 
 	prog.Step("把这台电脑接入控制面")
-	if _, err := initConnect(server, fp, p.DevicePassword, defaultDeviceName()); err != nil {
+	if _, err := initConnect(server, fp, adminUser, p.AdminPassword); err != nil {
 		if p.FromUI {
 			return nil, fmt.Errorf("本机接入失败: %w;控制面已经装好,稍后在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s", uiError(err), hostport, fp)
 		}
-		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s", err, hostport, fp)
+		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s --username %s", err, hostport, fp, adminUser)
 	}
 
 	fmt.Fprintln(prog.Stdout())
 	if p.FromUI {
-		fmt.Fprintf(prog.Stdout(), "别的设备接入这个控制面:在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s,再输入刚设的设备密码。\n", hostport, fp)
+		fmt.Fprintf(prog.Stdout(), "别的设备接入这个控制面:装好 mpx 后用管理员账号 %s 登录,地址 %s,核对指纹 %s。\n", adminUser, hostport, fp)
 	} else {
-		fmt.Fprintln(prog.Stdout(), "别的设备接入这个控制面,装好 mpx 后跑这一行,再输入刚设的设备密码:")
-		fmt.Fprintf(prog.Stdout(), "  mpx connect %s --fp %s\n", hostport, fp)
+		fmt.Fprintf(prog.Stdout(), "别的设备接入这个控制面,装好 mpx 后跑这一行,输入刚才的管理员密码:")
+		fmt.Fprintf(prog.Stdout(), "  mpx connect %s --fp %s --username %s\n", hostport, fp, adminUser)
 	}
 	fmt.Fprintln(prog.Stdout())
 	fmt.Fprintln(prog.Stdout(), "同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。")
+	fmt.Fprintln(prog.Stdout(), "网页管理台( /admin/ )需要域名加受信证书才适合对外开;之后用 mpx acme 配置(命令在下一批)。")
 	return &initResult{HostPort: hostport, Server: server, Fingerprint: fp, Connected: true}, nil
 }

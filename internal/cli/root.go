@@ -38,8 +38,8 @@ var rootCmd = &cobra.Command{
 --server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。
 
 第一次用:在你自己的电脑上跑 mpx init --host <VPS>,它经 SSH 把那台 VPS 装成控制面
-和节点,设好设备密码,并把这台电脑接上去。之后再也不用登录 VPS。
-别的设备:mpx connect <控制面地址>,输入设备密码即可接入。
+和节点,建好管理员账号,并把这台电脑接上去。之后再也不用登录 VPS。
+别的设备:mpx connect <控制面地址>,输入管理员用户名与密码即可接入。
 
 不知道下一步该敲什么,就先跑 mpx status 与 mpx doctor —— 这两条只读,不改动任何
 东西,它们会告诉你哪里不对。每个命令组(mpx node/inbound/host/user/settings)自己
