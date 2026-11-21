@@ -94,7 +94,9 @@ for (const relative of ["internal/ui/frontend/index.html", "internal/ui/frontend
   assert(!/<(?:img|video|canvas|form|button)\b/.test(html), `${relative}: the shell stays static; UI lives in React`);
 }
 const index = source("internal/ui/frontend/index.html");
-assert(index.includes('src="/boot.js"'), "index.html loads the compiled bootstrap.");
+// UC-26:入口引用一律相对(boot.js、favicon.svg、/main.tsx 入口由 vite base "./"
+// 改写),同一棵 assets 树在 / 和 /admin/ 两个挂载点下都能解析。
+assert(index.includes('src="boot.js"'), "index.html loads the compiled bootstrap (relative path).");
 assert(index.includes('src="/main.tsx"'), "index.html loads the React application entry.");
 const catalogHtml = source("internal/ui/frontend/components.html");
 assert(catalogHtml.includes('src="/catalog.tsx"'), "components.html loads the catalog entry.");

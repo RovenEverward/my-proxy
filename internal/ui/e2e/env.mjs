@@ -1,5 +1,6 @@
-// 测试环境:编出 mpx、起控制面、在它前面放一个记录请求的转发、起 mpx ui。
-// CLI 与页面都经过这个转发,于是能把「同一件事,CLI 发了什么、页面发了什么」逐条对照。
+// 测试环境:编出 mpx、起控制面、在它前面放一个记录请求的转发。
+// UC-26:浏览器直接开控制面自己的 /admin/(不再需要 mpx ui 进程),
+// CLI 走同一个转发,于是「同一件事,CLI 发了什么、页面发了什么」逐条对照。
 import { execFile, spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import http from "node:http";
@@ -13,6 +14,8 @@ import { fileURLToPath } from "node:url";
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const TOKEN = "e2e-token";
+// 管理员账号:密码下限 12 位。
+const ADMIN = { username: "admin", password: "e2e-admin-password" };
 
 const freePort = () => new Promise(res => { const s = net.createServer(); s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -77,27 +80,66 @@ export async function startEnv() {
   // 直接打控制面的 CLI:造数据用,不进记录。
   const seed = async (...args) => (await run(bin, args, { env: { ...env, MPX_SERVER: cpURL } })).stdout;
 
-  const ui = spawn(bin, ["ui", "--no-open", "--addr", "127.0.0.1:0"], { env: cliEnv });
-  procs.push(ui);
-  const link = await new Promise((res, rej) => {
-    let out = "";
-    ui.stdout.on("data", d => { out += d; const m = /http:\/\/\S+\?k=\S+/.exec(out); if (m) res(m[0]); });
-    ui.on("exit", c => rej(new Error("mpx ui 退出了: " + c + "\n" + out)));
-  });
+  // 管理台账号:页面登录走它;主 token(MPX_TOKEN)只留给 CLI 造数。
+  await seed("admin", "create", "--username", ADMIN.username, "--password", ADMIN.password);
 
   return {
-    link, origin: new URL(link).origin, cli, seed, token: TOKEN, cpURL,
+    bin, dir, cpURL, token: TOKEN, admin: { ...ADMIN }, seed, cli, log,
     takeLog: () => log.splice(0, log.length),
     // 最近一条写请求的控制面响应(状态码与原文),用来核对页面报的是不是原话。
     lastResponse: () => last && { status: last.status, body: last.response },
-    async stop() { for (const p of procs) p.kill(); rec.close(); await sleep(200); rmSync(dir, { recursive: true, force: true }); },
+    // 转发上游地址:对照「页面按请求 Host 拼链接」的用例拿它当控制面视角。
+    upstreamURL: cpURL,
+    // origin 不带尾斜杠:各 spec 用 env.origin + "/#nodes" 拼页面地址,
+    // /admin 会被 301 到 /admin/,Playwright 跟着跳过去。
+    origin: recURL + "/admin",
+    page: recURL + "/admin/",
+    get last() { return last; },
+    serveOut: () => serveOut,
+    async stop() {
+      for (const p of procs) p.kill("SIGTERM");
+      rec.close();
+      try { await Promise.all(procs.map(p => new Promise(res => { p.once("exit", res); setTimeout(res, 5000); }))); } catch { /* 进程已退出 */ }
+      rmSync(dir, { recursive: true, force: true });
+    },
   };
 }
 
-// 把一条写请求摆成可比的样子:twin 的名字换成 <u>;各人各异的 id、订阅 token、
-// 创建时间去掉;时间统一成毫秒数(CLI 带本地时区偏移,浏览器给 Z,是同一刻)。
-// opt.ids:twin 的数字 id(路径段与 id / node_id / inbound_id 字段)换成同一个占位;
-// opt.drop:PUT 里两边各自生成、本就不同的字段(如 REALITY 公钥)。
+// 登录:第一个用例走表单(顺带把表单本身测了),同一文件后面的用例复用 cookie。
+// 管理台的 mpx_admin cookie 30 天有效,一个文件跑下来不会过期。
+export async function login(page, env) {
+  if (process.env.MPX_INTERACTION_AUDIT) await (await import("./interaction-audit.mjs")).auditInteractions(page);
+  if (env.cookies) {
+    await page.context().addCookies(env.cookies);
+    await page.goto(env.page);
+    // 会话可能已被服务端的退出/改密吊销:落在登录页就退回表单重登。
+    // 用 main 判已登录(登录页没有 main):aside.side 在窄屏是隐藏的,等它会卡死。
+    await page.waitForSelector("#lg-user, main", { timeout: 15000 });
+    if (await page.locator("#lg-user").count() === 0) return;
+    env.cookies = null;
+  }
+  await page.goto(env.page);
+  await page.waitForSelector("#lg-user", { timeout: 15000 });
+  await page.fill("#lg-user", env.admin.username);
+  await page.fill("#lg-pass", env.admin.password);
+  await page.click("[data-act=login-submit]");
+  // 登录成功是整页重载:等工作区落地(main 只在工作区出现)。
+  await page.waitForSelector("main", { timeout: 15000 });
+  env.cookies = await page.context().cookies();
+}
+
+// cpFetch 直接问控制面,遇到 429 按 Retry-After 等一下再试 —— 和 CLI、页面的做法一样。
+// 整套用例在同一个 IP 上连续写,限流桶偶尔会见底;那是限流在正常工作,不是被测的东西坏了。
+export async function cpFetch(url, init) {
+  for (let i = 0; ; i++) {
+    const r = await fetch(url, init);
+    if (r.status !== 429 || i >= 5) return r;
+    await new Promise(ok => setTimeout(ok, 1000 * (+r.headers.get("Retry-After") || 2)));
+  }
+}
+
+// normalize 把记录下来的写请求整成可比对的快照:用户名/名字换成 <u>,
+// 自增 id 换成 <id>,时间换毫秒,PUT body 可按 opt.drop 丢字段。
 export function normalize(reqs, names, opt = {}) {
   const ids = opt.ids || [];
   const idOf = v => ids.includes(String(v)) ? "<id>" : v;
@@ -125,89 +167,8 @@ export function normalize(reqs, names, opt = {}) {
   });
 }
 
-// startSetupEnv:给「首次安装向导」用的独立环境。没有控制面,只有 mpx ui 自己。
-// 编译一次 mpx,HOME/配置目录指到临时目录,清掉 MPX_SERVER/MPX_TOKEN/MPX_PROFILE,
-// 于是页面进入 setup 模式、显示向导。从 stdout 抓带一次性 key 的登录链接。
-export async function startSetupEnv() {
-  const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-setup-"));
-  const bin = await binFor(dir);
-  const env = {
-    ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir,
-    MPX_SERVER: "", MPX_TOKEN: "", MPX_PROFILE: "",
-  };
-  const cp = spawn(bin, ["ui", "--no-open", "--addr", "127.0.0.1:0"], { env, stdio: ["ignore", "pipe", "pipe"] });
-  const link = await new Promise((res, rej) => {
-    let out = "";
-    cp.stdout.on("data", d => { out += d; const m = /http:\/\/\S+\?k=\S+/.exec(out); if (m) res(m[0]); });
-    cp.stderr.on("data", d => { out += d; });
-    cp.on("exit", c => rej(new Error("mpx ui 退出了: " + c + "\n" + out)));
-  });
-  return {
-    link, origin: new URL(link).origin,
-    async stop() { cp.kill(); await sleep(200); rmSync(dir, { recursive: true, force: true }); },
-  };
-}
-
-// startConnectEnv:给「接入已有控制面」用的环境。一台真控制面(同端口提供
-// HTTPS,证书指纹从 /api/status 的 tls_fingerprint 读回),先用管理 token 设好
-// 一个设备密码;另按需起配置为空的 mpx ui(startUI):每个用例一台,谁接入
-// 成功切到正常模式都不影响别的用例。返回的 u 兼容 login(page, u) 的形状。
-export async function startConnectEnv() {
-  const dir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-cp-"));
-  const bin = await binFor(dir);
-  const env = { ...process.env, HOME: dir, USERPROFILE: dir, XDG_CONFIG_HOME: dir, MPX_TOKEN: TOKEN, MPX_PROFILE: "", MPX_API_BURST: "1000" };
-  const cpPort = await freePort();
-  const procs = [];
-  const uiDirs = [];
-  const serve = spawn(bin, ["serve", "--addr", `127.0.0.1:${cpPort}`, "--db", path.join(dir, "mpx.db"), "--auto-locate=false"],
-    { env, stdio: ["ignore", "pipe", "pipe"] });
-  procs.push(serve);
-  let serveOut = "";
-  serve.stdout.on("data", d => { serveOut += d; }); serve.stderr.on("data", d => { serveOut += d; });
-  const cpURL = `http://127.0.0.1:${cpPort}`;
-  let fp = "";
-  for (let i = 0; ; i++) {
-    try {
-      const r = await fetch(cpURL + "/api/status", { headers: { Authorization: "Bearer " + TOKEN } });
-      if (r.ok) { fp = (await r.json()).tls_fingerprint || ""; if (fp) break; }
-    } catch {}
-    if (i > 300) throw new Error("控制面没起来:\n" + serveOut);
-    await sleep(100);
-  }
-  const pw = "Device-Entry-445566";
-  const r = await cpFetch(cpURL + "/api/device-password", {
-    method: "PUT", headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify({ password: pw }),
-  });
-  if (!r.ok) throw new Error("设设备密码失败: " + r.status + " " + (await r.text()));
-
-  const startUI = async () => {
-    const udir = mkdtempSync(path.join(tmpdir(), "mpx-e2e-ui-"));
-    uiDirs.push(udir);
-    const uenv = { ...process.env, HOME: udir, USERPROFILE: udir, XDG_CONFIG_HOME: udir, MPX_SERVER: "", MPX_TOKEN: "", MPX_PROFILE: "" };
-    const cp = spawn(bin, ["ui", "--no-open", "--addr", "127.0.0.1:0"], { env: uenv, stdio: ["ignore", "pipe", "pipe"] });
-    procs.push(cp);
-    const link = await new Promise((res, rej) => {
-      let out = "";
-      cp.stdout.on("data", d => { out += d; const m = /http:\/\/\S+\?k=\S+/.exec(out); if (m) res(m[0]); });
-      cp.stderr.on("data", d => { out += d; });
-      cp.on("exit", c => rej(new Error("mpx ui 退出了: " + c + "\n" + out)));
-    });
-    return { link, origin: new URL(link).origin, dir: udir, cookies: null };
-  };
-  return {
-    fp, pw, cpPort, cpURL, bin, startUI,
-    async stop() {
-      for (const p of procs) p.kill();
-      await sleep(200);
-      rmSync(dir, { recursive: true, force: true });
-      for (const d of uiDirs) rmSync(d, { recursive: true, force: true });
-    },
-  };
-}
-
-// httpsJSON 直接对控制面的 HTTPS 管理口发一次 JSON 请求。自签证书过不了 CA
-// 校验,这里只做连通(设备密码换成败本身就是被测行为,按指纹校验是 pin 包的事)。
+// httpsJSON 直连控制面的 HTTPS 侧(sniff 端口同时受理 HTTP/TLS,自签证书
+// 跳过 CA 校验)。给「必须在 TLS 上说话」的接口用,如 POST /api/connect。
 export function httpsJSON(port, method, p, body, headers = {}) {
   return new Promise((res, rej) => {
     const req = https.request({ host: "127.0.0.1", port, path: p, method, headers,
@@ -219,28 +180,4 @@ export function httpsJSON(port, method, p, body, headers = {}) {
     req.on("error", rej);
     req.end(body === undefined ? "" : JSON.stringify(body));
   });
-}
-
-// 登录:用一次性链接换 cookie。
-// 链接里的 key 只能换一次会话;之后的用例复用第一次拿到的 cookie。
-export async function login(page, env) {
-  if (process.env.MPX_INTERACTION_AUDIT) await (await import("./interaction-audit.mjs")).auditInteractions(page);
-  if (env.cookies) {
-    await page.context().addCookies(env.cookies);
-    await page.goto(env.origin + "/");
-  } else {
-    await page.goto(env.link);
-    await page.waitForURL(env.origin + "/");
-    env.cookies = await page.context().cookies();
-  }
-}
-
-// cpFetch 直接问控制面,遇到 429 按 Retry-After 等一下再试 —— 和 CLI、页面的做法一样。
-// 整套用例在同一个 IP 上连续写,限流桶偶尔会见底;那是限流在正常工作,不是被测的东西坏了。
-export async function cpFetch(url, init) {
-  for (let i = 0; ; i++) {
-    const r = await fetch(url, init);
-    if (r.status !== 429 || i >= 5) return r;
-    await new Promise(ok => setTimeout(ok, 1000 * (+r.headers.get("Retry-After") || 2)));
-  }
 }

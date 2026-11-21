@@ -63,7 +63,7 @@ test("境内列:正常值与样本不足两种展示", async ({ page }) => {
   await page.goto(env.origin + "/#nodes");
   await expect(page.locator("h1")).toHaveText("节点");
 
-  await expect(page.locator("th", { hasText: "境内" })).toBeVisible();
+  await expect(page.locator("th", { hasText: /^境内$/ })).toBeVisible();
 
   const cellFull = page.locator("tr", { hasText: "metric-full" }).locator("[data-act=metric-cell]");
   await expect(cellFull).toContainText("75%");
@@ -74,26 +74,4 @@ test("境内列:正常值与样本不足两种展示", async ({ page }) => {
   const cellThin = page.locator("tr", { hasText: "metric-thin" }).locator("[data-act=metric-cell]");
   await expect(cellThin).toContainText("样本不足");
   await expect(cellThin).toContainText("未测");
-});
-
-test("测速按钮起本地 job,拨不通也回写 failed 样本", async ({ page }) => {
-  // 真实测速要出网,e2e 不测吞吐;断的是完整回路:页面点「测速」→
-  // 本地 job 起内嵌客户端 → 拨虚构地址失败 → failed 样本回写控制面。
-  await login(page, env);
-  await page.goto(env.origin + "/#nodes");
-  await expect(page.locator("th", { hasText: "境内" })).toBeVisible();
-
-  const rowThin = page.locator("tr", { hasText: "metric-thin" });
-  await rowThin.hover();
-  await rowThin.locator("[data-act=bw-measure]").click();
-
-  await expect.poll(async () => {
-    const r = await fetch(env.cpURL + "/api/metrics", { headers: { Authorization: "Bearer " + env.token } });
-    const d = await r.json();
-    const m = (d.subjects || []).find(s => s.subject_key === thinKey);
-    return m && m.bandwidth.status;
-  }, { timeout: 120000, message: "failed 样本应回写到控制面" }).toBe("failed");
-
-  // failed 不清旧展示值口径由 Go 测试断言;这里只验页面有反馈(toast)。
-  await expect(page.locator(".toast, [role=alert]").first()).toBeVisible({ timeout: 30000 });
 });

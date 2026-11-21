@@ -34,10 +34,6 @@ async function overview(page, platform, theme, extreme = false) {
     counts: { users: 6, nodes: 8, inbounds: 8, hosts: 8 }, last_tick_at: iso(0), last_tick_seconds: 1.4,
     backoffs: (extreme ? nodes : [nodes[6]]).map(n => ({ node_id: n.id, node_name: n.name, failures: 4, skip_until: iso(1) })),
   };
-  await page.route("**/ui/meta", async r => {
-    const response = await r.fetch(), meta = await response.json();
-    await r.fulfill({ response, json: { ...meta, server: "203.0.113.10:8080" } });
-  });
   const data = { "/api/status": status, "/api/nodes": nodes, "/api/settings": settings,
     "/api/users": { users, total: users.length, presence: { active_24h: 3 } },
     "/api/sub-pulls": [{ username: users[0].username, client: "clash-verge", first_pulled_at: iso(-5), last_pulled_at: iso(0) }],
@@ -86,7 +82,7 @@ for (const platform of ["mac", "win"]) for (const theme of ["light", "dark"]) {
         await expect(page.locator("html")).toHaveClass(/os-mac/);
         expect(await main.evaluate(m => getComputedStyle(m, "::-webkit-scrollbar").width)).not.toBe("8px");
       } else {
-        await expect(page.locator("html")).toHaveClass(/tb-right/);
+        // UC-26:桌面壳退役,标题栏 tb-right 不再存在;非 mac 仍用 8px 细滚动条。
         expect(await main.evaluate(m => getComputedStyle(m, "::-webkit-scrollbar").width)).toBe("8px");
       }
       // 不靠 main 的 overflow-x:hidden 掩盖子元素溢出。

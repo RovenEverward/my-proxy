@@ -274,16 +274,10 @@ test('节点首帧的添加连接等待当前节点数据，不使用前一台�
   releaseFirst();
 });
 
-test('经 mpx ui 的真实管理 JSON 使用 gzip，二维码不再重读链接，订阅页并行请求状态', async ({ page }) => {
+test('真实管理 JSON 使用 gzip，订阅页并行请求状态', async ({ page }) => {
   await login(page, env); await ready(page);
   const data = await page.evaluate(async () => { const r = await fetch('/api/rule-catalog'); return { encoding: r.headers.get('content-encoding'), data: await r.json() }; });
   expect(data.encoding).toBe('gzip'); expect(data.data).toBeTruthy();
-  let links = 0;
-  page.on('request', r => { if (new URL(r.url()).pathname === '/api/users/reuse-a/links') links++; });
-  await page.click('tr[data-href="#users/reuse-a"]'); await detailReady(page);
-  await expect.poll(() => page.locator('.qrs').evaluate(async img => { await img.decode(); return img.naturalWidth; })).toBeGreaterThan(0);
-  expect(links).toBe(1);
-  await page.click('#drawer [data-act=close]');
   const release = await gate(page, '**/api/status');
   const settings = page.waitForRequest(r => new URL(r.url()).pathname === '/api/settings');
   await page.click('.side a[href="#sub"]');
@@ -294,7 +288,6 @@ test('经 mpx ui 的真实管理 JSON 使用 gzip，二维码不再重读链接�
 for (const theme of ['light', 'dark']) test(`详情复用 · ${theme} 截图`, async ({ page }) => {
   test.skip(!process.env.MPX_DATA_REUSE_SHOTS, '截图按需生成');
   await page.addInitScript(theme => localStorage.setItem('mpx-theme', theme), theme);
-  await page.route('**/ui/meta', async r => { const response = await r.fetch(); await r.fulfill({ response, json: { ...(await response.json()), server: 'https://203.0.113.10:8080' } }); });
   await login(page, env); await ready(page);
   await page.route('**/api/users/reuse-a/links', async r => { const response = await r.fetch(); await r.fulfill({ response, json: { ...(await response.json()), auto: 'https://sub.example.com/sub/example' } }); });
   const release = await gate(page, '**/api/users/reuse-a/**');

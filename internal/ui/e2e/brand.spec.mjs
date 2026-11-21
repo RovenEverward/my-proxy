@@ -11,10 +11,12 @@ for (const scheme of ["light", "dark"]) {
   test(`侧栏品牌 lockup(${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme });
     await page.addInitScript(t => localStorage.setItem("mpx-theme", t), scheme);
-    // 未登录时的静态兜底页也使用相同的品牌墨色。
+    // 未登录先到登录页:卡片上的品牌 lockup 与侧栏同资源、真加载。
     await page.goto(env.origin + "/");
-    await expect(page.locator("h1")).toHaveText("需要重新打开");
-    await expect(page.locator("h1")).toHaveCSS("color", scheme === "light" ? "rgb(47, 48, 51)" : "rgb(221, 222, 224)");
+    await expect(page.locator("h1")).toHaveText("登录管理台");
+    const loginImg = page.locator(`.lg-brand img.lk-${scheme === "light" ? "l" : "d"}`);
+    await expect(loginImg).toBeVisible();
+    expect(await loginImg.evaluate(i => i.complete && i.naturalWidth > 0)).toBe(true);
     await login(page, env);
     await expect(page).toHaveTitle("MPX");
     const shown = page.locator(`.brand img.lk-${scheme === "light" ? "l" : "d"}`);
@@ -34,9 +36,6 @@ for (const scheme of ["light", "dark"]) {
 for (const saved of [null, "dark"]) test(`系统深色时默认浅色，已存选择保留 · ${saved || "首次"}`, async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   if (saved) await page.addInitScript(t => localStorage.setItem("mpx-theme", t), saved);
-  const themes = [];
-  await page.route("**/local/app/theme", r => { themes.push(r.request().postDataJSON().theme); return r.fulfill({ json: {} }); });
   await login(page, env);
   await expect(page.locator("html")).toHaveAttribute("data-theme", saved || "light");
-  await expect.poll(() => themes.at(-1)).toBe(saved || "light");
 });

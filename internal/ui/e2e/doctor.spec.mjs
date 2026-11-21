@@ -118,11 +118,12 @@ test("优先显示 ui_hint,不把命令摆进窗口", async ({ page }) => {
   const row = page.locator("table tbody tr").first();
   await expect(row).toContainText("点「应用到节点」覆盖回去");
   await expect(row).not.toContainText("mpx ");
+  // UC-26:401 会直接退回登录页(session-expired),报错卡片用非 401 的错误验证 ui_hint 优先。
   await page.unroute("**/api/doctor");
-  await page.route("**/api/doctor", r => r.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "token 不正确或这台设备已被吊销;重新 mpx connect", ui_hint: "这台设备的登录已失效或被吊销:请在 MPX 里重新「接入已有控制面」" }) }));
+  await page.route("**/api/doctor", r => r.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "没有权限;执行 mpx doctor --fix", ui_hint: "这台控制面只读:体检只能在服务器上跑 mpx doctor" }) }));
   await page.click("[data-act=doc-run]");
-  await expect(page.locator("#content, main, body").first()).toContainText("重新「接入已有控制面」");
-  await expect(page.locator("body")).not.toContainText("重新 mpx connect");
+  await expect(page.locator("#content, main, body").first()).toContainText("体检只能在服务器上跑");
+  await expect(page.locator("body")).not.toContainText("mpx doctor --fix");
 });
 
 // 漂移警告行:文案换成界面说法,后面跟「应用到<节点>」;点一下跳到节点详情并弹出

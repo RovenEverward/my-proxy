@@ -144,41 +144,6 @@ test('单条规则写后只读取规则资源，兜底写失败恢复原值', as
   await expect(page.locator('#rp-final')).toHaveValue(original);
 });
 
-test('进入页面时读取控制面列表不取消页面加载', async ({ page }) => {
-  await page.route('**/ui/meta', async route => {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: { ...(await response.json()), profiles: true } });
-  });
-  await page.route('**/local/profiles', route => route.fulfill({ json: [
-    { name: 'current', server: env.cpURL, current: true },
-    { name: 'other', server: 'https://other.example.com' },
-  ] }));
-  let release;
-  const held = new Promise(resolve => { release = resolve; });
-  await page.route('**/api/rules', async route => {
-    const response = await route.fetch();
-    await held;
-    await route.fulfill({ response });
-  });
-  try {
-    await login(page, env);
-    // 胶囊一挂上就取控制面列表(响应已在路由层备好,不等页面加载完)。
-    const profiles = page.waitForResponse(response => new URL(response.url()).pathname === '/local/profiles');
-    await page.goto(env.origin + '/#rules');
-    await expect(page.locator('html[data-loading]')).toHaveCount(1);
-    await profiles;
-    await page.locator('[data-act=cp-toggle]').click();
-    await expect(page.locator('.pfitem')).toHaveCount(2);
-    await expect(page.locator('html[data-loading]')).toHaveCount(1);
-    await page.keyboard.press('Escape');
-    release();
-    await expect(page.locator('.rp-row').first()).toBeVisible();
-    await expect(page.locator('html[data-loading]')).toHaveCount(0);
-  } finally {
-    release();
-    await page.unrouteAll({ behavior: 'wait' });
-  }
-});
 
 test('连续切筛选与作用域不复用前一选择的在途请求', async ({ page }) => {
   // This case also runs after a worker restart or without the earlier tests.

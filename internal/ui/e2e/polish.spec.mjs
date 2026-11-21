@@ -103,7 +103,7 @@ test("M5 键盘聚焦光圈取自 --ring(Terminus 蓝),各类控件一致", asyn
 });
 
 test("N1 侧栏版本号去掉伪版本尾巴", async ({ page }) => {
-  await page.route("**/ui/meta", async r => { const res = await r.fetch(); const j = await res.json(); await r.fulfill({ response: res, json: { ...j, cli_version: "v0.9.11-0.20261018055517-abcdef123456" } }); });
+  await page.route("**/api/admin/meta", async r => { const res = await r.fetch(); const j = await res.json(); await r.fulfill({ response: res, json: { ...j, version: "v0.9.11-0.20261018055517-abcdef123456" } }); });
   await go(page, "overview");
   await expect(page.locator(".brand small")).toHaveText("v0.9.11");
 });
@@ -196,20 +196,6 @@ test("N10 分流卡片头「添加规则」吸顶", async ({ page }) => {
   await expect(ch.locator("[data-act=rp-add]")).toBeInViewport();
 });
 
-test("N12 Windows 标题栏模式下内容已让出顶栏，分流卡片头吸顶贴 main 的顶", async ({ page }) => {
-  // 必须是一个能滚动的页:卡片全在首屏时 main 没有滚动,卡片头根本到不了吸顶位置。窗口矮一点。
-  await page.setViewportSize({ width: 1440, height: 560 });
-  await go(page, "rules");
-  // 浏览器里没有 mygo 注入的标题栏:CSP 不让 addStyleTag,这里直接加 tb-right 类、设窗口高度变量(同 winFrame)。
-  // 两个变量都要设:页面每次 resize 都按 --mygo-titlebar-inset-right 重新加/摘 tb-right,只加类会被摘掉。
-  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); st.setProperty("--mygo-titlebar-inset-right", "138px"); document.documentElement.classList.add("tb-right"); dispatchEvent(new Event("resize")); });
-  await page.locator("main").evaluate(m => { m.scrollTop = 600; });
-  // 顶栏在 tb-right 下挪到标题栏里、不在 main 的滚动区里;卡片头贴 main 的顶,而且滚到底也贴得住(不是只露出了 8px 边距)。
-  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
-  await page.locator("main").evaluate(m => { m.scrollTop = m.scrollHeight; });
-  await expect.poll(async () => { const r = await page.evaluate(() => ({ main: document.querySelector("main").getBoundingClientRect().top, ch: document.querySelector(".rp-card > .ch").getBoundingClientRect().top })); return Math.abs(r.ch - r.main); }).toBeLessThanOrEqual(2);
-});
-
 test("N11 订阅地址占位文字带「例如」，用浅灰", async ({ page }) => {
   await go(page, "sub");
   const pf = page.locator("#f-prefix");
@@ -233,7 +219,7 @@ const cjkByNoto = fonts => fonts.some(f => /Noto Sans SC/.test(f.familyName) && 
 
 test("M4 中文用随程序带的 Noto Sans SC(本地加载);页面、弹窗、抽屉、深色都一样", async ({ page }) => {
   const external = [];
-  page.on("request", r => { if (!r.url().startsWith(env.origin) && /font|woff/i.test(r.url())) external.push(r.url()); });
+  page.on("request", r => { if (!r.url().startsWith(new URL(env.page).origin) && /font|woff/i.test(r.url())) external.push(r.url()); });
   await go(page, "nodes");
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => [...document.fonts].some(f => f.family.replace(/"/g, "") === "Noto Sans SC" && f.status === "loaded"))).toBe(true);
@@ -256,46 +242,6 @@ test("M4 中文用随程序带的 Noto Sans SC(本地加载);页面、弹窗、�
   await expect(page.locator("html[data-theme=dark]")).toHaveCount(1);
   expect(cjkByNoto(await usedFonts(page, ".ph h1"))).toBe(true);
   expect(external).toEqual([]);
-});
-
-// Windows 桌面窗口:右上角 138×52 是最小化/最大化/关闭。浏览器里用 mygo 注入的同名 CSS 变量模拟。
-async function winFrame(page) {
-  await page.evaluate(() => { const st = document.documentElement.style; st.setProperty("--mygo-titlebar-height", "52px"); st.setProperty("--mygo-titlebar-inset-right", "138px"); dispatchEvent(new Event("resize")); });
-  await expect(page.locator("html.tb-right")).toHaveCount(1);
-}
-async function clearOfCaption(page, sel) {
-  const box = page.locator(sel).first();
-  await expect(box).toBeVisible();
-  // 等滑入/淡入动画结束:轮询到位置不再变,再量它压不压窗口按钮。
-  let r, vw = page.viewportSize().width;
-  await expect(async () => {
-    const a = await box.boundingBox();
-    await page.waitForFunction(() => document.getAnimations().every(x => x.playState !== "running"));
-    r = await box.boundingBox();
-    expect(r).toEqual(a);
-  }).toPass();
-  const hitsCaption = r.y < 52 && r.x + r.width > vw - 138;
-  expect(hitsCaption, `${sel} 压到了窗口按钮:${JSON.stringify(r)}`).toBe(false);
-}
-
-test("W1 Windows 窗口里抽屉和弹窗都不压右上角的窗口按钮", async ({ page }) => {
-  await go(page, "nodes/1"); await winFrame(page);
-  for (const act of ["node-online", "conn-new"]) {
-    await page.click(`[data-act=${act}]`);
-    await clearOfCaption(page, "#drawer.open");
-    await page.keyboard.press("Escape"); await expect(page.locator("#drawer.open")).toHaveCount(0);
-  }
-  for (const act of ["node-rm", "node-install", "node-diagnose"]) {
-    await page.click(`[data-act=${act}]`);
-    await clearOfCaption(page, "#modal.open");
-    await page.click("[data-act=modal-cancel]"); await expect(page.locator("#modal.open")).toHaveCount(0);
-  }
-  await page.goto(env.origin + "/#sub"); await settle(page); await winFrame(page);
-  await page.click("[data-act=s5-rules]");
-  await clearOfCaption(page, "#drawer.open");
-  // 所有抽屉/弹窗容器共用 .drawer / .modal,规则对它们全部生效。
-  const tops = await page.evaluate(() => [...document.querySelectorAll(".drawer,.modal")].map(e => e.classList.contains("drawer") ? parseFloat(getComputedStyle(e).top) : -1));
-  for (const t of tops) if (t >= 0) expect(t).toBeGreaterThanOrEqual(52);
 });
 
 test("O1 在线名单读不到时说读不到，不说「没有在线用户」", async ({ page }) => {

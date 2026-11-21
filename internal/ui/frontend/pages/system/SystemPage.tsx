@@ -22,7 +22,7 @@ export function SystemPage({ route }: PageProps) {
   useEffect(() => { setBusy(query.loading); return () => setBusy(false); }, [query.loading, setBusy]);
   return <><PageHeader title="系统" description="通知、设备、备份与版本" /><Tabs items={SYSTEM_TABS} value={tab.key} />
     {query.data && query.error && <ErrorState title="系统" error={query.error} onRetry={() => void query.refresh()} />}
-    {tab.key === "update" ? <div className="card pad18"><b className="b6">当前版本</b><p className="sub mt6 mb14 mono">{meta.cli_version || "—"}</p><Button variant="primary" data-act="update-open" onClick={openUpdate}><Icon name="refresh" />检查更新</Button></div>
+    {tab.key === "update" ? <div className="card pad18"><b className="b6">当前版本</b><p className="sub mt6 mb14 mono">{meta.version || "—"}</p><Button variant="primary" data-act="update-open" onClick={openUpdate}><Icon name="refresh" />检查更新</Button></div>
       : !query.data ? query.error ? <ErrorState title="系统" error={query.error} onRetry={() => void query.refresh()} /> : <LoadingTable rows={6} columns={2} />
       : tab.key === "devices" ? <DevicesTab devices={query.data.devices || []} refresh={() => query.refresh(false)} />
       : tab.key === "backup" ? <BackupTab />

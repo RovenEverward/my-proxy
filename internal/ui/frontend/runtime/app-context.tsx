@@ -22,8 +22,7 @@ export interface AppContextValue {
   setModalLocked: (locked: boolean) => void;
   confirmBox: (confirmation: Confirmation) => void;
   openUpdate: () => void;
-  openProfiles: () => void;
-  openConnect: () => void;
+  logout: () => void;
 }
 export const AppContext = createContext<AppContextValue | null>(null);
 export function useApp(): AppContextValue {

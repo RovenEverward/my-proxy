@@ -6,7 +6,7 @@ import { startEnv, login } from "./env.mjs";
 let env;
 const LONG_USER = "zhang.san_" + "x".repeat(54); // 用户名只允许 [A-Za-z0-9_.-],最长 64;emoji 放在备注和节点名里
 const LONG_NODE = "hk-日本-🚀-very-long-node-name-for-overflow-check";
-const SERVERS = ["https://203.0.113.37:8080", "https://control-plane.my-very-long-subdomain.example-proxy.net:8443", "https://[2001:db8:85a3::8a2e:370:7334]:8080"];
+const USERNAMES = ["admin", "ops_" + "x".repeat(57)]; // 顶栏胶囊显示用户名:短名与 64 位长名各跑一遍
 
 test.beforeAll(async () => {
   env = await startEnv();
@@ -36,18 +36,17 @@ const overflowing = page => page.evaluate(() => {
   return bad;
 });
 
-for (const theme of ["light", "dark"]) for (const server of SERVERS) {
-  test(`无横向溢出 · ${theme} · ${server}`, async ({ page }) => {
+for (const theme of ["light", "dark"]) for (const username of USERNAMES) {
+  test(`无横向溢出 · ${theme} · ${username}`, async ({ page }) => {
     await page.addInitScript(t => localStorage.setItem("mpx-theme", t), theme);
-    await page.route("**/ui/meta", async r => { const res = await r.fetch(); const j = await res.json(); j.server = server; await r.fulfill({ response: res, json: j }); });
+    // 顶栏胶囊显示登录用户名:长名也要收进布局,不撑出横向滚动。
+    await page.route("**/api/admin/meta", async r => { const res = await r.fetch(); const j = await res.json(); j.username = username; await r.fulfill({ response: res, json: j }); });
     await login(page, env);
-    for (const h of ["overview", "users", "users/" + encodeURIComponent(LONG_USER), "nodes", "nodes/1", "settings", "settings/templates"]) {
+    for (const h of ["overview", "users", "users/" + encodeURIComponent(LONG_USER), "nodes", "nodes/1", "system", "sub/templates"]) {
       await page.goto(env.origin + "/#" + h); await page.reload();
-      await expect(page.locator(".profile")).toContainText(server.replace(/^https:\/\//, ""));
+      await expect(page.locator(".top .profile")).toContainText(username);
       await page.waitForTimeout(300);
       expect(await overflowing(page), h).toEqual([]);
     }
-    // 名称是自动生成的 default 时卡片只显示地址(<b>),完整地址在 title 里。
-    await expect(page.locator(`.profile [title="${server}"]`)).toHaveCount(1);
   });
 }

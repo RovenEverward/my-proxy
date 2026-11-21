@@ -29,19 +29,20 @@ function SourceGroup({ title, note, rows, side }: { title: string; note: string;
 }
 
 // ReachDrawer 是一台节点的触达明细:判定一句话 + 两来源×入站的 TCP/UDP 结果。
-export function ReachDrawer({ node, check, running, onRecheck }: { node: NodeView; check: ReachNodeCheck; running: boolean; onRecheck: () => void }) {
+// UC-26 起没有「重新检查」按钮 —— 起触达检查是 CLI 的事,页面只读存档。
+export function ReachDrawer({ node, check }: { node: NodeView; check: ReachNodeCheck }) {
   const app = useApp();
   const tone = check.verdict === "ok" ? "stone" : check.verdict === "unknown" ? "" : "bad";
   const icon = check.verdict === "ok" ? <Icon name="check" /> : <Icon name="warn" className={check.verdict === "unknown" ? "ico-warn" : "ico-bad"} />;
   return <><DrawerHeader title={<FlagText>{nodeLabel(node)}</FlagText>} description="触达检查 · 两来源 × 端口明细" onClose={app.closeOverlays} />
     <DrawerBody>
       <div className={`callout ${tone} mb`}>{icon}<div><b>{verdictText(check.verdict)}</b><div>{verdictLong[check.verdict]}</div></div></div>
-      <SourceGroup title="本机" note="这台电脑直接探测，反映你所在的网络" rows={check.rows} side="local" />
+      <SourceGroup title="境内" note="境内探测点探测，反映国内用户的可达性" rows={check.rows} side="local" />
       <SourceGroup title="控制面" note="控制面探测，反映节点本身是否活着" rows={check.rows} side="cp" />
       <MetricSection node={node} />
       <div className="reach-legend">UDP 超时可能是收了没回，判定仅供参考。检查于 {check.checked_at ? new Date(check.checked_at).toLocaleString() : "—"}</div>
     </DrawerBody>
-    <div className="df"><button type="button" className="lnk" data-act="reach-open-node" onClick={() => app.navigate(`nodes/${node.id}`)}>打开节点</button><span className="sp" /><Button size="sm" data-act="reach-recheck" loading={running} onClick={onRecheck}><Icon name="refresh" />重新检查</Button></div>
+    <div className="df"><button type="button" className="lnk" data-act="reach-open-node" onClick={() => app.navigate(`nodes/${node.id}`)}>打开节点</button><span className="sp" /></div>
   </>;
 }
 

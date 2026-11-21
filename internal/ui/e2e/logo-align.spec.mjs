@@ -22,9 +22,9 @@ async function setup(page, mode, theme, version = VERSION) {
       s.setProperty('--mygo-titlebar-inset-right', mode === 'windows' ? '138px' : '0px');
     });
   }, { mode, theme });
-  await page.route('**/ui/meta', async r => {
+  await page.route('**/api/admin/meta', async r => {
     const response = await r.fetch();
-    await r.fulfill({ response, json: { ...(await response.json()), cli_version: version, server: 'https://203.0.113.10:8080' } });
+    await r.fulfill({ response, json: { ...(await response.json()), version } });
   });
   await login(page, env);
   await page.goto(env.origin + '/#nodes');

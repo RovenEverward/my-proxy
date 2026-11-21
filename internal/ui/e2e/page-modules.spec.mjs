@@ -1,19 +1,18 @@
 // Exercise the delivered UI through its real server and public routes.
 // This suite does not depend on script names, module exports, or CSS file layout.
 import { test, expect } from "@playwright/test";
-import { startEnv, startSetupEnv, login, cpFetch } from "./env.mjs";
+import { startEnv, login, cpFetch } from "./env.mjs";
 
 const USER = "module-cruise-user";
 const NODE = "module-cruise-node";
 const PLAN = "module-cruise-plan";
 const RULE = "module-cruise.example";
 const resourceTypes = new Set(["script", "stylesheet", "font", "image"]);
-let env, setupEnv, nodeID;
+let env, nodeID;
 
 test.use({ deviceScaleFactor: 2 });
 test.beforeAll(async () => {
   env = await startEnv();
-  setupEnv = await startSetupEnv();
   await env.seed("node", "add", NODE, "--address", "127.0.0.1", "--ssh-port", "1");
   const response = await cpFetch(env.cpURL + "/api/nodes", { headers: { Authorization: "Bearer " + env.token } });
   expect(response.ok).toBe(true);
@@ -24,12 +23,11 @@ test.beforeAll(async () => {
   await env.seed("user", "add", USER, "--plan", PLAN, "--limit", "10GB");
   await env.seed("rule", "add", "suffix", RULE, "直连");
 });
-test.afterAll(async () => { await Promise.all([env?.stop(), setupEnv?.stop()]); });
+test.afterAll(async () => { await env?.stop(); });
 
 // HTTP 404 is an existing optional-API result, not an uncaught script error.
 // Keep these exact cases in the report, so an unexpected 404 remains a failure.
-const optional404 = pathname => pathname === "/local/app/theme"
-  || pathname === "/api/sources"
+const optional404 = pathname => pathname === "/api/sources"
   || pathname === "/api/reach/last"
   || /^\/api\/nodes\/\d+\/diagnostics$/.test(pathname);
 function observeHealth(page) {
@@ -51,6 +49,8 @@ function observeHealth(page) {
   return {
     async check(label) {
       const unexpectedConsole = consoleErrors.filter(message => {
+        // 未登录的 /api/admin/meta 401 是登录门的正常探针,不算错误。
+        if (message.url && /\/api\/admin\/meta$/.test(message.url)) return false;
         if (!/^Failed to load resource:.*404/.test(message.text) || !message.url) return true;
         return !optionalResponses.some(url => url === message.url);
       });
@@ -90,9 +90,15 @@ async function coldRoute(page, target, hash) {
   await page.goto(target.origin + "/#" + hash);
 }
 async function theme(page, target, value) {
+  // location.origin 只到主机:env.origin 带 /admin 前缀,不能直接比。
+  const root = new URL(target.page).origin;
+  // 只在本用例的第一次导航写主题:sessionStorage 标记保住 reload 后的手动切换。
   await page.addInitScript(({ origin, value }) => {
-    if (location.origin === origin && localStorage.getItem("mpx-theme") === null) localStorage.setItem("mpx-theme", value);
-  }, { origin: target.origin, value });
+    if (location.origin === origin && !sessionStorage.getItem("mpx-theme-set")) {
+      localStorage.setItem("mpx-theme", value);
+      sessionStorage.setItem("mpx-theme-set", "1");
+    }
+  }, { origin: root, value });
 }
 
 function routes() {
@@ -191,25 +197,6 @@ for (const value of ["light", "dark"]) for (const width of [1440, 390]) {
     } finally { await health.report(testInfo); }
   });
 
-  test(`首次安装与接入入口巡航 · ${value} · ${width}`, async ({ page }, testInfo) => {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
-    await theme(page, setupEnv, value);
-    const health = observeHealth(page);
-    await login(page, setupEnv);
-    try {
-      await expect(page.getByRole("heading", { name: "在你的 VPS 上装好 MPX", exact: true })).toBeVisible();
-      await withinViewport(page, "setup welcome");
-      await page.getByRole("button", { name: "接入已有控制面", exact: true }).click();
-      await expect(page.locator("#s-cp-addr")).toBeVisible();
-      await withinViewport(page, "connect control plane");
-      await page.getByRole("button", { name: "上一步", exact: true }).click();
-      await page.getByRole("button", { name: "首次安装（新服务器）", exact: true }).click();
-      await expect(page.locator("#s-host")).toBeVisible();
-      await withinViewport(page, "setup connection");
-      await expect(page.locator("html")).toHaveAttribute("data-theme", value);
-      await health.check("setup and connect entries");
-    } finally { await health.report(testInfo); }
-  });
 }
 
 test("旧地址保持兼容，并加载正确页面", async ({ page }, testInfo) => {
