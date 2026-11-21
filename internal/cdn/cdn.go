@@ -124,6 +124,42 @@ func Verify(ctx context.Context, candidates []Result, want int, timeout time.Dur
 	return out
 }
 
+// Recheck 并发复检一批池内成员:先 TCP:443 拨测,通了的再 TLS+HTTP 验证
+// CF-RAY。与 Verify 不同,每个成员都返回一条结论(成败都算)—— miss
+// 语义只对实测结论计数,没被核到不算(UC-24)。成员数小(池软上限 30),
+// 16 路并发足够快。
+func Recheck(ctx context.Context, ips []string, pingTimeout, verifyTimeout time.Duration) []Result {
+	out := make([]Result, len(ips))
+	sem := make(chan struct{}, 16)
+	var wg sync.WaitGroup
+	for i, ip := range ips {
+		wg.Add(1)
+		go func(i int, ip string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			lat, ok := tcpPing(ctx, ip, pingTimeout)
+			r := Result{IP: ip}
+			if !ok {
+				out[i] = r // TCP 不通:reachable=false
+				return
+			}
+			r.Reachable, r.LatencyMs = true, lat
+			edge, colo, err := verifyEdge(ctx, ip, verifyTimeout)
+			if err == nil && edge {
+				r.Edge, r.Colo = true, colo
+			}
+			out[i] = r // TLS/HTTP 失败:reachable=true, edge=false
+		}(i, ip)
+	}
+	wg.Wait()
+	return out
+}
+
 func verifyEdge(ctx context.Context, ip string, timeout time.Duration) (bool, string, error) {
 	d := net.Dialer{Timeout: timeout}
 	tconn, err := tls.DialWithDialer(&d, "tcp", net.JoinHostPort(ip, "443"), &tls.Config{InsecureSkipVerify: true})

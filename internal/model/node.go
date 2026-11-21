@@ -269,7 +269,8 @@ type CDNResult struct {
 }
 
 // CDNIP 是优选池里的一行(cdn_pool 表),附首次/最近命中与连续 miss
-// 计数 —— miss 是「当轮优选名单里没有它」,累计超过阈值出池。
+// 计数 —— miss 是「当轮复检未通过」(UC-24;旧探测端只报通过项时缺席
+// 也计 miss),累计超过阈值出池,misses=0 才参与 CDN 入口选优。
 type CDNIP struct {
 	IP        string    `json:"ip"`
 	LatencyMs int       `json:"latency_ms"`

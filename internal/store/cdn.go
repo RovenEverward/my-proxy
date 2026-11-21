@@ -6,9 +6,10 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// migrateCDN 建优选池表。池是「当前认为是好 IP」的集合:每次优选轮
-// 由探测点上报结果刷新;不在当轮名单的记 miss,连续 miss 达到上限
-// 才出池 —— 防一次抖动把可用 IP 抖掉。
+// migrateCDN 建优选池表。池是「最近确认可用、或仍在观察期」的 IP 集合:
+// 每轮优选由探测点复检全体成员 + 抽样新 IP,结论回传后刷新 —— 通过
+// 的清零 miss,未通过(或旧探测端没给通过结论)的 miss+1,连续 miss
+// 达到上限才出池 —— 防一次抖动把可用 IP 抖掉。
 func (s *Store) migrateCDN() error {
 	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS cdn_pool (
 	 ip TEXT PRIMARY KEY,
@@ -20,17 +21,25 @@ func (s *Store) migrateCDN() error {
 	return err
 }
 
-// SaveCDNResults 是一轮优选落库:winners 是新拿到边缘身份确认的 IP
-// (upsert,miss 清零);池里其余 IP misses+1,超过 maxMisses 的删除。
+// SaveCDNResults 是一轮优选落库:results 里 edge=true 的是当轮拿到边缘
+// 身份确认的 IP(upsert,miss 清零);池内成员不在通过名单的 miss+1,
+// 超过 maxMisses 的删除,池整体裁剪到 maxPool(留 miss 少、延迟低的)。
+// miss 只由「本轮名单」决定:新探测端会把 recheck 成员无论成败都报回
+// (UC-24);旧探测端只报通过项时,缺席即 miss,沿用旧语义兜底。
 // 返回当轮后的完整池名单。
-func (s *Store) SaveCDNResults(winners []model.CDNResult, now time.Time, maxMisses int) ([]model.CDNIP, error) {
+func (s *Store) SaveCDNResults(results []model.CDNResult, now time.Time, maxMisses, maxPool int) ([]model.CDNIP, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 	ts := now.Unix()
-	for _, w := range winners {
+	var winners []string
+	for _, w := range results {
+		if !w.Edge {
+			continue
+		}
+		winners = append(winners, w.IP)
 		if _, err := tx.Exec(`INSERT INTO cdn_pool (ip, latency_ms, colo, first_seen, last_seen, misses)
 		 VALUES (?, ?, ?, ?, ?, 0)
 		 ON CONFLICT(ip) DO UPDATE SET latency_ms=excluded.latency_ms, colo=excluded.colo, last_seen=excluded.last_seen, misses=0`,
@@ -38,7 +47,7 @@ func (s *Store) SaveCDNResults(winners []model.CDNResult, now time.Time, maxMiss
 			return nil, err
 		}
 	}
-	// 不在当轮名单的 miss+1。
+	// 不在当轮通过名单的 miss+1。
 	if _, err := tx.Exec(`UPDATE cdn_pool SET misses = misses + 1
 	 WHERE ip NOT IN (SELECT value FROM json_each(?))`, jsonIPs(winners)); err != nil {
 		return nil, err
@@ -46,19 +55,26 @@ func (s *Store) SaveCDNResults(winners []model.CDNResult, now time.Time, maxMiss
 	if _, err := tx.Exec(`DELETE FROM cdn_pool WHERE misses > ?`, maxMisses); err != nil {
 		return nil, err
 	}
+	// 软上限:复检成本随池线性涨,只留 miss 少、延迟低的。
+	if maxPool > 0 {
+		if _, err := tx.Exec(`DELETE FROM cdn_pool WHERE ip NOT IN
+		 (SELECT ip FROM cdn_pool ORDER BY misses, latency_ms LIMIT ?)`, maxPool); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return s.ListCDNPool()
 }
 
-func jsonIPs(rs []model.CDNResult) string {
+func jsonIPs(ips []string) string {
 	out := "["
-	for i, r := range rs {
+	for i, ip := range ips {
 		if i > 0 {
 			out += ","
 		}
-		out += `"` + r.IP + `"`
+		out += `"` + ip + `"`
 	}
 	return out + "]"
 }
@@ -92,9 +108,9 @@ func (s *Store) CDNLastRun() (time.Time, error) {
 	return time.Unix(ts, 0), nil
 }
 
-// MarkCDNRun 记「这一轮优选名单已经发出去/结果已经收进来」的完成时刻,
-// 用于 1 小时节流 —— 探测点每分钟 tick 都会来领,开关之外这道闸决定
-// 实际频率。
+// MarkCDNRun 记「这一轮优选名单已经发出去」的时刻,用于 1 小时节流 ——
+// 探测点每分钟 tick 都会来领,开关之外这道闸决定实际频率。UC-24 起在
+// 发名单时记而不是收结果时记:探测端不回存的空轮也占掉本轮配额。
 func (s *Store) MarkCDNRun(now time.Time) error {
 	_, err := s.db.Exec(`UPDATE settings SET cdn_last_run = ? WHERE id = 1`, now.Unix())
 	return err

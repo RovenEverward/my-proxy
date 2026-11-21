@@ -33,6 +33,11 @@ type TargetsResponse struct {
 // tick 是调度粒度:一分钟看一次欠账,把到期对象摊进整个周期分批处理。
 const tick = time.Minute
 
+// cdnVerifyTimeout 是一次 TLS+HTTP 边缘验证(要 CF-RAY)的超时,与
+// server 侧 cdnVerifyTimout 保持一致 —— 探测端自己也要超时,不能只靠
+// 服务端假设。
+const cdnVerifyTimeout = 5 * time.Second
+
 // Tick 跑一轮调度:拉目标 → 境内侧探一批到期对象 → 请控制面探它的欠账。
 // 自动剔除关着时(Exclude=false)境内侧不探 —— 判定不为任何人服务,
 // 白探只是给探测端与目标加无意义流量。控制面侧欠账照样清:
@@ -249,11 +254,12 @@ func firstNonEmptyBW(a, b string) string {
 	return b
 }
 
-// cdnOptimize 是一轮 CDN IP 优选:向控制面领候选名单,粗扫(TCP:443
-// ping)拿够 sweep_want 个合格候选,再按延迟升序逐个 TLS+HTTP 验证
-// 要 CF-RAY,凑够 verify_want 个真边缘回存。名单为空(开关关着)直接
-// 返回。金丝雀检查与 reach 主循环共用同一原则:境内路径被代理接管
-// 时这批优选结果全是假的,整轮跳过不回存。
+// cdnOptimize 是一轮 CDN IP 优选:向控制面领名单 —— recheck 是池内
+// 全体成员(逐个复检,成败都回报;miss 只对实测结论计数),scan 是从
+// IP 段新抽的样本(粗扫 TCP:443 拿够 sweep_want 个候选,再按延迟升序
+// 逐个 TLS+HTTP 验证要 CF-RAY,凑够 verify_want 个真边缘回存)。
+// 名单为空(开关关着)直接返回。金丝雀检查与 reach 主循环共用同一
+// 原则:境内路径被代理接管时这批优选结果全是假的,整轮跳过不回存。
 func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) error {
 	raw, err := call("GET", "/api/cdn-optimize/targets", nil)
 	if err != nil {
@@ -261,6 +267,8 @@ func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) er
 	}
 	var rt struct {
 		IPs           []string `json:"ips"`
+		Recheck       []string `json:"recheck"`
+		Scan          []string `json:"scan"`
 		SweepWant     int      `json:"sweep_want"`
 		VerifyWant    int      `json:"verify_want"`
 		PingTimeoutMs int      `json:"ping_timeout_ms"`
@@ -283,17 +291,30 @@ func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) er
 	if rt.PingTimeoutMs > 0 {
 		pingTimeout = time.Duration(rt.PingTimeoutMs) * time.Millisecond
 	}
-	candidates := cdn.ProbeTCP(ctx, rt.IPs, rt.SweepWant, pingTimeout)
-	if len(candidates) == 0 {
-		return nil
-	}
-	verified := cdn.Verify(ctx, candidates, rt.VerifyWant, 5*time.Second)
 	var results []model.CDNResult
-	for _, v := range verified {
-		results = append(results, model.CDNResult{
-			IP: v.IP, Reachable: v.Reachable, LatencyMs: v.LatencyMs,
-			Edge: v.Edge, Colo: v.Colo,
-		})
+	appendResults := func(rs []cdn.Result) {
+		for _, v := range rs {
+			results = append(results, model.CDNResult{
+				IP: v.IP, Reachable: v.Reachable, LatencyMs: v.LatencyMs,
+				Edge: v.Edge, Colo: v.Colo,
+			})
+		}
+	}
+	if len(rt.Recheck) > 0 {
+		// 池内成员无条件核完,失败的也要报 —— 控制面靠失败结论摘下入站。
+		appendResults(cdn.Recheck(ctx, rt.Recheck, pingTimeout, cdnVerifyTimeout))
+	}
+	scan := rt.Scan
+	if len(rt.Recheck) == 0 && len(scan) == 0 {
+		// 旧版控制面没有 recheck/scan 字段,ips 就是全部候选(含池成员),
+		// 沿用旧管道路由即可。
+		scan = rt.IPs
+	}
+	if len(scan) > 0 {
+		candidates := cdn.ProbeTCP(ctx, scan, rt.SweepWant, pingTimeout)
+		if len(candidates) > 0 {
+			appendResults(cdn.Verify(ctx, candidates, rt.VerifyWant, cdnVerifyTimeout))
+		}
 	}
 	if len(results) == 0 {
 		return nil
