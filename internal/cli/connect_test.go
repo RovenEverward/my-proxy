@@ -56,7 +56,7 @@ func TestConnectAndSaveProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := connectAndSaveProfile(cp.URL, "SHA256:new", "admin", "admin-password-123", "work")
+	res, err := connectAndSaveProfile(cp.URL, trustDecision{fp: "SHA256:new"}, "admin", "admin-password-123", "work")
 	if err != nil {
 		t.Fatalf("connectAndSaveProfile: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestConnectAndSaveProfile(t *testing.T) {
 	}
 
 	// 重名报错,已有的档原样保留。
-	if _, err := connectAndSaveProfile(cp.URL, "SHA256:new", "admin", "admin-password-123", "work"); err == nil ||
+	if _, err := connectAndSaveProfile(cp.URL, trustDecision{fp: "SHA256:new"}, "admin", "admin-password-123", "work"); err == nil ||
 		!strings.Contains(err.Error(), "已存在") {
 		t.Fatalf("重名应报错,得到 %v", err)
 	}

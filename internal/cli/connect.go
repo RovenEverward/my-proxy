@@ -3,6 +3,8 @@ package cli
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,7 +58,7 @@ token,连同地址与指纹保存在本机(--profile 指定名称,默认 default
 		if err != nil {
 			return err
 		}
-		fp, err := confirmFingerprint(hostport)
+		trust, err := decideTrust(hostport)
 		if err != nil {
 			return err
 		}
@@ -77,7 +79,7 @@ token,连同地址与指纹保存在本机(--profile 指定名称,默认 default
 				return err
 			}
 		}
-		_, err = connectAndSave(server, fp, user, pw)
+		_, err = connectAndSave(server, trust, user, pw)
 		return err
 	},
 }
@@ -106,6 +108,76 @@ func controlURL(arg string) (server, hostport string, err error) {
 	}
 	hostport = net.JoinHostPort(host, port)
 	return "https://" + hostport, hostport, nil
+}
+
+// trustDecision 是接入时认定的证书校验方式:指纹钉(UC-24 的自签身份)
+// 或公共 CA(mpx acme 签下的受信证书)。两者互斥:ca 为 true 时 fp 必为空。
+type trustDecision struct {
+	fp string // 指纹钉;空串表示不钉
+	ca bool   // 用系统 CA 链校验(带 SNI,服务端会出 ACME 证书)
+}
+
+// decideTrust 定下这次接入怎么认证书。
+//
+// 顺序:--fp 给了就只认它(连域名时也一样 —— 钉的是自签证书,SNI 无指纹,
+// 服务端回自签那张,校验照常过);没给且主机是域名时,先按公共 CA 试一次:
+// 受信就走 CA 模式(之后命令都发 SNI),不受信(还是自签)才落回指纹流程。
+// 主机是 IP 字面量时跳过 CA 探测 —— 公网 CA 不给裸 IP 发证书,试了也是白试。
+func decideTrust(hostport string) (trustDecision, error) {
+	if opts.fingerprint != "" {
+		fp, err := pin.Normalize(opts.fingerprint)
+		return trustDecision{fp: fp}, err
+	}
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	if net.ParseIP(host) == nil {
+		ca, err := probeCA(hostport)
+		if err != nil {
+			return trustDecision{}, err
+		}
+		if ca {
+			return trustDecision{ca: true}, nil
+		}
+	}
+	fp, err := confirmFingerprint(hostport)
+	return trustDecision{fp: fp}, err
+}
+
+// probeCA 报告这台控制面对 host 这个名字出的证书是否被系统信任。
+// 它带着 SNI 拨一次 TLS:受信(ACME 已配好)→ true;证书不被信任
+// (还是自签、或签给了别的名字)→ false,让调用方落回指纹流程;
+// 拨不通/超时 → error,接入失败(这和指纹流程拨不通一个待遇)。
+func probeCA(hostport string) (bool, error) {
+	return probeCAWithRoots(hostport, nil)
+}
+
+// probeCAWithRoots 是 probeCA 的可注入版:roots 为 nil 用系统根池(测试
+// 传入自建的池,验证「测试 CA 签的证书 → CA 模式」这条路)。
+func probeCAWithRoots(hostport string, roots *x509.CertPool) (bool, error) {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	d := &net.Dialer{Timeout: 15 * time.Second}
+	conn, err := tls.DialWithDialer(d, "tcp", hostport, &tls.Config{
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    roots,
+	})
+	if err != nil {
+		var ue x509.UnknownAuthorityError
+		var he x509.HostnameError
+		var ce x509.CertificateInvalidError
+		if errors.As(err, &ue) || errors.As(err, &he) || errors.As(err, &ce) {
+			return false, nil
+		}
+		// 不是校验问题的错(拨不通、超时、TLS 握手被断):当连接失败处理。
+		return false, fmt.Errorf("连不上控制面 %s: %w", hostport, err)
+	}
+	conn.Close()
+	return true, nil
 }
 
 // confirmFingerprint 定下要认的指纹:给了 --fp 就用它(连接时校验);没给就先
@@ -143,9 +215,18 @@ type loginResult struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// trustTransport 按接入时的认定造 HTTP 传输:CA 模式发 SNI、走系统校验;
+// 指纹模式照旧 pin.Transport。
+func trustTransport(trust trustDecision) *http.Transport {
+	if trust.ca {
+		return pin.Transport("")
+	}
+	return pin.Transport(trust.fp)
+}
+
 // connectAndSave 用账号密码换 token,存进控制面并切过去。mpx init 收尾时也走它。
-func connectAndSave(server, fp, username, password string) (*loginResult, error) {
-	res, profile, err := connectAndSaveQuiet(server, fp, username, password)
+func connectAndSave(server string, trust trustDecision, username, password string) (*loginResult, error) {
+	res, profile, err := connectAndSaveQuiet(server, trust, username, password)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +237,8 @@ func connectAndSave(server, fp, username, password string) (*loginResult, error)
 
 // connectAndSaveQuiet 是 connectAndSave 的安静版:同一件事,但不打印 —— mpx ui
 // 的「接入已有控制面」也走它,提示由页面自己给。
-func connectAndSaveQuiet(server, fp, username, password string) (loginResult, string, error) {
-	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
+func connectAndSaveQuiet(server string, trust trustDecision, username, password string) (loginResult, string, error) {
+	c := &Client{server: server, http: &http.Client{Transport: trustTransport(trust)}}
 	raw, err := postAdminLogin(c, username, password)
 	if err != nil {
 		return loginResult{}, "", err
@@ -166,7 +247,7 @@ func connectAndSaveQuiet(server, fp, username, password string) (loginResult, st
 	if err != nil {
 		return loginResult{}, "", err
 	}
-	profile, err := saveProfile(Profile{Server: server, Token: res.Token, Fingerprint: fp})
+	profile, err := saveProfile(Profile{Server: server, Token: res.Token, Fingerprint: trust.fp, CA: trust.ca})
 	if err != nil {
 		return loginResult{}, "", err
 	}
@@ -177,8 +258,8 @@ func connectAndSaveQuiet(server, fp, username, password string) (loginResult, st
 // **新**控制面并设为当前。档已存在时报错、不落盘 —— mpx ui 的「添加控制面」用
 // 它,不能把 default 或别的档里已有的 token 覆盖掉。不经过 saveProfile:那里写死
 // 了 --profile/default,而且会覆盖同名档。
-func connectAndSaveProfile(server, fp, username, password, profile string) (loginResult, error) {
-	c := &Client{server: server, http: &http.Client{Transport: pin.Transport(fp)}}
+func connectAndSaveProfile(server string, trust trustDecision, username, password, profile string) (loginResult, error) {
+	c := &Client{server: server, http: &http.Client{Transport: trustTransport(trust)}}
 	raw, err := postAdminLogin(c, username, password)
 	if err != nil {
 		return loginResult{}, err
@@ -197,7 +278,7 @@ func connectAndSaveProfile(server, fp, username, password, profile string) (logi
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]Profile{}
 	}
-	cfg.Profiles[profile] = Profile{Server: server, Token: res.Token, Fingerprint: fp}
+	cfg.Profiles[profile] = Profile{Server: server, Token: res.Token, Fingerprint: trust.fp, CA: trust.ca}
 	cfg.Current = profile
 	if err := saveConfig(cfg); err != nil {
 		return loginResult{}, err

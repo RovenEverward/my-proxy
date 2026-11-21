@@ -24,8 +24,9 @@ nodes ──1:N──► inbounds ──1:N──► hosts
 | `inbounds` | `node_id`、`tag`、`protocol`、`listen`、`port`、`network`、`security`、`ws_path`、`grpc_service`、`sni`、`alpn`、`fingerprint`、`cert_file`、`key_file`、`reality_dest`、`reality_priv`、`reality_pub`、`short_ids`、`flow`、`xhttp_path`、`xhttp_host`、`xhttp_mode`、`wg_secret`、`wg_address`、`wg_mtu`、`mux`、`fragment`、`max_users` | 切片存 JSON 文本;`max_users` 是 0 或正整数,0 表示不限 |
 | `hosts` | `inbound_id`、`remark`、`address`、`port`、`sni`、`host`、`path`、`alpn` | 全部可空,空 = 回落入站自身 |
 | `users` | `username`(唯一)、`key`、`sub_token`、`enabled`、`data_limit`、`used_traffic`、`lifetime_used_traffic`、`expire_at`、`reset_strategy`、`traffic_reset_at`、`inbound_ids`、`note`、`created_at` | `expire_at` / `traffic_reset_at` 可空,存 Unix 秒 |
-| `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules`、`templates`、`webhook_url`、`notify_days_left`、`notify_usage_percent` | `rules` 是 `[{pattern, result}]` 的 JSON 文本,`templates` 是 `{格式: 正文}`。`notify_days_left` / `notify_usage_percent` 为 0 表示关掉这一类提醒 |
+| `settings` | `id`(恒为 1)、`sub_url_prefix`、`profile_title`、`support_link`、`update_interval`、`rules`、`templates`、`webhook_url`、`notify_days_left`、`notify_usage_percent` | `rules` 是 `[{pattern, result}]` 的 JSON 文本,`templates` 是 `{格式: 正文}`。`notify_days_left` / `notify_usage_percent` 为 0 表示关掉这一类提醒。UC-26 加 `acme_domain` / `acme_cf_token` / `acme_staging`:域名、Cloudflare token(敏感,API 不回明文只回 `acme_cf_token_set`)、是否走 Let's Encrypt staging |
 | `traffic_samples` | `username`、`node_id`、`sampled_at`、`uplink`、`downlink` | 只追加的流量历史:`uplink` / `downlink` 是 xray 报的**累计值**;索引 `(node_id, username, sampled_at)` |
+| `acme_state` | `id`(恒为 1)、`account_key_pem`、`cert_pem`、`key_pem`、`domain`、`staging`、`issued_at`、`not_after`、`last_error`、`last_attempt_at`、`failures`、`next_retry_at` | UC-26:ACME 账户私钥与签到的证书;换域名/换 CA 时清证书字段(账户 key 保留),签发失败按 `1m<<(failures-1)` 退避存 `next_retry_at`,已有证书不清 |
 | `user_notices` | `user_id`、`kind`、`sent_at`(主键 `(user_id, kind)`) | 只是「这条用户提醒已经发过了」的流水账,不承载业务数据:整张表删掉用户、流量、订阅照常工作,只是下一轮可能重发。所以备份校验的必需表清单里**刻意没有它** |
 
 元数据另存两张表：`node_metadata。

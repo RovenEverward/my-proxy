@@ -153,8 +153,8 @@ func setupTestEnv(t *testing.T, fake *fakeRemote, token string) {
 	oldSSH, oldConnect := initSSH, initConnect
 	t.Cleanup(func() { initSSH, initConnect = oldSSH, oldConnect })
 	initSSH = fake
-	initConnect = func(server, fp, username, password string) (*loginResult, error) {
-		if _, err := saveProfile(Profile{Server: server, Token: token, Fingerprint: fp}); err != nil {
+	initConnect = func(server string, trust trustDecision, username, password string) (*loginResult, error) {
+		if _, err := saveProfile(Profile{Server: server, Token: token, Fingerprint: trust.fp}); err != nil {
 			return nil, err
 		}
 		return &loginResult{Token: token, ExpiresAt: time.Now().Add(30 * 24 * time.Hour)}, nil

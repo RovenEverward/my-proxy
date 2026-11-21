@@ -39,7 +39,7 @@ func (connectRunner) Connect(ctx context.Context, server, fingerprint, password,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	res, profile, err := connectAndSaveQuiet(server, fingerprint, defaultAdminUser, password)
+	res, profile, err := connectAndSaveQuiet(server, trustDecision{fp: fingerprint}, defaultAdminUser, password)
 	if err != nil {
 		return nil, uiError(err)
 	}
@@ -65,7 +65,7 @@ func (connectRunner) ConnectProfile(ctx context.Context, server, fingerprint, pa
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	res, err := connectAndSaveProfile(server, fingerprint, defaultAdminUser, password, profile)
+	res, err := connectAndSaveProfile(server, trustDecision{fp: fingerprint}, defaultAdminUser, password, profile)
 	if err != nil {
 		return nil, uiError(err)
 	}

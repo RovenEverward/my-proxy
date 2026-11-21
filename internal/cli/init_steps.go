@@ -245,7 +245,7 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	}
 
 	prog.Step("把这台电脑接入控制面")
-	if _, err := initConnect(server, fp, adminUser, p.AdminPassword); err != nil {
+	if _, err := initConnect(server, trustDecision{fp: fp}, adminUser, p.AdminPassword); err != nil {
 		if p.FromUI {
 			return nil, fmt.Errorf("本机接入失败: %w;控制面已经装好,稍后在 MPX 里选「接入已有控制面」,地址 %s,核对指纹 %s", uiError(err), hostport, fp)
 		}
@@ -261,6 +261,7 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	}
 	fmt.Fprintln(prog.Stdout())
 	fmt.Fprintln(prog.Stdout(), "同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。")
-	fmt.Fprintln(prog.Stdout(), "网页管理台( /admin/ )需要域名加受信证书才适合对外开;之后用 mpx acme 配置(命令在下一批)。")
+	fmt.Fprintln(prog.Stdout(), "网页管理台( /admin/ )需要域名加受信证书才适合对外开;配好 DNS(Cloudflare 托管、A 记录指到这台机器)后跑:")
+	fmt.Fprintln(prog.Stdout(), "  mpx acme set --domain <域名> --cf-token-stdin < token.txt")
 	return &initResult{HostPort: hostport, Server: server, Fingerprint: fp, Connected: true}, nil
 }

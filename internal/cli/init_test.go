@@ -144,7 +144,7 @@ func runInitCapture(t *testing.T, setup func()) (stdout, stderr string, err erro
 
 	fake := &fakeRemote{osName: "Linux", arch: "x86_64", uid: "0", fetch: "/usr/bin/curl"}
 	initSSH = fake
-	initConnect = func(server, fp, username, password string) (*loginResult, error) {
+	initConnect = func(server string, trust trustDecision, username, password string) (*loginResult, error) {
 		if fake.connectErr != nil {
 			return nil, fake.connectErr
 		}

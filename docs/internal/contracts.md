@@ -36,6 +36,8 @@ settings show | set | test | template get|set|del
 rule     list | add | move | rm | toggle | final TARGET | test DOMAIN
          | catalog | migrate [--dry-run|--confirm|--replace|--report] | mode
 group    list | add | edit | rm | preview
+acme     set --domain <域名> [--cf-token|--cf-token-stdin] [--staging] [--no-wait]
+         | unset | status | renew [--no-wait]     控制面域名 + ACME 自动证书(UC-26)
 ```
 
 `bootstrap` 是 **Hidden 子命令**(不在 `--help` 里),它是 `init` 在 VPS 上的另一半,由 `init` 调用而不是给人直接敲:
@@ -288,6 +290,11 @@ GET              /api/sub-pulls              每个用户第一次 / 最近一�
 GET|PUT          /api/settings
 POST             /api/settings/test-webhook   往当前 webhook_url 发一条测试事件
 
+PUT|DELETE       /api/acme/config             域名/CF token/staging;PUT 只改给到的字段,换域名或换 CA 会作废旧证书
+GET              /api/acme/status             域名、token 是否已设、证书状态、上次错误与下次重试
+POST             /api/acme/issue              后台开始签发(单飞:进行中再 POST 得 409)
+GET              /api/acme/issue[?since=N]    签发任务进度(seq 递增的事件流,断点续读)
+
 GET              /api/backup                 流式返回 tar.gz 备份归档
 POST             /api/restore                校验并暂存一份备份(?force=1 覆盖已暂存的)
 
@@ -305,6 +312,8 @@ $ curl -H 'Authorization: Bearer demo-token' \
 ```
 
 归档里有 `manifest.json` + 一致快照 `mpx.db` + 可选的系统 ssh 私钥 `id_ed25519`,**没有管理 token**。换入发生在控制面下次启动、打开数据库之前:旧库改名 `<db>.pre-restore-<UTC 时间戳>` 留着回退,`.restore` 变成新库。没有控制面也能恢复 —— 手动把 `mpx.db` 改名成 `<db>.restore` 再启动即可。
+
+`/api/acme/*`(UC-26,只增):`PUT /api/acme/config` 收 `{domain, cf_token, staging}`,**只改给到的字段**(`staging` 是布尔,要显式给 `false` 才表示关),三个键都缺时 400;`cf_token` 存 settings 表,`GET /api/settings` 不回明文,只回 `acme_cf_token_set: true`。domain 或 staging 的变化让「旧证书不该再服役」—— 换掉其中任一个会把 `acme_state` 里的证书、域名、失败计数一并清掉,账户私钥保留(CA 侧仍可复用),`handlePutACMEConfig` 换完就把新域名热装进 SNI 选择器。`DELETE /api/acme/config` 清三个 settings 键,不动已签证书(下次启动域名没了自然不装)。`POST /api/acme/issue` 缺域名或 token 时 400,签发进行中再来一次是 409;任务跑在后台,`GET /api/acme/issue?since=N` 只回序号更大的事件(`{job, state, seq, events:[{seq,msg}]}`),`state` 是 `idle|running|done|failed`。`GET /api/acme/status` 汇总 `{domain, cf_token_set, staging, cert_issued, cert_domain, not_after, last_error, last_attempt_at, failures, next_retry_at}`,没签过证书时只有前三个键有值。签发与续期失败按 `1m<<(failures-1)` 退避(封顶 12h)存 `next_retry_at`,**失败绝不清已有证书** —— 老证书一直服役到续期成功。
 
 `sub-pulls` 回 `[{ "username", "first_pulled_at", "last_pulled_at", "format", "client" }]`,只列拉取过的用户。订阅地址回 200 或 304 时记一笔:`first_pulled_at` 写下后不再变,`last_pulled_at` / `format` / `client` 跟着最近一次走;同一个用户 60 秒内只记一次,省得客户端频繁刷新时每次都写库。`client` 是 User-Agent 第一段(到第一个 `/` 或空格,最多 64 个字符,没有 UA 时为 `unknown`)。`revoke-sub` 换 token 时清掉这个用户的记录 —— 旧链接上的导入不再算数。桌面界面「发给他」的拉取状态和总览「开始使用」第 4 步都读它;本机界面另有 `/local/qr.svg?u=<用户名>`,由本机进程向控制面取 auto 链接再画二维码。
 
