@@ -312,6 +312,7 @@ func (s *Server) routes() {
 	api.HandleFunc("POST /api/inbounds", s.handleCreateInbound)
 	api.HandleFunc("GET /api/inbounds/{id}", s.handleGetInbound)
 	api.HandleFunc("PUT /api/inbounds/{id}", s.handleUpdateInbound)
+	api.HandleFunc("PUT /api/inbounds/{id}/cert", s.handleUpdateInboundCert)
 	api.HandleFunc("DELETE /api/inbounds/{id}", s.handleDeleteInbound)
 	api.HandleFunc("GET /api/inbounds/{id}/hosts", s.handleListHosts)
 	api.HandleFunc("POST /api/inbounds/{id}/hosts", s.handleCreateHost)

@@ -86,6 +86,7 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 	// certsEnsured 标记"这一轮已经查过",免得 verifyRemote 分支先补完、
 	// 走到下发前又查一遍 —— 一条 ssh 也是钱。
 	certsEnsured := false
+	certsReload := false
 	if !force && hash == d.DeployedHash {
 		if !verifyRemote {
 			// 无 ssh 的快路径(周期收敛):渲染结果与"最后一次下发成功"的
@@ -100,16 +101,24 @@ func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time
 		// 先把证书补齐再比对:配置没变但有人在节点上删了证书时,光对
 		// 哈希会判"不用发",而 sing-box check 会因为缺文件挂掉 —
 		// node sync 是唯一会来修它的入口,不能漏。
-		if err := node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
+		//
+		// 托管证书换过也要继续往下走:证书变化不进 config.json 的哈希,
+		// 磁盘配置对得上不代表服务已经读到新证书(进程里还是启动时加载
+		// 的那张)。补自签不算 —— 进程内存里那张与磁盘一样能撑握手。
+		var err error
+		if certsReload, err = node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
 			return err
 		}
 		certsEnsured = true
-		if onDisk, err := node.ConfigHash(ctx, c.runner, n, *d); err == nil && onDisk == hash {
-			return nil
+		if !certsReload {
+			if onDisk, err := node.ConfigHash(ctx, c.runner, n, *d); err == nil && onDisk == hash {
+				return nil
+			}
 		}
 	}
 	if !certsEnsured {
-		if err := node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
+		var err error
+		if certsReload, err = node.EnsureTLSCertificates(ctx, c.runner, n, model.InboundsForCore(inbounds, model.CoreSingBox)); err != nil {
 			return err
 		}
 	}

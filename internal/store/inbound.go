@@ -11,7 +11,7 @@ const inboundColumns = `id, node_id, tag, protocol, listen, port, network, secur
 	ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
 	reality_dest, reality_priv, reality_pub, short_ids, flow,
 	xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
-	mux, fragment, max_users, congestion_control`
+	mux, fragment, max_users, congestion_control, cert_pem, key_pem`
 
 func scanInbound(sc rowScanner) (*model.Inbound, error) {
 	var (
@@ -24,7 +24,8 @@ func scanInbound(sc rowScanner) (*model.Inbound, error) {
 		&i.Fingerprint, &i.CertFile, &i.KeyFile, &i.RealityDest, &i.RealityPriv,
 		&i.RealityPub, &shortIDs, &i.Flow,
 		&i.XHTTPPath, &i.XHTTPHost, &i.XHTTPMode,
-		&i.WGSecretKey, &i.WGAddress, &i.WGMTU, &mux, &fragment, &i.MaxUsers, &i.CongestionControl); err != nil {
+		&i.WGSecretKey, &i.WGAddress, &i.WGMTU, &mux, &fragment, &i.MaxUsers, &i.CongestionControl,
+		&i.CertPEM, &i.KeyPEM); err != nil {
 		return nil, err
 	}
 	i.Mux = mux != 0
@@ -56,16 +57,17 @@ func (s *Store) CreateInbound(i *model.Inbound) error {
 			ws_path, grpc_service, sni, alpn, fingerprint, cert_file, key_file,
 			reality_dest, reality_priv, reality_pub, short_ids, flow,
 			xhttp_path, xhttp_host, xhttp_mode, wg_secret, wg_address, wg_mtu,
-			mux, fragment, max_users, congestion_control)
+			mux, fragment, max_users, congestion_control, cert_pem, key_pem)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-		         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
 		i.CertFile, i.KeyFile, i.RealityDest, i.RealityPriv, i.RealityPub,
 		shortIDs, i.Flow,
 		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
 		i.WGSecretKey, i.WGAddress, i.WGMTU,
-		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl)
+		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl,
+		i.CertPEM, i.KeyPEM)
 	if err != nil {
 		return fmt.Errorf("创建入站 %q: %w", i.Tag, err)
 	}
@@ -133,7 +135,8 @@ func (s *Store) UpdateInbound(i *model.Inbound) error {
 		     ws_path = ?, grpc_service = ?, sni = ?, alpn = ?, fingerprint = ?, cert_file = ?, key_file = ?,
 		     reality_dest = ?, reality_priv = ?, reality_pub = ?, short_ids = ?, flow = ?,
 		     xhttp_path = ?, xhttp_host = ?, xhttp_mode = ?,
-		     wg_secret = ?, wg_address = ?, wg_mtu = ?, mux = ?, fragment = ?, max_users = ?, congestion_control = ?
+		     wg_secret = ?, wg_address = ?, wg_mtu = ?, mux = ?, fragment = ?, max_users = ?, congestion_control = ?,
+		     cert_pem = ?, key_pem = ?
 		 WHERE id = ?`,
 		i.NodeID, i.Tag, string(i.Protocol), i.Listen, i.Port, string(i.Network),
 		string(i.Security), i.WSPath, i.GRPCService, i.SNI, alpn, i.Fingerprint,
@@ -141,11 +144,23 @@ func (s *Store) UpdateInbound(i *model.Inbound) error {
 		shortIDs, i.Flow,
 		i.XHTTPPath, i.XHTTPHost, i.XHTTPMode,
 		i.WGSecretKey, i.WGAddress, i.WGMTU,
-		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl, i.ID)
+		boolToInt(i.Mux), boolToInt(i.Fragment), i.MaxUsers, i.CongestionControl,
+		i.CertPEM, i.KeyPEM, i.ID)
 	if err != nil {
 		return fmt.Errorf("更新入站 %d: %w", i.ID, err)
 	}
 	return affectedOrNotFound(res, fmt.Sprintf("入站 %d", i.ID))
+}
+
+// UpdateInboundCert 只改一条入站的证书材料,不动其它字段。
+// certPEM / keyPEM 都传空串表示清除托管证书,回退自签语义。
+func (s *Store) UpdateInboundCert(id int64, certPEM, keyPEM string) error {
+	res, err := s.db.Exec(`UPDATE inbounds SET cert_pem = ?, key_pem = ? WHERE id = ?`,
+		certPEM, keyPEM, id)
+	if err != nil {
+		return fmt.Errorf("更新入站 %d 的证书: %w", id, err)
+	}
+	return affectedOrNotFound(res, fmt.Sprintf("入站 %d", id))
 }
 
 // DeleteInbound 删除入站。它下面的 host 由外键 ON DELETE CASCADE 一并删掉,

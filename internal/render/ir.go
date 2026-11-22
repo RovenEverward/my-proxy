@@ -221,8 +221,10 @@ func endpoint(node model.Node, display string, in model.Inbound, h model.Host, u
 		ep.Fingerprint = ""
 		ep.Mux, ep.Fragment = false, false
 		ep.CongestionControl = in.CongestionControl
-		// mpx 为 hy2/tuic 签发自签证书，客户端必须跳过校验，否则 Clash Meta 测速 503。
-		ep.AllowInsecure = true
+		// mpx 托管的自签证书客户端必须跳过校验;挂了真实证书(CertPEM)
+		// 的入站交给 CA 正常校验 —— 这是订阅把"证书可信"信号带给客户端的
+		// 唯一通道。
+		ep.AllowInsecure = in.CertPEM == ""
 		if in.Protocol == model.ProtocolHysteria2 {
 			ep.UUID = ""
 		}

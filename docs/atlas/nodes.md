@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/control/, internal/node/, internal/render/xray.go, internal/render/serverconfig.go, internal/render/singbox_server.go, internal/xrayrelease/, internal/singboxbuild/]
-verified: 2026-11-19 @ 080daef
+verified: 2026-11-22 @ HEAD
 ---
 # 节点：下发、收敛与巡检
 
@@ -35,9 +35,16 @@ SSH 和核心安装在 [internal/node]。
 
 名单内一台节点可同时是订阅入口:`sub_mirrors` 登记「节点 + 端口 + 上游」,渲染时在该节点的 xray 配置里追加一个 `dokodemo-door` 入站,把公开端口的 TCP 转给控制面。镜像只在主核心 xray 上渲染 —— sing-box 是第二核心,同机同端口只能绑一边;纯 QUIC 节点有镜像时强制下发 xray。镜像不进数据通路、不持真相、不参与计量;内容与鉴权以控制面为唯一来源。加/删/改上游都是结构性变更,`mpx mirror add|rm|set` 默认走 `DeployNode` 下发(会重启核心),`--sync=false` 只登记。上游指到控制面的 `--sub-addr` 专用口时,`/api` 不会出现在镜像端口。
 
-### TLS 证书自签与装位(UC-09)
+### TLS 证书:托管下发与自签兜底(UC-09 / UC-27)
 
-QUIC 入站(hysteria2 / tuic)走 sing-box,它的 `sing-box check` 会打开 `certificate_path` / `key_path`,缺文件的 `node sync` 死在校验而不是起不来。所以下发前先 `node.EnsureTLSCertificates`:一条 ssh 探所有 TLS 入站的 cert/key 是否都在,缺的由控制面 `model.GenerateSelfSignedCertificate` 按 SNI 签一份 RSA 2048 自签(10 年,CN=SNI),经 `PutFileMode` 落 `/etc/mpx/sing-box/<tag>-cert.pem`(644)/`-key.pem`(600)。探活放在「hash 相同要跳过」的比对**之前**:有人在节点上删了证书而配置没变时,光对哈希会判「不用发」,证书永远补不回来。同 SNI 的多条入站共用一对(同一份 PEM 写多个路径);两个文件都在的一对一字节不动 —— 节点上已有的证书不被覆盖,半对(只剩一个文件)整对重签。`inbound add/edit` 里 QUIC + TLS 的 `--cert-file`/`--key-file` 可以省略,服务端按 tag 分配默认路径;非 QUIC 的 TLS(vless+tls 这类 CDN 入口)仍必填,证书归 CDN 侧管。`node status` 的「证书最短」列读这些路径的到期时间,自签落地后即生效。
+QUIC 入站(hysteria2 / tuic)走 sing-box,它的 `sing-box check` 会打开 `certificate_path` / `key_path`,缺文件的 `node sync` 死在校验而不是起不来。所以下发前先 `node.EnsureTLSCertificates`,一条 ssh 把每对 cert/key 的「缺失 / 在位 / 内容哈希」一次报回,再按材料来源分两条路:
+
+- **托管证书(UC-27)**:入站带了 `cert_pem`/`key_pem`(`inbounds` 表同名列,`json:"-"` 待遇同 `reality_priv`,只经 `PUT /api/inbounds/{id}/cert` 写入,响应只回 `cert` 展示信息)时,以库里的 PEM 为准按 sha256 比对,不一致或缺失就覆盖 —— 证书换过要重启核心才生效,而证书变化不进 config.json 哈希,所以 EnsureTLS 返回「动了托管材料」时 deploySingBox 不再走「hash 相同跳过」,照常走 stop/start。
+- **自签兜底(UC-09)**:没带 PEM 的入站回到旧语义 —— 缺的由控制面 `model.GenerateSelfSignedCertificate` 按 SNI 签一份 RSA 2048 自签(10 年,CN=SNI),同 SNI 多条入站共用一对;两文件都在的一对一字节不动,半对整对重签。补自签不重载服务:进程内存里已有证书,客户端反正跳过校验。
+
+写文件经 `PutFileMode` 落 `/etc/mpx/sing-box/<tag>-cert.pem`(644)/`-key.pem`(600),先 .tmp 再 mv。探活放在「hash 相同要跳过」的比对**之前**:有人在节点上删了证书而配置没变时,光对哈希会判「不用发」,证书永远补不回来。
+
+`inbound add/edit` 里 QUIC + TLS 的 `--cert-file`/`--key-file` 可以省略,服务端按 tag 分配默认路径;非 QUIC 的 TLS(vless+tls 这类 CDN 入口)仍必填,证书归 CDN 侧管。`node status` 的「证书最短」列读这些路径的到期时间。续期流水线留在 mpx 之外:acme.sh cron 续期后钩子把新 PEM 走 `mpx inbound cert set` + `mpx node sync` 推上去,同一个入口覆盖「换证书」与「换节点」。
 
 ## 坑
 

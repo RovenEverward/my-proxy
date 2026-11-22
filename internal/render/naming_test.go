@@ -20,6 +20,16 @@ func TestResolveNamedRemarks(t *testing.T) {
 			t.Fatalf("hy2 AllowInsecure=false, want true for self-signed certs")
 		}
 	}
+
+	// UC-27:挂了托管证书的 hy2 走正常 CA 校验,订阅不该再让客户端跳过。
+	hy2c := hy2
+	hy2c.ID = 14
+	hy2c.CertPEM = "-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n"
+	for _, ep := range ResolveNamed(node, "", []model.Inbound{hy2c}, nil, user) {
+		if ep.AllowInsecure {
+			t.Fatal("挂了真实证书的 hy2 不该再 AllowInsecure")
+		}
+	}
 	eps = DedupeRemarks(AddProtocolSuffix(eps))
 	got := map[int64]string{}
 	for _, ep := range eps {

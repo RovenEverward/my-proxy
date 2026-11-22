@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -32,7 +33,13 @@ sync 时控制面自签并装到节点上。
 var inboundHeaders = []string{"ID", "节点", "TAG", "协议", "传输", "安全", "监听", "端口", "上限", "参数"}
 
 func init() {
-	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundEditCmd, inboundRmCmd)
+	inboundCmd.AddCommand(inboundListCmd, inboundShowCmd, inboundAddCmd, inboundEditCmd, inboundRmCmd, inboundCertCmd)
+	inboundCertCmd.AddCommand(inboundCertSetCmd, inboundCertClearCmd)
+
+	inboundCertSetCmd.Flags().StringVar(&inboundCertFlags.cert, "cert", "", "证书 PEM 文件路径(全链),必填")
+	inboundCertSetCmd.Flags().StringVar(&inboundCertFlags.key, "key", "", "私钥 PEM 文件路径,必填")
+	_ = inboundCertSetCmd.MarkFlagRequired("cert")
+	_ = inboundCertSetCmd.MarkFlagRequired("key")
 
 	inboundListCmd.Flags().Var(nodeFlag(&inboundListNode), "node", "只看这个节点上的入站(id、名字或唯一前缀)")
 
@@ -253,6 +260,7 @@ var inboundShowCmd = &cobra.Command{
 			{"uTLS 指纹", in.Fingerprint},
 			{"证书路径", in.CertFile},
 			{"私钥路径", in.KeyFile},
+			{"托管证书", inboundCertCell(in.Cert)},
 			{"REALITY 回落目标", in.RealityDest},
 			{"REALITY 私钥", in.RealityPriv},
 			{"REALITY 公钥", in.RealityPub},
@@ -560,6 +568,104 @@ mpx node sync 才生效,并且会重启 xray 断开现有连接。只改 --max-u
 		}
 		return nil
 	},
+}
+
+var inboundCertCmd = &cobra.Command{
+	Use:   "cert",
+	Short: "管理入站挂的真实证书",
+	Long: `管理 TLS 入站(hysteria2 / tuic 等)挂的真实证书材料。
+
+给了证书之后:控制面随 node sync 把它下发到节点(内容变了才写),
+订阅里这条端点不再让客户端跳过校验 —— 探测看到的就是一张正常的 CA 证书。
+没给走原路:sync 时控制面按 SNI 签自签,客户端跳过校验。
+
+改完记得 mpx node sync;证书变化会让对应核心重启一次。`,
+}
+
+var inboundCertFlags struct {
+	cert string
+	key  string
+}
+
+var inboundCertSetCmd = &cobra.Command{
+	Use:   "set <入站> --cert <文件> --key <文件>",
+	Short: "给入站挂一对真实证书",
+	Long: `把证书与私钥交给控制面托管,随 node sync 下发到节点。
+
+  mpx inbound cert set 1/hy2-8444 --cert fullchain.pem --key key.pem
+
+证书内容进库,换证书、续期后再跑一次同样的命令即可。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := resolveInboundID(args[0], true)
+		if err != nil {
+			return err
+		}
+		cert, err := os.ReadFile(inboundCertFlags.cert)
+		if err != nil {
+			return fmt.Errorf("读证书文件失败: %w", err)
+		}
+		key, err := os.ReadFile(inboundCertFlags.key)
+		if err != nil {
+			return fmt.Errorf("读私钥文件失败: %w", err)
+		}
+		return putInboundCert(id, map[string]string{
+			"cert_pem": string(cert), "key_pem": string(key)})
+	},
+}
+
+var inboundCertClearCmd = &cobra.Command{
+	Use:   "clear <入站>",
+	Short: "摘掉托管证书,回退自签",
+	Long: `摘掉入站上托管的证书材料。节点上现有的证书文件保留不动,
+之后的 sync 回到旧语义:文件仍在就不动它,缺了才签自签。
+订阅里这条端点会重新让客户端跳过校验。`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := resolveInboundID(args[0], true)
+		if err != nil {
+			return err
+		}
+		return putInboundCert(id, map[string]string{"cert_pem": "", "key_pem": ""})
+	},
+}
+
+func putInboundCert(id int64, body map[string]string) error {
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
+	raw, err := c.do("PUT", inboundPath(id)+"/cert", body)
+	if err != nil {
+		return err
+	}
+	if opts.output == outputJSON {
+		return emitJSON(raw)
+	}
+	in, err := decode[model.Inbound](raw)
+	if err != nil {
+		return err
+	}
+	if in.Cert != nil {
+		fmt.Printf("已挂证书 %s(%s,%d 天后到期)到入站 %s\n",
+			in.Cert.Subject, in.Cert.Issuer, in.Cert.DaysLeft, in.TagOrDefault())
+	} else {
+		fmt.Printf("已摘掉入站 %s 的托管证书\n", in.TagOrDefault())
+	}
+	fmt.Println("节点上还是旧证书;跑 mpx node sync " + strconv.FormatInt(in.NodeID, 10) + " 才生效(会重启对应核心)")
+	return nil
+}
+
+// inboundCertCell 把入站的托管证书显示成一行;"-"表示没挂(走自签语义)。
+func inboundCertCell(c *model.InboundCertInfo) string {
+	if c == nil {
+		return "-"
+	}
+	exp := ""
+	if c.NotAfter != nil {
+		exp = fmt.Sprintf(",%d 天后到期", c.DaysLeft)
+	}
+	return fmt.Sprintf("%s(%s%s)", c.Subject, c.Issuer, exp)
 }
 
 // inboundPath 拼出入站资源的路径。

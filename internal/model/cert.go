@@ -3,6 +3,7 @@ package model
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -10,6 +11,47 @@ import (
 	"math/big"
 	"time"
 )
+
+// InboundCertInfo 是入站所挂真实证书对外的展示信息。
+//
+// 内容从 CertPEM 现场解析:证书正文只有一份(库里),展示字段不存,
+// 免得续期后两边对不上。
+type InboundCertInfo struct {
+	Subject  string     `json:"subject"`
+	Issuer   string     `json:"issuer"`
+	DNSNames []string   `json:"dns_names,omitempty"`
+	NotAfter *time.Time `json:"not_after"`
+	// DaysLeft 是距到期的天数(向下取整,过期为负)。
+	DaysLeft int `json:"days_left"`
+}
+
+// ValidateCertPair 校验一对证书材料可用:PEM 合法、私钥与证书匹配。
+func ValidateCertPair(certPEM, keyPEM []byte) error {
+	if _, err := tls.X509KeyPair(certPEM, keyPEM); err != nil {
+		return fmt.Errorf("证书与私钥配对失败: %w", err)
+	}
+	return nil
+}
+
+// ParseInboundCert 解析证书 PEM 的首张证书,组装展示信息。
+func ParseInboundCert(certPEM []byte, now time.Time) (*InboundCertInfo, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("不是 PEM 格式的证书")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("解析证书失败: %w", err)
+	}
+	notAfter := cert.NotAfter
+	return &InboundCertInfo{
+		Subject:  cert.Subject.String(),
+		Issuer:   cert.Issuer.String(),
+		DNSNames: cert.DNSNames,
+		NotAfter: &notAfter,
+		DaysLeft: int(cert.NotAfter.Sub(now).Hours() / 24),
+	}, nil
+}
 
 // inboundCertValidity 是入站自签证书的有效期。
 //

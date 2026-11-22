@@ -1492,3 +1492,109 @@ func TestEnabledInBodyWinsOverPreviousValue(t *testing.T) {
 		t.Errorf("请求体里写了 enabled: true,应当是启用")
 	}
 }
+
+// 托管证书走专用端点:证书材料写进库,展示信息出现在响应里,材料本身
+// 与私钥一样不出现在任何响应里;清掉后响应里不再有 cert 字段。
+func TestInboundCertSetAndClear(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("la", "la.example.com")
+
+	code, data := e.api("POST", "/api/inbounds", model.Inbound{
+		NodeID: n.ID, Protocol: model.ProtocolHysteria2, Port: 8444,
+		Network: model.NetworkUDP, Security: model.SecurityTLS, SNI: "la.example.com",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("建 hy2 入站: got %d %s", code, data)
+	}
+	in := decodeJSON[model.Inbound](t, data)
+	if in.Cert != nil {
+		t.Fatal("没挂证书的入站不该有 cert 展示信息")
+	}
+
+	certPEM, keyPEM, err := model.GenerateSelfSignedCertificate("la.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, data = e.api("PUT", pathf("/api/inbounds/%d/cert", in.ID), map[string]string{
+		"cert_pem": string(certPEM), "key_pem": string(keyPEM),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("挂证书: got %d %s", code, data)
+	}
+	updated := decodeJSON[model.Inbound](t, data)
+	if updated.Cert == nil || updated.Cert.Subject == "" {
+		t.Fatal("挂了证书后响应应当带展示信息")
+	}
+	if strings.Contains(string(data), "cert_pem") || strings.Contains(string(data), "PRIVATE KEY") {
+		t.Fatalf("响应里泄露了证书材料:\n%s", data)
+	}
+	// 材料真的进了库:再 GET 一次还能解析出同一张证书。
+	code, data = e.api("GET", pathf("/api/inbounds/%d", in.ID), nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET 入站: %d", code)
+	}
+	got := decodeJSON[model.Inbound](t, data)
+	if got.Cert == nil || got.Cert.Subject != updated.Cert.Subject {
+		t.Fatal("GET 没拿回挂上去的证书信息")
+	}
+
+	// 普通 PUT 不能碰证书材料:整体替换不许把它抹掉。
+	updated.SNI = "la2.example.com"
+	code, data = e.api("PUT", pathf("/api/inbounds/%d", in.ID), updated)
+	if code != http.StatusOK {
+		t.Fatalf("改入站: %d %s", code, data)
+	}
+	got2 := decodeJSON[model.Inbound](t, data)
+	if got2.Cert == nil {
+		t.Fatal("普通 PUT 把证书材料抹掉了")
+	}
+
+	// 只给一半、或给一对配不上,都不许入库。
+	code, data = e.api("PUT", pathf("/api/inbounds/%d/cert", in.ID), map[string]string{"cert_pem": string(certPEM)})
+	if code != http.StatusBadRequest {
+		t.Fatalf("只给证书应当是 400,实际 %d %s", code, data)
+	}
+	otherCert, otherKey, _ := model.GenerateSelfSignedCertificate("other.example.com")
+	code, data = e.api("PUT", pathf("/api/inbounds/%d/cert", in.ID), map[string]string{
+		"cert_pem": string(otherCert), "key_pem": string(keyPEM)[:len(keyPEM)-2] + "x\n",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("配不上的对应当是 400,实际 %d %s", code, data)
+	}
+	_ = otherKey
+
+	// 清除:响应里 cert 消失,库里也清了(再 GET 没有)。
+	code, data = e.api("PUT", pathf("/api/inbounds/%d/cert", in.ID), map[string]string{"cert_pem": "", "key_pem": ""})
+	if code != http.StatusOK {
+		t.Fatalf("清证书: %d %s", code, data)
+	}
+	if decodeJSON[model.Inbound](t, data).Cert != nil {
+		t.Fatal("清除后响应不该再带 cert")
+	}
+	code, data = e.api("GET", pathf("/api/inbounds/%d", in.ID), nil)
+	if decodeJSON[model.Inbound](t, data).Cert != nil {
+		t.Fatal("清除后库里还有证书")
+	}
+}
+
+// 非 TLS 入站不许挂证书:REALITY 与裸协议都走不到证书路径。
+func TestInboundCertRejectsNonTLS(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("la", "la.example.com")
+	code, data := e.api("POST", "/api/inbounds", model.Inbound{
+		NodeID: n.ID, Protocol: model.ProtocolVLESS, Port: 443,
+		Network: model.NetworkTCP, Security: model.SecurityReality,
+		RealityDest: "www.microsoft.com:443", SNI: "www.microsoft.com",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("建入站: %d %s", code, data)
+	}
+	in := decodeJSON[model.Inbound](t, data)
+	certPEM, keyPEM, _ := model.GenerateSelfSignedCertificate("x.example.com")
+	code, data = e.api("PUT", pathf("/api/inbounds/%d/cert", in.ID), map[string]string{
+		"cert_pem": string(certPEM), "key_pem": string(keyPEM),
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("非 TLS 入站挂证书应当是 400,实际 %d %s", code, data)
+	}
+}

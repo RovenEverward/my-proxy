@@ -101,6 +101,14 @@ type Inbound struct {
 	Fingerprint string   `json:"fingerprint,omitempty"` // 客户端 uTLS 指纹,默认 chrome
 	CertFile    string   `json:"cert_file,omitempty"`   // TLS:节点上的证书路径
 	KeyFile     string   `json:"key_file,omitempty"`
+	// CertPEM / KeyPEM 是控制面持有、随下发装到节点的真实证书材料(PEM)。
+	// 非空时下发层按内容比对覆盖节点上的文件,客户端按 CA 校验;
+	// 为空回到旧语义:文件缺失时控制面签自签,订阅端 AllowInsecure。
+	// 与 reality_priv 一个待遇:只进不出,API 响应不带。
+	CertPEM string `json:"-"`
+	KeyPEM string `json:"-"`
+	// Cert 是 CertPEM 解析出的展示信息,服务端在响应时临时填,不落库。
+	Cert *InboundCertInfo `json:"cert,omitempty"`
 	RealityDest string   `json:"reality_dest,omitempty"` // REALITY 回落目标,如 www.microsoft.com:443
 	RealityPriv string   `json:"-"`                      // REALITY 私钥,不下发到客户端
 	RealityPub  string   `json:"reality_pub,omitempty"`

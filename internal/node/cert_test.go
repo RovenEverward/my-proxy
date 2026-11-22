@@ -65,7 +65,7 @@ func TestEnsureTLSCertificatesWritesMissingPair(t *testing.T) {
 		return nil
 	}
 
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		quicInbound("www.apple.com", "/etc/mpx/sing-box/hy2-cert.pem", "/etc/mpx/sing-box/hy2-key.pem"),
 	})
 	if err != nil {
@@ -115,7 +115,7 @@ func TestEnsureTLSCertificatesReusesPairPerSNI(t *testing.T) {
 		writes[dest] = string(stdin)
 		return nil
 	}
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		quicInbound("www.apple.com", "/a/cert.pem", "/a/key.pem"),
 		{NodeID: 1, Tag: "tuic-8445", Protocol: model.ProtocolTUIC, Network: model.NetworkUDP,
 			Security: model.SecurityTLS, SNI: "www.apple.com", CertFile: "/b/cert.pem", KeyFile: "/b/key.pem"},
@@ -145,7 +145,7 @@ func TestEnsureTLSCertificatesSkipsExisting(t *testing.T) {
 		got = stdin
 		return fmt.Errorf("不该写文件")
 	}
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		quicInbound("www.apple.com", "/a/cert.pem", "/a/key.pem"),
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestEnsureTLSCertificatesRepairsHalfPair(t *testing.T) {
 		}
 		return nil
 	}
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		quicInbound("www.apple.com", "/a/cert.pem", "/a/key.pem"),
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestEnsureTLSCertificatesProbeFailure(t *testing.T) {
 	}
 	var wrote bool
 	n.file = func(_ string, _ []byte) error { wrote = true; return nil }
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		quicInbound("www.apple.com", "/a/cert.pem", "/a/key.pem"),
 	})
 	if err == nil {
@@ -210,7 +210,7 @@ func TestEnsureTLSCertificatesIgnoresNonTLS(t *testing.T) {
 		probed = script
 		return "", nil
 	}
-	err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+	_, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
 		{NodeID: 1, Tag: "vless", Protocol: model.ProtocolVLESS, Network: model.NetworkWS,
 			Security: model.SecurityNone},
 	})
@@ -219,5 +219,90 @@ func TestEnsureTLSCertificatesIgnoresNonTLS(t *testing.T) {
 	}
 	if probed != "" {
 		t.Errorf("非 TLS 入站不该探活: %s", probed)
+	}
+}
+
+// 挂 PEM 的辅助:给一对材料,节点上的状态由探活结果喂出来。
+func managedInbound(certPEM, keyPEM string) model.Inbound {
+	in := quicInbound("la1.shiziyi.top", "/a/cert.pem", "/a/key.pem")
+	in.CertPEM, in.KeyPEM = certPEM, keyPEM
+	return in
+}
+
+const fakeCertPEM = "-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n"
+const fakeKeyPEM = "-----BEGIN PRIVATE KEY-----\na2V5\n-----END PRIVATE KEY-----\n"
+
+// 托管证书缺失:写的应当是库里的 PEM,而不是现签的自签。
+func TestEnsureTLSCertificatesPushesManagedWhenMissing(t *testing.T) {
+	n := &certNode{t: t}
+	writes := map[string]string{}
+	n.fn = func(script string) (string, error) { return "missing:0\n", nil }
+	n.file = func(script string, stdin []byte) error {
+		dest := strings.Trim(script[strings.LastIndex(script, " ")+1:], "'")
+		writes[dest] = string(stdin)
+		return nil
+	}
+	changed, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+		managedInbound(fakeCertPEM, fakeKeyPEM),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("写了文件 changed 应当是 true")
+	}
+	if writes["/a/cert.pem"] != fakeCertPEM {
+		t.Errorf("证书应写库里的 PEM,实际 %q", writes["/a/cert.pem"])
+	}
+	if writes["/a/key.pem"] != fakeKeyPEM {
+		t.Errorf("私钥应写库里的 PEM,实际 %q", writes["/a/key.pem"])
+	}
+}
+
+// 托管证书与库里哈希对不上(diff):覆盖成库里的内容,并告诉调用方文件动了。
+func TestEnsureTLSCertificatesPushesManagedOnDiff(t *testing.T) {
+	n := &certNode{t: t}
+	writes := map[string]string{}
+	n.fn = func(script string) (string, error) {
+		if !strings.Contains(script, "sha256sum") {
+			t.Errorf("托管证书的探活脚本应比对 sha256,实际: %s", script)
+		}
+		return "diff:0\n", nil
+	}
+	n.file = func(script string, stdin []byte) error {
+		dest := strings.Trim(script[strings.LastIndex(script, " ")+1:], "'")
+		writes[dest] = string(stdin)
+		return nil
+	}
+	changed, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+		managedInbound(fakeCertPEM, fakeKeyPEM),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Error("diff 写了文件 changed 应当是 true")
+	}
+	if writes["/a/cert.pem"] != fakeCertPEM || writes["/a/key.pem"] != fakeKeyPEM {
+		t.Errorf("diff 应覆盖成库里的 PEM: %+v", writes)
+	}
+}
+
+// 托管证书内容一致(ok):一字节不写,也不报 changed。
+func TestEnsureTLSCertificatesManagedUnchanged(t *testing.T) {
+	n := &certNode{t: t}
+	n.fn = func(script string) (string, error) { return "ok:0\n", nil }
+	n.file = func(_ string, _ []byte) error {
+		t.Error("ok 状态不该写文件")
+		return nil
+	}
+	changed, err := EnsureTLSCertificates(t.Context(), n, model.Node{}, []model.Inbound{
+		managedInbound(fakeCertPEM, fakeKeyPEM),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Error("ok 状态 changed 应当是 false")
 	}
 }

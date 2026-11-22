@@ -121,7 +121,9 @@ var schema = []string{
 		wg_mtu       INTEGER NOT NULL DEFAULT 0,
 		mux          INTEGER NOT NULL DEFAULT 0,
 		fragment     INTEGER NOT NULL DEFAULT 0,
-		max_users    INTEGER NOT NULL DEFAULT 0
+		max_users    INTEGER NOT NULL DEFAULT 0,
+		cert_pem     TEXT    NOT NULL DEFAULT '',
+		key_pem      TEXT    NOT NULL DEFAULT ''
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_inbounds_node_id ON inbounds(node_id)`,
 
@@ -486,6 +488,12 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE inbounds ADD COLUMN fragment INTEGER NOT NULL DEFAULT 0`},
 	{"inbounds", "max_users",
 		`ALTER TABLE inbounds ADD COLUMN max_users INTEGER NOT NULL DEFAULT 0`},
+	// UC-27:入站持有的真实证书材料。key_pem 与 reality_priv 一个口径:落库明文,
+	// 整库即备份。空串表示没有托管证书,下发回退自签语义。
+	{"inbounds", "cert_pem",
+		`ALTER TABLE inbounds ADD COLUMN cert_pem TEXT NOT NULL DEFAULT ''`},
+	{"inbounds", "key_pem",
+		`ALTER TABLE inbounds ADD COLUMN key_pem TEXT NOT NULL DEFAULT ''`},
 	{"nodes", "draining",
 		`ALTER TABLE nodes ADD COLUMN draining INTEGER NOT NULL DEFAULT 0`},
 	{"nodes", "outbound_ip",

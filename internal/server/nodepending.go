@@ -14,6 +14,9 @@ import (
 func inboundNeedsApply(old, cur model.Inbound) bool {
 	old.MaxUsers, cur.MaxUsers = 0, 0
 	old.Fingerprint, cur.Fingerprint = "", ""
+	// Cert 是响应时现算的展示信息,不落库也不是写入对象:带不带它
+	// 都不该让一次普通 PUT 误判成"入站变了"。
+	old.Cert, cur.Cert = nil, nil
 	return !reflect.DeepEqual(old, cur)
 }
 
