@@ -147,11 +147,13 @@ type Server struct {
 	// 见 recordSubPull。只在内存里,重启即清空。
 	subPulls subPullState
 
-	// subLimiter 与 apiLimiter 是两个独立的令牌桶:订阅公网可达且无鉴权,
-	// 是扫描器与定时刷新的主战场;管理面有鉴权,但仍值得防暴力撞 token。
+	// subLimiter、rulesetLimiter 与 apiLimiter 是三个独立的令牌桶:订阅公网
+	// 可达且无鉴权,是扫描器与定时刷新的主战场;规则集镜像文件的突发形态
+	// 与订阅本体差一个量级,单占一桶;管理面有鉴权,但仍值得防暴力撞 token。
 	// 速率与突发见 ratelimit.go 的常数,按真实使用拍,不做配置项。
-	subLimiter *ipRateLimiter
-	apiLimiter *ipRateLimiter
+	subLimiter     *ipRateLimiter
+	rulesetLimiter *ipRateLimiter
+	apiLimiter     *ipRateLimiter
 	// subHandler 是只含 /sub 路由的处理器,给订阅专用监听(--sub-addr)用:
 	// 那个口上永远没有 /api,管理面不会随订阅端口外泄。
 	subHandler http.Handler
@@ -176,8 +178,9 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		token:      token,
 		logger:     logger,
 		mux:        http.NewServeMux(),
-		subLimiter: newSubLimiter(),
-		apiLimiter: newAPILimiter(),
+		subLimiter:     newSubLimiter(),
+		rulesetLimiter: newRulesetLimiter(),
+		apiLimiter:     newAPILimiter(),
 		adminLogin: newLoginGuard(),
 	}
 	if len(dbPath) > 0 {
@@ -247,7 +250,7 @@ func (s *Server) routes() {
 	// UC-05:镜像出来的规则集文件。四段路径不会撞上 /sub/{token}/{format}
 	// ({format} 是单段);fmt/name 的白名单在处理器里校验。
 	sub.HandleFunc("GET /sub/{token}/ruleset/{fmt}/{name}", s.handleRulesetFile)
-	s.mux.Handle("/sub/", s.rateLimit(s.subLimiter, sub))
+	s.mux.Handle("/sub/", s.subRateLimit(sub))
 	s.subHandler = sub
 
 	api := http.NewServeMux()

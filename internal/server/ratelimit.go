@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -99,10 +100,36 @@ func (s *Server) rateLimit(l *ipRateLimiter, next http.Handler) http.Handler {
 	})
 }
 
+// subRateLimit 罩住 /sub 的入口,按路径挑桶:订阅本体与 rotate 走 subLimiter,
+// 镜像规则集文件走独立的 rulesetLimiter。两类流量的正常形态差一个量级 ——
+// 订阅是客户端定时刷一份文档,规则集是启动时并行拉几十个文件;塞同一个桶里,
+// privatized 分发一开启就批量 429(ISS-18)。主监听与订阅专用监听共用这里,
+// 两边行为一致。
+func (s *Server) subRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l := s.subLimiter
+		if isRulesetPath(r.URL.Path) {
+			l = s.rulesetLimiter
+		}
+		s.rateLimit(l, next).ServeHTTP(w, r)
+	})
+}
+
+// isRulesetPath 判断请求是不是镜像规则集文件(/sub/{token}/ruleset/{fmt}/{name})。
+// 按段比对,不做子串匹配:子串判等于把路径形状的信任建立在 token 的字符集上。
+func isRulesetPath(path string) bool {
+	segs := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	return len(segs) == 5 && segs[0] == "sub" && segs[2] == "ruleset"
+}
+
 // subLimit 与 apiLimit 是挂载点用的两个桶。路径前缀要精确匹配:/sub 只罩
 // /sub/ 开头的路径(订阅本体与 rotate),/api 罩整个管理面。
 const (
 	subRate, subBurst = 10.0, 30.0
+	// 镜像规则集是静态小文件:客户端冷启动一轮并行拉几十个,突发容量按
+	// 全量目录(catalog 一百多个文件)放余量。桶仍按 IP 收口 —— CDN 聚合
+	// 下共享一个桶也只是更快触顶,不会被单点刷穿。
+	rulesetRate, rulesetBurst = 30.0, 400.0
 	// 管理台在同一个源里一次页面加载就有约 15 个请求
 	// 同时打上来,桶要比「单运维手工操作」的口径宽出这 15 个的量。
 	apiRate, apiBurst = 10.0, 60.0
@@ -111,6 +138,10 @@ const (
 )
 
 func newSubLimiter() *ipRateLimiter { return newIPRateLimiter(subRate, subBurst, bucketIdle) }
+
+func newRulesetLimiter() *ipRateLimiter {
+	return newIPRateLimiter(rulesetRate, rulesetBurst, bucketIdle)
+}
 
 // newAPILimiter 的桶默认每秒 10、突发 60。浏览器测试可以让它宽一些:一个进程、一个 IP、
 // 几十条用例连着跑,突发 60 一会就见底,429 会拖慢整套。只认正数,读不到或写错都按默认走。

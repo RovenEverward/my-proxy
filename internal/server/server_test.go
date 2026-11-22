@@ -55,6 +55,7 @@ func newEnvWith(t *testing.T, ops NodeOps) *env {
 	// routes() 在 New() 里就把桶指针闭包进了处理器,换字段到不了请求路径,
 	// 所以这里改原桶的参数而不是换一个新桶。
 	s.subLimiter.rate, s.subLimiter.burst = 1e9, 1e9
+	s.rulesetLimiter.rate, s.rulesetLimiter.burst = 1e9, 1e9
 	s.apiLimiter.rate, s.apiLimiter.burst = 1e9, 1e9
 	if ops != nil {
 		s.SetNodeOps(ops)

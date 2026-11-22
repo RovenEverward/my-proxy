@@ -182,7 +182,7 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 			return fmt.Errorf("监听订阅专用口 %s: %w", opt.SubAddr, err)
 		}
 		subSrv = &http.Server{
-			Handler:           srv.rateLimit(srv.subLimiter, srv.subHandler),
+			Handler:           srv.subRateLimit(srv.subHandler),
 			ReadHeaderTimeout: 10 * time.Second,
 			BaseContext:       func(net.Listener) context.Context { return ctx },
 		}
