@@ -24,6 +24,13 @@ type Profile struct {
 	// 受信证书),与 Fingerprint 互斥:connect 探到受信证书才置它,发 SNI 让
 	// 服务端出 ACME 证书。指纹钉仍是默认路径,CA 是它之上的可选升级。
 	CA bool `json:"ca,omitempty"`
+	// SSH 是这台机器到控制面所在服务器的 ssh 目标(user@host、~/.ssh/config
+	// 的别名,或带 -p 等参数的目标串)。非空表示这条 profile 的会话由 SSH 铸
+	// (UC-28):会话过期时 CLI 自己经它再铸一枚,不找人要密码。
+	SSH string `json:"ssh,omitempty"`
+	// SSHCmd 覆盖默认的远端铸会话命令(默认见 sshSessionCmd);非默认安装路径
+	// 或端口时用。空表示用默认。
+	SSHCmd string `json:"ssh_cmd,omitempty"`
 }
 
 // Config 是客户端自己记住的东西。
@@ -172,6 +179,25 @@ func resolve() (server, token string, err error) {
 	return firstNonEmpty(opts.server, os.Getenv("MPX_SERVER"), p.Server),
 		firstNonEmpty(opts.token, os.Getenv("MPX_TOKEN"), p.Token),
 		nil
+}
+
+// resolveSSH 找出连 server 的会话过期后该往哪条 ssh 续期:只有生效 server 正好
+// 是 profile 记的那个时才沿用 profile 里的 SSH 目标 —— --server / MPX_SERVER 指
+// 到别处时,拿旧目标去铸会话是错的。
+func resolveSSH(server string) (target, remoteCmd, profileName string) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return "", "", ""
+	}
+	name := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current)
+	p, err := cfg.pick(name)
+	if err != nil || p.SSH == "" {
+		return "", "", ""
+	}
+	if strings.TrimSuffix(p.Server, "/") != strings.TrimSuffix(server, "/") {
+		return "", "", ""
+	}
+	return p.SSH, p.SSHCmd, name
 }
 
 // resolveFingerprint 找出连 server 时该认的证书指纹:--fp > MPX_FINGERPRINT >

@@ -324,3 +324,57 @@ func TestAdminLoginRefusesPlaintextFromPublic(t *testing.T) {
 		t.Fatalf("公网明文登录应 403,得到 %d %s", w.Code, w.Body)
 	}
 }
+
+// UC-28:主钥匙代铸会话(SSH 接入的服务端半边)。会话凭据不能用它续命。
+func TestAdminSessionMinting(t *testing.T) {
+	e := newEnv(t)
+	relaxAdmin(e)
+	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
+
+	// 主钥匙铸 kind=ssh 会话。
+	code, body := e.api("POST", "/api/admin/session", adminSessionRequest{Kind: "ssh"})
+	if code != http.StatusOK {
+		t.Fatalf("铸会话 %d %s", code, body)
+	}
+	var lr adminLoginResponse
+	_ = json.Unmarshal(body, &lr)
+	if lr.Token == "" {
+		t.Fatal("没回 token")
+	}
+	// 到期时刻在 30 天附近。
+	if d := time.Until(lr.ExpiresAt); d < 29*24*time.Hour || d > 30*24*time.Hour {
+		t.Fatalf("会话有效期不对: %v", d)
+	}
+	// kind 落库。
+	sess, err := e.st.AdminSessionByTokenHash(hashToken(lr.Token), time.Now())
+	if err != nil {
+		t.Fatalf("会话没落库: %v", err)
+	}
+	if sess.Kind != "ssh" {
+		t.Fatalf("kind = %q,期望 ssh", sess.Kind)
+	}
+	// 这枚会话能正常访问 API。
+	if code, _ := e.request("GET", "/api/nodes", nil, bearer(lr.Token)); code != http.StatusOK {
+		t.Fatalf("新会话应可用,得到 %d", code)
+	}
+	// kind 缺省按 cli 记。
+	code, body = e.api("POST", "/api/admin/session", nil)
+	if code != http.StatusOK {
+		t.Fatalf("缺省 kind 铸会话 %d", code)
+	}
+	_ = json.Unmarshal(body, &lr)
+	sess, err = e.st.AdminSessionByTokenHash(hashToken(lr.Token), time.Now())
+	if err != nil || sess.Kind != "cli" {
+		t.Fatalf("缺省 kind = %v %q,期望 cli", err, sess.Kind)
+	}
+
+	// 会话凭据不能拿这口铸新会话。
+	code, _ = e.request("POST", "/api/admin/session", adminSessionRequest{Kind: "ssh"}, bearer(lr.Token))
+	if code != http.StatusForbidden {
+		t.Fatalf("会话凭据铸会话应 403,得到 %d", code)
+	}
+	// 无凭据 401(requireAuth 先拦住)。
+	if code, _ := e.request("POST", "/api/admin/session", nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("无凭据应 401,得到 %d", code)
+	}
+}

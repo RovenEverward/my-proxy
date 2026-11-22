@@ -34,7 +34,12 @@ var connectFlags struct {
 	username      string
 	password      string
 	passwordStdin bool
+	sshTarget     string
+	sshCmd        string
 }
+
+// sshTargetAuto 是 --ssh 不带值时的占位:目标取 connect 地址的主机名。
+const sshTargetAuto = "auto"
 
 var connectCmd = &cobra.Command{
 	Use:   "connect <地址>",
@@ -61,6 +66,13 @@ token,连同地址与指纹保存在本机(--profile 指定名称,默认 default
 		trust, err := decideTrust(hostport)
 		if err != nil {
 			return err
+		}
+		if cmd.Flags().Changed("ssh") {
+			target := connectFlags.sshTarget
+			if target == sshTargetAuto {
+				target = sshTargetFromServer(server)
+			}
+			return connectViaSSH(cmd.Context(), server, trust, target, connectFlags.sshCmd)
 		}
 		user := strings.TrimSpace(connectFlags.username)
 		if user == "" {
@@ -225,6 +237,29 @@ func trustTransport(trust trustDecision) *http.Transport {
 }
 
 // connectAndSave 用账号密码换 token,存进控制面并切过去。mpx init 收尾时也走它。
+// connectViaSSH 是 UC-28 的免密码接入:经 ssh 在控制面本地铸会话,把
+// (server, token, trust, ssh目标) 存进 profile。之后会话过期由 client 自动
+// 走同一条 ssh 续期(见 Client.renewViaSSH)。
+func connectViaSSH(ctx context.Context, server string, trust trustDecision, target, remoteCmd string) error {
+	tok, expires, err := mintSessionViaSSH(ctx, target, remoteCmd, apiPortFromServer(server))
+	if err != nil {
+		return err
+	}
+	profile, err := saveProfile(Profile{
+		Server: server, Token: tok, Fingerprint: trust.fp, CA: trust.ca,
+		SSH: target, SSHCmd: remoteCmd,
+	})
+	if err != nil {
+		return err
+	}
+	until := ""
+	if !expires.IsZero() {
+		until = ",会话 " + expires.Local().Format("2006-01-02 15:04") + " 到期(过期自动经 ssh 续)"
+	}
+	fmt.Printf("已接入 %s(经 ssh %s%s),保存为控制面「%s」。\n", server, target, until, profile)
+	return nil
+}
+
 func connectAndSave(server string, trust trustDecision, username, password string) (*loginResult, error) {
 	res, profile, err := connectAndSaveQuiet(server, trust, username, password)
 	if err != nil {
@@ -287,6 +322,10 @@ func connectAndSaveProfile(server string, trust trustDecision, username, passwor
 }
 
 // saveProfile 把 p 写进 --profile 指的控制面(默认 default)并设为当前。
+//
+// SSH 续期信息按「同地址保留、换地址丢弃」处理:profile 已记了 SSH 目标而新
+// 写入没带(比如旧密码路径重新 connect),地址不变就保住续期能力,地址变了
+// 旧目标八成也指错机器,不带更干净。
 func saveProfile(p Profile) (string, error) {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -295,6 +334,10 @@ func saveProfile(p Profile) (string, error) {
 	name := firstNonEmpty(opts.profile, defaultProfile)
 	if old, ok := cfg.Profiles[name]; ok && old.Server != "" && old.Server != p.Server {
 		fmt.Printf("控制面 %s 的地址:%s → %s\n", name, old.Server, p.Server)
+	}
+	if old, ok := cfg.Profiles[name]; ok && p.SSH == "" && old.SSH != "" &&
+		strings.TrimSuffix(old.Server, "/") == strings.TrimSuffix(p.Server, "/") {
+		p.SSH, p.SSHCmd = old.SSH, old.SSHCmd
 	}
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]Profile{}
@@ -317,6 +360,9 @@ func init() {
 	connectCmd.Flags().StringVar(&connectFlags.username, "username", "", "管理员用户名,默认 admin(mpx init 建的那个账号)")
 	connectCmd.Flags().StringVar(&connectFlags.password, "password", "", "管理员密码(脚本用;不给则交互输入)")
 	connectCmd.Flags().BoolVar(&connectFlags.passwordStdin, "password-stdin", false, "从 stdin 读管理员密码(脚本用)")
+	connectCmd.Flags().StringVar(&connectFlags.sshTarget, "ssh", "", "用 SSH 接入:目标是 ssh 的目标串(user@host、~/.ssh/config 别名;可带 -p 等参数)。不带值时取连接地址的主机名。会话过期后自动经它续期,不再要密码")
+	connectCmd.Flags().Lookup("ssh").NoOptDefVal = sshTargetAuto
+	connectCmd.Flags().StringVar(&connectFlags.sshCmd, "ssh-cmd", "", "覆盖默认的远端铸会话命令(非默认安装路径/端口时用)")
 	rootCmd.AddCommand(connectCmd)
 }
 

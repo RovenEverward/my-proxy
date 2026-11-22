@@ -251,6 +251,11 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 		}
 		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s --username %s", err, hostport, fp, adminUser)
 	}
+	// UC-28:init 用的 SSH 通路正好就是续期通路,把它记进 profile —— 之后
+	// 会话过期不用再问密码。目标与 init 连的是同一串(user@host -p port)。
+	if err := setProfileSSH("", initSSHTarget(p)); err != nil {
+		prog.Note("记录 SSH 续期目标失败(不影响接入):%v", err)
+	}
 
 	fmt.Fprintln(prog.Stdout())
 	if p.FromUI {
@@ -264,4 +269,38 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	fmt.Fprintln(prog.Stdout(), "网页管理台( /admin/ )需要域名加受信证书才适合对外开;配好 DNS(Cloudflare 托管、A 记录指到这台机器)后跑:")
 	fmt.Fprintln(prog.Stdout(), "  mpx acme set --domain <域名> --cf-token-stdin < token.txt")
 	return &initResult{HostPort: hostport, Server: server, Fingerprint: fp, Connected: true}, nil
+}
+
+// initSSHTarget 把 init 的 SSH 参数拼成一条目标串(user@host,非默认端口
+// 带 -p)。它就是 init 自己连 VPS 的那条路,记进 profile 后 UC-28 的会话
+// 续期照走同一条。
+func initSSHTarget(p *initParams) string {
+	user := p.SSHUser
+	if user == "" {
+		user = "root"
+	}
+	t := user + "@" + p.Host
+	if p.SSHPort > 0 && p.SSHPort != 22 {
+		t += " -p " + strconv.Itoa(p.SSHPort)
+	}
+	return t
+}
+
+// setProfileSSH 把 SSH 目标写进一个已接入的 profile。name 为空写 current。
+// init 在 initConnect 之后调它:connect 只认密码登录,SSH 目标在这里补上。
+func setProfileSSH(name, target string) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		name = cfg.Current
+	}
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return fmt.Errorf("没有名为 %q 的控制面", name)
+	}
+	p.SSH = target
+	cfg.Profiles[name] = p
+	return saveConfig(cfg)
 }
