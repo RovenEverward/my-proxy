@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/ui/, internal/pin/, internal/server/admin.go, internal/server/admin_page.go, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-22 @ 17f8e96 + working tree
+verified: 2026-11-22 @ 630917a
 ---
 # 操作入口：CLI 与网页管理台
 
