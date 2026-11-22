@@ -56,9 +56,24 @@ func (s *Server) handleRulesetFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
+	// 大件按 Accept-Encoding 协商 gzip:clash 的 direct.yaml 这类文件有 2MB+,
+	// 跨国链路不压缩要传 30s+,客户端拉取超时(ISS-18 后续)。文本规则集能压
+	// 掉九成;.srs 已是压缩格式,压不动就回退原文。Vary 让边缘缓存分清两种
+	// 表示。编码协商与订阅本体共用同一对 helper(acceptsGzip/gzipBody)。
+	w.Header().Set("Vary", "Accept-Encoding")
+	if acceptsGzip(r) && len(body) >= rulesetGzipMinBytes {
+		if gz, err := gzipBody(body); err == nil && len(gz) < len(body) {
+			w.Header().Set("Content-Encoding", "gzip")
+			body = gz
+		}
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
+
+// rulesetGzipMinBytes 是启用协商压缩的下限:小文件压缩省不了多少,还白搭 CPU
+// 与一个让探测端困惑的 Content-Encoding。
+const rulesetGzipMinBytes = 64 << 10
 
 // rulesetFileContentType 在上游没给 Content-Type 时按文件名后缀猜一个。
 func rulesetFileContentType(name string) string {

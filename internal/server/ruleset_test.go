@@ -1,7 +1,9 @@
 package server
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -107,6 +109,81 @@ func TestRulesetFileHandler(t *testing.T) {
 	}
 	if string(body) != "\x00srs" {
 		t.Fatalf("srs 正文: %q", body)
+	}
+}
+
+// 大件镜像按 Accept-Encoding 协商 gzip(ISS-18 后续):clash 的 direct.yaml 超过
+// 2MB,不压缩在跨国链路上要传 30s+,撑爆客户端拉取超时。声明 gzip 的拿到
+// Content-Encoding: gzip 且能解回原文;没声明的拿原文;.srs 这类压不动的回退
+// 原文,不背一个假 Content-Encoding。
+func TestRulesetFileGzipNegotiation(t *testing.T) {
+	e, _ := newRulesetEnv(t, nil)
+	_, subPath := e.createSubReadyUser("carol")
+
+	// 种一个可压缩的大文件:重复的 yaml 行能压掉九成多。
+	big := strings.Repeat("payload: [a.com, b.com, c.com, d.com, e.com]\n", rulesetGzipMinBytes/40)
+	if _, err := e.st.CompleteRulesetRefresh("clash/direct", "https://up/direct.yaml",
+		time.Now(), []byte(big), "text/yaml", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// 不自动解压的客户端:Accept-Encoding 自己控制,才能验协商。
+	rawClient := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	get := func(path, accept string) (*http.Response, []byte) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, e.srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if accept != "" {
+			req.Header.Set("Accept-Encoding", accept)
+		}
+		resp, err := rawClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp, data
+	}
+
+	// 声明 gzip:应返回压缩体且能解回原文。
+	resp, data := get(subPath+"/ruleset/clash/direct", "gzip")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("gzip 请求: %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatalf("应回 gzip 编码: %v", resp.Header)
+	}
+	if resp.Header.Get("Vary") != "Accept-Encoding" {
+		t.Fatalf("应带 Vary: %v", resp.Header)
+	}
+	if len(data) >= len(big) {
+		t.Fatalf("压缩体不该更大: %d >= %d", len(data), len(big))
+	}
+	zr, err := gzip.NewReader(strings.NewReader(string(data)))
+	if err != nil {
+		t.Fatalf("gzip 流打不开: %v", err)
+	}
+	plain, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("解压: %v", err)
+	}
+	if string(plain) != big {
+		t.Fatal("解回的正文与快照不一致")
+	}
+
+	// 不声明 gzip:拿原文。
+	_, data = get(subPath+"/ruleset/clash/direct", "")
+	if len(data) != len(big) {
+		t.Fatalf("未声明 gzip 应回原文 %dB,得到 %dB", len(big), len(data))
+	}
+	resp2, _ := get(subPath+"/ruleset/clash/direct", "br")
+	if resp2.Header.Get("Content-Encoding") == "gzip" {
+		t.Fatal("没声明 gzip 不该回 gzip 编码")
 	}
 }
 
