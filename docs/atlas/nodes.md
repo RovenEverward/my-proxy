@@ -46,6 +46,8 @@ QUIC 入站(hysteria2 / tuic)走 sing-box,它的 `sing-box check` 会打开 `cer
 
 `inbound add/edit` 里 QUIC + TLS 的 `--cert-file`/`--key-file` 可以省略,服务端按 tag 分配默认路径;非 QUIC 的 TLS(vless+tls 这类 CDN 入口)仍必填,证书归 CDN 侧管。`node status` 的「证书最短」列读这些路径的到期时间。续期流水线留在 mpx 之外:acme.sh cron 续期后钩子把新 PEM 走 `mpx inbound cert set` + `mpx node sync` 推上去,同一个入口覆盖「换证书」与「换节点」。
 
+挂托管证书的 QUIC 入站,SNI 必须换成证书 SAN 覆盖的域名(校验只看 SNI),但对外入口地址保持回落节点 IP:`Host.Address` 一旦偏离节点地址,这个入口就变成独立探测对象 `host:<id>`,探测轮播覆盖不到时会被自动剔除机制以「暂无探测数据」摘掉 —— 域名入口的真实拨号需求(如 CDN)才值得独立成对象,hy2 这种节点本体的入站不要这样做。
+
 ## 坑
 
 - sing-box 下发的"hash 相同就跳过"只信「最后一次下发成功」的基准:失败的 apply(mv/start 失败)会把候选配置留在磁盘、服务留在停机,基准已脱节 —— 此时 `deploySingBox` 经 `StaleDeployError` 清掉 `DeployedHash`。而 `node sync`(verifyRemote)会额外对一次节点上的 `sha256sum`,磁盘对不上就重发;周期收敛(无 verify)仍是零 ssh 快路径。
