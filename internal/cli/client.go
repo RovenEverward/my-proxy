@@ -25,6 +25,9 @@ type Client struct {
 	server string
 	token  string
 	http   *http.Client
+	// renew 是可选的会话续期器:请求撞上 401 时调用一次、重试一次。UC-28
+	// 的 SSH 续期走它 —— 只在 profile 记了 SSH 目标时才挂上来。
+	renew func() (string, error)
 }
 
 // APIError 是控制面返回的非 2xx 响应。
@@ -67,13 +70,48 @@ func newClient() (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{
+	c := &Client{
 		server: strings.TrimSuffix(server, "/"),
 		token:  token,
 		// 超时按次给(见 doWithin),不在这里定一个套在所有接口上的值:读一条记录
 		// 和往节点上装核心的合理上限差三个数量级。
 		http: &http.Client{Transport: tr},
-	}, nil
+	}
+	// UC-28:profile 记了 SSH 目标时,401 先经它铸新会话再重试一次,不找人要
+	// 密码。env/flag 显式给了 token 时也挂:那枚 token 同样可能过期。
+	if target, remoteCmd, profileName := resolveSSH(server); target != "" {
+		prof := profileName
+		c.renew = func() (string, error) {
+			return c.renewViaSSH(context.Background(), target, remoteCmd, prof)
+		}
+	}
+	return c, nil
+}
+
+// renewViaSSH 经 ssh 铸一枚新会话,换上并写回 profile(写回失败只警告:
+// 内存里的 token 已经能用,这轮命令不该被存盘问题打断 —— 下次启动还会再铸)。
+func (c *Client) renewViaSSH(ctx context.Context, target, remoteCmd, profileName string) (string, error) {
+	tok, _, err := mintSessionViaSSH(ctx, target, remoteCmd, apiPortFromServer(c.server))
+	if err != nil {
+		return "", fmt.Errorf("会话已过期,经 ssh %s 续期失败: %w", target, err)
+	}
+	c.token = tok
+	if profileName == "" {
+		return tok, nil
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "注意:会话已续,但配置文件读不出来,新 token 没落盘: %v\n", err)
+		return tok, nil
+	}
+	if p, ok := cfg.Profiles[profileName]; ok {
+		p.Token = tok
+		cfg.Profiles[profileName] = p
+		if err := saveConfig(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "注意:会话已续,但新 token 写回配置文件失败: %v\n", err)
+		}
+	}
+	return tok, nil
 }
 
 const (
@@ -154,6 +192,7 @@ func (c *Client) doRetry(ctx context.Context, method, path string, payload []byt
 	// 限流在业务处理之前,所以 429 意味着请求根本没执行过,重试不会重复建对象。
 	// 服务端给了 Retry-After 就照它等。
 	var lastErr error
+	renewed := false
 	for attempt := 0; attempt < apiRetries; attempt++ {
 		if attempt > 0 {
 			select {
@@ -170,6 +209,18 @@ func (c *Client) doRetry(ctx context.Context, method, path string, payload []byt
 		lastErr = err
 
 		var apiErr *APIError
+		// UC-28:401 且配了 SSH 续期时,先铸新会话再重放一次。只重试一次:
+		// 新会话立刻又 401 说明问题不在过期(比如会话表被整表吊销后又拒绝
+		// 这枚机器),循环铸下去只会把表塞满。
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized &&
+			c.renew != nil && !renewed {
+			renewed = true
+			if _, rerr := c.renew(); rerr != nil {
+				return nil, rerr
+			}
+			attempt--
+			continue
+		}
 		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
 			return nil, err
 		}
@@ -232,6 +283,12 @@ func (c *Client) doOnce(ctx context.Context, method, path string, payload []byte
 func (c *Client) download(path string, w io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), backupTimeout)
 	defer cancel()
+	return c.downloadWithRetry(ctx, path, w, true)
+}
+
+// downloadWithRetry 把 401 续期放进下载这条单独的路:写出去的字节没法回滚,
+// 但续期发生在「还没写出任何字节」的 401 分支,重放是安全的。
+func (c *Client) downloadWithRetry(ctx context.Context, path string, w io.Writer, canRenew bool) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.server+path, nil)
 	if err != nil {
 		return err
@@ -246,7 +303,14 @@ func (c *Client) download(path string, w io.Writer) error {
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(resp.Body)
-		return &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data)}
+		ae := &APIError{StatusCode: resp.StatusCode, Message: errorMessage(resp.StatusCode, data), UIHint: errorUIHint(data)}
+		if ae.StatusCode == http.StatusUnauthorized && c.renew != nil && canRenew {
+			if _, rerr := c.renew(); rerr != nil {
+				return rerr
+			}
+			return c.downloadWithRetry(ctx, path, w, false)
+		}
+		return ae
 	}
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		return fmt.Errorf("写入备份文件: %w", err)

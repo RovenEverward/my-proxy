@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -123,6 +124,51 @@ var adminPasswordCmd = &cobra.Command{
 	},
 }
 
+var adminSessionFlags struct {
+	kind string
+}
+
+var adminSessionCmd = &cobra.Command{
+	Use:   "session",
+	Short: "铸一枚管理会话 token(主钥匙专属;SSH 接入的远端侧)",
+	Long: `铸一枚管理会话 token(POST /api/admin/session,UC-28)。
+
+这条接口只认主钥匙 MPX_TOKEN:会话凭据不能拿它续命,它的用途是在控制面所在
+服务器上给「能用 SSH 进来的机器」发会话。mpx connect --ssh 的远端侧跑的就是
+这条命令;平时不需要手工调它。
+
+默认只把 token 打到 stdout(给 ssh 管道解析用);要看到期时间用 -o json。`,
+	Example: `  ssh server 'MPX_TOKEN=... mpx --server http://127.0.0.1:8080 admin session --kind ssh'`,
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		kind := strings.TrimSpace(adminSessionFlags.kind)
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		var body any
+		if kind != "" {
+			body = map[string]string{"kind": kind}
+		}
+		raw, err := c.do("POST", "/api/admin/session", body)
+		if err != nil {
+			return err
+		}
+		if opts.output == outputJSON {
+			fmt.Println(string(raw))
+			return nil
+		}
+		res, err := decode[struct {
+			Token string `json:"token"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.Token)
+		return nil
+	},
+}
+
 // readAdminPassword 读一次密码:--password 直接给、--password-stdin 读一行、
 // 否则交互输两次核对。至少 12 个字符。
 func readAdminPassword(flag string, fromStdin bool, prompt string) (string, error) {
@@ -160,6 +206,7 @@ func init() {
 	adminCreateCmd.Flags().BoolVar(&adminCreateFlags.passwordStdin, "password-stdin", false, "从 stdin 读管理员密码(脚本用)")
 	adminPasswordCmd.Flags().StringVar(&adminPasswordFlags.oldPassword, "old-password", "", "当前密码(脚本用;不给则交互输入)")
 	adminPasswordCmd.Flags().BoolVar(&adminPasswordFlags.passwordStdin, "password-stdin", false, "从 stdin 读新密码(脚本用)")
-	adminCmd.AddCommand(adminCreateCmd, adminPasswordCmd)
+	adminSessionCmd.Flags().StringVar(&adminSessionFlags.kind, "kind", "", "会话来源标记(ssh / cli 等;缺省服务端记 cli)")
+	adminCmd.AddCommand(adminCreateCmd, adminPasswordCmd, adminSessionCmd)
 	rootCmd.AddCommand(adminCmd)
 }
