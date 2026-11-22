@@ -53,23 +53,40 @@ token,连同地址与指纹保存在本机(--profile 指定名称,默认 default
 
 账号是 mpx init 时建的管理员账号(默认用户名 admin);忘了密码的话,登录控制面
 所在的服务器用 MPX_TOKEN 跑 mpx admin password 重设(见 mpx admin password
---help 的救援说明)。`,
+--help 的救援说明)。
+
+不要密码的走 --ssh:目标是 ssh 的目标串(~/.ssh/config 的别名或 user@host,
+可写成第二个位置参数或 --ssh=值)。CLI 经 ssh 在控制面本机铸一枚会话,SSH 目标
+存进 profile;会话过期后自己经同一条 ssh 续,不再问密码。`,
 	Example: `  mpx connect 203.0.113.10 --fp SHA256:DU4SswBA8LrUy6O0MfhRRxLJZ2p8GPREpV2Zfxtj9Wg
   mpx connect 203.0.113.10:8080 --username ops --profile work
-  echo 'correct horse battery' | mpx connect 203.0.113.10 --fp SHA256:... --password-stdin`,
-	Args: cobra.ExactArgs(1),
+  echo 'correct horse battery' | mpx connect 203.0.113.10 --fp SHA256:... --password-stdin
+  mpx connect mpx.example.net --ssh la-1          # 别名,~/.ssh/config 里那条
+  mpx connect mpx.example.net --ssh root@203.0.113.10
+  mpx connect mpx.example.net --ssh               # 目标取连接地址的主机名`,
+	Args: cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		server, hostport, err := controlURL(args[0])
 		if err != nil {
 			return err
 		}
+		// 第二个位置参数等价 --ssh=<目标>:写起来更像 ssh 本身的用法。
+		// `--ssh la-1` 这种写法 cobra 会把 la-1 留在 args 里(flag 是 auto 占位),
+		// 一样按目标接 —— 只有 --ssh=显式值 与位置参数同时出现时才算给了两次。
+		sshGiven := cmd.Flags().Changed("ssh") || len(args) == 2
+		target := connectFlags.sshTarget
+		if len(args) == 2 {
+			if cmd.Flags().Changed("ssh") && target != "" && target != sshTargetAuto {
+				return errors.New("SSH 目标给了两次:位置参数与 --ssh=<值> 留一个")
+			}
+			target = args[1]
+		}
 		trust, err := decideTrust(hostport)
 		if err != nil {
 			return err
 		}
-		if cmd.Flags().Changed("ssh") {
-			target := connectFlags.sshTarget
-			if target == sshTargetAuto {
+		if sshGiven {
+			if target == "" || target == sshTargetAuto {
 				target = sshTargetFromServer(server)
 			}
 			return connectViaSSH(cmd.Context(), server, trust, target, connectFlags.sshCmd)
