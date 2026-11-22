@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -36,12 +35,10 @@ const (
 	adminCookieName = "mpx_admin"
 	// webSessionTTL 是会话的固定有效期。
 	webSessionTTL = 30 * 24 * time.Hour
-	// sessionKindWeb / sessionKindCLI / sessionKindSSH 标记会话来源:kind 不
-	// 参与鉴权分支,只是来源记录(将来「踢掉某台 CLI」一类动作可以按它筛)。
-	// ssh 是会话由 SSH 侧经主钥匙代铸的标记(UC-28)。
+	// sessionKindWeb / sessionKindCLI 标记会话来源:kind 不参与鉴权分支,
+	// 只是来源记录(将来「踢掉某台 CLI」一类动作可以按它筛)。
 	sessionKindWeb = "web"
 	sessionKindCLI = "cli"
-	sessionKindSSH = "ssh"
 )
 
 // ---- Origin / Fetch-Site 校验 ----
@@ -257,55 +254,6 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if kind == sessionKindWeb {
 		setAdminCookie(w, tok, expires)
 	}
-	writeJSON(w, http.StatusOK, adminLoginResponse{Token: tok, ExpiresAt: expires})
-}
-
-// adminSessionRequest 是 POST /api/admin/session 的入参:kind 标记来源,
-// 缺省按 cli 记。
-type adminSessionRequest struct {
-	Kind string `json:"kind,omitempty"`
-}
-
-// handleAdminSession 是 UC-28 的「代铸会话」口:主钥匙(MPX_TOKEN)换一枚
-// 普通会话 token。CLI 的 SSH 接入走它 —— 客户端 ssh 到服务器,远端 mpx 用
-// /etc/mpx/env 的主钥匙调它,拿回一枚 30 天的会话;机器凭据(SSH)与人凭据
-// (密码)就此分开,落库的还是同一张 admin_sessions 表。
-//
-// 只认主钥匙:会话凭据不能拿它给自己续命 —— 会话本来就会过期,续期的入口
-// 是「重新证明身份」,不是拿旧凭据换新凭据。
-func (s *Server) handleAdminSession(w http.ResponseWriter, r *http.Request) {
-	if master, _ := r.Context().Value(authMasterKey).(bool); !master {
-		writeError(w, http.StatusForbidden, "铸会话只能凭主钥匙(MPX_TOKEN);会话凭据不能自助续期")
-		return
-	}
-	var req adminSessionRequest
-	// 空 body 也收:kind 有默认值,CLI 直连时不给 JSON 一样成立。
-	if r.Body != nil {
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, "请求体不是合法 JSON")
-			return
-		}
-	}
-	kind := req.Kind
-	if kind == "" {
-		kind = sessionKindCLI
-	}
-	if len(kind) > 32 {
-		writeErrorField(w, http.StatusBadRequest, "kind 不能超过 32 个字符", "kind")
-		return
-	}
-	now := time.Now()
-	tok, err := newToken()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "生成会话失败")
-		return
-	}
-	expires := now.Add(webSessionTTL)
-	if err := s.store.CreateAdminSession(hashToken(tok), kind, now, expires); err != nil {
-		s.writeStoreError(w, err, "管理会话")
-		return
-	}
-	s.logger.Info("已代铸管理会话", "kind", kind, "remote", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, adminLoginResponse{Token: tok, ExpiresAt: expires})
 }
 

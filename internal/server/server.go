@@ -346,7 +346,6 @@ func (s *Server) routes() {
 
 	// UC-26:管理台账号。建号(尚无账号时)与改名共用一个口;改口令单独一条,
 	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
-	api.HandleFunc("POST /api/admin/session", s.handleAdminSession)
 	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
 	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
 	api.HandleFunc("GET /api/admin/meta", s.handleAdminMeta)
