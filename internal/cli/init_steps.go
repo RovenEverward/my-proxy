@@ -251,10 +251,10 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 		}
 		return nil, fmt.Errorf("本机接入失败: %w;稍后可手动 mpx connect %s --fp %s --username %s", err, hostport, fp, adminUser)
 	}
-	// UC-28:init 用的 SSH 通路正好就是续期通路,把它记进 profile —— 之后
-	// 会话过期不用再问密码。目标与 init 连的是同一串(user@host -p port)。
+	// UC-29:init 用的 SSH 通路正好就是通道,把它记进 profile —— 之后
+	// 命令都经它转发,init 存的会话 token 也用不上了,一并清掉。
 	if err := setProfileSSH("", initSSHTarget(p)); err != nil {
-		prog.Note("记录 SSH 续期目标失败(不影响接入):%v", err)
+		prog.Note("记录 SSH 通道目标失败(不影响接入):%v", err)
 	}
 
 	fmt.Fprintln(prog.Stdout())
@@ -272,8 +272,8 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 }
 
 // initSSHTarget 把 init 的 SSH 参数拼成一条目标串(user@host,非默认端口
-// 带 -p)。它就是 init 自己连 VPS 的那条路,记进 profile 后 UC-28 的会话
-// 续期照走同一条。
+// 带 -p)。它就是 init 自己连 VPS 的那条路,记进 profile 后 UC-29 的通道
+// 照走同一条。
 func initSSHTarget(p *initParams) string {
 	user := p.SSHUser
 	if user == "" {
@@ -287,7 +287,8 @@ func initSSHTarget(p *initParams) string {
 }
 
 // setProfileSSH 把 SSH 目标写进一个已接入的 profile。name 为空写 current。
-// init 在 initConnect 之后调它:connect 只认密码登录,SSH 目标在这里补上。
+// init 在 initConnect 之后调它:切到 SSH 通道后,密码换来的会话 token 不再
+// 需要(通道模式不存凭据),一并清掉。
 func setProfileSSH(name, target string) error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -301,6 +302,9 @@ func setProfileSSH(name, target string) error {
 		return fmt.Errorf("没有名为 %q 的控制面", name)
 	}
 	p.SSH = target
+	p.Token = ""
+	p.Fingerprint = ""
+	p.CA = false
 	cfg.Profiles[name] = p
 	return saveConfig(cfg)
 }

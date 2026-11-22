@@ -1,211 +1,252 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
-	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// fakeSSH 在 PATH 前头放一个假的 ssh:把收到的参数写进 argsFile,stdout 输出
-// out,exit code 是 code。
-func fakeSSH(t *testing.T, out string, code int) (argsFile string) {
+// fakeSSH 把一个可执行脚本放到 PATH 最前的临时目录,返回记录调用参数的文件
+// 路径。stdout 是原样写出的内容(一条完整 HTTP 响应报文),stderr 是写往
+// 错误输出的内容(模拟 ssh 自己的报错)。
+func fakeSSH(t *testing.T, stdout, stderr string, exitCode int) string {
 	t.Helper()
 	dir := t.TempDir()
-	argsFile = filepath.Join(dir, "args")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\n" +
-		"printf '%s' '" + strings.ReplaceAll(out, "'", `'\''`) + "'\n" +
-		"exit " + strconv.Itoa(code) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "ssh"), []byte(script), 0o755); err != nil {
+	argsFile := filepath.Join(dir, "args")
+	script := filepath.Join(dir, "ssh")
+	content := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %s\ncat > /dev/null\nprintf '%%s' %s\nprintf '%%s' %s >&2\nexit %d\n",
+		argsFile, shellQuote(stdout), shellQuote(stderr), exitCode)
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 	return argsFile
 }
 
-func TestSSHSessionCmd(t *testing.T) {
-	cmd := sshSessionCmd(9443)
-	for _, want := range []string{"MPX_TOKEN", "/etc/mpx/env", "127.0.0.1:9443", "admin session", "--kind ssh"} {
-		if !strings.Contains(cmd, want) {
-			t.Errorf("远端铸会话命令缺 %q: %s", want, cmd)
-		}
+// shellQuote 把任意字节塞进单引号:单引号自身换成 '\'' 即可。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func TestSSHRelayCmd(t *testing.T) {
+	cmd := sshRelayCmd(8080)
+	if !strings.Contains(cmd, "api-relay") || !strings.Contains(cmd, "--port 8080") {
+		t.Fatalf("远端命令没指向 api-relay: %s", cmd)
+	}
+	if !strings.Contains(cmd, "command -v mpx") {
+		t.Fatalf("远端命令丢了 mpx 查找: %s", cmd)
 	}
 }
 
 func TestSSHTargetFromServer(t *testing.T) {
-	for in, want := range map[string]string{
-		"https://mpx.example.net:8080": "mpx.example.net",
-		"https://203.0.113.10:8080":    "203.0.113.10",
-		"https://mpx.example.net":      "mpx.example.net",
-		"https://[2001:db8::1]:8080":   "2001:db8::1",
+	for _, tc := range []struct{ in, want string }{
+		{"https://mpx.example.net:8080", "mpx.example.net"},
+		{"https://203.0.113.10:8080", "203.0.113.10"},
+		{"https://[2001:db8::1]:8443", "2001:db8::1"},
+		{"https://example.net", "example.net"},
 	} {
-		if got := sshTargetFromServer(in); got != want {
-			t.Errorf("sshTargetFromServer(%q) = %q, want %q", in, got, want)
+		if got := sshTargetFromServer(tc.in); got != tc.want {
+			t.Errorf("sshTargetFromServer(%q) = %q,期望 %q", tc.in, got, tc.want)
 		}
 	}
 }
 
 func TestAPIPortFromServer(t *testing.T) {
-	for in, want := range map[string]int{
-		"https://mpx.example.net:9443": 9443,
-		"https://mpx.example.net:8080": 8080,
-		"https://mpx.example.net":      defaultControlPort,
-		"https://mpx.example.net:bad":  defaultControlPort,
+	for _, tc := range []struct {
+		in   string
+		want int
+	}{
+		{"https://mpx.example.net:8080", 8080},
+		{"https://mpx.example.net:9443", 9443},
+		{"https://mpx.example.net", defaultControlPort},
 	} {
-		if got := apiPortFromServer(in); got != want {
-			t.Errorf("apiPortFromServer(%q) = %d, want %d", in, got, want)
+		if got := apiPortFromServer(tc.in); got != tc.want {
+			t.Errorf("apiPortFromServer(%q) = %d,期望 %d", tc.in, got, tc.want)
 		}
 	}
 }
 
-// UC-28:ssh 返回的 token 被取回,目标串带 -p 之类参数时被原样转给 ssh。
-func TestMintSessionViaSSH(t *testing.T) {
-	argsFile := fakeSSH(t, "tok-from-ssh\n", 0)
-	tok, _, err := mintSessionViaSSH(context.Background(), "root@cp.example -p 5522", "", 8080)
+// 通道端到端的一半:请求序列化经 ssh 出去,响应报文原样回来。
+func TestSSHRequestRoundTrip(t *testing.T) {
+	respBody := "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nhello relay"
+	argsFile := fakeSSH(t, respBody, "", 0)
+
+	req, err := newRelayRequest(context.Background(), http.MethodGet, "/api/status", nil)
 	if err != nil {
-		t.Fatalf("mintSessionViaSSH: %v", err)
+		t.Fatal(err)
 	}
-	if tok != "tok-from-ssh" {
-		t.Fatalf("token = %q", tok)
+	resp, err := sshRequest(context.Background(), "root@example -p 5522", "mpx api-relay", req)
+	if err != nil {
+		t.Fatalf("sshRequest: %v", err)
 	}
-	args, _ := os.ReadFile(argsFile)
-	s := string(args)
-	for _, want := range []string{"root@cp.example", "-p", "5522", "admin session --kind ssh"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("ssh 参数里缺 %q: %s", want, s)
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("状态 = %d", resp.StatusCode)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	if string(data) != "hello relay" {
+		t.Fatalf("响应体 = %q", data)
+	}
+	// 参数:BatchMode + 目标按空白拆开 + 远端命令。
+	got, _ := os.ReadFile(argsFile)
+	for _, want := range []string{"BatchMode=yes", "root@example", "-p", "5522", "mpx api-relay"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("ssh 参数缺 %q: %s", want, got)
 		}
 	}
 }
 
-// UC-28:ssh 失败时透传 stderr,不落 token。
-func TestMintSessionViaSSHFailure(t *testing.T) {
-	fakeSSH(t, "", 255)
-	if _, _, err := mintSessionViaSSH(context.Background(), "no-such-host", "", 8080); err == nil {
-		t.Fatal("ssh 失败时应报错")
+// ssh 失败时 stderr 原样进错误。
+func TestSSHRequestFailure(t *testing.T) {
+	fakeSSH(t, "", "ssh: Could not resolve hostname bad-target", 255)
+	req, _ := newRelayRequest(context.Background(), http.MethodGet, "/api/status", nil)
+	_, err := sshRequest(context.Background(), "bad-target", "mpx api-relay", req)
+	if err == nil || !strings.Contains(err.Error(), "bad-target") {
+		t.Fatalf("应报 ssh 目标错: %v", err)
 	}
 }
 
-// UC-28:profile 记了 SSH 目标时,401 自动续期重试一次,全程不需要密码。
-func TestClientRenewsOn401(t *testing.T) {
-	var calls atomic.Int32
-	var auths []string
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		auths = append(auths, r.Header.Get("Authorization"))
-		calls.Add(1)
-		if r.Header.Get("Authorization") == "Bearer new-token" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"ok":true}`))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"凭据不正确或会话已过期"}`))
-	})
-	var renews atomic.Int32
-	c.renew = func() (string, error) {
-		renews.Add(1)
-		c.token = "new-token"
-		return "new-token", nil
-	}
-	if _, err := c.do("GET", "/api/nodes", nil); err != nil {
-		t.Fatalf("续期重试后仍失败: %v", err)
-	}
-	if renews.Load() != 1 || calls.Load() != 2 {
-		t.Fatalf("renew=%d 次,请求=%d 次;期望各一次+重试", renews.Load(), calls.Load())
-	}
-	if auths[0] != "Bearer secret-token" || auths[1] != "Bearer new-token" {
-		t.Fatalf("Authorization 头: %v", auths)
+// 远端不认 api-relay 时给升级提示。
+func TestSSHRequestOldRemote(t *testing.T) {
+	fakeSSH(t, "", `Error: unknown command "api-relay" for "mpx"`, 1)
+	req, _ := newRelayRequest(context.Background(), http.MethodGet, "/api/status", nil)
+	_, err := sshRequest(context.Background(), "la-1", "mpx api-relay", req)
+	if err == nil || !strings.Contains(err.Error(), "升级") {
+		t.Fatalf("应提示升级: %v", err)
 	}
 }
 
-// 续期后还是 401:不循环,错误原样回来。
-func TestClientRenewOnceOnly(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"凭据不正确"}`))
-	})
-	var renews atomic.Int32
-	c.renew = func() (string, error) {
-		renews.Add(1)
-		c.token = "new-token"
-		return "new-token", nil
+// sshRoundTrip 走通道拿 200;429 时带回 Retry-After。
+func TestSSHRoundTripThroughClient(t *testing.T) {
+	argsFile := fakeSSH(t, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}", "", 0)
+	c := &Client{server: "https://cp.example:8080", sshTarget: "la-1"}
+	data, _, err := c.sshRoundTrip(context.Background(), http.MethodGet, "/api/nodes", nil, false)
+	if err != nil {
+		t.Fatalf("sshRoundTrip: %v", err)
 	}
-	var apiErr *APIError
-	_, err := c.do("GET", "/api/nodes", nil)
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("期望 401 原样回来,得到 %v", err)
+	if string(data) != "{}" {
+		t.Fatalf("响应 = %q", data)
 	}
-	if renews.Load() != 1 {
-		t.Fatalf("续期只该发生一次,实际 %d", renews.Load())
+	got, _ := os.ReadFile(argsFile)
+	if !strings.Contains(string(got), "api-relay --port 8080") {
+		t.Fatalf("默认远端命令没带端口: %s", got)
+	}
+
+	fakeSSH(t, "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 5\r\nContent-Length: 2\r\n\r\n{}", "", 0)
+	_, wait, err := c.sshRoundTrip(context.Background(), http.MethodGet, "/api/nodes", nil, false)
+	if err == nil || wait != 5*time.Second {
+		t.Fatalf("429 应带 5s retryAfter: wait=%v err=%v", wait, err)
 	}
 }
 
-// 续期本身失败(SSH 不通):报续期的错,不吞原 401 的线索。
-func TestClientRenewFailure(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":"凭据不正确"}`))
-	})
-	c.renew = func() (string, error) {
-		return "", errors.New("ssh la-1: connect timeout")
-	}
-	_, err := c.do("GET", "/api/nodes", nil)
-	if err == nil || !strings.Contains(err.Error(), "ssh la-1") {
-		t.Fatalf("期望带 ssh 原因的错,得到 %v", err)
-	}
-}
-
-// profile 换了地址后,旧 SSH 目标不沿用(那台机器多半不是这台控制面)。
-func TestSaveProfileDropsSSHOnServerChange(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-
-	if _, err := saveProfile(Profile{Server: "https://a:1", Token: "t1", SSH: "la-1"}); err != nil {
-		t.Fatal(err)
-	}
-	// 同地址重 connect(没带 SSH):续期目标保留。
-	if _, err := saveProfile(Profile{Server: "https://a:1", Token: "t2"}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, _ := loadConfig()
-	if cfg.Profiles["default"].SSH != "la-1" {
-		t.Fatalf("同地址重连不该丢 SSH 目标: %+v", cfg.Profiles["default"])
-	}
-	// 换地址:SSH 目标丢弃,不留错指。
-	if _, err := saveProfile(Profile{Server: "https://b:2", Token: "t3"}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, _ = loadConfig()
-	if cfg.Profiles["default"].SSH != "" {
-		t.Fatalf("换地址后 SSH 目标应丢弃: %+v", cfg.Profiles["default"])
-	}
-}
-
-// resolveSSH:只有生效地址与 profile 一致时才沿用 SSH 目标。
+// resolveSSH:server 匹配才沿用 profile 目标;不匹配返回空。
 func TestResolveSSH(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	if _, err := saveProfile(Profile{Server: "https://a:8080", Token: "t", SSH: "la-1", SSHCmd: "custom"}); err != nil {
-		t.Fatal(err)
+	path := useTempConfig(t)
+	writeRaw(t, path, `{"current":"default","profiles":{"default":{"server":"https://cp.example:8080","ssh":"la-1","ssh_cmd":"custom cmd"}}}`)
+
+	target, remote := resolveSSH("https://cp.example:8080")
+	if target != "la-1" || remote != "custom cmd" {
+		t.Fatalf("resolveSSH = (%q,%q)", target, remote)
 	}
-	target, cmd, name := resolveSSH("https://a:8080")
-	if target != "la-1" || cmd != "custom" || name != "default" {
-		t.Fatalf("resolveSSH = %q %q %q", target, cmd, name)
-	}
-	if target, _, _ := resolveSSH("https://b:9"); target != "" {
-		t.Fatalf("地址不一致时不该沿用 SSH 目标,得到 %q", target)
+	if target, _ := resolveSSH("https://other.example:8080"); target != "" {
+		t.Fatalf("server 不匹配时应返回空,得到 %q", target)
 	}
 }
 
-// 编译期确认:UC-28 的时间字段不引入未用导入。
-var _ = time.Second
+// saveProfile:带 SSH 写入时清掉凭据字段;不带 SSH 且同地址时保留旧目标。
+func TestSaveProfileSSHSemantics(t *testing.T) {
+	path := useTempConfig(t)
+	writeRaw(t, path, `{"current":"default","profiles":{"default":{"server":"https://cp.example:8080","token":"old","ssh":"la-1","ssh_cmd":"cmd"}}}`)
+
+	// 不带 SSH 的重写(密码路径):同地址保留通道。
+	if _, err := saveProfile(Profile{Server: "https://cp.example:8080", Token: "t2"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := cfg.Profiles["default"]
+	if p.SSH != "la-1" || p.SSHCmd != "cmd" {
+		t.Fatalf("同地址重写丢了 SSH 目标: %+v", p)
+	}
+
+	// 带 SSH 的重写:凭据字段清空。
+	if _, err := saveProfile(Profile{Server: "https://cp.example:8080", Token: "t3", Fingerprint: "SHA256:x", CA: true, SSH: "la-2"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = cfg.Profiles["default"]
+	if p.Token != "" || p.Fingerprint != "" || p.CA {
+		t.Fatalf("通道模式不该存凭据: %+v", p)
+	}
+	if p.SSH != "la-2" {
+		t.Fatalf("SSH 目标没更新: %+v", p)
+	}
+
+	// 换地址重写:旧目标丢弃。
+	if _, err := saveProfile(Profile{Server: "https://new.example:8080", Token: "t4"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = cfg.Profiles["default"]
+	if p.SSH != "" {
+		t.Fatalf("换地址应丢弃旧目标: %+v", p)
+	}
+}
+
+// runAPIRelay:注入主钥匙、改写目标到 127.0.0.1:<port>,响应原样回吐。
+func TestAPIRelay(t *testing.T) {
+	var gotAuth, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotPath = r.URL.Path
+		w.Header().Set("X-Test", "ok")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+	port := srv.Listener.Addr().(*net.TCPAddr).Port
+	apiRelayFlags.port = port
+	defer func() { apiRelayFlags.port = 0 }()
+	t.Setenv("MPX_TOKEN", "master-secret")
+
+	req, _ := newRelayRequest(context.Background(), http.MethodGet, "/api/status", nil)
+	var in bytes.Buffer
+	if err := req.WriteProxy(&in); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runAPIRelay(&in, &out); err != nil {
+		t.Fatalf("runAPIRelay: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(&out), req)
+	if err != nil {
+		t.Fatalf("relay 响应解析不了: %v\n%s", err, out.String())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 || resp.Header.Get("X-Test") != "ok" {
+		t.Fatalf("响应 = %d %v", resp.StatusCode, resp.Header)
+	}
+	if gotAuth != "Bearer master-secret" {
+		t.Fatalf("主钥匙没注入: %q", gotAuth)
+	}
+	if gotPath != "/api/status" {
+		t.Fatalf("路径没转对: %q", gotPath)
+	}
+}

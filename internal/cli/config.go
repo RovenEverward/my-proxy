@@ -25,10 +25,11 @@ type Profile struct {
 	// 服务端出 ACME 证书。指纹钉仍是默认路径,CA 是它之上的可选升级。
 	CA bool `json:"ca,omitempty"`
 	// SSH 是这台机器到控制面所在服务器的 ssh 目标(user@host、~/.ssh/config
-	// 的别名,或带 -p 等参数的目标串)。非空表示这条 profile 的会话由 SSH 铸
-	// (UC-28):会话过期时 CLI 自己经它再铸一枚,不找人要密码。
+	// 的别名,或带 -p 等参数的目标串)。非空表示这条 profile 走 SSH 通道
+	// (UC-29):每个 API 请求经 `ssh <目标> 'mpx api-relay'` 在控制面本机
+	// 执行,Token 字段用不到、也不写。
 	SSH string `json:"ssh,omitempty"`
-	// SSHCmd 覆盖默认的远端铸会话命令(默认见 sshSessionCmd);非默认安装路径
+	// SSHCmd 覆盖默认的远端通道命令(默认见 sshRelayCmd);非默认安装路径
 	// 或端口时用。空表示用默认。
 	SSHCmd string `json:"ssh_cmd,omitempty"`
 }
@@ -181,23 +182,22 @@ func resolve() (server, token string, err error) {
 		nil
 }
 
-// resolveSSH 找出连 server 的会话过期后该往哪条 ssh 续期:只有生效 server 正好
-// 是 profile 记的那个时才沿用 profile 里的 SSH 目标 —— --server / MPX_SERVER 指
-// 到别处时,拿旧目标去铸会话是错的。
-func resolveSSH(server string) (target, remoteCmd, profileName string) {
+// resolveSSH 找出连 server 该走的 SSH 通道目标:只有生效 server 正好是
+// profile 记的那个时才沿用 —— --server / MPX_SERVER 指到别处时,拿旧目标
+// 去开通道是错的(通道那头必须是同一台控制面)。
+func resolveSSH(server string) (target, remoteCmd string) {
 	cfg, err := loadConfig()
 	if err != nil {
-		return "", "", ""
+		return "", ""
 	}
-	name := firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE"), cfg.Current)
-	p, err := cfg.pick(name)
+	p, err := cfg.pick(firstNonEmpty(opts.profile, os.Getenv("MPX_PROFILE")))
 	if err != nil || p.SSH == "" {
-		return "", "", ""
+		return "", ""
 	}
 	if strings.TrimSuffix(p.Server, "/") != strings.TrimSuffix(server, "/") {
-		return "", "", ""
+		return "", ""
 	}
-	return p.SSH, p.SSHCmd, name
+	return p.SSH, p.SSHCmd
 }
 
 // resolveFingerprint 找出连 server 时该认的证书指纹:--fp > MPX_FINGERPRINT >
