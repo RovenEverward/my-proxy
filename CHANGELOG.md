@@ -11,6 +11,8 @@
 - 订阅镜像(UC-10):在名单内一台节点上开放 /sub 入口,订阅地址可不止控制面一个 IP。节点侧是核心自带的 TCP 转发(dokodemo-door / sing-box direct),不装 MPX 组件;内容与鉴权以控制面为唯一真相。新增 `mpx mirror add|list|set|rm`,API `GET/POST/PUT/DELETE /api/mirrors`,`mpx serve --sub-addr` 可开一个只路由 /sub 的专用监听(节点镜像指到它时 /api 不出现在镜像端口)。订阅页与用户链接列出"镜像 · <节点>"入口。
 - 控制面迁移后,`mpx mirror set <id> --upstream <新控制面>:<端口>` 让既有镜像跟随新控制面。
 
+- CDN IP 优选升级(UC-31):探测从「延迟+边缘」两段补成「丢包+延迟+吞吐」三段 —— 每 IP 4 次 TCP 拨测记丢包率,边缘通过的前 8 个对 `cdn_speed_url` 做 8 秒限时下载测速;优选池与 CDN 入口按速度降序选优,丢包超 20% 直接不参选;测速地址由 `settings.cdn_speed_url` 配(自建 Worker 或控制面静态文件),空地址退化为丢包+延迟排序。
+
 ### 兼容性(破坏性变更,UC-30)
 - **退役:境内活性探测与自动剔除(UC-06/12/18/25)、境内指标与带宽测量(UC-20/23)**。删除 `GET /api/reach`、`GET /api/reach/last`、`GET /api/reach/targets`、`POST /api/reach/probe`、`POST /api/reach/results`、`PUT /api/reach/keep`、`GET /api/metrics`、`GET /api/bandwidth/endpoint`、`GET /api/bandwidth/targets`、`POST /api/bandwidth/results`;移除 `mpx node check`、`mpx node bandwidth`、`mpx reach` 命令;管理台的境内列、触达判定筛选、测速按钮、剔除开关与保留按钮一并撤下。
 - **探测点职责收窄为 CDN IP 优选**:`/api/probes*`、`mpx probe` 保留,探测端凭据只放 `GET/POST /api/cdn-optimize/*` 两个接口。

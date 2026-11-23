@@ -269,11 +269,13 @@ const (
 // CDNResult 是探测点回传的一个优选 IP 结果(internal/cdn.Result 的
 // 传输形状 —— server 收 API 用这套,不反向依赖 probe 包)。
 type CDNResult struct {
-	IP        string `json:"ip"`
-	Reachable bool   `json:"reachable"`
-	LatencyMs int    `json:"latency_ms"`
-	Edge      bool   `json:"edge"`
-	Colo      string `json:"colo,omitempty"`
+	IP        string  `json:"ip"`
+	Reachable bool    `json:"reachable"`
+	LatencyMs int     `json:"latency_ms"`
+	Loss      float64 `json:"loss"`       // TCP 握手丢包率 0~1(UC-31)
+	Edge      bool    `json:"edge"`
+	Colo      string  `json:"colo,omitempty"`
+	SpeedMbps float64 `json:"speed_mbps"` // 限时下载测速 MB/s,未测/失败为 0(UC-31)
 }
 
 // CDNIP 是优选池里的一行(cdn_pool 表),附首次/最近命中与连续 miss
@@ -282,6 +284,8 @@ type CDNResult struct {
 type CDNIP struct {
 	IP        string    `json:"ip"`
 	LatencyMs int       `json:"latency_ms"`
+	Loss      float64   `json:"loss"`
+	SpeedMbps float64   `json:"speed_mbps"`
 	Colo      string    `json:"colo"`
 	FirstSeen time.Time `json:"first_seen"`
 	LastSeen  time.Time `json:"last_seen"`

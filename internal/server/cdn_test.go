@@ -203,3 +203,46 @@ func TestCDNResultsAbsentMemberCountsMiss(t *testing.T) {
 		}
 	}
 }
+
+// UC-31:选优按速度降序;丢包超阈的即使边缘真也不上入口。
+func TestCDNHostsPreferSpeedAndLossGate(t *testing.T) {
+	e := newEnv(t)
+	enableCDNOptimize(t, e)
+
+	node := e.createNode("la-1", "203.0.113.7")
+	in := e.createInbound(node.ID, "cdn-in", 443)
+	e.createHost(in.ID, "洛杉矶 A · CDN", "cdn.example.com")
+
+	code, _ := cdnResults(e, []model.CDNResult{
+		{IP: "1.1.1.1", Reachable: true, LatencyMs: 20, Edge: true, Colo: "FRA", Loss: 0, SpeedMbps: 5},
+		{IP: "2.2.2.2", Reachable: true, LatencyMs: 90, Edge: true, Colo: "SJC", Loss: 0, SpeedMbps: 50},
+		{IP: "3.3.3.3", Reachable: true, LatencyMs: 60, Edge: true, Colo: "NRT", Loss: 0, SpeedMbps: 30},
+		{IP: "4.4.4.4", Reachable: true, LatencyMs: 40, Edge: true, Colo: "LAX", Loss: 0, SpeedMbps: 10},
+		// 速度最快但丢包 50%:不该挂入口。
+		{IP: "9.9.9.9", Reachable: true, LatencyMs: 10, Edge: true, Colo: "HKG", Loss: 0.5, SpeedMbps: 99},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("回存: got %d", code)
+	}
+	code, data := e.api("GET", pathf("/api/inbounds/%d/hosts", in.ID), nil)
+	if code != http.StatusOK {
+		t.Fatalf("列 Host: got %d %s", code, data)
+	}
+	got := map[string]bool{}
+	for _, h := range decodeJSON[[]model.Host](t, data) {
+		if h.Kind == "cdn" {
+			got[h.Address] = true
+		}
+	}
+	for _, want := range []string{"2.2.2.2", "3.3.3.3", "4.4.4.4"} {
+		if !got[want] {
+			t.Errorf("速度前 3 的 %s 应挂优选 Host,实际 %v", want, got)
+		}
+	}
+	if got["1.1.1.1"] {
+		t.Error("延迟最低但速度第 4 的不该挂")
+	}
+	if got["9.9.9.9"] {
+		t.Error("丢包 50% 不该挂入口")
+	}
+}

@@ -20,13 +20,19 @@ import (
 // 通过(misses=0)的成员 —— 失效 IP 立刻摘下入站,不再按旧延迟占位。
 
 const (
-	cdnInterval     = time.Hour // 优选周期:服务端节流,探测端每轮领名单
-	cdnSweepWant    = 64        // 每轮粗扫拿到多少 TCP 合格候选后早停
-	cdnVerifyWant   = 20        // 每轮验证凑够多少真边缘后停(池目标规模)
-	cdnScanBatch    = 512       // 每轮新抽多少 IP 加入候选(渐进覆盖全段)
-	cdnMaxMisses    = 2         // 池内 IP 连续几轮未通过后出池(保留一轮观察)
-	cdnMaxPool      = 30        // 池软上限:复检成本随池线性涨,只留好的
-	cdnPerInbound   = 3         // 每个 CDN 入站最多挂几个优选 Host
+	cdnInterval   = time.Hour // 优选周期:服务端节流,探测端每轮领名单
+	cdnSweepWant  = 64        // 每轮粗扫拿到多少 TCP 合格候选后早停
+	cdnVerifyWant = 20        // 每轮验证凑够多少真边缘后停(池目标规模)
+	cdnScanBatch  = 512       // 每轮新抽多少 IP 加入候选(渐进覆盖全段)
+	cdnMaxMisses  = 2         // 池内 IP 连续几轮未通过后出池(保留一轮观察)
+	cdnMaxPool    = 30        // 池软上限:复检成本随池线性涨,只留好的
+	cdnPerInbound = 3         // 每个 CDN 入站最多挂几个优选 Host
+
+	cdnPingCount    = 4               // UC-31:每 IP 拨测次数,出丢包率
+	cdnLossMax      = 0.2             // UC-31:丢包率上限,超过即不参选
+	cdnSpeedCount   = 8               // UC-31:边缘通过后测速的 IP 数(dn)
+	cdnSpeedSeconds = 8 * time.Second // UC-31:单 IP 测速时长(dt)
+
 	cdnPingTimeout  = 800 * time.Millisecond
 	cdnVerifyTimout = 5 * time.Second
 )
@@ -103,6 +109,11 @@ func (s *Server) handleCDNTargets(w http.ResponseWriter, r *http.Request) {
 		"sweep_want":      cdnSweepWant,
 		"verify_want":     cdnVerifyWant,
 		"ping_timeout_ms": int(cdnPingTimeout.Milliseconds()),
+		"ping_count":      cdnPingCount,
+		"loss_max":        cdnLossMax,
+		"speed_url":       settings.CDNSpeedURL,
+		"speed_count":     cdnSpeedCount,
+		"speed_seconds":   int(cdnSpeedSeconds.Seconds()),
 	})
 }
 
@@ -144,11 +155,13 @@ func (s *Server) handleCDNResults(w http.ResponseWriter, r *http.Request) {
 func (s *Server) applyCDNHosts(pool []model.CDNIP) (int, error) {
 	var eligible []model.CDNIP
 	for _, e := range pool {
-		if e.Misses == 0 {
+		// UC-31:丢包超阈的不参选 —— 高丢包比高延迟更伤体验。
+		if e.Misses == 0 && e.Loss <= cdnLossMax {
 			eligible = append(eligible, e)
 		}
 	}
-	// 池按 latency 升序返回,eligible 继承该序。
+	// 池按 speed_mbps 降序、latency 升序返回,eligible 继承该序:
+	// 有测速数据的按速度排,没测过的按延迟垫后。
 	top := eligible
 	if len(top) > cdnPerInbound {
 		top = top[:cdnPerInbound]

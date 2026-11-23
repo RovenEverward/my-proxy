@@ -11,6 +11,8 @@ import (
 type cdnPoolEntry struct {
 	IP        string    `json:"ip"`
 	LatencyMs int       `json:"latency_ms"`
+	Loss      float64   `json:"loss"`
+	SpeedMbps float64   `json:"speed_mbps"`
 	Colo      string    `json:"colo"`
 	Misses    int       `json:"misses"`
 	LastSeen  time.Time `json:"last_seen"`
@@ -59,14 +61,19 @@ Host(kind=cdn),手工 Host 不受影响。`,
 				if e.Misses > 0 {
 					state = fmt.Sprintf("miss %d", e.Misses)
 				}
+				speed := "-"
+				if e.SpeedMbps > 0 {
+					speed = fmt.Sprintf("%.1fMB/s", e.SpeedMbps)
+				}
 				rows = append(rows, []string{e.IP, e.Colo,
-					fmt.Sprintf("%dms", e.LatencyMs), state,
+					fmt.Sprintf("%dms", e.LatencyMs),
+					fmt.Sprintf("%.0f%%", e.Loss*100), speed, state,
 					e.LastSeen.Format("01-02 15:04")})
 			}
-			if err := writeTable([]string{"IP", "机房", "延迟", "状态", "最近命中"}, rows); err != nil {
+			if err := writeTable([]string{"IP", "机房", "延迟", "丢包", "速度", "状态", "最近命中"}, rows); err != nil {
 				return err
 			}
-			fmt.Printf("\n优选池 %d 个 IP(目标 %d),最近更新 %s\n", v.Size, v.Target, v.Updated)
+			fmt.Printf("\n优选池 %d 个 IP(目标 %d),按速度排序,最近更新 %s\n", v.Size, v.Target, v.Updated)
 			return nil
 		},
 	})

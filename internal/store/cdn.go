@@ -11,14 +11,24 @@ import (
 // 的清零 miss,未通过(或旧探测端没给通过结论)的 miss+1,连续 miss
 // 达到上限才出池 —— 防一次抖动把可用 IP 抖掉。
 func (s *Store) migrateCDN() error {
-	_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS cdn_pool (
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS cdn_pool (
 	 ip TEXT PRIMARY KEY,
 	 latency_ms INTEGER NOT NULL,
+	 loss REAL NOT NULL DEFAULT 0,
+	 speed_mbps REAL NOT NULL DEFAULT 0,
 	 colo TEXT NOT NULL DEFAULT '',
 	 first_seen INTEGER NOT NULL,
 	 last_seen INTEGER NOT NULL,
-	 misses INTEGER NOT NULL DEFAULT 0)`)
-	return err
+	 misses INTEGER NOT NULL DEFAULT 0)`); err != nil {
+		return err
+	}
+	// UC-31:老库补丢包/吞吐两列。
+	if err := s.addColumnIfMissing("cdn_pool", "loss",
+		`ALTER TABLE cdn_pool ADD COLUMN loss REAL NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	return s.addColumnIfMissing("cdn_pool", "speed_mbps",
+		`ALTER TABLE cdn_pool ADD COLUMN speed_mbps REAL NOT NULL DEFAULT 0`)
 }
 
 // SaveCDNResults 是一轮优选落库:results 里 edge=true 的是当轮拿到边缘
@@ -40,10 +50,10 @@ func (s *Store) SaveCDNResults(results []model.CDNResult, now time.Time, maxMiss
 			continue
 		}
 		winners = append(winners, w.IP)
-		if _, err := tx.Exec(`INSERT INTO cdn_pool (ip, latency_ms, colo, first_seen, last_seen, misses)
-		 VALUES (?, ?, ?, ?, ?, 0)
-		 ON CONFLICT(ip) DO UPDATE SET latency_ms=excluded.latency_ms, colo=excluded.colo, last_seen=excluded.last_seen, misses=0`,
-			w.IP, w.LatencyMs, w.Colo, ts, ts); err != nil {
+		if _, err := tx.Exec(`INSERT INTO cdn_pool (ip, latency_ms, loss, speed_mbps, colo, first_seen, last_seen, misses)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		 ON CONFLICT(ip) DO UPDATE SET latency_ms=excluded.latency_ms, loss=excluded.loss, speed_mbps=excluded.speed_mbps, colo=excluded.colo, last_seen=excluded.last_seen, misses=0`,
+			w.IP, w.LatencyMs, w.Loss, w.SpeedMbps, w.Colo, ts, ts); err != nil {
 			return nil, err
 		}
 	}
@@ -79,9 +89,11 @@ func jsonIPs(ips []string) string {
 	return out + "]"
 }
 
-// ListCDNPool 返回全池,按延迟升序 —— 池视图与 Host 生成都取这个序。
+// ListCDNPool 返回全池,按吞吐降序再按延迟升序 —— UC-31 起选优以
+// 实传速度为主键;没测过速的(speed=0)按延迟排,自然落在测过速的
+// 后面 —— 测速是更强的资格信号。
 func (s *Store) ListCDNPool() ([]model.CDNIP, error) {
-	rows, err := s.db.Query(`SELECT ip, latency_ms, colo, first_seen, last_seen, misses FROM cdn_pool ORDER BY latency_ms`)
+	rows, err := s.db.Query(`SELECT ip, latency_ms, loss, speed_mbps, colo, first_seen, last_seen, misses FROM cdn_pool ORDER BY speed_mbps DESC, latency_ms`)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +102,7 @@ func (s *Store) ListCDNPool() ([]model.CDNIP, error) {
 	for rows.Next() {
 		var e model.CDNIP
 		var first, last int64
-		if err := rows.Scan(&e.IP, &e.LatencyMs, &e.Colo, &first, &last, &e.Misses); err != nil {
+		if err := rows.Scan(&e.IP, &e.LatencyMs, &e.Loss, &e.SpeedMbps, &e.Colo, &first, &last, &e.Misses); err != nil {
 			return nil, err
 		}
 		e.FirstSeen, e.LastSeen = time.Unix(first, 0), time.Unix(last, 0)

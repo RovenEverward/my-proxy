@@ -423,6 +423,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 	{"hosts", "kind", `ALTER TABLE hosts ADD COLUMN kind TEXT NOT NULL DEFAULT ''`},
 	{"settings", "cdn_optimize", `ALTER TABLE settings ADD COLUMN cdn_optimize INTEGER NOT NULL DEFAULT 0`},
 	{"settings", "cdn_last_run", `ALTER TABLE settings ADD COLUMN cdn_last_run INTEGER NOT NULL DEFAULT 0`},
+	{"settings", "cdn_speed_url", `ALTER TABLE settings ADD COLUMN cdn_speed_url TEXT NOT NULL DEFAULT ''`},
 	{"traffic_samples", "core", `ALTER TABLE traffic_samples ADD COLUMN core TEXT NOT NULL DEFAULT 'xray'`},
 	{"users", "lifetime_used_traffic",
 		`ALTER TABLE users ADD COLUMN lifetime_used_traffic INTEGER NOT NULL DEFAULT 0`},

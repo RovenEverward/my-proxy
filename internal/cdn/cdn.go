@@ -26,20 +26,23 @@ var Ranges = []string{
 
 // Result 是一个 IP 的优选结论。
 type Result struct {
-	IP        string `json:"ip"`
-	Reachable bool   `json:"reachable"`      // TCP 层能连上
-	LatencyMs int    `json:"latency_ms"`     // TCP ping 最小延迟
-	Edge      bool   `json:"edge"`           // HTTP 层确认是 Cloudflare 边缘(有 CF-RAY)
-	Colo      string `json:"colo,omitempty"` // IATA 机房码,如 NRT/LAX/SJC
+	IP        string  `json:"ip"`
+	Reachable bool    `json:"reachable"`       // TCP 层能连上
+	LatencyMs int     `json:"latency_ms"`      // TCP ping 最小延迟
+	Loss      float64 `json:"loss"`            // TCP 握手丢包率 0.0~1.0(UC-31)
+	Edge      bool    `json:"edge"`            // HTTP 层确认是 Cloudflare 边缘(有 CF-RAY)
+	Colo      string  `json:"colo,omitempty"`  // IATA 机房码,如 NRT/LAX/SJC
+	SpeedMbps float64 `json:"speed_mbps"`      // 下载测速 MB/s(未测为 0,UC-31)
 }
 
 // ProbeTCP 对一批 IP 做 TCP:443 拨测,返回延迟合格的候选,按延迟升序。
 // 64 并发 worker;任一连接在 timeout 内握手成功即记可达,失败不记。
 // want<=0 表示不限;拿到 want 个合格候选后取消剩余探测(早停)。
-func ProbeTCP(ctx context.Context, ips []string, want int, timeout time.Duration) []Result {
+func ProbeTCP(ctx context.Context, ips []string, want, pings int, timeout time.Duration) []Result {
 	type hit struct {
-		ip  string
-		lat int
+		ip   string
+		lat  int
+		loss float64
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -51,10 +54,10 @@ func ProbeTCP(ctx context.Context, ips []string, want int, timeout time.Duration
 		go func() {
 			defer wg.Done()
 			for ip := range ch {
-				lat, ok := tcpPing(ctx, ip, timeout)
+				lat, ok, loss := tcpPingN(ctx, ip, pings, timeout)
 				if ok {
 					select {
-					case hits <- hit{ip, lat}:
+					case hits <- hit{ip, lat, loss}:
 					default:
 					}
 				}
@@ -78,7 +81,7 @@ func ProbeTCP(ctx context.Context, ips []string, want int, timeout time.Duration
 	var out []Result
 	for h := range hits {
 		if want <= 0 || len(out) < want {
-			out = append(out, Result{IP: h.ip, Reachable: true, LatencyMs: h.lat})
+			out = append(out, Result{IP: h.ip, Reachable: true, LatencyMs: h.lat, Loss: h.loss})
 			if want > 0 && len(out) >= want {
 				cancel()
 			}
@@ -86,6 +89,27 @@ func ProbeTCP(ctx context.Context, ips []string, want int, timeout time.Duration
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LatencyMs < out[j].LatencyMs })
 	return out
+}
+
+// tcpPingN 对同一 IP 拨 n 次 TCP:443,返回最小延迟、至少一次是否成功、
+// 丢包率(失败次数/尝试次数)。n<=1 退化为单次的旧行为。
+func tcpPingN(ctx context.Context, ip string, n int, timeout time.Duration) (int, bool, float64) {
+	if n < 1 {
+		n = 1
+	}
+	best, ok, fails := 0, false, 0
+	for i := 0; i < n; i++ {
+		lat, good := tcpPing(ctx, ip, timeout)
+		if good {
+			ok = true
+			if best == 0 || lat < best {
+				best = lat
+			}
+		} else {
+			fails++
+		}
+	}
+	return best, ok, float64(fails) / float64(n)
 }
 
 func tcpPing(ctx context.Context, ip string, timeout time.Duration) (int, bool) {
@@ -128,7 +152,7 @@ func Verify(ctx context.Context, candidates []Result, want int, timeout time.Dur
 // CF-RAY。与 Verify 不同,每个成员都返回一条结论(成败都算)—— miss
 // 语义只对实测结论计数,没被核到不算(UC-24)。成员数小(池软上限 30),
 // 16 路并发足够快。
-func Recheck(ctx context.Context, ips []string, pingTimeout, verifyTimeout time.Duration) []Result {
+func Recheck(ctx context.Context, ips []string, pings int, pingTimeout, verifyTimeout time.Duration) []Result {
 	out := make([]Result, len(ips))
 	sem := make(chan struct{}, 16)
 	var wg sync.WaitGroup
@@ -142,13 +166,13 @@ func Recheck(ctx context.Context, ips []string, pingTimeout, verifyTimeout time.
 				return
 			}
 			defer func() { <-sem }()
-			lat, ok := tcpPing(ctx, ip, pingTimeout)
+			lat, ok, loss := tcpPingN(ctx, ip, pings, pingTimeout)
 			r := Result{IP: ip}
 			if !ok {
 				out[i] = r // TCP 不通:reachable=false
 				return
 			}
-			r.Reachable, r.LatencyMs = true, lat
+			r.Reachable, r.LatencyMs, r.Loss = true, lat, loss
 			edge, colo, err := verifyEdge(ctx, ip, verifyTimeout)
 			if err == nil && edge {
 				r.Edge, r.Colo = true, colo

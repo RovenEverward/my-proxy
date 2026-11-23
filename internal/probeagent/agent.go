@@ -1,6 +1,7 @@
 // Package probeagent 是探测点(mpx probe run)的常驻编排:探测点现在的唯一
 // 职责是 CDN IP 优选 —— 每轮 tick 向控制面领名单,做完复检/扫描把结论
-// 回传。境内活性探测与带宽补测已在 UC-30 退役。
+// 回传。境内活性探测与带宽补测已在 UC-30 退役;UC-31 给优选补了丢包与
+// 吞吐两个度量维度。
 package probeagent
 
 import (
@@ -51,6 +52,10 @@ func Loop(ctx context.Context, call Caller, logf func(string, ...any), onError f
 // 逐个 TLS+HTTP 验证要 CF-RAY,凑够 verify_want 个真边缘回存)。
 // 名单为空(开关关着)直接返回。金丝雀检查:境内路径被代理接管时这批
 // 优选结果全是假的,整轮跳过不回存。
+// UC-31:每 IP 拨 ping_count 次出丢包率;边缘通过的按延迟升序取前
+// speed_count 个向 speed_url 做限时下载测速,速度进结果。丢包超
+// loss_max 的直接不验证不入选。测速地址整体不可达(前两个都失败)时
+// 整轮测速跳过,结果照常回存 —— 地址挂不是 IP 挂。
 func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) error {
 	raw, err := call("GET", "/api/cdn-optimize/targets", nil)
 	if err != nil {
@@ -63,6 +68,11 @@ func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) er
 		SweepWant     int      `json:"sweep_want"`
 		VerifyWant    int      `json:"verify_want"`
 		PingTimeoutMs int      `json:"ping_timeout_ms"`
+		PingCount     int      `json:"ping_count"`
+		LossMax       float64  `json:"loss_max"`
+		SpeedURL      string   `json:"speed_url"`
+		SpeedCount    int      `json:"speed_count"`
+		SpeedSeconds  int      `json:"speed_seconds"`
 	}
 	if err := json.Unmarshal(raw, &rt); err != nil {
 		return err
@@ -82,18 +92,29 @@ func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) er
 	if rt.PingTimeoutMs > 0 {
 		pingTimeout = time.Duration(rt.PingTimeoutMs) * time.Millisecond
 	}
+	pings := rt.PingCount
+	if pings < 1 {
+		pings = 1
+	}
 	var results []model.CDNResult
 	appendResults := func(rs []cdn.Result) {
 		for _, v := range rs {
 			results = append(results, model.CDNResult{
-				IP: v.IP, Reachable: v.Reachable, LatencyMs: v.LatencyMs,
-				Edge: v.Edge, Colo: v.Colo,
+				IP: v.IP, Reachable: v.Reachable, LatencyMs: v.LatencyMs, Loss: v.Loss,
+				Edge: v.Edge, Colo: v.Colo, SpeedMbps: v.SpeedMbps,
 			})
 		}
 	}
+	var edge []cdn.Result // 本轮全部边缘通过项,测速从这里挑
 	if len(rt.Recheck) > 0 {
 		// 池内成员无条件核完,失败的也要报 —— 控制面靠失败结论摘下入站。
-		appendResults(cdn.Recheck(ctx, rt.Recheck, pingTimeout, cdnVerifyTimeout))
+		rs := cdn.Recheck(ctx, rt.Recheck, pings, pingTimeout, cdnVerifyTimeout)
+		for _, r := range rs {
+			if r.Edge {
+				edge = append(edge, r)
+			}
+		}
+		appendResults(rs)
 	}
 	scan := rt.Scan
 	if len(rt.Recheck) == 0 && len(scan) == 0 {
@@ -102,9 +123,55 @@ func cdnOptimize(ctx context.Context, call Caller, logf func(string, ...any)) er
 		scan = rt.IPs
 	}
 	if len(scan) > 0 {
-		candidates := cdn.ProbeTCP(ctx, scan, rt.SweepWant, pingTimeout)
-		if len(candidates) > 0 {
-			appendResults(cdn.Verify(ctx, candidates, rt.VerifyWant, cdnVerifyTimeout))
+		candidates := cdn.ProbeTCP(ctx, scan, rt.SweepWant, pings, pingTimeout)
+		// UC-31:丢包超阈的不进验证段 —— 高丢包 IP 即使验证过也上不了
+		// 入口,省下验证开销。
+		var qualified []cdn.Result
+		for _, c := range candidates {
+			if c.Loss <= rt.LossMax {
+				qualified = append(qualified, c)
+			}
+		}
+		if len(qualified) > 0 {
+			rs := cdn.Verify(ctx, qualified, rt.VerifyWant, cdnVerifyTimeout)
+			edge = append(edge, rs...)
+			appendResults(rs)
+		}
+	}
+	// UC-31:边缘通过后测速。speed_url 空表示不测(退化 UC-21);测速
+	// 地址整体不可达时前两发全失败,后面不再浪费 —— 判地址挂不判 IP 挂。
+	if rt.SpeedURL != "" && rt.SpeedCount > 0 && len(edge) > 0 {
+		speedSecs := rt.SpeedSeconds
+		if speedSecs < 1 {
+			speedSecs = 8
+		}
+		speedTimeout := time.Duration(speedSecs) * time.Second
+		tested, aborted := 0, false
+		for i := range results {
+			if tested >= rt.SpeedCount || aborted {
+				break
+			}
+			if !results[i].Edge {
+				continue
+			}
+			mbps, colo, err := cdn.MeasureSpeed(ctx, results[i].IP, rt.SpeedURL, speedTimeout)
+			tested++
+			if err != nil {
+				if tested >= 2 && results[i].SpeedMbps == 0 {
+					// 连续两个边缘测不出:测速地址挂了,整轮测速停手。
+					// 结果里速度字段全为 0,控制面按丢包+延迟兜底排序。
+					aborted = true
+					if logf != nil {
+						logf("测速地址疑似不可达(%s),本轮测速中止", rt.SpeedURL)
+					}
+					break
+				}
+				continue
+			}
+			results[i].SpeedMbps = mbps
+			if colo != "" {
+				results[i].Colo = colo
+			}
 		}
 	}
 	if len(results) == 0 {
