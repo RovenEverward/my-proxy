@@ -1,8 +1,8 @@
-import { Field } from "../primitives";
-import { Input } from "../ui/input";
-import { NativeSelect } from "../native-select";
-import { NETWORKS, OPTION_NAMES, PROTOCOLS, SECURITIES, isQUIC, splitCSV, type ConnectionInbound } from "../../domain/connections";
-import { nodeLabel, type NodeView } from "../../domain/nodes";
+import { Field } from "@/components/primitives";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/native-select";
+import { NETWORKS, OPTION_NAMES, PROTOCOLS, SECURITIES, isQUIC, splitCSV, type ConnectionInbound } from "@/domain/connections";
+import { nodeLabel, type NodeView } from "@/domain/nodes";
 
 type FieldDefinition = { key: string; label: string; placeholder?: string; kind?: "integer" | "list" | "boolean"; show?: (draft: InboundDraft) => boolean };
 export type InboundDraft = Record<string, string | boolean>;
@@ -53,10 +53,10 @@ export function InboundFields({ draft, onChange, nodes, isNew }: { draft: Inboun
     onChange(next);
   };
   const select = (key: string, label: string, choices: string[]) => <Field label={label} htmlFor={`i-${key}`}><NativeSelect className="in" id={`i-${key}`} name={key} value={String(draft[key])} onChange={event => update(key, event.target.value)}>{choices.map(value => <option key={value} value={value}>{OPTION_NAMES[value] || value}</option>)}</NativeSelect></Field>;
-  const renderField = (field: FieldDefinition) => <div key={field.key} data-f={field.key} hidden={field.show ? !field.show(draft) : false}>{field.kind === "boolean" ? <label className="chk"><input type="checkbox" name={field.key} checked={!!draft[field.key]} onChange={event => update(field.key, event.target.checked)} /> {field.label}</label> : <Field label={field.label} htmlFor={`i-${field.key}`}><Input className="in mono" id={`i-${field.key}`} name={field.key} value={String(draft[field.key])} placeholder={field.placeholder} autoComplete="off" inputMode={field.kind === "integer" ? "numeric" : undefined} onChange={event => update(field.key, event.target.value)} /></Field>}</div>;
+  const renderField = (field: FieldDefinition) => <div key={field.key} data-f={field.key} hidden={field.show ? !field.show(draft) : false}>{field.kind === "boolean" ? <label className="chk"><input type="checkbox" name={field.key} checked={!!draft[field.key]} onChange={event => update(field.key, event.target.checked)} /> {field.label}</label> : <Field label={field.label} htmlFor={`i-${field.key}`}><Input className="mono" id={`i-${field.key}`} name={field.key} value={String(draft[field.key])} placeholder={field.placeholder} autoComplete="off" inputMode={field.kind === "integer" ? "numeric" : undefined} onChange={event => update(field.key, event.target.value)} /></Field>}</div>;
   const advanced = new Set(["tag", "listen", "max_users", "mux", "fragment"]);
   return <>
-    <div className="two"><Field label="节点" htmlFor="i-node"><NativeSelect className="in" id="i-node" name="node_id" disabled={!isNew} value={String(draft.node_id)} onChange={event => update("node_id", event.target.value)}>{nodes.map(node => <option key={node.id} value={node.id}>{nodeLabel(node)}</option>)}</NativeSelect></Field><Field label="端口" htmlFor="i-port"><Input className="in mono" id="i-port" name="port" value={String(draft.port)} placeholder="443" inputMode="numeric" onChange={event => update("port", event.target.value)} /></Field></div>
+    <div className="two"><Field label="节点" htmlFor="i-node"><NativeSelect className="in" id="i-node" name="node_id" disabled={!isNew} value={String(draft.node_id)} onChange={event => update("node_id", event.target.value)}>{nodes.map(node => <option key={node.id} value={node.id}>{nodeLabel(node)}</option>)}</NativeSelect></Field><Field label="端口" htmlFor="i-port"><Input className="mono" id="i-port" name="port" value={String(draft.port)} placeholder="443" inputMode="numeric" onChange={event => update("port", event.target.value)} /></Field></div>
     {select("protocol", "协议", PROTOCOLS)}<div className="two">{select("network", "传输", NETWORKS)}{select("security", "安全层", SECURITIES)}</div>
     {INBOUND_FIELDS.filter(field => !advanced.has(field.key)).map(renderField)}
     <details className="adv"><summary>更多</summary>{INBOUND_FIELDS.filter(field => advanced.has(field.key) && field.kind !== "boolean").map(renderField)}<div className="stack8 mb">{INBOUND_FIELDS.filter(field => field.kind === "boolean").map(renderField)}</div></details>

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { nodeLabel } from "../../domain/nodes";
-import { api } from "../../runtime/api";
-import { useApp } from "../../runtime/app-context";
-import type { Node } from "../../runtime/types";
+import { nodeLabel } from "@/domain/nodes";
+import { api } from "@/runtime/api";
+import { useApp } from "@/runtime/app-context";
+import type { Node } from "@/runtime/types";
 import type { DoctorReport } from "./report";
 
 const DOCTOR_TIMEOUT_MS = 10 * 60 * 1000;

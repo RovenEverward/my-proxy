@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Field } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import { sinceText } from "../../domain/settings";
-import { dateTime } from "../../domain/nodes";
+import { Field } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import { sinceText } from "@/domain/settings";
+import { dateTime } from "@/domain/nodes";
+import { Input } from "@/components/ui/input";
 
 // 「域名与证书」tab(UC-26):管 https://<域名>/admin 的入场券。
 // 域名托管在 Cloudflare,证书由控制面走 DNS-01 自己签(不用开 80 端口):
@@ -89,13 +90,13 @@ function AcmeConfigForm({ status, refresh, writable, deletable }: { status: ACME
     <b className="b6">域名与证书</b>
     <p className="sub mt6 mb14">管理台的公网地址是 https://&lt;域名&gt;/admin。域名要托管在 Cloudflare，证书由控制面走 DNS-01 自己签，不用开 80 端口。</p>
     <Field label="管理台域名" htmlFor="acme-domain" hint="例如 cp.example.net；改了域名原证书作废，要重新签发">
-      <input className="in mono" id="acme-domain" name="domain" autoComplete="off" spellCheck={false}
+      <Input className="mono" id="acme-domain" name="domain" autoComplete="off" spellCheck={false}
         value={domain} onChange={edit(setDomain)}
         placeholder="cp.example.net" readOnly={!writable || saving} />
     </Field>
     <Field label="Cloudflare API token" htmlFor="acme-token"
       hint={status.cf_token_set ? "已保存；要换就填新的，留空不动；需要 Zone.DNS 编辑权限" : "需要 Zone.DNS 编辑权限；存进控制面数据库，不回显"}>
-      <input className="in mono" id="acme-token" name="cf_token" type="password" autoComplete="new-password"
+      <Input className="mono" id="acme-token" name="cf_token" type="password" autoComplete="new-password"
         value={token} onChange={edit(setToken)}
         placeholder={status.cf_token_set ? "已保存，留空不动" : "粘贴 CF API token"} readOnly={!writable || saving} />
     </Field>

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Card } from "../../components/primitives";
-import { api } from "../../runtime/api";
-import { errorMessage, groupID, RULE_TYPES, ruleValueText, type RulesPageData, type RuleTestResult } from "../../domain/routing";
+import { Card } from "@/components/primitives";
+import { api } from "@/runtime/api";
+import { errorMessage, groupID, RULE_TYPES, ruleValueText, type RulesPageData, type RuleTestResult } from "@/domain/routing";
 import { TargetPill } from "./components";
+import { Input } from "@/components/ui/input";
 
 let rememberedDomain = "";
 export function TestCard({ data, scope }: { data: RulesPageData; scope: string }) {
@@ -23,7 +24,7 @@ export function TestCard({ data, scope }: { data: RulesPageData; scope: string }
     return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [domain, scope, rulesKey, immediate]);
   const how = result && groupID(result.target) ? result.mode === "auto" ? `自动在 ${result.members?.length || 0} 个节点里挑最快的` : `你在客户端里选的那个(${result.members?.length || 0} 个可选)` : "";
-  return <Card title="测试一个网址"><div className="pad16"><label htmlFor="rp-test" className="vh">测试网址</label><input className="in mono" id="rp-test" value={domain} placeholder="输入域名，比如 chatgpt.com" autoComplete="off" spellCheck={false} onChange={event => { setImmediate(false); setDomain(event.target.value); }} />
+  return <Card title="测试一个网址"><div className="pad16"><label htmlFor="rp-test" className="vh">测试网址</label><Input className="mono" id="rp-test" value={domain} placeholder="输入域名，比如 chatgpt.com" autoComplete="off" spellCheck={false} onChange={event => { setImmediate(false); setDomain(event.target.value); }} />
     <div className="chips mt6">{["chatgpt.com", "netflix.com", "bilibili.com", "github.com", "baidu.com"].map(value => <button type="button" className="tag rp-try" key={value} data-act="rp-try" data-d={value} onClick={() => { setImmediate(true); setDomain(value); }}>{value}</button>)}</div>
     <div id="rp-res" aria-live="polite" aria-busy={loading}>
       {error ? <p className="c-bad mt" role="alert">{error}</p> : !result ? <p className="sub mt">{loading ? "正在测试…" : <>看看它会命中哪条规则、最后从哪里出去。{scope ? `按 ${scope} 的规则算。` : ""}</>}</p> : <div className="rp-res"><div className="sub">{result.domain}</div><div className="rp-big"><TargetPill target={result.target} groups={data.groups} /></div>

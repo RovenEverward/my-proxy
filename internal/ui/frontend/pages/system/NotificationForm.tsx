@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Button } from "../../components/ui/button";
-import { Field } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { write } from "../../runtime/api";
-import type { Settings } from "../../runtime/types";
-import { modifySettings } from "../../domain/settings";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { write } from "@/runtime/api";
+import type { Settings } from "@/runtime/types";
+import { modifySettings } from "@/domain/settings";
+import { Input } from "@/components/ui/input";
 
 type NotificationValues = { webhook_url: string; notify_days_left: string; notify_usage_percent: string };
 const valuesOf = (settings: Settings): NotificationValues => ({ webhook_url: settings.webhook_url || "", notify_days_left: String(settings.notify_days_left || 0), notify_usage_percent: String(settings.notify_usage_percent || 0) });
@@ -34,9 +35,9 @@ export function NotificationForm({ settings, refresh }: { settings: Settings; re
     finally { lock.current = false; if (mounted.current) setSaving(false); }
   };
   return <div className="grid g2"><form className="card pad18" id="set-form" noValidate onSubmit={submit}>
-    <Field label="Webhook" htmlFor="s-webhook_url" hint="到期、超限等通知发到这里;留空不发"><div className="flex8"><input className="in mono" id="s-webhook_url" name="webhook_url" value={values.webhook_url} onChange={event => edit("webhook_url", event.target.value)} readOnly={!writable || saving} />{can("POST", "/api/settings/test-webhook") && <Button data-act="set-test" loading={testing} onClick={async () => { if (testing) return; setTesting(true); try { await write("POST", "/api/settings/test-webhook"); toast("测试通知已送到"); } catch (cause) { toast(cause instanceof Error ? cause.message : String(cause), true); } finally { if (mounted.current) setTesting(false); } }}>发测试</Button>}</div></Field>
-    <div className="two"><Field label="到期前提醒(天)" htmlFor="s-notify_days_left" hint="0 表示关闭"><input className="in mono" id="s-notify_days_left" name="notify_days_left" value={values.notify_days_left} inputMode="numeric" onChange={event => edit("notify_days_left", event.target.value)} readOnly={!writable || saving} /></Field>
-      <Field label="用量提醒(%)" htmlFor="s-notify_usage_percent" hint="0 表示关闭"><input className="in mono" id="s-notify_usage_percent" name="notify_usage_percent" value={values.notify_usage_percent} inputMode="numeric" onChange={event => edit("notify_usage_percent", event.target.value)} readOnly={!writable || saving} /></Field></div>
+    <Field label="Webhook" htmlFor="s-webhook_url" hint="到期、超限等通知发到这里;留空不发"><div className="flex8"><Input className="mono" id="s-webhook_url" name="webhook_url" value={values.webhook_url} onChange={event => edit("webhook_url", event.target.value)} readOnly={!writable || saving} />{can("POST", "/api/settings/test-webhook") && <Button data-act="set-test" loading={testing} onClick={async () => { if (testing) return; setTesting(true); try { await write("POST", "/api/settings/test-webhook"); toast("测试通知已送到"); } catch (cause) { toast(cause instanceof Error ? cause.message : String(cause), true); } finally { if (mounted.current) setTesting(false); } }}>发测试</Button>}</div></Field>
+    <div className="two"><Field label="到期前提醒(天)" htmlFor="s-notify_days_left" hint="0 表示关闭"><Input className="mono" id="s-notify_days_left" name="notify_days_left" value={values.notify_days_left} inputMode="numeric" onChange={event => edit("notify_days_left", event.target.value)} readOnly={!writable || saving} /></Field>
+      <Field label="用量提醒(%)" htmlFor="s-notify_usage_percent" hint="0 表示关闭"><Input className="mono" id="s-notify_usage_percent" name="notify_usage_percent" value={values.notify_usage_percent} inputMode="numeric" onChange={event => edit("notify_usage_percent", event.target.value)} readOnly={!writable || saving} /></Field></div>
     <div className="err" id="s-err" role="alert">{error}</div>{writable && <div className="flex8 end"><Button data-act="set-revert" disabled={saving} onClick={() => { setOriginal(settings); setValues(valuesOf(settings)); setError(""); void refresh(true); }}>还原</Button><Button type="submit" variant="primary" id="s-save" loading={saving}>保存</Button></div>}
   </form><div className="card pad16 self-start"><div className="sub mb8">会通知什么</div><p className="sub">用户快到期、用量快用完时，往 Webhook 发一条消息。两个提醒填 0 就不发。</p></div></div>;
 }

@@ -1,15 +1,15 @@
 // 探测点页(UC-21/30):节点页第三个页签,只有探测点名册。
 // 探测点是境内常驻主机,跑起来后常驻执行 CDN IP 优选任务。
 import { useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Card, DrawerBody, DrawerFooter, DrawerHeader, EmptyState, ErrorState, Field, Icon, LoadingTable, PageHeader, Tabs } from "../../components/primitives";
-import { api, write } from "../../runtime/api";
-import { useApp, usePageTitle } from "../../runtime/app-context";
-import { usePageData } from "../../runtime/query";
-import type { Read, Status } from "../../runtime/types";
-import { NODE_TABS, dateTime, errorMessage, sinceText } from "../../domain/nodes";
-import type { ProbePoint, ProbeCreated } from "../../domain/probes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, DrawerBody, DrawerFooter, DrawerHeader, EmptyState, ErrorState, Field, Icon, LoadingTable, PageHeader, Tabs } from "@/components/primitives";
+import { api, write } from "@/runtime/api";
+import { useApp, usePageTitle } from "@/runtime/app-context";
+import { usePageData } from "@/runtime/query";
+import type { Read, Status } from "@/runtime/types";
+import { NODE_TABS, dateTime, errorMessage, sinceText } from "@/domain/nodes";
+import type { ProbePoint, ProbeCreated } from "@/domain/probes";
 
 interface ProbesData { probes: ProbePoint[]; fingerprint: string }
 

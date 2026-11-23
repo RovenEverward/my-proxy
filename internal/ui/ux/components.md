@@ -29,7 +29,7 @@
 
 ## CSS 组件
 
-实现：[frontend/styles/](../frontend/styles/)，由 [index.css](../frontend/styles/index.css) 统一导入。主题与尺寸由 [Token 真源](../assets/styles/tokens.css) 提供。shadcn 角色经 [shadcn.css](../frontend/styles/shadcn.css) 绑定到同一份 Token。
+实现：[frontend/styles/](../frontend/styles/)，由 [index.css](../frontend/styles/index.css) 统一导入。主题与尺寸由 [Token 真源](../assets/styles/tokens.css) 提供，共用组件与 Radix 包装共用同一份语义样式。
 
 | 组件 | 使用方式 | 必查状态 |
 | --- | --- | --- |
@@ -58,7 +58,7 @@
 | 编辑器 | [code-editor](../frontend/components/code-editor/) → 值、定位与焦点操作 | [设置测试](../e2e/settings.spec.mjs) |
 | 连接列表 | [connections](../frontend/components/connections/)；连接模块持有缓存与编辑状态 | [连接测试](../e2e/inbounds.spec.mjs) |
 | 订阅草稿 | [订阅页](../frontend/pages/sub/SubscriptionPage.tsx) 草稿状态与统一保存条 | [订阅测试](../e2e/sub.spec.mjs) |
-| 更新 | [runtime/update.tsx](../frontend/runtime/update.tsx)；pill 与更新弹窗 | [更新测试](../e2e/update.spec.mjs) |
+| 更新 | [runtime/update.ts](../frontend/runtime/update.ts) 与 [UpdateDialog.tsx](../frontend/components/UpdateDialog.tsx)；pill 与更新弹窗 | [更新测试](../e2e/update.spec.mjs) |
 
 ## 官方图标
 

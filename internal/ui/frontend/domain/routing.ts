@@ -1,5 +1,5 @@
-import { APIError } from "../runtime/api";
-import type { Read, User, UserList } from "../runtime/types";
+import { APIError } from "@/runtime/api";
+import type { Read, User, UserList } from "@/runtime/types";
 
 export const RULE_TYPES: Record<RuleType, string> = { suffix: "域名后缀", keyword: "域名关键词", set: "规则组", geoip: "IP 所在国家", cidr: "IP 段" };
 export const RULE_CAPS: Record<string, string> = { egress: "出口可用", youtube: "能看 YouTube", netflix: "能看 Netflix" };

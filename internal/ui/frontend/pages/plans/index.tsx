@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { ErrorState, Icon, LoadingTable, PageHeader, Tabs } from "../../components/primitives";
-import { useApp, usePageTitle } from "../../runtime/app-context";
-import { usePageData } from "../../runtime/query";
-import type { PageProps } from "../../runtime/types";
-import type { UserList } from "../../domain/users";
-import type { PlanData } from "../../domain/plans";
+import { Button } from "@/components/ui/button";
+import { ErrorState, Icon, LoadingTable, PageHeader, Tabs } from "@/components/primitives";
+import { useApp, usePageTitle } from "@/runtime/app-context";
+import { usePageData } from "@/runtime/query";
+import type { PageProps } from "@/runtime/types";
+import type { UserList } from "@/domain/users";
+import type { PlanData } from "@/domain/plans";
 import { PlanEditor } from "./editor";
 import { PlanList } from "./list";
 const tabs = [{ key: "users", label: "用户", href: "#users" }, { key: "plans", label: "套餐", href: "#users/plans" }];

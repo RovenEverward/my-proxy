@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button } from "../ui/button";
-import { FlagText, Icon, LoadingTable } from "../primitives";
-import { useApp } from "../../runtime/app-context";
-import { addrOfHost, customAddr, customName, inbKind, inbShortKind, inbTitle, nameMismatch, nameOfHost, type ConnectionData, type ConnectionHost, type ConnectionInbound } from "../../domain/connections";
-import { errorMessage, type NodeView } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { FlagText, Icon, LoadingTable } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { addrOfHost, customAddr, customName, inbKind, inbShortKind, inbTitle, nameMismatch, nameOfHost, type ConnectionData, type ConnectionHost, type ConnectionInbound } from "@/domain/connections";
+import { errorMessage, type NodeView } from "@/domain/nodes";
 import { AddConnection } from "./AddConnection";
 import { ConnectionEditor } from "./ConnectionEditor";
 import { HostEditor } from "./HostEditor";

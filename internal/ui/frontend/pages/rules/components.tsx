@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Icon } from "../../components/primitives";
-import type { RulesPageData, SavedProxyGroup } from "../../domain/routing";
-import { groupID, targetName } from "../../domain/routing";
+import { Icon } from "@/components/primitives";
+import type { RulesPageData, SavedProxyGroup } from "@/domain/routing";
+import { groupID, targetName } from "@/domain/routing";
 
 export function TargetPill({ target, groups }: { target: string; groups: SavedProxyGroup[] }) {
   const group = groups.find(item => item.id === groupID(target));

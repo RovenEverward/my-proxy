@@ -1,4 +1,4 @@
-import type { User as APIUser, Presence, SubPull } from "../runtime/types";
+import type { User as APIUser, Presence, SubPull } from "@/runtime/types";
 
 export interface UserPresence extends Omit<Presence, "online"> {
   online?: boolean;

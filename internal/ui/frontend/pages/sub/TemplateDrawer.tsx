@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { CodeEditor, type CodeEditorHandle } from "../../components/code-editor";
-import { DrawerBody, DrawerFooter, DrawerHeader, ErrorState, Icon, LoadingTable } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { api, write } from "../../runtime/api";
-import { useApp } from "../../runtime/app-context";
-import { TEMPLATE_META, templateBytes, templateLines, templateSize, validateTemplate, type TemplateError, type TemplateFormat } from "../../domain/settings";
+import { CodeEditor, type CodeEditorHandle } from "@/components/code-editor";
+import { DrawerBody, DrawerFooter, DrawerHeader, ErrorState, Icon, LoadingTable } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { api, write } from "@/runtime/api";
+import { useApp } from "@/runtime/app-context";
+import { TEMPLATE_META, templateBytes, templateLines, templateSize, validateTemplate, type TemplateError, type TemplateFormat } from "@/domain/settings";
 
 export function TemplateDrawer({ format, custom, onSaved }: { format: TemplateFormat; custom: boolean; onSaved: () => void }) {
   const { can, closeOverlays, confirmBox, toast } = useApp();

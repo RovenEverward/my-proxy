@@ -1,5 +1,5 @@
-import { api } from "../runtime/api";
-import type { Node, NodeMetadata, NodeStatus } from "../runtime/types";
+import { api } from "@/runtime/api";
+import type { Node, NodeMetadata, NodeStatus } from "@/runtime/types";
 
 export interface ExtendedNodeStatus extends NodeStatus {
   observed_hash?: string;

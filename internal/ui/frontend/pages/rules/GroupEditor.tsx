@@ -1,11 +1,12 @@
 import { NativeSelect } from "@/components/native-select";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText, Icon, LoadingTable } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { api, batchWrites, write } from "../../runtime/api";
-import { errorMessage, groupPath, previewInit, RULE_CAPS, RULE_REGIONS, type GroupPreview, type ProxyGroup, type RulesPageData, type SavedProxyGroup } from "../../domain/routing";
+import { Button } from "@/components/ui/button";
+import { Card, DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText, Icon, LoadingTable } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { api, batchWrites, write } from "@/runtime/api";
+import { errorMessage, groupPath, previewInit, RULE_CAPS, RULE_REGIONS, type GroupPreview, type ProxyGroup, type RulesPageData, type SavedProxyGroup } from "@/domain/routing";
 import { RuleWarning } from "./components";
+import { Input } from "@/components/ui/input";
 
 type Conditions = "regions" | "protocols" | "capabilities";
 const toggleValue = (values: string[], value: string) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
@@ -78,7 +79,7 @@ export function GroupEditor({ data, original }: { data: RulesPageData; original?
   return <form id="gp-form" noValidate onSubmit={event => void save(event)}>
     <DrawerHeader title={original?.name || "新建策略组"} onClose={app.closeOverlays} />
     <DrawerBody>
-      <Field label="名字" htmlFor="gp-name" error={!draft.name.trim() && error ? error : undefined}><div className="flex8"><input className="in" style={{ width: 64, flex: "none", textAlign: "center" }} id="gp-icon" value={draft.icon || ""} placeholder="🌐" aria-label="图标" onChange={event => setDraft(previous => ({ ...previous, icon: event.target.value }))} /><input className="in" style={{ flex: 1, minWidth: 0 }} id="gp-name" value={draft.name} placeholder="比如 日本节点" autoComplete="off" onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} /></div></Field>
+      <Field label="名字" htmlFor="gp-name" error={!draft.name.trim() && error ? error : undefined}><div className="flex8"><Input style={{ width: 64, flex: "none", textAlign: "center" }} id="gp-icon" value={draft.icon || ""} placeholder="🌐" aria-label="图标" onChange={event => setDraft(previous => ({ ...previous, icon: event.target.value }))} /><Input style={{ flex: 1, minWidth: 0 }} id="gp-name" value={draft.name} placeholder="比如 日本节点" autoComplete="off" onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} /></div></Field>
       <Field label={<>收哪些节点 <span className="sub">· 各类之间要同时满足，不选就不限</span></>}><></></Field>
       <Field label={<span className="sub">来源（任一，不选表示全部）</span>}><div className="chips">{sourceChoices.map(choice => <label className="chip" key={choice.value}><input type="checkbox" data-source-choice="" value={choice.value} checked={origins.includes(choice.value)} onChange={() => setOrigins(previous => toggleValue(previous, choice.value))} />{choice.label}</label>)}</div></Field>
       <Field label={<span className="sub">地区(任一)</span>}>{conditionChoices("regions", choices.flatMap(entry => entry.region ? [entry.region] : []), RULE_REGIONS)}</Field>

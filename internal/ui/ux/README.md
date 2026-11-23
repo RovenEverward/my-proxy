@@ -31,7 +31,7 @@ MPX 是操作者本机使用的代理控制工具。用户进入主页后，应�
 - `--ui-control-*`、`--ui-field-*`、`--ui-row-*`：控件、字段和列表尺度。
 - `--ui-radius-*`、`--ui-shadow-*`、`--ui-duration-*`：形状、高度与反馈。
 
-新样式读取语义角色，不在页面另建色板。Token 数值只在真源修改。图标描边、字号和点击区分别定义。React 样式入口 [index.css](../frontend/styles/index.css) 首个导入即真源；shadcn 角色经 `@theme` 绑定到同一份 Token，不建第二份色板。
+新样式读取语义角色，不在页面另建色板。Token 数值只在真源修改。图标描边、字号和点击区分别定义。React 样式入口 [index.css](../frontend/styles/index.css) 首个导入即真源，所有页面与 Radix 组件包装共用同一套语义 Token，不建第二份色板。
 
 所有页面共用七档字号。常规页面、区块和详情标题使用 title；只有开场标题和展示数字使用 display。对象名称、正文和输入使用 body。导航、状态、按钮、标签和菜单使用 navigation/control。次要说明和列标题使用 caption。时间与只读技术标识使用 meta。微型标记使用 micro，不承担关键状态。
 

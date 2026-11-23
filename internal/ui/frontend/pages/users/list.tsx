@@ -1,6 +1,6 @@
-import { Button } from "../../components/ui/button";
-import { Avatar, EmptyState, Icon } from "../../components/primitives";
-import { PAGE_SIZE, RESET, expiredFor } from "../../domain/users";
+import { Button } from "@/components/ui/button";
+import { Avatar, EmptyState, Icon } from "@/components/primitives";
+import { PAGE_SIZE, RESET, expiredFor } from "@/domain/users";
 import { BulkDeleteBar } from "./bulk-delete";
 import { ExpireCell, Pickbox, UsageBar, UserPlanCell, UserStatus } from "./components";
 import { comparePresence, PresenceCell, StalePresenceNote } from "./presence";

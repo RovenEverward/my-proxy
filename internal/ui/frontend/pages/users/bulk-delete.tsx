@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { useApp } from "../../runtime/app-context";
-import { batchWrites, write } from "../../runtime/api";
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/primitives";
-import { EXPIRED_KEEP_DAYS, expiredFor, userPath, type User } from "../../domain/users";
+import { useApp } from "@/runtime/app-context";
+import { batchWrites, write } from "@/runtime/api";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/primitives";
+import { EXPIRED_KEEP_DAYS, expiredFor, userPath, type User } from "@/domain/users";
 function progressState(initial: string) {
   let label = initial;
   const listeners = new Set<() => void>();

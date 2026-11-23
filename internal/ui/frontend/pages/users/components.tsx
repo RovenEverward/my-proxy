@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FlagText, Icon, StatusBadge } from "../../components/primitives";
-import { EXPIRE_SOON_DAYS, daysLeft, fmtBytes, remain, userStateLabel, ymd, type User } from "../../domain/users";
-import { extrasOf, type Inbound, type Plan } from "../../domain/plans";
+import { FlagText, Icon, StatusBadge } from "@/components/primitives";
+import { EXPIRE_SOON_DAYS, daysLeft, fmtBytes, remain, userStateLabel, ymd, type User } from "@/domain/users";
+import { extrasOf, type Inbound, type Plan } from "@/domain/plans";
 
 export function UserStatus({ status, children }: { status: string; children?: ReactNode }) {
   return <StatusBadge tone={status === "active" ? "ok" : status === "expired" || status === "limited" ? "warn" : ""}>{children || userStateLabel(status)}</StatusBadge>;

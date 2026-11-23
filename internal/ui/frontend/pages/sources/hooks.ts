@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, requestEvents } from "../../runtime/api";
-import { errorMessage, sourcePath, type SubscriptionSource } from "../../domain/routing";
+import { api, requestEvents } from "@/runtime/api";
+import { errorMessage, sourcePath, type SubscriptionSource } from "@/domain/routing";
 
 export function useSourceRuntime(initial: SubscriptionSource, onSettled: () => Promise<void>) {
   const [source, setSource] = useState(initial);

@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { NativeSelect } from "../../components/native-select";
-import { Label } from "../../components/ui/label";
-import { DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText } from "../../components/primitives";
-import { DrawerReadState, ErrorMessage } from "../../components/connections/EditorFrame";
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import { usePageData } from "../../runtime/query";
-import { asModelNode, autoNodeName, errorMessage, metadataGroup, nodeLabel, nodePath, previewDisplay, type Metadata, type NodeView } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/native-select";
+import { Label } from "@/components/ui/label";
+import { DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText } from "@/components/primitives";
+import { DrawerReadState, ErrorMessage } from "@/components/connections/EditorFrame";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import { usePageData } from "@/runtime/query";
+import { asModelNode, autoNodeName, errorMessage, metadataGroup, nodeLabel, nodePath, previewDisplay, type Metadata, type NodeView } from "@/domain/nodes";
 
 interface Props { nodeId?: number; title?: string; onChanged: () => Promise<void> }
 export function NodeEditor(props: Props) {
@@ -35,7 +35,7 @@ function NodeForm({ nodeId, node, metadata, onChanged }: Props & { node: NodeVie
   const currentMetadata = { region: draft.region.trim().toUpperCase(), city: draft.city.trim(), letter: draft.letter.trim().toUpperCase() };
   const preview = { ...currentMetadata };
   if (preview.letter === (metadata.letter || "") && metadataGroup(preview) !== metadataGroup(metadata)) preview.letter = "";
-  const input = (key: string, id: string, label: string, placeholder = "", hint?: string, numeric = false) => <Field label={label} htmlFor={id} hint={hint}><Input className="in mono" id={id} name={key} value={draft[key]} placeholder={placeholder} inputMode={numeric ? "numeric" : undefined} autoComplete="off" onChange={event => setDraft({ ...draft, [key]: event.target.value })} /></Field>;
+  const input = (key: string, id: string, label: string, placeholder = "", hint?: string, numeric = false) => <Field label={label} htmlFor={id} hint={hint}><Input className="mono" id={id} name={key} value={draft[key]} placeholder={placeholder} inputMode={numeric ? "numeric" : undefined} autoComplete="off" onChange={event => setDraft({ ...draft, [key]: event.target.value })} /></Field>;
   const locate = async () => {
     setLocating(true);
     try {
@@ -84,7 +84,7 @@ function NodeForm({ nodeId, node, metadata, onChanged }: Props & { node: NodeVie
   return <form id="node-form" noValidate onSubmit={event => { event.preventDefault(); void save(); }}><DrawerHeader title={<FlagText>{isNew ? "添加节点" : `编辑 ${nodeLabel(node)}`}</FlagText>} onClose={app.closeOverlays} /><DrawerBody>
     {input("address", "n-address", "对外地址", "203.0.113.10", `连接方式没填对外地址时，订阅里用它${isNew ? ";显示名按它自动识别" : ""}`)}
     <div className="two">{input("ssh_port", "n-ssh-port", "SSH 端口", "22", undefined, true)}{input("ssh_user", "n-ssh-user", "SSH 用户", "root")}</div>
-    {!isNew && <div className="field"><Label>显示名<span className="sub" id="n-display">{preview.region && <> · <FlagText>{previewDisplay(preview)}</FlagText>{!preview.letter && "(字母保存时自动分配)"}</>}</span></Label><div className="three">{[["region", "地区", "地区 US"], ["city", "城市", "城市，留空用国家名"], ["letter", "字母", "字母，留空自动"]].map(([key, label, placeholder]) => <Input key={key} className={`in ${key !== "city" ? "mono" : ""}`} id={`n-${key}`} name={key} value={draft[key]} placeholder={placeholder} aria-label={label} autoComplete="off" onChange={event => setDraft({ ...draft, [key]: event.target.value })} />)}</div><div className="flex8 mt"><Button type="button" size="sm" id="n-locate" loading={locating} onClick={() => void locate()}>重新识别</Button><span className="h" id="n-locate-msg"><FlagText>{locateMessage}</FlagText></span></div></div>}
+    {!isNew && <div className="field"><Label>显示名<span className="sub" id="n-display">{preview.region && <> · <FlagText>{previewDisplay(preview)}</FlagText>{!preview.letter && "(字母保存时自动分配)"}</>}</span></Label><div className="three">{[["region", "地区", "地区 US"], ["city", "城市", "城市，留空用国家名"], ["letter", "字母", "字母，留空自动"]].map(([key, label, placeholder]) => <Input key={key} className={`${key !== "city" ? "mono" : ""}`} id={`n-${key}`} name={key} value={draft[key]} placeholder={placeholder} aria-label={label} autoComplete="off" onChange={event => setDraft({ ...draft, [key]: event.target.value })} />)}</div><div className="flex8 mt"><Button type="button" size="sm" id="n-locate" loading={locating} onClick={() => void locate()}>重新识别</Button><span className="h" id="n-locate-msg"><FlagText>{locateMessage}</FlagText></span></div></div>}
     <details className="adv"><summary>高级</summary>{input("name", "n-name", "内部名", isNew ? "留空自动生成" : "", "只在命令行和数据里用;界面和订阅里显示的是显示名")}<div className="two">{input("api_port", "n-api-port", "xray API 端口", "默认", undefined, true)}{input("service_name", "n-service", "服务名", "mpx-xray")}</div>{input("config_path", "n-config", "配置路径", "/etc/mpx/xray/config.json")}
       <Field label="出口 IP" htmlFor="n-outbound-ip" hint="节点直连出口的 IP 版本;改完要「应用到节点」才生效"><NativeSelect className="in" id="n-outbound-ip" name="outbound_ip" value={draft.outbound_ip === "v4v6" ? "" : draft.outbound_ip} onChange={event => setDraft({ ...draft, outbound_ip: event.target.value })}><option value="">默认(先 IPv4)</option><option value="v4">仅 IPv4</option><option value="v6">仅 IPv6</option><option value="asis">不指定(AsIs)</option></NativeSelect></Field></details>
     <p className="sub">{isNew ? "这里只登记已能免密 SSH 的机器。要用 SSH 密码添加，请用「添加节点」向导。" : "改地址会影响订阅里没单独填对外地址的连接方式;改 SSH 参数只影响控制面以后怎么连它。都不会自动应用到节点。"}</p><ErrorMessage id="n-err">{error}</ErrorMessage>

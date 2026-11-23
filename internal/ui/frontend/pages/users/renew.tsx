@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
-import type { AppContextValue } from "../../runtime/app-context";
-import { write } from "../../runtime/api";
-import { daysLeft, fmtBytes, parseExpire, renewTarget, userPath, ymd, type User } from "../../domain/users";
+import type { AppContextValue } from "@/runtime/app-context";
+import { write } from "@/runtime/api";
+import { daysLeft, fmtBytes, parseExpire, renewTarget, userPath, ymd, type User } from "@/domain/users";
 import { readModifyUser } from "./hooks";
+import { Input } from "@/components/ui/input";
 
 interface Renewal { pick: number | "date"; date: string; reset: boolean; savedTarget: string | null; label: string }
 function renewalState(user: User) {
@@ -25,7 +26,7 @@ export function RenewOptions({ user, state }: { user: User; state: RenewalState 
   return <div className="rn"><div className="seg rn-seg" role="radiogroup" aria-label="续多久">
     {[30, 90, 365, "date"].map(pick => <button key={pick} type="button" role="radio" className={value.pick === pick ? "on" : ""} aria-checked={value.pick === pick} aria-disabled={value.savedTarget ? true : undefined} data-rn={pick} onClick={() => choose(pick === "date" ? "date" : Number(pick))}>{pick === "date" ? "指定日期" : `${pick} 天`}</button>)}
   </div><div className="rn-to" id="rn-to" hidden={value.pick === "date"}><span className="sub">新的到期日</span><b>{target}</b></div>
-    <div className="field rn-date" id="rn-date" hidden={value.pick !== "date"}><label htmlFor="rn-in">到期日</label><input ref={dateInput} className="in mono" id="rn-in" value={value.date} placeholder="YYYY-MM-DD" autoComplete="off" readOnly={!!value.savedTarget} onChange={event => state.update({ date: event.target.value })} /><span className="h">当天 23:59:59 到期，按这台电脑的时区。</span></div>
+    <div className="field rn-date" id="rn-date" hidden={value.pick !== "date"}><label htmlFor="rn-in">到期日</label><Input ref={dateInput} className="mono" id="rn-in" value={value.date} placeholder="YYYY-MM-DD" autoComplete="off" readOnly={!!value.savedTarget} onChange={event => state.update({ date: event.target.value })} /><span className="h">当天 23:59:59 到期，按这台电脑的时区。</span></div>
     {over && <label className="chk rn-reset"><input type="checkbox" id="rn-reset" checked={value.reset} onChange={event => state.update({ reset: event.target.checked })} /><span>同时清零本期用量<span className="sub">本期已用 {fmtBytes(user.used_traffic)}，上限 {fmtBytes(user.data_limit)}。不清零的话，续期后他仍然是「已超限」，连不上。</span></span></label>}
   </div>;
 }

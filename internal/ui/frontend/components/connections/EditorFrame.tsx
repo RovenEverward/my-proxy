@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { Button } from "../ui/button";
-import { DrawerBody, DrawerHeader, ErrorState, FlagText, LoadingTable } from "../primitives";
-import { useApp } from "../../runtime/app-context";
-import { write } from "../../runtime/api";
-import { errorMessage, plainNodeName, type NodeView } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { DrawerBody, DrawerHeader, ErrorState, FlagText, LoadingTable } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { write } from "@/runtime/api";
+import { errorMessage, plainNodeName, type NodeView } from "@/domain/nodes";
 
 export function DrawerReadState({ title, loading, error, retry }: { title: string; loading: boolean; error: Error | null; retry: () => void }) {
   const { closeOverlays } = useApp();

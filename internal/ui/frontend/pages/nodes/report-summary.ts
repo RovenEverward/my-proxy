@@ -1,5 +1,5 @@
-import { inbTitle, type ConnectionInbound } from "../../domain/connections";
-import type { NodeView } from "../../domain/nodes";
+import { inbTitle, type ConnectionInbound } from "@/domain/connections";
+import type { NodeView } from "@/domain/nodes";
 const TARGET: Record<string, string> = { netflix: "Netflix", youtube: "YouTube", chatgpt: "ChatGPT", openai: "ChatGPT", disney: "Disney+", "disney+": "Disney+" };
 const STATUS: Record<string, string> = { unknown: "没测出结果", unavailable: "不能用", failed: "没通过", partial: "只通过了一部分", skipped: "跳过了", canceled: "被中断了", cancelled: "被中断了", timeout: "超时了" };
 const NETWORK: Record<string, string> = { DNS: "域名解析", ICMP: "ping", HTTP: "网页请求", 路由: "路由追踪" };

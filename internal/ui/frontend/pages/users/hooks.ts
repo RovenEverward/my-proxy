@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, readEpoch, requestEvents } from "../../runtime/api";
-import type { Read, Settings } from "../../runtime/types";
-import type { PlanData } from "../../domain/plans";
-import { PAGE_SIZE, STATUS_TABS, asModelUser, userPath, type Activity, type ModelUser, type Pull, type User, type UserLinks, type UserList } from "../../domain/users";
-import { write } from "../../runtime/api";
+import { api, readEpoch, requestEvents } from "@/runtime/api";
+import type { Read, Settings } from "@/runtime/types";
+import type { PlanData } from "@/domain/plans";
+import { PAGE_SIZE, STATUS_TABS, asModelUser, userPath, type Activity, type ModelUser, type Pull, type User, type UserLinks, type UserList } from "@/domain/users";
+import { write } from "@/runtime/api";
 export interface UserFilters { status: string; search: string; plan: string; offset: number }
 export interface UsersData extends Omit<PlanData, "users"> { page: UserList; counts: Record<string, number>; pulls: Pull[]; pullsKnown: boolean }
 export async function readUsers(read: Read, filters: UserFilters): Promise<UsersData> {

@@ -1,68 +1,13 @@
-// 更新 pill 状态与一键更新弹窗(UC-26 二层版):30 秒静默取 GET /api/update;
-// 弹窗列「控制面 + 节点核心」两层,先起 POST /api/update/nodes 跟
-// /api/update/nodes?since= 的事件流,节点侧收尾后再 POST /api/update/control
-// 并轮询 /api/admin/meta,控制面起来即整页刷新。没有本机/桌面一层 ——
-// 管理台伺服在控制面自己身上。
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { api, write } from "./api";
-import { useApp } from "./app-context";
-import { Button } from "../components/ui/button";
-import { Icon } from "../components/primitives";
-import { nodeLabel } from "../domain/nodes";
-import { isDevVer, nodeUpgradable, updLatest, updTitle, updateAvailable, type UpdateInfo, type UpdateNode, type UpdatePart } from "../domain/releases";
-
-/* ---------- 共享状态 ---------- */
-
-const UPD_SKIP_KEY = "mpx-upd-skip";
-const POLL_MS = 30000;
-let updateData: UpdateInfo | null = null;
-let updateBusy = false;
-let updateAt = 0;
-let skipVersion = "";
-const listeners = new Set<() => void>();
-const emit = () => { for (const listener of listeners) listener(); };
-
-try { skipVersion = sessionStorage.getItem(UPD_SKIP_KEY) || ""; } catch { /* 存储不可用就每次问 */ }
-
-// refreshUpdate:失败静默保留上次结论;force=false 时 30 秒内不重问。
-export async function refreshUpdate(force = true): Promise<UpdateInfo | null> {
-  if (updateBusy) return updateData;
-  if (!force && Date.now() - updateAt < POLL_MS) return updateData;
-  updateBusy = true;
-  try {
-    const u = await api<UpdateInfo>("/api/update");
-    updateAt = Date.now();
-    updateData = u;
-    emit();
-  } catch { /* 失败静默:保留上次状态,不打扰用户 */ }
-  finally { updateBusy = false; }
-  return updateData;
-}
-
-export function skipUpdate(u: UpdateInfo | null) {
-  const v = updLatest(u);
-  if (!v) return;
-  try { sessionStorage.setItem(UPD_SKIP_KEY, v); } catch { /* 不可写也只影响下次启动 */ }
-  skipVersion = v;
-  emit();
-}
-
-export function useUpdateState(enabled = true): { data: UpdateInfo | null; refresh: () => Promise<UpdateInfo | null>; available: boolean } {
-  const subscribe = useCallback((listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, []);
-  const data = useSyncExternalStore(subscribe, () => updateData);
-  const skipped = useSyncExternalStore(subscribe, () => skipVersion);
-  useEffect(() => {
-    if (!enabled) return;
-    void refreshUpdate(false);
-    const timer = setInterval(() => { if (!document.hidden) void refreshUpdate(true); }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [enabled]);
-  const refresh = useCallback(() => refreshUpdate(false), []);
-  const latest = updLatest(data);
-  return { data, refresh, available: updateAvailable(data) && !(latest && skipped === latest) };
-}
-
-/* ---------- 节点显示名 ---------- */
+// Two-stage upgrade dialog: upgrade node cores via incremental job events,
+// then trigger control-plane upgrade and poll /api/admin/meta until back online.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, write } from "@/runtime/api";
+import { useApp } from "@/runtime/app-context";
+import { publishUpdate, skipUpdate } from "@/runtime/update";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/primitives";
+import { nodeLabel } from "@/domain/nodes";
+import { isDevVer, nodeUpgradable, updTitle, updateAvailable, type UpdateInfo, type UpdateNode, type UpdatePart } from "@/domain/releases";
 
 const NODE_LABELS: Record<string, string> = {};
 async function ensureNodeLabels(): Promise<boolean> {
@@ -71,15 +16,10 @@ async function ensureNodeLabels(): Promise<boolean> {
     const nodes = await api<{ name?: string; display?: string }[]>("/api/nodes");
     for (const n of nodes || []) if (n.name) NODE_LABELS[n.name] = nodeLabel(n);
     return true;
-  } catch { return false; } /* 原名兜底 */
+  } catch { return false; }
 }
 const labelOfName = (name: string) => NODE_LABELS[name] || name;
 
-/* ---------- 更新弹窗 ---------- */
-
-// 一轮跑的两段:先节点核心(后台 job,GET /api/update/nodes 跟事件),
-// 再控制面(POST /api/update/control 写请求文件,root 侧接力升级并重启)。
-// 控制面重启期间 /api 全断,等 /api/admin/meta 问通就整页刷新。
 interface NodeEvent { seq: number; node: string; core: string; status: string; msg: string }
 interface NodeProgress { job?: number; state?: string; seq?: number; events?: NodeEvent[] }
 type RunPhase = "nodes" | "control" | "restart" | "done" | "failed";
@@ -89,7 +29,6 @@ let activeRun: RunState | null = null;
 const restartWait = { active: false, timedOut: false };
 const detachRun = () => { activeRun = null; };
 
-// nodeEventText 把 (节点,核心,状态) 折成一行可读的事件。
 const NODE_EVENT_TEXT: Record<string, string> = {
   start: "正在升级", ok: "完成", skip: "已是目标版本", rolled_back: "已回滚", failed: "失败",
 };
@@ -112,7 +51,6 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
   void labelTick;
   const timer = useRef(0);
 
-  // 一轮进行中锁弹窗(防误关);卸载一律解锁、停本地定时器。
   useEffect(() => {
     const unlock = () => appRef.current.setModalLocked(false);
     return () => { unlock(); clearTimeout(timer.current); detachRun(); };
@@ -124,25 +62,11 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
   }, []);
   useEffect(() => { setLive(data); }, [data]);
 
-  const refreshNow = useCallback(async () => {
-    try {
-      const u = await api<UpdateInfo>("/api/update");
-      updateAt = Date.now();
-      updateData = u;
-      emit();
-      setLive(u);
-    } catch { /* 轮询失败静默 */ }
-  }, []);
-
-  /* ----- 轮询与阶段推进 ----- */
-
   const push = (patch: Partial<RunState>) => {
     activeRun = { phase: "nodes", since: 0, events: [], error: "", ...activeRun, ...patch };
     setRun({ ...activeRun, events: [...activeRun.events] });
   };
 
-  // 控制面升级请求已写下:每秒问 /api/admin/meta,问通整页刷新;
-  // 120 秒还没起来换「手动刷新」提示(会话在库里,重启不失效)。
   const waitRestart = useCallback(() => {
     restartWait.active = true;
     setRestarting("wait");
@@ -152,25 +76,23 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
         await fetch("/api/admin/meta", { credentials: "same-origin", headers: { Accept: "application/json" } }).then(r => { if (!r.ok) throw new Error(); });
         location.reload();
         return;
-      } catch { /* 还没起来 */ }
+      } catch { /* Still restarting. */ }
       if (Date.now() > deadline) { restartWait.timedOut = true; setRestarting("timeout"); return; }
       timer.current = window.setTimeout(tick, 1000);
     };
     void tick();
   }, []);
 
-  // 节点 job 轮询:?since 增量取事件;终态(done/failed)推进到控制面段。
   const watchNodes = useCallback(() => {
     const tick = async () => {
       let snap: NodeProgress | null = null;
-      try { snap = await api<NodeProgress>("/api/update/nodes?since=" + (activeRun?.since ?? 0)); } catch { /* 抖一下下轮再试 */ }
+      try { snap = await api<NodeProgress>("/api/update/nodes?since=" + (activeRun?.since ?? 0)); } catch { /* Retry on next tick. */ }
       if (!activeRun || activeRun.phase !== "nodes") return;
       if (snap) {
-        const events = [...(activeRun.events), ...(snap.events || [])];
+        const events = [...activeRun.events, ...(snap.events || [])];
         push({ events, since: snap.seq ?? activeRun.since });
         if (snap.state === "done" || snap.state === "failed") {
           if (snap.state === "failed") { push({ phase: "failed", error: "节点升级任务失败，见上面事件" }); return; }
-          // 节点侧完事:发起控制面升级。
           push({ phase: "control" });
           try {
             await write("POST", "/api/update/control", { action: "upgrade" });
@@ -187,8 +109,6 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
     void tick();
   }, [waitRestart]);
 
-  // apply 只在「有可更新项且没在跑」时点亮:节点有货就先起节点 job,
-  // 只有控制面可升时直接写升级请求。
   const apply = useCallback(async () => {
     if (applying || run) return;
     setApplying(true);
@@ -215,15 +135,11 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
     setChecking(true);
     try {
       const u = await api<UpdateInfo>("/api/update?refresh=1");
-      updateAt = Date.now();
-      updateData = u;
-      emit();
+      publishUpdate(u);
       setLive(u);
     } catch (cause) { appRef.current.toast(cause instanceof Error ? cause.message : "检查失败", true); }
     finally { setChecking(false); }
   }, []);
-
-  /* ----- 渲染 ----- */
 
   const c = live.control || {}, nodes = Array.isArray(live.nodes) ? live.nodes : [];
   const row = (label: string, part: UpdatePart, kind: "control" | "cli" | "node") => {
@@ -256,8 +172,8 @@ export function UpdateDialog({ data, onClose }: { data: UpdateInfo; onClose: () 
   return <><div className="mbody"><h2>{anyUpgradable ? updTitle(live) : "检查更新"}</h2>
     {row("控制面", c, "control")}
     {nodes.map(nodeRow)}
-    {!!nodes.length === false && <p className="sub">还没有节点更新信息。</p>}
-    {(c.release_url) && <p><a className="u-link" target="_blank" rel="noopener" href={c.release_url}>查看发布说明</a></p>}
+    {!nodes.length && <p className="sub">还没有节点更新信息。</p>}
+    {c.release_url && <p><a className="u-link" target="_blank" rel="noopener" href={c.release_url}>查看发布说明</a></p>}
     {anyUpgradable && <p className="sub mt">将先升级各节点，再升级控制面并重启；期间页面会短暂断开。</p>}
   </div>
     <div className="mf">

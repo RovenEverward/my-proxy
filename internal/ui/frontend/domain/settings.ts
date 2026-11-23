@@ -1,5 +1,5 @@
-import { api, write } from "../runtime/api";
-import type { ClientRule, Read, Settings, SubPull, User, UserList } from "../runtime/types";
+import { api, write } from "@/runtime/api";
+import type { ClientRule, Read, Settings, SubPull, User, UserList } from "@/runtime/types";
 
 export const TEMPLATE_FORMATS = ["clash-meta", "sing-box", "xray"] as const;
 export type TemplateFormat = typeof TEMPLATE_FORMATS[number];

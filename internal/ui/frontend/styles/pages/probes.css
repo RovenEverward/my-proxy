@@ -1,8 +1,8 @@
 
 .probe-note{padding:10px 16px 14px}
 .probe-cmd{white-space:normal;word-break:break-all;user-select:all}
-.steps{margin:14px 0 0;padding-left:18px;display:grid;gap:8px;font-size:var(--ui-font-size-caption);color:var(--ink2)}
-.steps li::marker{color:var(--faint)}
+.steps{margin:14px 0 0;padding-left:18px;display:grid;gap:8px;font-size:var(--ui-font-size-caption);color:var(--ui-text-secondary)}
+.steps li::marker{color:var(--ui-text-disabled)}
 
 /* 排水标(订阅预览里标结构性剔除)。 */
-.tag.x-tag{background:var(--bad-bg);color:var(--bad)}
+.tag.x-tag{background:var(--ui-danger-bg);color:var(--ui-danger-text)}

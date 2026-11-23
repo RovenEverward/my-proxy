@@ -1,6 +1,6 @@
-import { useApp } from "../../runtime/app-context";
-import { write } from "../../runtime/api";
-import { userPath, type User } from "../../domain/users";
+import { useApp } from "@/runtime/app-context";
+import { write } from "@/runtime/api";
+import { userPath, type User } from "@/domain/users";
 import { readModifyUser } from "./hooks";
 import { openRenew } from "./renew";
 export function useUserActions(user: User, onChanged?: () => Promise<void>, options: { afterDelete?: () => void } = {}) {

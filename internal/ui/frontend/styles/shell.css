@@ -1,150 +1,126 @@
-/* Extracted verbatim from assets/app.css (rules unchanged). */
+/* Application shell: sidebar, top bar, mobile nav, session menu and update modal. */
 .app{display:grid;grid-template-columns:232px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%}
-/* sidebar */
-.side{height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;background:var(--base)}
-/* 标志自成一行:左右内边距 10 → 标志框左缘 x=20,和导航图标框、控制面圆点对齐(标志和图标都是 24 格内缩 3,墨迹左缘同在 21.5)。 */
-.brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin-bottom:14px;font-weight:620;font-size:var(--ui-font-size-body)}
-/* 版本号等宽显示、靠右(右缘 212 = 导航数字、下拉箭头右缘);margin-top 6.5 让它的基线落在字标基线(标志高的 18/24 = 16.5)。 */
-.brand img.lk{height:22px;width:auto}.brand small{margin-left:auto;align-self:flex-start;margin-top:6.5px;font:500 var(--ui-font-size-meta)/1 var(--mono);color:var(--faint);white-space:nowrap;max-width:100%;overflow:hidden}
-/* 控制面状态胶囊:顶栏「更新于」左侧的圆点 + 名称小药丸,点开下面那层浮层。 */
+
+/* Sidebar */
+.side{height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:16px 12px;background:var(--ui-bg-sidebar);border-right:1px solid var(--ui-border-subtle)}
+.brand{display:flex;align-items:center;gap:9px;height:22px;padding:0 10px;margin:4px 0 22px;font-weight:620;font-size:var(--ui-font-size-body)}
+.brand img.lk{height:22px;width:auto}
+.brand small{margin-left:auto;align-self:flex-start;margin-top:6.5px;font:500 var(--ui-font-size-meta)/1 var(--mono);color:var(--ui-text-disabled);white-space:nowrap;max-width:100%;overflow:hidden}
+.nav-entry{display:contents}
+.nsep{height:14px}
+.navg{font-size:var(--ui-font-size-caption);color:var(--ui-text-disabled);padding:12px 10px 4px;letter-spacing:.02em}
+.nav{display:flex;align-items:center;gap:10px;height:var(--ui-row-height);min-height:var(--ui-row-height);padding:0 10px;border-radius:var(--ui-radius-sm);color:var(--ui-text-secondary);font-weight:400;transition:background 120ms;font-size:var(--ui-font-size-navigation)}
+.nav:hover{background:var(--ui-hover-bg)}
+.nav.on{background:var(--ui-nav-current-bg);color:var(--ui-nav-current-text);font-weight:600}
+.nav.on svg{opacity:1}
+.nav.on .ct{color:inherit}
+.nav svg{width:16px;height:16px;flex:none;opacity:.75}
+.nav .ct{margin-left:auto;font:500 var(--ui-font-size-meta) var(--mono);color:var(--ui-text-disabled)}
+.side .nav .ct .dot{width:6px;height:6px}
+.side .foot{margin-top:auto;display:grid;gap:6px;padding:10px;font-size:var(--ui-font-size-caption);color:var(--ui-text-muted)}
+
+/* Session capsule & popover */
 .cp-menu{position:relative;flex:none}
-.profile{display:flex;align-items:center;gap:7px;max-width:220px;height:28px;padding:0 11px;border:0;border-radius:var(--ui-radius-pill);background:var(--panel);font-size:var(--ui-font-size-control)}
-.profile .pf-t{display:flex;align-items:baseline;gap:7px;min-width:0}.profile .dot{flex:none}.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.profile b{font-weight:560}.profile span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.profile[data-act]{cursor:pointer}.profile[data-act]:hover{background:var(--hover)}.profile .pf-car{flex:none;width:14px;height:14px;color:var(--faint)}
-.pflist{display:grid;gap:6px;margin-bottom:6px}
-.pfitem{display:flex;align-items:center;gap:10px;width:100%;padding:9px 12px;border:0;border-radius:9px;background:var(--panel);text-align:left;cursor:pointer}
-.pfitem:hover{background:var(--hover)}.pfitem.on{background:var(--canvas);box-shadow:inset 0 0 0 1px var(--stone)}
-.pfitem .pf-t{flex:1;min-width:0}.pfitem b,.pfitem span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pfitem b{font-weight:560;font-size:var(--ui-font-size-control)}.pfitem span{color:var(--muted);font-family:var(--mono);font-size:var(--ui-font-size-meta)}
-.pfitem svg{width:15px;height:15px;flex:none;color:var(--ok)}
-.pf-car{transition:transform 160ms var(--ease,ease)}.pf-car.up{transform:rotate(180deg)}
-/* 浮层挂在胶囊下面、右缘对齐胶囊右缘;层低于弹窗遮罩(z30),草稿确认弹窗来了不被遮。 */
-.cp-pop{position:absolute;z-index:28;top:calc(100% + 6px);right:0;width:340px;max-width:calc(100vw - 24px);padding:10px;border-radius:var(--ui-radius-md);background:var(--canvas);border:1px solid var(--ui-border-subtle);box-shadow:var(--ui-shadow-popover)}
-.cp-list{max-height:320px;overflow-y:auto}
-.cp-kv{display:grid;grid-template-columns:1fr!important;gap:2px!important;padding:4px 4px 10px!important;font-size:var(--ui-font-size-body)!important;margin:0}.cp-kv dt{color:var(--muted);font-size:var(--ui-font-size-caption)}.cp-kv dd{margin:0 0 6px!important;white-space:normal;overflow-wrap:anywhere}
-.cp-kv .fp{display:flex;flex-wrap:wrap;gap:1px 6px;font-size:var(--ui-font-size-meta);line-height:1.6;color:var(--ink2)}.cp-kv .fp i{font-style:normal}
-.cp-act{display:flex;align-items:center;gap:8px;width:100%;padding:8px 9px;border:0;border-radius:8px;background:none;text-align:left;cursor:pointer;font-size:var(--ui-font-size-control)}
-.cp-act:hover{background:var(--hover)}.cp-act>span{flex:1;display:flex;align-items:center;gap:8px;min-width:0}.cp-act svg{width:14px;height:14px;flex:none;color:var(--muted)}
-.cp-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--ui-border-subtle)}.cp-acts .btn{flex:1;justify-content:center;padding:0 8px}
-.cp-note{margin:8px 4px 2px;font-size:var(--ui-font-size-caption);line-height:1.5}
-.nsep{height:14px}.side .nav .ct .dot{width:6px;height:6px}
-.ua-to{display:inline-flex}.ua-to svg{width:14px;height:14px}
-.tabs .tab-adv{margin-left:6px;font-size:var(--ui-font-size-micro);color:var(--faint);font-weight:450}
-.navg{font-size:var(--ui-font-size-caption);color:var(--faint);padding:12px 10px 4px;letter-spacing:.02em}
-.nav{display:flex;align-items:center;gap:10px;height:var(--ui-row-height);min-height:var(--ui-row-height);padding:0 10px;border-radius:var(--ui-radius-sm);color:var(--ink2);font-weight:400;transition:background 120ms;font-size:var(--ui-font-size-navigation)}
-.nav:hover{background:var(--hover)}.nav.on{background:var(--ui-nav-current-bg);color:var(--ui-nav-current-text);font-weight:600}.nav.on svg{opacity:1}.nav.on .ct{color:inherit}
-.nav svg{width:16px;height:16px;flex:none;opacity:.75}.nav .ct{margin-left:auto;font:500 var(--ui-font-size-meta) var(--mono);color:var(--faint)}
-.side .foot{margin-top:auto;display:grid;gap:6px;padding:10px;font-size:var(--ui-font-size-caption);color:var(--muted)}
-/* main */
-/* 外层(html/body)一律不滚:内容区 main 自己滚。100vh 加边距、标题栏会超出视口,WebView2 就会在窗口最右边出一条整页高的系统滚动条。 */
-main{min-width:0;margin:8px 8px 8px 0;background:var(--canvas);border-radius:var(--r-card);height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
-.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 28px;border-radius:var(--r-card) var(--r-card) 0 0;background:var(--canvas)}
-.crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:var(--ui-font-size-control)}.crumb b{color:var(--ink);font-weight:560;font-size:var(--ui-font-size-title)}.crumb i{font-style:normal;color:var(--faint)}
-.top .sp{flex:1}.top .sub{font-size:var(--ui-font-size-meta)}
+.profile{display:flex;align-items:center;gap:7px;max-width:220px;height:28px;padding:0 11px;border:0;border-radius:var(--ui-radius-pill);background:var(--ui-bg-panel);font-size:var(--ui-font-size-control);text-align:left;cursor:pointer}
+.profile:focus-visible{outline:2px solid var(--ui-focus-ring);outline-offset:2px}
+.profile .pf-t{display:flex;align-items:baseline;gap:7px;min-width:0}
+.profile .dot{flex:none}
+.profile b,.profile span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile b{font-weight:560}
+.profile span{color:var(--ui-text-muted);font-family:var(--mono);font-size:var(--ui-font-size-meta)}
+.profile[data-act]:hover{background:var(--ui-hover-bg)}
+.profile .pf-car{flex:none;width:14px;height:14px;color:var(--ui-text-disabled)}
+.pf-car{transition:transform 160ms var(--ui-ease-standard)}
+.pf-car.up{transform:rotate(180deg)}
+.cp-pop{position:absolute;z-index:28;top:calc(100% + 6px);right:0;width:340px;max-width:calc(100vw - 24px);padding:10px;border-radius:var(--ui-radius-md);background:var(--ui-bg-surface);border:1px solid var(--ui-border-subtle);box-shadow:var(--ui-shadow-popover);animation:home-expand var(--ui-duration-fast) var(--ui-ease-out) both;transform-origin:top right}
+.cp-kv{display:grid;grid-template-columns:1fr;gap:2px;padding:4px 4px 10px;font-size:var(--ui-font-size-body);margin:0}
+.cp-kv dt{color:var(--ui-text-muted);font-size:var(--ui-font-size-caption)}
+.cp-kv dd{margin:0 0 6px;white-space:normal;overflow-wrap:anywhere}
+.cp-kv .fp{display:flex;flex-wrap:wrap;gap:1px 6px;font-size:var(--ui-font-size-meta);line-height:1.6;color:var(--ui-text-secondary)}
+.cp-kv .fp i{font-style:normal}
+.cp-act{display:flex;align-items:center;gap:8px;width:100%;padding:8px 9px;border:0;border-radius:var(--ui-radius-sm);background:none;text-align:left;cursor:pointer;font-size:var(--ui-font-size-control)}
+.cp-act:hover{background:var(--ui-hover-bg)}
+.cp-act>span{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.cp-act svg{width:14px;height:14px;flex:none;color:var(--ui-text-muted)}
+.cp-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;padding-top:8px;border-top:1px solid var(--ui-border-subtle)}
+.cp-acts .btn{flex:1;justify-content:center;padding:0 8px}
+
+/* Main scroll container & sticky top bar */
+main{min-width:0;margin:0;height:100%;border-radius:0;background:var(--ui-bg-surface);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;--main-scroll-thumb:transparent}
+main.scrolling{--main-scroll-thumb:color-mix(in srgb,var(--ui-text-primary) 24%,transparent)}
+html:not(.os-mac) main::-webkit-scrollbar{width:8px;height:8px}
+html:not(.os-mac) main::-webkit-scrollbar-thumb{background-color:var(--main-scroll-thumb);border-width:2px}
+html:not(.os-mac) main::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ui-text-primary) 38%,transparent)}
+
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;height:52px;padding:0 20px 0 24px;border-radius:0;border-bottom:1px solid var(--ui-border-subtle);background:var(--ui-bg-surface)}
+.crumb{display:flex;gap:8px;align-items:center;color:var(--ui-text-muted);font-size:var(--ui-font-size-title)}
+.crumb>svg{width:16px;height:16px;color:var(--ui-text-muted)}
+.crumb a{font-size:var(--ui-font-size-navigation)}
+.crumb b{color:var(--ui-text-primary);font-weight:560;font-size:var(--ui-font-size-title)}
+.crumb i{font-style:normal;color:var(--ui-text-disabled)}
+.top .sp{flex:1}
+.top .sub{font-size:var(--ui-font-size-meta)}
+.page{max-width:1240px;margin:0 auto;padding:24px}
+
+.tabs .tab-adv{margin-left:6px;font-size:var(--ui-font-size-micro);color:var(--ui-text-disabled);font-weight:450}
 .mtop,.mnav{display:none}
-@media (max-width:860px){
- .app{grid-template-columns:1fr}.side{display:none}main{margin:8px}.top{padding:0 14px}.search{display:none;font-size:var(--ui-font-size-body)}.page{padding:18px 14px 90px}
- .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g2,.g3,.two,.three{grid-template-columns:minmax(0,1fr)}.ph{flex-wrap:wrap}.ph h1{font-size:var(--ui-font-size-title)}
- .hide-m{display:none}td,th{padding:10px 12px}.bar{width:64px}.use span{min-width:0;font-size:var(--ui-font-size-control)}
- .mnav{display:flex;position:fixed;z-index:20;left:0;right:0;bottom:0;justify-content:space-around;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--canvas) 90%,transparent);backdrop-filter:blur(12px)}
- .mnav a{display:grid;justify-items:center;gap:2px;font-size:var(--ui-font-size-navigation);color:var(--muted);padding:4px 10px}.mnav a.on{color:var(--ui-nav-current-text)}.mnav svg{width:19px;height:19px}
- }
-/* 顶部「更新」pill 与更新弹窗 */
-.upd-pill{
-  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:0;border-radius:99px;
-  background:var(--ink);color:var(--canvas);font-weight:560;font-size:var(--ui-font-size-control);cursor:pointer;
-}
+
+/* Update pill & modal */
+.upd-pill{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border:0;border-radius:var(--ui-radius-pill);background:var(--ui-text-primary);color:var(--ui-bg-surface);font-weight:560;font-size:var(--ui-font-size-control);cursor:pointer}
 .upd-pill:hover{opacity:.9}
 .upd-pill[hidden]{display:none!important}
-.upd-notes{max-height:220px;overflow:auto;font:var(--ui-font-size-caption)/1.55 var(--sans);background:var(--stone);padding:10px 12px;border-radius:8px;margin:10px 0;color:var(--ink2)}
-.upd-notes h1,.upd-notes h2,.upd-notes h3{margin:10px 0 4px;font-weight:600;color:var(--ink);line-height:1.35}
-.upd-notes h1{font-size:var(--ui-font-size-title)}.upd-notes h2{font-size:var(--ui-font-size-title)}.upd-notes h3{font-size:var(--ui-font-size-title)}
+.upd-notes{max-height:220px;overflow:auto;font:var(--ui-font-size-caption)/1.55 var(--sans);background:var(--ui-bg-subtle);padding:10px 12px;border-radius:var(--ui-radius-sm);margin:10px 0;color:var(--ui-text-secondary)}
+.upd-notes h1,.upd-notes h2,.upd-notes h3{margin:10px 0 4px;font-size:var(--ui-font-size-title);font-weight:600;color:var(--ui-text-primary);line-height:1.35}
 .upd-notes h1:first-child,.upd-notes h2:first-child,.upd-notes h3:first-child{margin-top:0}
-.upd-notes p{margin:0 0 8px;color:var(--ink2)}
+.upd-notes p{margin:0 0 8px;color:var(--ui-text-secondary)}
 .upd-notes ul,.upd-notes ol{margin:0 0 8px;padding-left:20px}
 .upd-notes li{margin:2px 0}
 .upd-notes ul ul,.upd-notes ul ol,.upd-notes ol ul,.upd-notes ol ol{margin:2px 0 0;padding-left:18px}
-.upd-hl-t{font-weight:600;color:var(--ink);margin-bottom:4px}.upd-hl{margin:0;padding-left:18px}.upd-hl li{margin:2px 0}
-.upd-notes code{font:var(--ui-font-size-meta) var(--mono);padding:1px 4px;border-radius:4px;background:var(--canvas);color:var(--ink)}
-.upd-notes pre{margin:0 0 8px;padding:8px 10px;border-radius:6px;background:var(--canvas);overflow:auto;white-space:pre}
+.upd-hl-t{font-weight:600;color:var(--ui-text-primary);margin-bottom:4px}
+.upd-hl{margin:0;padding-left:18px}
+.upd-hl li{margin:2px 0}
+.upd-notes code{font:var(--ui-font-size-meta) var(--mono);padding:1px 4px;border-radius:4px;background:var(--ui-bg-surface);color:var(--ui-text-primary)}
+.upd-notes pre{margin:0 0 8px;padding:8px 10px;border-radius:var(--ui-radius-xs);background:var(--ui-bg-surface);overflow:auto;white-space:pre}
 .upd-notes pre code{padding:0;background:none;font-size:var(--ui-font-size-meta);line-height:1.5}
-.upd-notes a{color:var(--info);text-decoration:underline;text-underline-offset:2px}
+.upd-notes a{color:var(--ui-info-text);text-decoration:underline;text-underline-offset:2px}
 .upd-notes>:last-child{margin-bottom:0}
-.upd-row{display:flex;align-items:center;gap:8px;font-size:var(--ui-font-size-caption);color:var(--ink2);padding:3px 0}
-.upd-row b{font-weight:560;color:var(--ink);min-width:56px}
-.upd-arrow{width:12px;height:12px;color:var(--faint);flex:none}.upd-row .upd-arrow{color:var(--faint)}.upd-row .sp{flex:1}
-/* 一键更新的进度列表:事件按 step 分组,一组一个标题 */
+.upd-row{display:flex;align-items:center;gap:8px;font-size:var(--ui-font-size-caption);color:var(--ui-text-secondary);padding:3px 0}
+.upd-row b{font-weight:560;color:var(--ui-text-primary);min-width:56px}
+.upd-arrow{width:12px;height:12px;color:var(--ui-text-disabled);flex:none}
+.upd-row .sp{flex:1}
 .upd-steps{max-height:280px;overflow:auto;margin:10px 0}
-.upd-step{font-size:var(--ui-font-size-title);font-weight:560;color:var(--muted);margin:10px 0 3px}
+.upd-step{font-size:var(--ui-font-size-title);font-weight:560;color:var(--ui-text-muted);margin:10px 0 3px}
 .upd-step:first-child{margin-top:0}
-.upd-ev{font-size:var(--ui-font-size-caption);color:var(--ink2);padding:1px 0 1px 10px;border-left:2px solid var(--stone);word-break:break-all}
-.upd-ev.failed{color:var(--bad);border-left-color:var(--bad)}
-.upd-ev.ok{color:var(--ink)}
+.upd-ev{font-size:var(--ui-font-size-caption);color:var(--ui-text-secondary);padding:1px 0 1px 10px;border-left:2px solid var(--ui-bg-subtle);word-break:break-all}
+.upd-ev.failed{color:var(--ui-danger-text);border-left-color:var(--ui-danger-text)}
+.upd-ev.ok{color:var(--ui-text-primary)}
 
-/* 让出标题栏的是 main:它从标题栏那一条下面开始(margin-top 等于标题栏的高),高度再从 100% 里
-   去掉这一条和自己的 8px 下边距,正好放进标题栏以下的内容区,不溢出、也不多出一截滚不动的空白。
-   main 的左右、下边距不改:改了它,顶栏和侧栏、卡片就对不上了。main 整个挪到标题栏下面以后,
-   卡片头的吸顶位置就是 main 的顶(top:0),不用再让出顶栏。 */
-/* 抽屉和弹窗不能压到右上角的最小化/最大化/关闭:抽屉从标题栏那一行下面开始,弹窗在标题栏以下的区域里居中。 */
-/* 内容区固定 8px，只在滚动中或悬停滑块时显色，不挤动内容。 */
-main{--main-scroll-thumb:transparent}
-main.scrolling{--main-scroll-thumb:color-mix(in srgb,var(--ink) 24%,transparent)}
-html:not(.os-mac) main::-webkit-scrollbar{width:8px;height:8px}
-html:not(.os-mac) main::-webkit-scrollbar-thumb{background-color:var(--main-scroll-thumb);border-width:2px}
-html:not(.os-mac) main::-webkit-scrollbar-thumb:hover{background-color:color-mix(in srgb,var(--ink) 38%,transparent)}
-
-/* 所有异步入口共用反馈，不改变控件尺寸和页面布局。 */
+/* Async progress indicator */
 .ui-pending{opacity:.6;cursor:progress}
-.ui-progress{position:fixed;right:18px;bottom:18px;z-index:60;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--canvas);color:var(--ink2);box-shadow:var(--shadow);font-size:var(--ui-font-size-caption);pointer-events:none}
-.crumb a{font-size:var(--ui-font-size-navigation)}
+.ui-progress{position:fixed;right:18px;bottom:18px;z-index:60;padding:8px 12px;border:1px solid var(--ui-border-subtle);border-radius:var(--ui-radius-sm);background:var(--ui-bg-surface);color:var(--ui-text-secondary);box-shadow:var(--ui-shadow-popover);font-size:var(--ui-font-size-caption);pointer-events:none}
 
-/* App 外壳(token 值,全部页共用;原 workspace.css 并入,别再靠类区分页 */
-.side {
-  padding: 16px 12px 16px;
-  gap: 2px;
-  border-right: 1px solid var(--ui-border-subtle);
+@media (min-width:861px) and (max-width:1180px){
+  .page{padding:20px}
 }
 
-.brand { margin: 4px 0 22px; padding: 0 10px; }
-
-.brand small { font-size: var(--ui-font-size-meta); }
-
-.profile { cursor: pointer; }
-
-.profile:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-
-main { margin: 0; height: 100%; border-radius: 0; }
-
-.top {
-  padding-left: 24px;
-  padding-right: 20px;
-  border-radius: 0;
-  border-bottom: 1px solid var(--ui-border-subtle);
-  background: var(--canvas);
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{display:none}
+  .top{padding:0 12px 0 16px}
+  .search{display:none;font-size:var(--ui-font-size-body)}
+  .page{padding:20px 16px calc(90px + env(safe-area-inset-bottom,0px))}
+  .profile{max-width:140px}
+  .cp-pop{right:0}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g2,.g3,.two,.three{grid-template-columns:minmax(0,1fr)}
+  .ph{flex-wrap:wrap}
+  .ph h1{font-size:var(--ui-font-size-title)}
+  .hide-m{display:none}
+  td,th{padding:10px 12px}
+  .bar{width:64px}
+  .use span{min-width:0;font-size:var(--ui-font-size-control)}
+  .mnav{display:flex;position:fixed;z-index:20;left:0;right:0;bottom:0;justify-content:space-around;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--ui-bg-surface) 90%,transparent);backdrop-filter:blur(12px)}
+  .mnav a{display:grid;justify-items:center;gap:2px;font-size:var(--ui-font-size-navigation);color:var(--ui-text-muted);padding:4px 10px}
+  .mnav a.on{color:var(--ui-nav-current-text)}
+  .mnav svg{width:19px;height:19px}
 }
-
-.crumb { gap: 8px; font-size: var(--ui-font-size-title); }
-
-.crumb > svg { width: 16px; height: 16px; color: var(--muted); }
-
-.top .sub { font-size: var(--ui-font-size-meta); }
-
-.ib { width: 30px; height: 30px; border-radius: 50%; }
-
-.ib.sm { width: 24px; height: 24px; }
-
-.page { max-width: 1240px; padding: 24px 24px 24px; }
-
-.btn { height: var(--ui-control-height); border-radius: var(--ui-radius-pill); font-size: var(--ui-font-size-control); font-weight: 400; }
-
-.btn.sm { height: var(--ui-control-height); font-size: var(--ui-font-size-control); }
-
-.btn.pri { background: var(--ui-action-bg); color: var(--ui-action-text); box-shadow: var(--ui-shadow-action); }
-
-.btn.pri:hover { background: var(--ui-action-hover); opacity: 1; }
-
-.btn.pri:active { background: var(--ui-action-pressed); }
-
-.cp-pop { animation: home-expand var(--ui-duration-fast) var(--ui-ease-out) both; transform-origin: top right; }
-
-@media (max-width:860px){.profile{max-width:140px}.cp-pop{right:0}}
-

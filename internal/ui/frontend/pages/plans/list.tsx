@@ -1,5 +1,5 @@
-import { FlagText, Icon } from "../../components/primitives";
-import { planCountText, planInboundLabel, planNodeName, planSelection, sortedPlans, type Plan, type PlanData } from "../../domain/plans";
+import { FlagText, Icon } from "@/components/primitives";
+import { planCountText, planInboundLabel, planNodeName, planSelection, sortedPlans, type Plan, type PlanData } from "@/domain/plans";
 function PlanIncludedTags({ plan, data }: { plan: Plan; data: PlanData }) {
   if (plan.all_nodes) return <span className="tag all"><Icon name="globe" />全部节点(含以后新加的)</span>;
   const selection = planSelection(plan, data.inbounds);

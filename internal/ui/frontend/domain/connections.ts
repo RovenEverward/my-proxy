@@ -1,5 +1,5 @@
-import { api } from "../runtime/api";
-import type { Host, Inbound, Read } from "../runtime/types";
+import { api } from "@/runtime/api";
+import type { Host, Inbound, Read } from "@/runtime/types";
 import { nodeLabel, type Metadata, type NodeView } from "./nodes";
 
 export interface ConnectionInbound extends Inbound {

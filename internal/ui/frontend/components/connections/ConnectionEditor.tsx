@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { DrawerBody, DrawerHeader, Field, FlagText, Icon } from "../primitives";
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import { usePageData } from "../../runtime/query";
-import { addrOfHost, asModelHost, asModelInbound, customAddr, customName, inbKind, inbNeedsApply, inbPath, inbTitle, nameOfHost, type ConnectionHost, type ConnectionInbound } from "../../domain/connections";
-import { errorMessage, nodeLabel, type NodeView } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DrawerBody, DrawerHeader, Field, FlagText, Icon } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import { usePageData } from "@/runtime/query";
+import { addrOfHost, asModelHost, asModelInbound, customAddr, customName, inbKind, inbNeedsApply, inbPath, inbTitle, nameOfHost, type ConnectionHost, type ConnectionInbound } from "@/domain/connections";
+import { errorMessage, nodeLabel, type NodeView } from "@/domain/nodes";
 import { ApplyFooter, DrawerReadState, ErrorMessage, useConnectionFinish } from "./EditorFrame";
 import { collectInbound, InboundFields, inboundDraft } from "./InboundFields";
 import { HostEditor } from "./HostEditor";
@@ -73,8 +73,8 @@ function ConnectionForm({ inboundId, full, onChanged, data }: Props & { data: Da
   return <form id={full || isNew ? "inb-form" : "conn-form"} noValidate onSubmit={event => { event.preventDefault(); void save(true); }}>
     <DrawerHeader title={<FlagText>{isNew ? "添加连接方式" : full ? `编辑连接方式 ${inbTitle(base, node)}` : nameOfHost(base, host, node)}</FlagText>} description={full || isNew ? undefined : <FlagText>{`${inbKind(base)} · 端口 ${base.port} · 在 ${nodeLabel(node)} 上`}</FlagText>} onClose={app.closeOverlays} />
     <DrawerBody>{full || isNew ? <>{fields}<p className="sub">{isNew ? "REALITY 的密钥对由控制面生成。" : "只改用户数上限不用应用到节点。"}</p>{remove}</> : <>
-      <Field label="名称" htmlFor="d-name" hint={customName(host) ? <>已自定义 · <button type="button" className="lnk" data-act="conn-fix" data-inb={base.id} data-id={host.id} onClick={() => { void actions.restoreName(base, host, node).catch(reason => setError(errorMessage(reason))); }}>改回跟随节点名</button></> : "留空就跟着节点名走"}><Input className="in" id="d-name" name="d_name" value={draft.name} placeholder={base.sub_name || nodeLabel(node)} autoComplete="off" onChange={event => setDraft({ ...draft, name: event.target.value })} /></Field>
-      <Field label="地址" htmlFor="d-addr" hint={customAddr(host) ? "已自定义 · 留空改回节点地址" : "留空用节点地址"}><Input className="in mono" id="d-addr" name="d_addr" value={draft.address} placeholder={node.address} autoComplete="off" onChange={event => setDraft({ ...draft, address: event.target.value })} /></Field>
+      <Field label="名称" htmlFor="d-name" hint={customName(host) ? <>已自定义 · <button type="button" className="lnk" data-act="conn-fix" data-inb={base.id} data-id={host.id} onClick={() => { void actions.restoreName(base, host, node).catch(reason => setError(errorMessage(reason))); }}>改回跟随节点名</button></> : "留空就跟着节点名走"}><Input id="d-name" name="d_name" value={draft.name} placeholder={base.sub_name || nodeLabel(node)} autoComplete="off" onChange={event => setDraft({ ...draft, name: event.target.value })} /></Field>
+      <Field label="地址" htmlFor="d-addr" hint={customAddr(host) ? "已自定义 · 留空改回节点地址" : "留空用节点地址"}><Input className="mono" id="d-addr" name="d_addr" value={draft.address} placeholder={node.address} autoComplete="off" onChange={event => setDraft({ ...draft, address: event.target.value })} /></Field>
       <details className="adv2"><summary><Icon name="arrow" />高级<span>协议、端口、{data.hosts.length > 1 ? `${data.hosts.length} 个入口` : "入口"}</span></summary><div className="adv-b">{fields}
         <div className="ae-h">入口<span>{data.hosts.length ? `${data.hosts.length} 个 · 订阅里每个入口一行` : "还没有入口 · 订阅会用入站自己的地址"}</span><span className="sp" />{app.can("PUT", "/api/hosts/x") && <Button type="button" size="sm" variant="ghost" data-act="conn-host-new" data-inb={base.id} onClick={() => openHost()}><Icon name="plus" />入口</Button>}</div>
         {!!data.hosts.length && <div className="ae">{data.hosts.map(value => <div className="ae-r" key={value.id}><div><b className={customName(value) ? "" : "dim"}><FlagText>{nameOfHost(base, value, node)}</FlagText></b><span className="mono">{addrOfHost(base, value, node)}</span></div><span className="ptag lite">{value.address ? "自定义地址" : "节点地址"}</span><Button type="button" size="icon" title="编辑这个入口" aria-label="编辑这个入口" data-act="conn-host-edit" data-inb={base.id} data-id={value.id} onClick={() => openHost(value.id)}><Icon name="pen" /></Button></div>)}</div>}{remove}

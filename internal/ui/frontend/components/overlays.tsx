@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { FlagText, Icon } from "./primitives";
 import type { Confirmation, DrawerOptions, ToastAction } from "@/runtime/types";
 
@@ -90,7 +91,7 @@ function ConfirmationBody({ spec, onClose, onSuccess, onLock }: { spec: Confirma
     finally { setBusy(null); if (spec.lock) onLock(false); }
   };
   return <><div className="mbody"><h2>{spec.danger && <span className="warnico"><Icon name="warn" /></span>}<span className="mt-t">{typeof spec.title === "string" ? <FlagText>{spec.title}</FlagText> : spec.title}</span></h2><div className="confirm-text">{typeof spec.text === "string" ? <p><FlagText>{spec.text}</FlagText></p> : spec.text}</div>
-    {spec.typed && <div className="field"><label htmlFor="typed" className="sub">输入 <b className="c-ink">{spec.typed}</b> 确认</label><input id="typed" className={"in" + (/[\u3400-\u9fff]/.test(spec.typed) ? "" : " mono")} value={typed} onChange={event => setTyped(event.target.value)} autoFocus autoComplete="off" spellCheck={false} disabled={!!busy && spec.lock} /></div>}
+    {spec.typed && <div className="field"><label htmlFor="typed" className="sub">输入 <b className="c-ink">{spec.typed}</b> 确认</label><Input id="typed" className={/[\u3400-\u9fff]/.test(spec.typed) ? undefined : "mono"} value={typed} onChange={event => setTyped(event.target.value)} autoFocus autoComplete="off" spellCheck={false} disabled={!!busy && spec.lock} /></div>}
     <fieldset disabled={!!busy && spec.lock} className="confirm-extra">{spec.extra}</fieldset><div className="err" id="modal-err" role="alert">{error}</div></div>
     <div className="mf"><Button data-act="modal-cancel" disabled={!!busy && spec.lock} onClick={onClose}>取消</Button>{spec.alt && <Button id="altb" disabled={disabled} loading={busy === "alt"} onClick={() => void execute("alt")}>{spec.alt.label}</Button>}<Button id="okb" variant={spec.danger ? "danger" : "primary"} disabled={disabled} loading={busy === "main"} autoFocus={!spec.typed} onClick={() => void execute("main")}>{spec.ok}</Button></div></>;
 }

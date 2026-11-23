@@ -1,6 +1,6 @@
-import { Icon } from "../../components/primitives";
-import { DAY, SEND_FORMATS, absTime, agoShort, cat, clientLabel, fmtBytes, hm, pullText, relTime, spanText, type Pull, type User, type UserPresence } from "../../domain/users";
-import { planNodeName } from "../../domain/plans";
+import { Icon } from "@/components/primitives";
+import { DAY, SEND_FORMATS, absTime, agoShort, cat, clientLabel, fmtBytes, hm, pullText, relTime, spanText, type Pull, type User, type UserPresence } from "@/domain/users";
+import { planNodeName } from "@/domain/plans";
 import { DetailReadError, NodeName, Tip } from "./components";
 import type { DetailPart, UserDetailData, UsersData } from "./hooks";
 export const presenceKnown = (data: UsersData | null) => !!data?.page.presence?.updated_at;

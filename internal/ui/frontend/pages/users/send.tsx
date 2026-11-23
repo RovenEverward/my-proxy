@@ -1,7 +1,7 @@
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { SEND_FORMATS, pullText, type Pull, type User, type UserLinks } from "../../domain/users";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { SEND_FORMATS, pullText, type Pull, type User, type UserLinks } from "@/domain/users";
 import { DetailReadError } from "./components";
 import type { DetailPart, UserDetailData } from "./hooks";
 export function SendSubscription({ user, detail, pull, pullsKnown, retry }: { user: User; detail: UserDetailData; pull?: Pull; pullsKnown?: boolean; retry: (part: DetailPart) => void }) {

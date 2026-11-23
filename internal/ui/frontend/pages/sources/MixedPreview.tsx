@@ -1,11 +1,11 @@
 import { NativeSelect } from "@/components/native-select";
 import { useEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Field, FlagText, Icon } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { api } from "../../runtime/api";
-import type { User } from "../../runtime/types";
-import { errorMessage, SOURCE_FORMATS, type SourceFormat, type SubscriptionPreview } from "../../domain/routing";
+import { Button } from "@/components/ui/button";
+import { Field, FlagText, Icon } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { api } from "@/runtime/api";
+import type { User } from "@/runtime/types";
+import { errorMessage, SOURCE_FORMATS, type SourceFormat, type SubscriptionPreview } from "@/domain/routing";
 import { SourceIssues } from "./components";
 import { useWrittenRevision } from "./hooks";
 

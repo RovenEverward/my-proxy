@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useApp } from "../../runtime/app-context";
-import { api } from "../../runtime/api";
-import { nodeLabel, nodePath, type NodeView } from "../../domain/nodes";
+import { useApp } from "@/runtime/app-context";
+import { api } from "@/runtime/api";
+import { nodeLabel, nodePath, type NodeView } from "@/domain/nodes";
 
 export interface NodeJob {
   id: number; kind: "diagnose" | "install"; node_id: number; status: string; started_at: string; finished_at?: string;

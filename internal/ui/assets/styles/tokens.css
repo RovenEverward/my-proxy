@@ -1,13 +1,13 @@
 /* MPX token authority. Values are maintained here, not in page CSS. */
-@import url("/styles/terminus/fonts.css");
 
 /* Shared desktop UI sizes, based on the approved Terminus specimen.
    Set data-density on html. Standard is the default.
-   Keep type sizes independent from density. Styles may select their own fonts.
-   Load Noto Sans SC in the project for Chinese text. */
+   Keep type sizes independent from density. */
 
 :root {
-  --ui-font-mono: "SFMono-Regular", "SF Mono", Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace;
+  --ui-font-ui: "Inter", "Noto Sans SC", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+  --ui-font-mono: "Mona Sans Mono VF", ui-monospace, "SF Mono", Menlo, Consolas, "Noto Sans SC", monospace;
+
   /* Terminus's seven type steps. Use display only for an opening heading. */
   --ui-font-size-display: 21px;
   --ui-font-size-title: 15px;
@@ -36,6 +36,7 @@
   --ui-space-10: 40px;
   --ui-space-12: 48px;
   --ui-icon-size: 16px;
+  --ui-icon-stroke: 1.75;
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
 
@@ -92,17 +93,18 @@
 
 :root {
   color-scheme: light;
-  --ui-font-ui: "Inter", "Noto Sans SC", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
 
-  /* Surfaces stay neutral. The frame glow is an optional outer material. */
+  /* Surfaces stay neutral. */
   --ui-bg-canvas: #f8f8f5;
   --ui-bg-surface: #ffffff;
   --ui-bg-raised: #ffffff;
+  --ui-bg-panel: var(--ui-bg-canvas);
   --ui-bg-sidebar: #f0f1f2;
   --ui-bg-control: #ffffff;
   --ui-bg-control-hover: #fafaf9;
   --ui-bg-control-pressed: #f2f1ee;
   --ui-bg-field: rgba(28, 25, 23, 0.05);
+  --ui-bg-subtle: var(--ui-bg-field);
   --ui-bg-field-focus: #ffffff;
   --ui-text-primary: #1c1917;
   --ui-text-secondary: #57534e;
@@ -115,6 +117,7 @@
   --ui-selected-bg: rgba(28, 25, 23, 0.09);
   --ui-selected-text: var(--ui-text-primary);
   --ui-scrim: rgba(28, 25, 23, 0.22);
+  --ui-flag-edge: rgba(0, 0, 0, 0.14);
 
   /* Each action state has a paired readable label. */
   --ui-action-bg: #2c6dbb;
@@ -127,23 +130,39 @@
   --ui-focus-ring: #2c6dbb;
   --ui-focus-strong-ring: #111111;
   --ui-focus-halo: rgba(44, 109, 187, 0.12);
+  --ui-field-focus-ring: color-mix(in srgb, var(--ui-text-primary) 28%, transparent);
   --ui-text-selection-bg: rgba(44, 109, 187, 0.18);
+
   /* Current navigation is distinct from selection of objects or options. */
   --ui-nav-current-bg: rgba(44, 109, 187, 0.15);
   --ui-nav-current-text: #1f5794;
-  --ui-success-text: #257b49;
+
+  /* Status & metering semantics. */
+  --ui-success-text: #16a34a;
   --ui-success-bg: #edf7f0;
   --ui-presence-dot: #2eae6b;
-  --ui-warning-text: #805704;
-  --ui-warning-bg: #fbf4df;
-  --ui-danger-text: #b9322b;
-  --ui-danger-bg: #fcefeb;
+  --ui-warning-text: #8f6b00;
+  --ui-warning-icon: #c99700;
+  --ui-warning-bg: #fdf8e1;
+  --ui-danger-text: #dc2626;
+  --ui-danger-bg: #fef2f2;
   --ui-danger-action: #b9322b;
   --ui-danger-action-hover: #a32a25;
   --ui-danger-action-pressed: #8e241f;
   --ui-danger-action-text: #ffffff;
+  --ui-info-text: #2563eb;
+  --ui-status-off: #a1a1aa;
+  --ui-bar-good: #4f9468;
+  --ui-bar-bad: #d24b45;
   --ui-toast-bg: rgba(28, 25, 23, 0.94);
   --ui-toast-text: #fafaf9;
+
+  /* Code editor syntax roles. */
+  --ui-syntax-key: #0b57d0;
+  --ui-syntax-str: #067d4a;
+  --ui-syntax-num: #b4530a;
+  --ui-syntax-bool: #8a3ffc;
+  --ui-syntax-comment: #8b8d94;
 
   /* Glass belongs to floating chrome, menus and toolbars. */
   --ui-glass-bg: rgba(255, 255, 255, 0.72);
@@ -169,19 +188,31 @@
   --ui-radius-field: var(--ui-radius-md);
   --ui-radius-row: var(--ui-radius-md);
   --ui-radius-container: var(--ui-radius-lg);
-  --ui-font-display: "EB Garamond", Georgia, "Noto Serif SC", "Songti SC", serif;
 
   --ui-duration-tap: 70ms;
   --ui-duration-fast: 150ms;
   --ui-duration-base: 240ms;
   --ui-duration-slow: 360ms;
   --ui-duration-spring: 280ms;
+  --ui-ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
   --ui-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   --ui-ease-pop: cubic-bezier(0.16, 1, 0.3, 1);
   --ui-ease-glide: cubic-bezier(0.2, 0, 0, 1);
   --ui-ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
   --ui-press-scale: 0.97;
   --ui-enter-offset: 4px;
+
+  /* Minimal font & test contract bindings (read by fonts_test.go and e2e checks). */
+  --sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+  --mono: var(--ui-font-mono);
+  --ring: var(--ui-focus-ring);
+  --muted: var(--ui-text-muted);
+  --faint: var(--ui-text-disabled);
+  --bad: var(--ui-danger-text);
+}
+
+:root[data-ui="workspace"] {
+  --sans: var(--ui-font-ui);
 }
 
 /* Theme choice is explicit. The OS setting does not change the default. */
@@ -190,11 +221,13 @@
   --ui-bg-canvas: #0f0e0d;
   --ui-bg-surface: #1a1817;
   --ui-bg-raised: #252220;
+  --ui-bg-panel: var(--ui-bg-raised);
   --ui-bg-sidebar: #171717;
   --ui-bg-control: #2f2b29;
   --ui-bg-control-hover: #36322f;
   --ui-bg-control-pressed: #2a2725;
   --ui-bg-field: rgba(250, 249, 247, 0.06);
+  --ui-bg-subtle: var(--ui-bg-control);
   --ui-bg-field-focus: #1a1817;
   --ui-text-primary: #efedeb;
   --ui-text-secondary: #b8b1ab;
@@ -206,6 +239,7 @@
   --ui-pressed-bg: rgba(250, 249, 247, 0.11);
   --ui-selected-bg: rgba(250, 249, 247, 0.11);
   --ui-scrim: rgba(0, 0, 0, 0.50);
+  --ui-flag-edge: rgba(255, 255, 255, 0.22);
   --ui-link: #91bdf0;
   --ui-focus-ring: #91bdf0;
   --ui-focus-strong-ring: #f2f2f2;
@@ -213,13 +247,23 @@
   --ui-text-selection-bg: rgba(145, 189, 240, 0.30);
   --ui-nav-current-bg: var(--ui-selected-bg);
   --ui-nav-current-text: var(--ui-text-primary);
-  --ui-success-text: #80d7a1;
+  --ui-success-text: #3fb950;
   --ui-success-bg: #1c3325;
   --ui-presence-dot: #3fc77e;
   --ui-warning-text: #ebc76d;
+  --ui-warning-icon: #d4a72c;
   --ui-warning-bg: #352c17;
-  --ui-danger-text: #ff9d96;
-  --ui-danger-bg: #3b211e;
+  --ui-danger-text: #f2555a;
+  --ui-danger-bg: #2a1214;
+  --ui-info-text: #58a6ff;
+  --ui-status-off: #5b5d64;
+  --ui-bar-good: #5a9a6e;
+  --ui-bar-bad: #de5f5c;
+  --ui-syntax-key: #7cacf8;
+  --ui-syntax-str: #6dd39e;
+  --ui-syntax-num: #f0a868;
+  --ui-syntax-bool: #c4a5ff;
+  --ui-syntax-comment: #6b6e76;
   --ui-glass-bg: rgba(43, 40, 37, 0.76);
   --ui-glass-strong-bg: rgba(43, 40, 37, 0.94);
   --ui-glass-edge: inset 0 0 0 0.5px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 0 0 0.5px rgba(0, 0, 0, 0.60);
@@ -242,67 +286,4 @@
     --ui-press-scale: 1;
     --ui-enter-offset: 0px;
   }
-}
-
-:root{--base:#e9e9ec;--canvas:#fff;--panel:#f4f4f6;--stone:#ececef;--hover:color-mix(in srgb,var(--ink) 4.5%,transparent);--ink:#2F3033;--ink2:#3f3f46;--muted:#71717a;--faint:#a1a1aa;
---lift:0 2px 6px #0000000d,0 24px 56px -16px #00000038;--ring:color-mix(in srgb,var(--ink) 28%,transparent);--in-ring:color-mix(in srgb,var(--ink) 28%,transparent);--r-card:12px;--flag-edge:rgba(0,0,0,.14);
---ok:#16a34a;--warn:#8F6B00;--warn-ico:#C99700;--good:#4F9468;--bar-bad:#D24B45;--bad:#dc2626;--info:#2563eb;--off:#a1a1aa;--bad-bg:#fef2f2;--warn-bg:#FDF8E1;
---ease:cubic-bezier(.23,1,.32,1);--sans:"Mona Sans VF",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","PingFang SC","Noto Sans",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";--mono:"Mona Sans Mono VF",ui-monospace,"SF Mono",Menlo,Consolas,"Noto Sans SC",monospace}
-[data-theme=dark]{--base:#08090a;--canvas:#111214;--panel:#17181b;--stone:#222327;--hover:color-mix(in srgb,var(--ink) 7%,transparent);--ink:#DDDEE0;--ink2:#c4c4c8;--muted:#8f8f96;--faint:#5b5d64;
---lift:0 2px 6px #00000080,0 24px 56px -12px #000000d0;--flag-edge:rgba(255,255,255,.22);
---ok:#3fb950;--warn:#D4A72C;--warn-ico:#D4A72C;--good:#5A9A6E;--bar-bad:#DE5F5C;--bad:#f2555a;--info:#58a6ff;--off:#5b5d64;--bad-bg:#2a1214;--warn-bg:#221D0B}
-
-:root{--t-k:#0b57d0;--t-s:#067d4a;--t-n:#b4530a;--t-b:#8a3ffc;--t-c:#8b8d94}
-[data-theme=dark]{--t-k:#7cacf8;--t-s:#6dd39e;--t-n:#f0a868;--t-b:#c4a5ff;--t-c:#6b6e76}
-
-/* Compatibility bindings preserve existing pages during migration. */
-:root {
-  --font-body: var(--ui-font-size-body);
-  --line-body: var(--ui-line-height-body);
-  --font-control: var(--ui-font-size-control);
-  --font-control-sm: var(--ui-font-size-control);
-  --font-status: var(--ui-font-size-navigation);
-  --control-height: var(--ui-control-height);
-  --control-height-sm: 28px;
-  --control-radius: 8px;
-  --field-height: 34px;
-  --field-radius: 8px;
-  --icon-button-size: 32px;
-  --button-primary-bg: var(--ink);
-  --button-primary-text: var(--canvas);
-  --ui-icon-stroke: 1.75;
-}
-/* The route owns this profile. Overlays inherit it from the root. */
-:root[data-ui="workspace"] {
-  --base: var(--ui-bg-sidebar);
-  --canvas: var(--ui-bg-surface);
-  --panel: var(--ui-bg-canvas);
-  --stone: var(--ui-bg-field);
-  --hover: var(--ui-hover-bg);
-  --ink: var(--ui-text-primary);
-  --ink2: var(--ui-text-secondary);
-  --muted: var(--ui-text-muted);
-  --faint: var(--ui-text-disabled);
-  --ring: var(--ui-focus-ring);
-  --sans: var(--ui-font-ui);
-  --r-card: var(--ui-radius-container);
-  --lift: var(--ui-shadow-dialog);
-  --font-body: var(--ui-font-size-body);
-  --line-body: var(--ui-line-height-body);
-  --font-control: var(--ui-font-size-control);
-  --font-control-sm: var(--ui-font-size-control);
-  --font-status: var(--ui-font-size-navigation);
-  --control-height-sm: var(--ui-control-height);
-  --control-radius: var(--ui-radius-control);
-  --field-height: var(--ui-field-height);
-  --field-radius: var(--ui-radius-field);
-  --icon-button-size: var(--ui-icon-button-size);
-  --button-primary-bg: var(--ui-action-bg);
-  --button-primary-text: var(--ui-action-text);
-}
-:root[data-ui="workspace"][data-theme="dark"] {
-  --panel: var(--ui-bg-raised);
-  --stone: var(--ui-bg-control);
-  --warn-bg: var(--ui-warning-bg);
-  --warn: var(--ui-warning-text);
 }

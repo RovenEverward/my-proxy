@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText, Icon } from "../primitives";
-import { NodeEditor } from "../../pages/nodes/NodeEditor";
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import type { Plan } from "../../runtime/types";
-import { autoNodeName, errorMessage, nodePath, type NodeView } from "../../domain/nodes";
-import type { ConnectionInbound } from "../../domain/connections";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { DrawerBody, DrawerFooter, DrawerHeader, Field, FlagText, Icon } from "@/components/primitives";
+import { NodeEditor } from "@/pages/nodes/NodeEditor";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import type { Plan } from "@/runtime/types";
+import { autoNodeName, errorMessage, nodePath, type NodeView } from "@/domain/nodes";
+import type { ConnectionInbound } from "@/domain/connections";
 
 type RowState = "wait" | "run" | "done" | "fail";
 interface ProgressRow { status: RowState; title: string; duration: string; error?: string; hint?: string }
@@ -108,13 +108,13 @@ export function NodeWizard({ onChanged, onRegister }: Props = {}) {
   };
   const failed = state.rows.findIndex(value => value.status === "fail");
   let steps = state.step === 1 ? ["cur", "", "", ""] : state.step === 2 ? ["done", "cur", "", ""] : state.step === 4 ? ["done", "done", "done", "cur"] : failed === 0 ? ["fail", "", "", ""] : ["done", "done", failed > 0 ? "fail" : "cur", ""];
-  const field = (key: "address" | "sshPort" | "sshUser" | "password" | "inboundPort" | "sni" | "destination", id: string, label: string, placeholder: string, hint?: string, numeric = false) => <Field label={label} htmlFor={id} hint={hint ? <FlagText>{hint}</FlagText> : undefined} error={state.errors[key]}><Input id={id} className={`in mono ${state.errors[key] ? "bad" : ""}`} value={state[key]} placeholder={placeholder} inputMode={numeric ? "numeric" : undefined} autoComplete="off" aria-invalid={!!state.errors[key]} aria-describedby={state.errors[key] ? `${id}-error` : hint ? `${id}-hint` : undefined} onChange={event => input(key, event.target.value)} /></Field>;
+  const field = (key: "address" | "sshPort" | "sshUser" | "password" | "inboundPort" | "sni" | "destination", id: string, label: string, placeholder: string, hint?: string, numeric = false) => <Field label={label} htmlFor={id} hint={hint ? <FlagText>{hint}</FlagText> : undefined} error={state.errors[key]}><Input id={id} className={`mono ${state.errors[key] ? "bad" : ""}`} value={state[key]} placeholder={placeholder} inputMode={numeric ? "numeric" : undefined} autoComplete="off" aria-invalid={!!state.errors[key]} aria-describedby={state.errors[key] ? `${id}-error` : hint ? `${id}-hint` : undefined} onChange={event => input(key, event.target.value)} /></Field>;
   let body: ReactNode, footer: ReactNode;
   if (state.step === 1) {
     body = <><p className="lead">填一台新 VPS 的 SSH 信息。密码只用来装一次控制面的公钥，用完即丢，不保存。<button type="button" className="lnk wlnk" data-act="node-new" onClick={register}>已能免密 SSH，直接登记</button></p>
       {field("address", "w-address", "服务器地址", "203.0.113.10", "显示名(如 🇯🇵 东京 A)按这台机器的 IP 自动识别，之后可在节点页改")}
       <div className="two">{field("sshPort", "w-ssh-port", "SSH 端口", "22", undefined, true)}{field("sshUser", "w-ssh-user", "SSH 用户", "root")}</div>
-      <Field label="SSH 密码" htmlFor="w-pw" hint="机房给的初始密码即可" error={state.errors.password}><div className="pw"><Input id="w-pw" type={state.showPassword ? "text" : "password"} className={`in ${state.errors.password ? "bad" : ""}`} value={state.password} autoComplete="off" aria-invalid={!!state.errors.password} aria-describedby={state.errors.password ? "w-pw-error" : "w-pw-hint"} onChange={event => input("password", event.target.value)} /><Button type="button" size="icon" id="w-pw-eye" aria-label={state.showPassword ? "隐藏密码" : "显示密码"} onClick={() => { update({ showPassword: !state.showPassword }); requestAnimationFrame(() => { const input = document.getElementById("w-pw"); if (input instanceof HTMLInputElement) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } }); }}><Icon name={state.showPassword ? "eyeoff" : "eye"} /></Button></div></Field></>;
+      <Field label="SSH 密码" htmlFor="w-pw" hint="机房给的初始密码即可" error={state.errors.password}><div className="pw"><Input id="w-pw" type={state.showPassword ? "text" : "password"} className={`${state.errors.password ? "bad" : ""}`} value={state.password} autoComplete="off" aria-invalid={!!state.errors.password} aria-describedby={state.errors.password ? "w-pw-error" : "w-pw-hint"} onChange={event => input("password", event.target.value)} /><Button type="button" size="icon" id="w-pw-eye" aria-label={state.showPassword ? "隐藏密码" : "显示密码"} onClick={() => { update({ showPassword: !state.showPassword }); requestAnimationFrame(() => { const input = document.getElementById("w-pw"); if (input instanceof HTMLInputElement) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); } }); }}><Icon name={state.showPassword ? "eyeoff" : "eye"} /></Button></div></Field></>;
     footer = <><Button data-act="close" onClick={app.closeOverlays}>取消</Button><Button variant="primary" id="w-next" onClick={validateConnection}>下一步</Button></>;
   } else if (state.step === 2) {
     body = <><p className="lead">给这台节点加一条连接方式。默认值与首次安装时建的一致。</p><div className="opts" role="radiogroup" aria-label="连接方式预设"><button type="button" className={`opt ${state.preset === "reality" ? "on" : ""}`} id="w-opt-reality" role="radio" aria-checked={state.preset === "reality"} onClick={() => update({ preset: "reality", inboundPort: "443", sni: "www.cloudflare.com", destination: "www.cloudflare.com:443", errors: {} })}><span className="rd" /><div><b>REALITY · 443（推荐）</b><span className="h">VLESS + TCP + REALITY，SNI 和回落目标 www.cloudflare.com</span></div></button><button type="button" className={`opt ${state.preset === "custom" ? "on" : ""}`} id="w-opt-custom" role="radio" aria-checked={state.preset === "custom"} onClick={() => update({ preset: "custom", errors: {} })}><span className="rd" /><div><b>自定义</b><span className="h">在下面的高级里改端口、SNI 和回落目标</span></div></button></div>

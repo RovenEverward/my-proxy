@@ -1,9 +1,9 @@
 import { NativeSelect } from "@/components/native-select";
 import { useState, type FormEvent } from "react";
-import { Button } from "../../components/ui/button";
-import { DrawerBody, DrawerFooter, DrawerHeader } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { errorMessage, type RouteRule, type RulesPageData } from "../../domain/routing";
+import { Button } from "@/components/ui/button";
+import { DrawerBody, DrawerFooter, DrawerHeader } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { errorMessage, type RouteRule, type RulesPageData } from "@/domain/routing";
 import { TargetOptions } from "./components";
 
 export function BuiltinEditor({ data, onSave }: { data: RulesPageData; onSave: (rules: RouteRule[], version: number, message: string) => Promise<void> }) {

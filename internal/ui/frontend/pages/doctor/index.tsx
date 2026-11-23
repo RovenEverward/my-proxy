@@ -1,7 +1,7 @@
-import { Card, Icon, PageHeader, StatusBadge } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { useApp, usePageTitle } from "../../runtime/app-context";
-import type { PageProps } from "../../runtime/types";
+import { Card, Icon, PageHeader, StatusBadge } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { useApp, usePageTitle } from "@/runtime/app-context";
+import type { PageProps } from "@/runtime/types";
 import { DOCTOR_STATUSES, doctorApplyDetail, doctorPlain, type DoctorCheck } from "./report";
 import { useDoctor } from "./use-doctor";
 

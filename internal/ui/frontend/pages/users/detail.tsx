@@ -1,9 +1,9 @@
-import { Avatar, DrawerBody, Icon } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
-import { useApp } from "../../runtime/app-context";
-import { RESET, fmtBytes, remain, ymd, type User } from "../../domain/users";
-import { planInboundLabel, planNodeCount } from "../../domain/plans";
+import { Avatar, DrawerBody, Icon } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useApp } from "@/runtime/app-context";
+import { RESET, fmtBytes, remain, ymd, type User } from "@/domain/users";
+import { planInboundLabel, planNodeCount } from "@/domain/plans";
 import { DetailReadError, ExpireCell, UserStatus } from "./components";
 import { useUserActions } from "./actions";
 import { useUserDetail, type UsersData } from "./hooks";

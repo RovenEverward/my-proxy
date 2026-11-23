@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, DrawerBody, DrawerFooter, DrawerHeader, Icon } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { usePageData } from "../../runtime/query";
-import { write } from "../../runtime/api";
-import { modifySettings } from "../../domain/settings";
-import { sinceText } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { Card, DrawerBody, DrawerFooter, DrawerHeader, Icon } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { usePageData } from "@/runtime/query";
+import { write } from "@/runtime/api";
+import { modifySettings } from "@/domain/settings";
+import { sinceText } from "@/domain/nodes";
 const rulesetSince = (ms?: number) => ms ? sinceText(new Date(ms).toISOString()) : "—";
-import { errorMessage, rulesetCounts, rulesetStatus, type RulesetGroup, type RulesPageData } from "../../domain/routing";
+import { errorMessage, rulesetCounts, rulesetStatus, type RulesetGroup, type RulesPageData } from "@/domain/routing";
 
 // 规则集私有化分发:分流页侧栏卡 + 管理抽屉。开关改全局设置,镜像清单按内置规则组聚合。
 export function RulesetCard({ data }: { data: RulesPageData }) {

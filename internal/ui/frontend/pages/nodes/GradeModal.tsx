@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { FlagText, Icon, StatusBadge } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import { errorMessage } from "../../domain/nodes";
-import { scoreTone, type RegradePacket, type RegradeRow } from "../../domain/quality";
-import type { SubscriptionSource } from "../../domain/routing";
+import { Button } from "@/components/ui/button";
+import { FlagText, Icon, StatusBadge } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import { errorMessage } from "@/domain/nodes";
+import { scoreTone, type RegradePacket, type RegradeRow } from "@/domain/quality";
+import type { SubscriptionSource } from "@/domain/routing";
 
 interface Props { nodes: { id: number; name: string; display?: string }[]; onChanged: () => Promise<void> }
 

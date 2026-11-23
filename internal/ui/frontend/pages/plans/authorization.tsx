@@ -1,8 +1,8 @@
 import { Fragment, useState } from "react";
-import { FlagText, Icon, StatusBadge } from "../../components/primitives";
-import { activeOccupancy, planCountText, planInboundLabel, planNodeName, type PlanData, type PlanDraft, type PlanSelection } from "../../domain/plans";
-import type { User } from "../../domain/users";
-import { Pickbox } from "../users/components";
+import { FlagText, Icon, StatusBadge } from "@/components/primitives";
+import { activeOccupancy, planCountText, planInboundLabel, planNodeName, type PlanData, type PlanDraft, type PlanSelection } from "@/domain/plans";
+import type { User } from "@/domain/users";
+import { Pickbox } from "@/pages/users/components";
 export function PlanAuthorization({ data, draft, writable, onChange }: { data: PlanData; draft: PlanDraft; writable: boolean; onChange: (selection: PlanSelection) => void }) {
   const [expanded, setExpanded] = useState(new Set(Object.keys(draft.selection).map(Number).filter(id => Array.isArray(draft.selection[id]))));
   const occupancy = activeOccupancy(data.inbounds, data.users, data.plans);

@@ -17,7 +17,8 @@ import { DoctorPage } from "@/pages/doctor";
 import { OverviewPage } from "@/pages/overview";
 import { LoginPage } from "@/pages/login";
 import { ErrorState, LoadingTable, PageHeader } from "@/components/primitives";
-import { UpdateDialog, useUpdateState } from "@/runtime/update";
+import { useUpdateState } from "@/runtime/update";
+import { UpdateDialog } from "@/components/UpdateDialog";
 
 const pages: Record<string, ComponentType<PageProps>> = {
   overview: OverviewPage, users: UsersPage, plans: PlansPage, nodes: NodesPage, sub: SubscriptionPage,

@@ -1,6 +1,6 @@
-import type { Inbound, Node, Plan } from "../runtime/types";
+import type { Inbound, Node, Plan } from "@/runtime/types";
 import type { User } from "./users";
-export type { Inbound, Node, Plan } from "../runtime/types";
+export type { Inbound, Node, Plan } from "@/runtime/types";
 export interface PlanData { plans: Plan[]; nodes: Node[]; inbounds: Inbound[]; users: User[] }
 export type PlanSelection = Record<number, "all" | number[]>;
 export interface PlanDraft { name: string; note: string; all_nodes: boolean; selection: PlanSelection }

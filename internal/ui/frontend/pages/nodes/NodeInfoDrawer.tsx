@@ -1,10 +1,10 @@
-import { Button } from "../../components/ui/button";
-import { DrawerBody, DrawerHeader, EmptyState, FlagText, Icon } from "../../components/primitives";
-import { DrawerReadState } from "../../components/connections/EditorFrame";
-import { useApp } from "../../runtime/app-context";
-import { APIError } from "../../runtime/api";
-import { usePageData } from "../../runtime/query";
-import { nodeLabel, nodePath, type NodeView } from "../../domain/nodes";
+import { Button } from "@/components/ui/button";
+import { DrawerBody, DrawerHeader, EmptyState, FlagText, Icon } from "@/components/primitives";
+import { DrawerReadState } from "@/components/connections/EditorFrame";
+import { useApp } from "@/runtime/app-context";
+import { APIError } from "@/runtime/api";
+import { usePageData } from "@/runtime/query";
+import { nodeLabel, nodePath, type NodeView } from "@/domain/nodes";
 interface Online { node: string; online: { user: string; count: number; ips?: string[] }[] }
 export function NodeInfoDrawer({ node, kind, onApply }: { node: NodeView; kind: "online" | "config"; onApply: () => void }) {
   const app = useApp();

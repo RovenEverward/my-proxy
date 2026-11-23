@@ -1,16 +1,17 @@
 import { NativeSelect } from "@/components/native-select";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ErrorState, Icon, LoadingTable, PageHeader } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { APIError } from "../../runtime/api";
-import { useApp, useLeaveGuard, usePageTitle } from "../../runtime/app-context";
-import { usePageData } from "../../runtime/query";
-import type { ClientRule, PageProps, Settings, Status, SubPull, User } from "../../runtime/types";
-import type { SubscriptionSource } from "../../domain/routing";
-import { CLIENT_APPS, FORMATS, OTHER_UA, TEMPLATE_FORMATS, TEMPLATE_META, changedFields, changedPatch, changes, clientFormat, clientGroups, effectiveRules, emptyPreview, modifySettings, recentPreviewUser, sameRules, subscriptionLink, subscriptionPreview, subscriptionTemplates, subscriptionUsers, templateBytes, templateLines, templateSize, type SubscriptionDraft, type SubscriptionPreview, type TemplateFormat } from "../../domain/settings";
+import { ErrorState, Icon, LoadingTable, PageHeader } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { APIError } from "@/runtime/api";
+import { useApp, useLeaveGuard, usePageTitle } from "@/runtime/app-context";
+import { usePageData } from "@/runtime/query";
+import type { ClientRule, PageProps, Settings, Status, SubPull, User } from "@/runtime/types";
+import type { SubscriptionSource } from "@/domain/routing";
+import { CLIENT_APPS, FORMATS, OTHER_UA, TEMPLATE_FORMATS, TEMPLATE_META, changedFields, changedPatch, changes, clientFormat, clientGroups, effectiveRules, emptyPreview, modifySettings, recentPreviewUser, sameRules, subscriptionLink, subscriptionPreview, subscriptionTemplates, subscriptionUsers, templateBytes, templateLines, templateSize, type SubscriptionDraft, type SubscriptionPreview, type TemplateFormat } from "@/domain/settings";
 import { RulesDrawer } from "./RulesDrawer";
 import { TemplateDrawer } from "./TemplateDrawer";
 import { TitleField } from "./TitleField";
+import { Input } from "@/components/ui/input";
 
 interface SubscriptionData { settings: Settings; builtin: ClientRule[]; users: User[]; preview: SubscriptionPreview; sources: SubscriptionSource[]; warnings: string[] }
 interface DraftState { original: SubscriptionDraft; draft: SubscriptionDraft; error: string; fieldErrors: Partial<Record<keyof Settings, string>>; saving: boolean }
@@ -138,7 +139,7 @@ function SubscriptionWorkspace({ route, data, selected, refresh, readError, onRe
         <section className="r-li r-li-field" id="sec-info">
           <div className="r-ll"><label htmlFor="f-prefix"><b>链接开头</b></label><span className="sub">客户端要能访问到这个地址</span></div>
           <div className="r-lv">
-            <input className="in mono" id="f-prefix" data-k="sub_url_prefix" value={state.draft.sub_url_prefix} onChange={event => edit("sub_url_prefix", event.target.value)} placeholder="例如 https://sub.example.com" autoComplete="off" spellCheck={false} readOnly={readOnly} aria-invalid={!!state.fieldErrors.sub_url_prefix} aria-describedby="pfx-err pfx-slot" onMouseEnter={() => setPrefixHover(true)} onMouseLeave={() => setPrefixHover(false)} onFocus={event => { setPrefixFocus(true); event.currentTarget.select?.(); }} onBlur={() => setPrefixFocus(false)} />
+            <Input className="mono" id="f-prefix" data-k="sub_url_prefix" value={state.draft.sub_url_prefix} onChange={event => edit("sub_url_prefix", event.target.value)} placeholder="例如 https://sub.example.com" autoComplete="off" spellCheck={false} readOnly={readOnly} aria-invalid={!!state.fieldErrors.sub_url_prefix} aria-describedby="pfx-err pfx-slot" onMouseEnter={() => setPrefixHover(true)} onMouseLeave={() => setPrefixHover(false)} onFocus={event => { setPrefixFocus(true); event.currentTarget.select?.(); }} onBlur={() => setPrefixFocus(false)} />
             <span className="s5-field-err" id="pfx-err" role="alert">{state.fieldErrors.sub_url_prefix || ""}</span>
             <div id="pfx-slot"><span className="h">{state.draft.sub_url_prefix ? "客户端要能访问到这个地址。" : `没填，链接用服务器 IP（${prefixBase.replace(/^https?:\/\//, "").replace(/:\d+$/, "")}）开头，拿到链接的人都能看到。`}</span></div>
           </div>
@@ -149,11 +150,11 @@ function SubscriptionWorkspace({ route, data, selected, refresh, readError, onRe
         </div>
         <div className="r-li r-li-field">
           <div className="r-ll"><label htmlFor="f-int"><b>刷新间隔</b><Tip>客户端多久自动更新一次订阅，单位小时。填 0 由客户端决定。</Tip></label><span className="sub">客户端多久自动更新一次，0 由客户端决定</span></div>
-          <div className="r-lv"><div className="s5-unit"><input className="in mono" id="f-int" data-k="update_interval" value={state.draft.update_interval} onChange={event => { const value = event.target.value; edit("update_interval", /^\d+$/.test(value.trim()) ? +value.trim() : value); }} inputMode="numeric" autoComplete="off" readOnly={readOnly} aria-invalid={!!state.fieldErrors.update_interval} aria-describedby="int-err" /><span>小时</span></div><span className="s5-field-err" id="int-err" role="alert">{state.fieldErrors.update_interval || ""}</span></div>
+          <div className="r-lv"><div className="s5-unit"><Input className="mono" id="f-int" data-k="update_interval" value={state.draft.update_interval} onChange={event => { const value = event.target.value; edit("update_interval", /^\d+$/.test(value.trim()) ? +value.trim() : value); }} inputMode="numeric" autoComplete="off" readOnly={readOnly} aria-invalid={!!state.fieldErrors.update_interval} aria-describedby="int-err" /><span>小时</span></div><span className="s5-field-err" id="int-err" role="alert">{state.fieldErrors.update_interval || ""}</span></div>
         </div>
         <div className="r-li r-li-field">
           <div className="r-ll"><label htmlFor="f-help"><b>帮助链接</b></label><span className="sub">客户端「帮助」打开的地址，可以不填</span></div>
-          <div className="r-lv"><input className="in mono" id="f-help" data-k="support_link" value={state.draft.support_link} onChange={event => edit("support_link", event.target.value)} placeholder="例如 https://help.example.com" autoComplete="off" spellCheck={false} readOnly={readOnly} /></div>
+          <div className="r-lv"><Input className="mono" id="f-help" data-k="support_link" value={state.draft.support_link} onChange={event => edit("support_link", event.target.value)} placeholder="例如 https://help.example.com" autoComplete="off" spellCheck={false} readOnly={readOnly} /></div>
         </div>
       </div>
 

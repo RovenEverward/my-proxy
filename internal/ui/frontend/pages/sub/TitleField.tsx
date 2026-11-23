@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Icon } from "../../components/primitives";
+import { Icon } from "@/components/primitives";
 
 const TOKEN = "{USERNAME}";
 export function titleValue(element: Node): string {

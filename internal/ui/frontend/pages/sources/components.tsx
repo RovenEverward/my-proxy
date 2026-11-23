@@ -1,6 +1,6 @@
 import { Fragment } from "react";
-import { StatusBadge } from "../../components/primitives";
-import { SOURCE_FORMATS, type SourceIssue, type SubscriptionSource } from "../../domain/routing";
+import { StatusBadge } from "@/components/primitives";
+import { SOURCE_FORMATS, type SourceIssue, type SubscriptionSource } from "@/domain/routing";
 
 export function SourceStatus({ source }: { source: SubscriptionSource }) {
   const [tone, label] = !source.enabled ? ["off", "已停用"] : source.refreshing ? ["warn", "刷新中"] : source.last_error ? ["warn", source.node_count ? "使用上次结果" : "未就绪"] : source.node_count ? ["ok", "可用"] : ["warn", "未就绪"];

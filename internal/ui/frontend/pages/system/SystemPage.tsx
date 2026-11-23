@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ErrorState, Icon, LoadingTable, PageHeader, Tabs } from "../../components/primitives";
-import { Button } from "../../components/ui/button";
-import { useApp, usePageTitle } from "../../runtime/app-context";
-import { sleep } from "../../runtime/api";
-import { usePageData } from "../../runtime/query";
-import type { PageProps, Settings } from "../../runtime/types";
+import { ErrorState, Icon, LoadingTable, PageHeader, Tabs } from "@/components/primitives";
+import { Button } from "@/components/ui/button";
+import { useApp, usePageTitle } from "@/runtime/app-context";
+import { sleep } from "@/runtime/api";
+import { usePageData } from "@/runtime/query";
+import type { PageProps, Settings } from "@/runtime/types";
 import { NotificationForm } from "./NotificationForm";
 import { AcmeTab, type ACMEStatus } from "./AcmeTab";
 

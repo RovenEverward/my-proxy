@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { NativeSelect } from "../../components/native-select";
-import { Card, EmptyState, ErrorState, Field, FlagText, Icon, LoadingTable, PageHeader, StatusBadge, Tabs } from "../../components/primitives";
-import { AddConnection } from "../../components/connections/AddConnection";
-import { ConnectionList } from "../../components/connections/ConnectionList";
-import { Menu } from "../../components/connections/Menu";
-import { NodeWizard } from "../../components/node-wizard/NodeWizard";
-import { APIError, api, write } from "../../runtime/api";
-import { useApp, usePageTitle } from "../../runtime/app-context";
-import { cachedPage, usePageData } from "../../runtime/query";
-import type { PageProps, Read, Settings } from "../../runtime/types";
-import { loadConnections, type ConnectionData } from "../../domain/connections";
-import { coreText, dateTime, driftState, errorMessage, hourMinute, NODE_TABS, nodeLabel, nodePath, nodeStateLabel, nodeStateTone, sinceText, sshText, type NodeView } from "../../domain/nodes";
-import { SourcesPage } from "../sources";
-import { ProbesPage } from "../probes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/native-select";
+import { Card, EmptyState, ErrorState, Field, FlagText, Icon, LoadingTable, PageHeader, StatusBadge, Tabs } from "@/components/primitives";
+import { AddConnection } from "@/components/connections/AddConnection";
+import { ConnectionList } from "@/components/connections/ConnectionList";
+import { Menu } from "@/components/connections/Menu";
+import { NodeWizard } from "@/components/node-wizard/NodeWizard";
+import { APIError, api, write } from "@/runtime/api";
+import { useApp, usePageTitle } from "@/runtime/app-context";
+import { cachedPage, usePageData } from "@/runtime/query";
+import type { PageProps, Read, Settings } from "@/runtime/types";
+import { loadConnections, type ConnectionData } from "@/domain/connections";
+import { coreText, dateTime, driftState, errorMessage, hourMinute, NODE_TABS, nodeLabel, nodePath, nodeStateLabel, nodeStateTone, sinceText, sshText, type NodeView } from "@/domain/nodes";
+import { SourcesPage } from "@/pages/sources";
+import { ProbesPage } from "@/pages/probes";
 import { NodeEditor } from "./NodeEditor";
 import { NodeInfoDrawer } from "./NodeInfoDrawer";
 import { GradeModal } from "./GradeModal";
 import { plainSummary } from "./report-summary";
 import { useNodeJobs, type NodeJob } from "./use-node-jobs";
-import { qualityTip, scoreText, scoreTone, type NodeQuality } from "../../domain/quality";
+import { qualityTip, scoreText, scoreTone, type NodeQuality } from "@/domain/quality";
 
 interface NodeListData { nodes: NodeView[]; quality: NodeQuality[] }
 interface Report { checked_at: string; measured_address?: string; report: string | { summary?: string[] } }
@@ -126,7 +126,7 @@ function NodeDetailPage({ id }: { id: number }) {
   const diagnose = () => app.confirmBox({ title: `体检 ${label}？`, text: "在节点上做一次完整体检：运行状况、能访问哪些网站、网速（不测硬件）。最长要十几分钟。可以关掉这个页面，做完会在节点上显示结果。", ok: "开始体检", run: async () => started("diagnose", await write("POST", `${nodePath(id)}/diagnostics/jobs`, { engine: "fusion", position: "node", node_id: String(id), speed: true })) });
   const install = () => {
     const options = { core: "xray", version: "" };
-    app.confirmBox({ title: `在 ${label} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟。可以关掉这个页面，做完会在节点上显示结果。", ok: "安装", extra: <div className="two"><Field label="代理程序" htmlFor="i-core"><NativeSelect className="in" id="i-core" defaultValue="xray" onChange={event => { options.core = event.target.value; }}><option value="xray">xray</option><option value="sing-box">sing-box（hysteria2 / tuic）</option></NativeSelect></Field><Field label="版本" htmlFor="i-ver"><Input className="in mono" id="i-ver" placeholder="留空用最新版" autoComplete="off" onChange={event => { options.version = event.target.value; }} /></Field></div>, run: async () => { let path = `${nodePath(id)}/install/jobs?core=${encodeURIComponent(options.core)}`; if (options.version.trim()) path += `&version=${encodeURIComponent(options.version.trim())}`; await started("install", await write("POST", path), options.core); } });
+    app.confirmBox({ title: `在 ${label} 上安装代理程序？`, text: "控制面下载发布包（下过的会复用），送到节点上，应用当前配置并启动。慢链路上要几分钟。可以关掉这个页面，做完会在节点上显示结果。", ok: "安装", extra: <div className="two"><Field label="代理程序" htmlFor="i-core"><NativeSelect className="in" id="i-core" defaultValue="xray" onChange={event => { options.core = event.target.value; }}><option value="xray">xray</option><option value="sing-box">sing-box（hysteria2 / tuic）</option></NativeSelect></Field><Field label="版本" htmlFor="i-ver"><Input className="mono" id="i-ver" placeholder="留空用最新版" autoComplete="off" onChange={event => { options.version = event.target.value; }} /></Field></div>, run: async () => { let path = `${nodePath(id)}/install/jobs?core=${encodeURIComponent(options.core)}`; if (options.version.trim()) path += `&version=${encodeURIComponent(options.version.trim())}`; await started("install", await write("POST", path), options.core); } });
   };
   const syncButton = (primary = false, inMenu = false) => <><Button type="button" variant={primary ? "primary" : "default"} role={inMenu ? "menuitem" : undefined} data-act="node-sync" data-id={id} data-name={node.name} data-label={label} aria-disabled={down || undefined} aria-describedby={down ? inMenu ? "sync-why-m" : "sync-why" : applyWhy ? "sync-drift-why" : undefined} data-tip={down ? "节点连不上，连上后再应用" : undefined} onClick={() => { if (!down) { setMenu(false); sync(); } }}>{inMenu && <Icon name="upload" />}应用到节点</Button>{down ? <span id={inMenu ? "sync-why-m" : "sync-why"} className="vh">节点连不上，连上后再应用</span> : applyWhy ? <span id="sync-drift-why" className="vh">{applyWhy}</span> : null}</>;
   const report = query.data?.report && !("error" in query.data.report) ? query.data.report : null;

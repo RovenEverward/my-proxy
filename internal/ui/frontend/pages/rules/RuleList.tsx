@@ -1,11 +1,12 @@
 import { NativeSelect } from "@/components/native-select";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Card, FlagText, Icon } from "../../components/primitives";
-import { useApp } from "../../runtime/app-context";
-import { write } from "../../runtime/api";
-import { errorMessage, finalPath, RULE_REGIONS, RULE_TYPES, ruleValueText, targetName, type RouteRule, type RulesPageData, type RuleType } from "../../domain/routing";
+import { Button } from "@/components/ui/button";
+import { Card, FlagText, Icon } from "@/components/primitives";
+import { useApp } from "@/runtime/app-context";
+import { write } from "@/runtime/api";
+import { errorMessage, finalPath, RULE_REGIONS, RULE_TYPES, ruleValueText, targetName, type RouteRule, type RulesPageData, type RuleType } from "@/domain/routing";
 import { TargetOptions, TargetPill } from "./components";
+import { Input } from "@/components/ui/input";
 
 export interface RuleDraft { rule: RouteRule; index: number | null }
 export function RuleList({ data, scope, draft, onDraft, onSave, onBuiltin }: {
@@ -97,7 +98,7 @@ function RuleEditor({ data, draft, onDraft, rules, version, onSave }: {
   }
   return <div className="rp-row editing"><span className="rp-grip" /><span className="rp-n">{draft.index === null ? "新" : <Icon name="edit" />}</span>
     <NativeSelect className="in w140" id="re-type" aria-label="类型" value={draft.rule.type} onChange={event => { const type = event.target.value as RuleType; update({ type, value: type === "set" ? data.catalog[0]?.key || "" : type === "geoip" ? "CN" : "" }); }} disabled={saving}>{Object.entries(RULE_TYPES).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</NativeSelect>
-    <div className="grow">{draft.rule.type === "set" || draft.rule.type === "geoip" ? <NativeSelect className="in" id="re-val" aria-label="匹配内容" ref={element => { input.current = element; }} value={draft.rule.value} onChange={event => update({ value: event.target.value })} disabled={saving}>{draft.rule.type === "set" ? data.catalog.map(entry => <option key={entry.key} value={entry.key}>{entry.name} · {entry.desc}</option>) : Object.entries(RULE_REGIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect> : <input className="in mono" id="re-val" aria-label="匹配内容" aria-invalid={!!error || undefined} aria-describedby="re-err" ref={element => { input.current = element; }} value={draft.rule.value} autoComplete="off" spellCheck={false} disabled={saving} placeholder={draft.rule.type === "suffix" ? "example.com(含子域名)" : draft.rule.type === "keyword" ? "google" : "91.108.4.0/22"} onChange={event => update({ value: event.target.value })} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void save(); } }} />}</div>
+    <div className="grow">{draft.rule.type === "set" || draft.rule.type === "geoip" ? <NativeSelect className="in" id="re-val" aria-label="匹配内容" ref={element => { input.current = element; }} value={draft.rule.value} onChange={event => update({ value: event.target.value })} disabled={saving}>{draft.rule.type === "set" ? data.catalog.map(entry => <option key={entry.key} value={entry.key}>{entry.name} · {entry.desc}</option>) : Object.entries(RULE_REGIONS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</NativeSelect> : <Input className="mono" id="re-val" aria-label="匹配内容" aria-invalid={!!error || undefined} aria-describedby="re-err" ref={element => { input.current = element; }} value={draft.rule.value} autoComplete="off" spellCheck={false} disabled={saving} placeholder={draft.rule.type === "suffix" ? "example.com(含子域名)" : draft.rule.type === "keyword" ? "google" : "91.108.4.0/22"} onChange={event => update({ value: event.target.value })} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); void save(); } }} />}</div>
     <span className="rp-a"><Icon name="arrow" /></span><NativeSelect className="in w220" id="re-to" aria-label="去向" value={draft.rule.target} disabled={saving} onChange={event => update({ target: event.target.value })}><TargetOptions data={data} /></NativeSelect>
     <Button variant="primary" size="sm" data-act="rp-save" loading={saving} onClick={() => void save()}>{draft.index === null ? "添加" : "保存"}</Button><Button variant="ghost" size="sm" data-act="rp-cancel" disabled={saving} onClick={() => onDraft(null)}>取消</Button>{draft.index !== null && <Button size="icon-sm" data-act="rp-del" title="删除" aria-label="删除这条" disabled={saving} onClick={() => void save(true)}><Icon name="x" /></Button>}
     <div className="err" id="re-err" role="alert" style={{ flexBasis: "100%" }}>{error}</div>

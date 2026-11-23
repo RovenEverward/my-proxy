@@ -1,7 +1,7 @@
-import { useApp } from "../../runtime/app-context";
-import { api, write } from "../../runtime/api";
-import { asModelHost, inbPath, inbTag, inbTitle, type ConnectionHost, type ConnectionInbound } from "../../domain/connections";
-import { type NodeView } from "../../domain/nodes";
+import { useApp } from "@/runtime/app-context";
+import { api, write } from "@/runtime/api";
+import { asModelHost, inbPath, inbTag, inbTitle, type ConnectionHost, type ConnectionInbound } from "@/domain/connections";
+import { type NodeView } from "@/domain/nodes";
 import { restartNote, useConnectionFinish } from "./EditorFrame";
 
 export function useConnectionActions(onChanged: () => Promise<void>) {
