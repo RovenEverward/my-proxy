@@ -138,8 +138,27 @@ func newSourceCmd() *cobra.Command {
 真实订阅地址不进命令行:source add 交互输入(不回显),自动化用 --url-stdin 从
 stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 
-	var addF sourceFlags
-	add := &cobra.Command{
+	c.AddCommand(
+		newSourceAddCmd(),
+		newSourceListCmd(),
+		newSourceShowCmd(),
+		newSourceEditCmd(),
+		newSourceRefreshCmd(),
+		newSourceGrantsCmd(),
+		newSourceGrantCmd(),
+		newSourceRevokeCmd(),
+		newSourceToggleCmd("disable", "停用来源(停止输出与定时拉取,保留配置、授权与快照)", false),
+		newSourceToggleCmd("enable", "恢复来源(之后用 source refresh 拉新快照)", true),
+		newSourceDeleteCmd(),
+		newSourcePreviewCmd(),
+	)
+	c.AddCommand(sourceCmdExtras...)
+	return c
+}
+
+func newSourceAddCmd() *cobra.Command {
+	var f sourceFlags
+	cmd := &cobra.Command{
 		Use:   "add NAME",
 		Short: "添加一个外部订阅源(交互输入 URL,默认 6h 刷新,自动首次拉取)",
 		Example: `  mpx source add "常用订阅"            # 提示输入 URL,等待首次拉取
@@ -151,21 +170,21 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			if err != nil {
 				return err
 			}
-			rawURL, err := readSourceURL(addF.urlStdin)
+			rawURL, err := readSourceURL(f.urlStdin)
 			if err != nil {
 				return err
 			}
 			body := map[string]any{
 				"name":             strings.TrimSpace(args[0]),
 				"url":              rawURL,
-				"interval_seconds": int(addF.interval.Seconds()),
-				"enabled":          !addF.disabled,
+				"interval_seconds": int(f.interval.Seconds()),
+				"enabled":          !f.disabled,
 			}
-			if strings.TrimSpace(addF.region) != "" {
-				body["region"] = strings.TrimSpace(addF.region)
+			if strings.TrimSpace(f.region) != "" {
+				body["region"] = strings.TrimSpace(f.region)
 			}
 			if cmd.Flags().Changed("everyone") {
-				body["grant_all"] = addF.everyone
+				body["grant_all"] = f.everyone
 			}
 			raw, err := cl.do("POST", "/api/sources", body)
 			if err != nil {
@@ -176,7 +195,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 				return err
 			}
 			waited := false
-			if addF.wait && v.Refreshing {
+			if f.wait && v.Refreshing {
 				if opts.output != outputJSON {
 					fmt.Printf("已创建来源 %d(%s),等待首次拉取…\n", v.ID, v.Name)
 				}
@@ -191,7 +210,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 					return err
 				}
 				// --wait 且拉取已败(等完或本已结束)也要非零退出:脚本靠退出码。
-				if addF.wait && v.LastError != "" {
+				if f.wait && v.LastError != "" {
 					return fmt.Errorf("来源 %d 首次拉取失败: %s", v.ID, v.LastError)
 				}
 				return nil
@@ -199,7 +218,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			if !waited {
 				fmt.Printf("已创建来源 %d(%s)\n", v.ID, v.Name)
 			}
-			if addF.wait && v.LastError != "" {
+			if f.wait && v.LastError != "" {
 				fmt.Printf("首次拉取失败:%s\n", v.LastError)
 				printSourceSummary(&v)
 				return fmt.Errorf("来源 %d 首次拉取失败: %s", v.ID, v.LastError)
@@ -208,10 +227,12 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			return nil
 		},
 	}
-	addF.bind(add, true)
-	c.AddCommand(add)
+	f.bind(cmd, true)
+	return cmd
+}
 
-	c.AddCommand(&cobra.Command{
+func newSourceListCmd() *cobra.Command {
+	return &cobra.Command{
 		Use: "list", Short: "列出外部订阅源", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
@@ -243,9 +264,11 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			return writeTable([]string{"ID", "名称", "订阅地址", "状态", "节点", "刷新间隔", "最近成功"}, rows)
 		},
-	})
+	}
+}
 
-	c.AddCommand(&cobra.Command{
+func newSourceShowCmd() *cobra.Command {
+	return &cobra.Command{
 		Use: "show NAME|ID", Short: "查看来源快照、刷新状态与各格式兼容报告", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
@@ -265,10 +288,12 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			return printSourceDetail(cl, v)
 		},
-	})
+	}
+}
 
-	var editF sourceFlags
-	edit := &cobra.Command{
+func newSourceEditCmd() *cobra.Command {
+	var f sourceFlags
+	cmd := &cobra.Command{
 		Use: "edit NAME|ID", Short: "修改来源(只改给了的选项;换 URL 走 --url-stdin)", Args: cobra.ExactArgs(1),
 		Example: `  mpx source edit 7 --interval 12h
   mpx source edit 7 --region JP --name "新名字"
@@ -284,15 +309,15 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			patch := map[string]any{}
 			if cmd.Flags().Changed("name") {
-				patch["name"] = editF.name
+				patch["name"] = f.name
 			}
 			if cmd.Flags().Changed("region") {
-				patch["region"] = editF.region
+				patch["region"] = f.region
 			}
 			if cmd.Flags().Changed("interval") {
-				patch["interval_seconds"] = int(editF.interval.Seconds())
+				patch["interval_seconds"] = int(f.interval.Seconds())
 			}
-			if editF.urlStdin {
+			if f.urlStdin {
 				rawURL, err := readSourceURL(true)
 				if err != nil {
 					return err
@@ -300,7 +325,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 				patch["url"] = rawURL
 			}
 			if cmd.Flags().Changed("everyone") {
-				patch["grant_all"] = editF.everyone
+				patch["grant_all"] = f.everyone
 			}
 			if len(patch) == 0 {
 				return fmt.Errorf("没给要改的字段(--name/--region/--interval/--everyone/--url-stdin;启停用 source enable|disable)")
@@ -316,11 +341,13 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			return nil
 		},
 	}
-	editF.bind(edit, false)
-	c.AddCommand(edit)
+	f.bind(cmd, false)
+	return cmd
+}
 
-	var refreshWait bool
-	refresh := &cobra.Command{
+func newSourceRefreshCmd() *cobra.Command {
+	var wait bool
+	cmd := &cobra.Command{
 		Use: "refresh NAME|ID", Short: "手动刷新来源(默认等它拉完)", Args: cobra.ExactArgs(1),
 		Example: `  mpx source refresh 7                # 等待刷新结束,失败会报原因
   mpx source refresh 7 --wait=false   # 只触发,立即返回`,
@@ -337,7 +364,7 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			if err != nil {
 				return err
 			}
-			if !refreshWait {
+			if !wait {
 				return report(raw, "已提交刷新(异步进行,用 mpx source show %d 看结果)", v.ID)
 			}
 			cur, err := decode[sourceView](raw)
@@ -370,10 +397,12 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			return nil
 		},
 	}
-	refresh.Flags().BoolVar(&refreshWait, "wait", true, "等刷新结束再返回(失败会报原因并以非零退出)")
-	c.AddCommand(refresh)
+	cmd.Flags().BoolVar(&wait, "wait", true, "等刷新结束再返回(失败会报原因并以非零退出)")
+	return cmd
+}
 
-	c.AddCommand(&cobra.Command{
+func newSourceGrantsCmd() *cobra.Command {
+	return &cobra.Command{
 		Use: "grants NAME|ID", Short: "列出已授权的用户与套餐(全员授权时名单不代表实际可见范围)", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
@@ -407,20 +436,22 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			return nil
 		},
-	})
+	}
+}
 
-	var grantUsers, grantPlans []string
-	grant := &cobra.Command{
+func newSourceGrantCmd() *cobra.Command {
+	var users, plans []string
+	cmd := &cobra.Command{
 		Use: "grant NAME|ID (--user USER... | --plan PLAN...)", Short: "把来源授权给用户或套餐(可重复;重复授权幂等)",
 		Example: `  mpx source grant 7 --user alice
   mpx source grant 7 --user alice --plan 基础套餐
   mpx source grant 7 --plan 全家桶`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(grantUsers) == 0 && len(grantPlans) == 0 {
+			if len(users) == 0 && len(plans) == 0 {
 				return fmt.Errorf("至少给一个 --user 或 --plan")
 			}
-			return sourceGrantRun(args[0], grantUsers, grantPlans,
+			return sourceGrantRun(args[0], users, plans,
 				func(cl *Client, id int64, u string) ([]byte, error) {
 					return cl.do("PUT", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
 				},
@@ -429,21 +460,23 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 				}, "已授权 %s")
 		},
 	}
-	grant.Flags().StringSliceVar(&grantUsers, "user", nil, "接收这个来源的用户(可重复或逗号分隔)")
-	grant.Flags().StringSliceVar(&grantPlans, "plan", nil, "接收这个来源的套餐名(可重复或逗号分隔)")
-	c.AddCommand(grant)
+	cmd.Flags().StringSliceVar(&users, "user", nil, "接收这个来源的用户(可重复或逗号分隔)")
+	cmd.Flags().StringSliceVar(&plans, "plan", nil, "接收这个来源的套餐名(可重复或逗号分隔)")
+	return cmd
+}
 
-	var revokeUsers, revokePlans []string
-	revoke := &cobra.Command{
+func newSourceRevokeCmd() *cobra.Command {
+	var users, plans []string
+	cmd := &cobra.Command{
 		Use: "revoke NAME|ID (--user USER... | --plan PLAN...)", Short: "撤回某用户或套餐对该来源的授权(不影响对方已保存的上游凭证)",
 		Example: `  mpx source revoke 7 --user alice
   mpx source revoke 7 --plan 基础套餐`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(revokeUsers) == 0 && len(revokePlans) == 0 {
+			if len(users) == 0 && len(plans) == 0 {
 				return fmt.Errorf("至少给一个 --user 或 --plan")
 			}
-			return sourceGrantRun(args[0], revokeUsers, revokePlans,
+			return sourceGrantRun(args[0], users, plans,
 				func(cl *Client, id int64, u string) ([]byte, error) {
 					return cl.do("DELETE", fmt.Sprintf("%s/grants/%s", sourcePath(id), url.PathEscape(u)), nil)
 				},
@@ -452,24 +485,22 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 				}, "已撤回 %s")
 		},
 	}
-	revoke.Flags().StringSliceVar(&revokeUsers, "user", nil, "要撤回授权的用户(可重复或逗号分隔)")
-	revoke.Flags().StringSliceVar(&revokePlans, "plan", nil, "要撤回授权的套餐名(可重复或逗号分隔)")
-	c.AddCommand(revoke)
+	cmd.Flags().StringSliceVar(&users, "user", nil, "要撤回授权的用户(可重复或逗号分隔)")
+	cmd.Flags().StringSliceVar(&plans, "plan", nil, "要撤回授权的套餐名(可重复或逗号分隔)")
+	return cmd
+}
 
-	c.AddCommand(&cobra.Command{
-		Use: "disable NAME|ID", Short: "停用来源(停止输出与定时拉取,保留配置、授权与快照)", Args: cobra.ExactArgs(1),
+func newSourceToggleCmd(use, short string, enabled bool) *cobra.Command {
+	return &cobra.Command{
+		Use: use + " NAME|ID", Short: short, Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return sourceSetEnabled(args[0], false)
+			return sourceSetEnabled(args[0], enabled)
 		},
-	})
-	c.AddCommand(&cobra.Command{
-		Use: "enable NAME|ID", Short: "恢复来源(之后用 source refresh 拉新快照)", Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return sourceSetEnabled(args[0], true)
-		},
-	})
+	}
+}
 
-	c.AddCommand(&cobra.Command{
+func newSourceDeleteCmd() *cobra.Command {
+	return &cobra.Command{
 		Use: "delete NAME|ID", Aliases: []string{"rm"}, Short: "删除来源(连同授权与快照;引用它的策略组条件保留为「来源已删除」)",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -487,10 +518,12 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			}
 			return report(raw, "已删除来源 %d(%s)", v.ID, v.Name)
 		},
-	})
+	}
+}
 
+func newSourcePreviewCmd() *cobra.Command {
 	var previewUser, previewFormat string
-	preview := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "preview --user USER",
 		Short: "按用户预览混合订阅:自建与外部节点、所在策略组与排除原因",
 		Example: `  mpx source preview --user alice
@@ -539,12 +572,10 @@ stdin 喂。interval 用 Go 时长写法(6h、30m),0 表示只手动刷新。`}
 			return nil
 		},
 	}
-	preview.Flags().StringVar(&previewUser, "user", "", "按这个用户预览(必填)")
-	_ = preview.MarkFlagRequired("user")
-	preview.Flags().StringVar(&previewFormat, "format", "clash-meta", "输出格式:links / base64-links / clash / clash-meta / sing-box / xray")
-	c.AddCommand(preview)
-	c.AddCommand(sourceCmdExtras...)
-	return c
+	cmd.Flags().StringVar(&previewUser, "user", "", "按这个用户预览(必填)")
+	_ = cmd.MarkFlagRequired("user")
+	cmd.Flags().StringVar(&previewFormat, "format", "clash-meta", "输出格式:links / base64-links / clash / clash-meta / sing-box / xray")
+	return cmd
 }
 
 func init() { rootCmd.AddCommand(newSourceCmd()) }

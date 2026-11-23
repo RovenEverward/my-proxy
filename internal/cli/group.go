@@ -148,8 +148,19 @@ func printPreview(raw []byte) error {
 func newGroupCmd() *cobra.Command {
 	c := &cobra.Command{Use: "group", Short: "管理策略组", Long: `策略组是规则的去向:按地区、协议、能力检测、标签自动收进入口,新加的节点符合条件会自动进组。
 mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选。`}
+	c.AddCommand(
+		newGroupListCmd(),
+		newGroupAddCmd(),
+		newGroupEditCmd(),
+		newGroupSourcesCmd(),
+		newGroupRmCmd(),
+		newGroupPreviewCmd(),
+	)
+	return c
+}
 
-	c.AddCommand(&cobra.Command{Use: "list", Short: "列出策略组", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+func newGroupListCmd() *cobra.Command {
+	return &cobra.Command{Use: "list", Short: "列出策略组", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -170,16 +181,18 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 			rows = append(rows, []string{strconv.FormatInt(g.ID, 10), g.Name, string(g.Mode), groupConds(g)})
 		}
 		return writeTable([]string{"ID", "名称", "方式", "条件"}, rows)
-	}})
+	}}
+}
 
-	var af groupFlags
-	add := &cobra.Command{Use: "add NAME", Short: "新建策略组", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newGroupAddCmd() *cobra.Command {
+	var f groupFlags
+	cmd := &cobra.Command{Use: "add NAME", Short: "新建策略组", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
 		g := model.ProxyGroup{Name: args[0], Mode: model.GroupAuto}
-		af.apply(cmd, &g)
+		f.apply(cmd, &g)
 		raw, err := cl.do("POST", "/api/proxy-groups", g)
 		if err != nil {
 			return err
@@ -189,7 +202,7 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 			if err != nil {
 				return err
 			}
-			if raw, err = putGroupSources(cl, created.ID, af.sources); err != nil {
+			if raw, err = putGroupSources(cl, created.ID, f.sources); err != nil {
 				return err
 			}
 		}
@@ -199,12 +212,14 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		fmt.Println("已创建")
 		return nil
 	}}
-	af.bind(add)
-	c.AddCommand(add)
+	f.bind(cmd)
+	return cmd
+}
 
-	var ef groupFlags
+func newGroupEditCmd() *cobra.Command {
+	var f groupFlags
 	var rename string
-	edit := &cobra.Command{Use: "edit NAME|ID", Short: "修改策略组(只改给了的选项)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "edit NAME|ID", Short: "修改策略组(只改给了的选项)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -213,7 +228,7 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		if err != nil {
 			return err
 		}
-		ef.apply(cmd, g)
+		f.apply(cmd, g)
 		if rename != "" {
 			g.Name = rename
 		}
@@ -223,7 +238,7 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		}
 		// 来源条件走专用接口,不进上面的整组 PUT(见 groupSourcesPath)。
 		if cmd.Flags().Changed("source") {
-			if raw, err = putGroupSources(cl, g.ID, ef.sources); err != nil {
+			if raw, err = putGroupSources(cl, g.ID, f.sources); err != nil {
 				return err
 			}
 		}
@@ -233,11 +248,13 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		fmt.Println("已保存")
 		return nil
 	}}
-	ef.bind(edit)
-	edit.Flags().StringVar(&rename, "name", "", "改名")
-	c.AddCommand(edit)
+	f.bind(cmd)
+	cmd.Flags().StringVar(&rename, "name", "", "改名")
+	return cmd
+}
 
-	c.AddCommand(&cobra.Command{Use: "sources NAME|ID", Short: "查看策略组的候选来源(空 = 全部来源)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newGroupSourcesCmd() *cobra.Command {
+	return &cobra.Command{Use: "sources NAME|ID", Short: "查看策略组的候选来源(空 = 全部来源)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -267,9 +284,11 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 			fmt.Println(s)
 		}
 		return nil
-	}})
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "rm NAME|ID", Short: "删除策略组(还有规则指向它时会被拒绝)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newGroupRmCmd() *cobra.Command {
+	return &cobra.Command{Use: "rm NAME|ID", Short: "删除策略组(还有规则指向它时会被拒绝)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -283,11 +302,13 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		}
 		fmt.Println("已删除")
 		return nil
-	}})
+	}}
+}
 
-	var pf groupFlags
+func newGroupPreviewCmd() *cobra.Command {
+	var f groupFlags
 	var previewUser, previewFormat string
-	preview := &cobra.Command{Use: "preview [NAME|ID]", Short: "看看这组条件会收进哪些入口(可以只给条件,不用先建组)", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "preview [NAME|ID]", Short: "看看这组条件会收进哪些入口(可以只给条件,不用先建组)", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -298,7 +319,7 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 				return err
 			}
 		}
-		pf.apply(cmd, g)
+		f.apply(cmd, g)
 		// 请求体仍是 ProxyGroup;来源条件走查询参数 sources(只增不破的
 		// 新参数,服务端不落库)。显式 --source "" 传空值 = 按全部来源预览。
 		q := url.Values{}
@@ -310,7 +331,7 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		}
 		if cmd.Flags().Changed("source") {
 			clean := []string{}
-			for _, s := range pf.sources {
+			for _, s := range f.sources {
 				if s = strings.TrimSpace(s); s != "" {
 					clean = append(clean, s)
 				}
@@ -327,9 +348,8 @@ mode=auto 客户端自动选最快的,mode=manual 用户在客户端里手动选
 		}
 		return printPreview(raw)
 	}}
-	pf.bind(preview)
-	preview.Flags().StringVar(&previewUser, "user", "", "按这个用户预览(含他的外部订阅授权)")
-	preview.Flags().StringVar(&previewFormat, "format", "", "按这个输出格式预览(如 sing-box;空 = 服务端默认)")
-	c.AddCommand(preview)
-	return c
+	f.bind(cmd)
+	cmd.Flags().StringVar(&previewUser, "user", "", "按这个用户预览(含他的外部订阅授权)")
+	cmd.Flags().StringVar(&previewFormat, "format", "", "按这个输出格式预览(如 sing-box;空 = 服务端默认)")
+	return cmd
 }

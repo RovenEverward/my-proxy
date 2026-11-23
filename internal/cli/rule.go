@@ -165,19 +165,35 @@ func newRuleCmd() *cobra.Command {
 去向:直连 / DIRECT、拦截 / REJECT,或策略组名(mpx group list)`}
 	c.PersistentFlags().StringVar(&user, "user", "", "编辑这个用户的规则(默认全局)")
 
-	c.AddCommand(&cobra.Command{Use: "list", Short: "列出规则", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+	c.AddCommand(
+		newRuleListCmd(&user),
+		newRuleAddCmd(&user),
+		newRuleMoveCmd(&user),
+		newRuleRmCmd(&user),
+		newRuleToggleCmd(&user),
+		newRuleFinalCmd(&user),
+		newRuleTestCmd(&user),
+		newRuleCatalogCmd(),
+		newRuleMigrateCmd(),
+		newRuleModeCmd(),
+	)
+	return c
+}
+
+func newRuleListCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "list", Short: "列出规则", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
 		if opts.output == outputJSON {
-			raw, err := cl.do("GET", rulesPath(user), nil)
+			raw, err := cl.do("GET", rulesPath(*user), nil)
 			if err != nil {
 				return err
 			}
 			return emitJSON(raw)
 		}
-		r, err := getRules(cl, user)
+		r, err := getRules(cl, *user)
 		if err != nil {
 			return err
 		}
@@ -195,27 +211,29 @@ func newRuleCmd() *cobra.Command {
 				rows = append(rows, []string{scope, strconv.Itoa(i + 1), string(x.Type), ruleValueText(x), targetName(groups, x.Target), on, dash(x.Note)})
 			}
 		}
-		if user != "" {
-			add(user, r.UserRules)
+		if *user != "" {
+			add(*user, r.UserRules)
 		}
 		add("全局", r.Global)
 		if err := writeTable([]string{"层", "序号", "类型", "匹配", "去向", "启用", "备注"}, rows); err != nil {
 			return err
 		}
 		final := r.Final
-		if user != "" && r.UserFinal != "" {
+		if *user != "" && r.UserFinal != "" {
 			final = targetName(groups, r.UserFinal) + "(该用户覆盖)"
 		} else {
 			final = targetName(groups, final)
 		}
 		fmt.Printf("其他全部 → %s\n", final)
 		return nil
-	}})
+	}}
+}
 
+func newRuleAddCmd(user *string) *cobra.Command {
 	var at int
 	var off bool
 	var note string
-	add := &cobra.Command{Use: "add TYPE VALUE TARGET", Short: "加一条规则(默认加在这一层最前面)", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "add TYPE VALUE TARGET", Short: "加一条规则(默认加在这一层最前面)", Args: cobra.ExactArgs(3), RunE: func(cmd *cobra.Command, args []string) error {
 		t, ok := ruleTypeAlias[strings.ToLower(args[0])]
 		if !ok {
 			return fmt.Errorf("不认识的类型 %q,可选 suffix keyword set geoip cidr", args[0])
@@ -228,11 +246,11 @@ func newRuleCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		r, err := getRules(cl, user)
+		r, err := getRules(cl, *user)
 		if err != nil {
 			return err
 		}
-		rules, ver := r.scope(user)
+		rules, ver := r.scope(*user)
 		pos := at - 1
 		if pos < 0 || pos > len(rules) {
 			pos = 0
@@ -242,23 +260,25 @@ func newRuleCmd() *cobra.Command {
 		}
 		nr := model.RouteRule{Type: t, Value: args[1], Target: target, Enabled: !off, Note: note}
 		rules = append(rules[:pos], append([]model.RouteRule{nr}, rules[pos:]...)...)
-		return putRules(cl, user, rules, ver)
+		return putRules(cl, *user, rules, ver)
 	}}
-	add.Flags().IntVar(&at, "at", 1, "放在第几条(1 = 最前,超过条数 = 最后)")
-	add.Flags().BoolVar(&off, "off", false, "先加成停用")
-	add.Flags().StringVar(&note, "note", "", "备注")
-	c.AddCommand(add)
+	cmd.Flags().IntVar(&at, "at", 1, "放在第几条(1 = 最前,超过条数 = 最后)")
+	cmd.Flags().BoolVar(&off, "off", false, "先加成停用")
+	cmd.Flags().StringVar(&note, "note", "", "备注")
+	return cmd
+}
 
-	c.AddCommand(&cobra.Command{Use: "move FROM TO", Short: "调整规则顺序", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleMoveCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "move FROM TO", Short: "调整规则顺序", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		r, err := getRules(cl, user)
+		r, err := getRules(cl, *user)
 		if err != nil {
 			return err
 		}
-		rules, ver := r.scope(user)
+		rules, ver := r.scope(*user)
 		from, err := routeRuleIndex(args[0], len(rules))
 		if err != nil {
 			return err
@@ -270,36 +290,40 @@ func newRuleCmd() *cobra.Command {
 		x := rules[from]
 		rules = append(rules[:from], rules[from+1:]...)
 		rules = append(rules[:to], append([]model.RouteRule{x}, rules[to:]...)...)
-		return putRules(cl, user, rules, ver)
-	}})
+		return putRules(cl, *user, rules, ver)
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "rm N", Short: "删除一条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleRmCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "rm N", Short: "删除一条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		r, err := getRules(cl, user)
+		r, err := getRules(cl, *user)
 		if err != nil {
 			return err
 		}
-		rules, ver := r.scope(user)
+		rules, ver := r.scope(*user)
 		i, err := routeRuleIndex(args[0], len(rules))
 		if err != nil {
 			return err
 		}
-		return putRules(cl, user, append(rules[:i], rules[i+1:]...), ver)
-	}})
+		return putRules(cl, *user, append(rules[:i], rules[i+1:]...), ver)
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "toggle N", Short: "启用 / 停用一条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleToggleCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "toggle N", Short: "启用 / 停用一条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		r, err := getRules(cl, user)
+		r, err := getRules(cl, *user)
 		if err != nil {
 			return err
 		}
-		rules, _ := r.scope(user)
+		rules, _ := r.scope(*user)
 		i, err := routeRuleIndex(args[0], len(rules))
 		if err != nil {
 			return err
@@ -314,9 +338,11 @@ func newRuleCmd() *cobra.Command {
 		}
 		fmt.Println(map[bool]string{true: "已启用", false: "已停用"}[on])
 		return nil
-	}})
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "final TARGET", Short: "设置「其他全部」的去向(--user 时传 - 取消覆盖)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleFinalCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "final TARGET", Short: "设置「其他全部」的去向(--user 时传 - 取消覆盖)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -328,8 +354,8 @@ func newRuleCmd() *cobra.Command {
 			}
 		}
 		path := "/api/rules/final"
-		if user != "" {
-			path += "?user=" + url.QueryEscape(user)
+		if *user != "" {
+			path += "?user=" + url.QueryEscape(*user)
 		}
 		raw, err := cl.do("PUT", path, map[string]any{"target": target})
 		if err != nil {
@@ -340,14 +366,16 @@ func newRuleCmd() *cobra.Command {
 		}
 		fmt.Println("已保存")
 		return nil
-	}})
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "test DOMAIN", Short: "看一个网址会走哪条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleTestCmd(user *string) *cobra.Command {
+	return &cobra.Command{Use: "test DOMAIN", Short: "看一个网址会走哪条规则", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
 		}
-		raw, err := cl.do("POST", "/api/rules/test", map[string]any{"domain": args[0], "user": user})
+		raw, err := cl.do("POST", "/api/rules/test", map[string]any{"domain": args[0], "user": *user})
 		if err != nil {
 			return err
 		}
@@ -374,7 +402,7 @@ func newRuleCmd() *cobra.Command {
 			return err
 		}
 		if res.Matched != nil {
-			scope := map[string]string{"global": "全局", "user": user}[res.Matched.Scope]
+			scope := map[string]string{"global": "全局", "user": *user}[res.Matched.Scope]
 			fmt.Printf("%s 命中 %s第 %d 条:%s %s\n", res.Domain, scope, res.Matched.Index, res.Matched.Rule.Type, ruleValueText(res.Matched.Rule))
 		} else {
 			fmt.Printf("%s 没有命中任何规则,走「其他全部」\n", res.Domain)
@@ -387,9 +415,11 @@ func newRuleCmd() *cobra.Command {
 			fmt.Printf("注意:第 %d 条 %s %s 无法判断(%s),客户端上可能先命中它\n", u.Index, u.Rule.Type, u.Rule.Value, u.Reason)
 		}
 		return nil
-	}})
+	}}
+}
 
-	c.AddCommand(&cobra.Command{Use: "catalog", Short: "列出内置规则组", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+func newRuleCatalogCmd() *cobra.Command {
+	return &cobra.Command{Use: "catalog", Short: "列出内置规则组", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 		cl, err := newClient()
 		if err != nil {
 			return err
@@ -410,9 +440,7 @@ func newRuleCmd() *cobra.Command {
 			rows = append(rows, []string{s.Key, s.Name, s.Desc})
 		}
 		return writeTable([]string{"KEY", "名称", "包含"}, rows)
-	}})
-	c.AddCommand(newRuleMigrateCmd(), newRuleModeCmd())
-	return c
+	}}
 }
 
 type migrationReport struct {
