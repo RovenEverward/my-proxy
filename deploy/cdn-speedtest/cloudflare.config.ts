@@ -5,5 +5,6 @@ export default defineConfig({
     name: "mpx-cdn-speedtest",
     entrypoint: "./index.js",
     compatibilityDate: "2025-01-01",
+    domains: ["cdn-speedtest.shiziyi.top"],
   },
 });
