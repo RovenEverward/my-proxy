@@ -60,15 +60,13 @@ type sourcePlanRef struct {
 	Name string `json:"name"`
 }
 
-// sourceNodeRef 是外部节点的最小展示字段。Key 是对象身份(UC-12),
-// Excluded 标它当前是否被剔除(UC-30 后只剩排水)。Name 是清洗后的订阅名(UC-17),
-// RawName 保留上游原名,供界面展开与回溯。
+// sourceNodeRef 是外部节点的最小展示字段。Key 是端点指纹身份,
+// Name 是清洗后的订阅名(UC-17),RawName 保留上游原名,供界面展开与回溯。
 type sourceNodeRef struct {
 	Name     string `json:"name"`
 	RawName  string `json:"raw_name,omitempty"`
 	Protocol string `json:"protocol"`
 	Key      string `json:"key,omitempty"`
-	Excluded bool   `json:"excluded,omitempty"`
 }
 
 func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
@@ -391,7 +389,7 @@ type subscriptionPreviewNode struct {
 	SourceName string   `json:"source_name"`
 	Groups     []string `json:"groups"`
 	Reasons    []string `json:"reasons"`
-	// Excluded 为真时这个节点不出现在订阅里,只在预览里说明原因(UC-12)。
+	// Excluded 为真时这个节点不出现在订阅里,只在预览里说明原因(排水)。
 	Excluded bool `json:"excluded,omitempty"`
 }
 
