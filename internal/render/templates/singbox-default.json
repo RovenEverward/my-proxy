@@ -999,6 +999,14 @@
         "outbound": "本地直连"
       },
       {
+        "domain_suffix": [
+          "isnssdk.com",
+          "zijieapi.com",
+          "bytedance.com"
+        ],
+        "outbound": "本地直连"
+      },
+      {
         "rule_set": [
           "category-ads-all",
           "easylist"

@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/server/settings.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/model/settings.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
-verified: 2026-11-23 @ 3c427e3
+verified: 2026-11-23 @ HEAD + 抖音基建域直连工作树
 ---
 # 订阅与分流
 
@@ -35,6 +35,7 @@ verified: 2026-11-23 @ 3c427e3
 - 订阅链接带 `?purpose=` → v0.7.0 起被忽略，返回完整订阅 → 不报错是有意的，老客户端不会坏。
 - UA 规则表为空 → 表示「没配过」，用内置默认，不是「关掉分流」。
 - 「国内媒体」「苹果」等直连组必须排在大表之前 → globalmedia/category-media 等大集合会吞掉 snssdk.com 等国内域名 → 排后面匹配不到，抖音评论区会走代理加载不出。规整后的层序：lan/ads → 自定义 suffix → 直连组(apple/cnmedia) → 主题代理组(media/ai/google/ms/social/game/dev) → global 大表 → cn/geoip 兜底。例外:global 有意收 apple.com/mzstatic.com（海外 CDN 更稳），不纠正。
+- 字节基建域必须直连且在「广告拦截」前面 → reject 集误杀 mssdk.bytedance.com（签名）、tnc*.isnssdk.com（配置）、vcs.zijieapi.com（互动接口），globalmedia 又吞走 isnssdk.com → 抖音看不了评论、发不了评论 → 已加 `isnssdk.com / zijieapi.com / bytedance.com` 三条 suffix 直连排在 ads 前（DB 全局规则 2–4 位；模板同步）。
 - `/sub/{token}/ruleset/*` 与订阅本体不共用限流桶（`subRateLimit` 按路径挑 `rulesetLimiter`，30/s·burst 400）→ 客户端冷启动并行拉几十个规则集文件是正常形态，共桶时 privatized 一开就批量 429（ISS-18）。桶键仍是 `RemoteAddr`，CDN 边缘聚合会把多用户折算进一个桶，量级撑不住时先考虑在边缘放行 `/sub/*/ruleset/` 再动这里。大件按 `Accept-Encoding` 协商 gzip（≥64KB、压不出收益回退原文）：clash `direct` 2.27MB→512KB；`.srs` 已压缩、gzip 无效。已在 CF 配边缘缓存：zone ruleset `MPX CDN bypass cache` 里 `sub.shiziyi.top` 且 path 含 `/ruleset/` 的请求 `cache:true`+`edge_ttl 7200`，`MISS→HIT`。注意 Cache Rules 是“可叠加、最后命中 wins”，该条必须排在 `mpx_sub_cache_bypass` 之后，否则被同主机 bypass 冲掉。
 - 节点名里写 `{USERNAME}` → 会被抹成空串，只在订阅名里生效 → 见 [缺口与待定项] 第 3 条。
 - 订阅走明文 HTTP → token 可被链路窃听 → 已接受的代价，换地址用 `/sub/{token}/rotate`。

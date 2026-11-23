@@ -964,7 +964,12 @@ rules:
   - RULE-SET,lancidr,本地直连,no-resolve
   # 二、代理客户端自己的进程,直连,避免绕圈
   - RULE-SET,applications,本地直连
-  # 三、广告与 DNS 劫持域名
+  # 三、字节跳动基建域先直连:reject 集误杀 mssdk/tnc/vcs 等签名配置域,
+  # globalmedia 又会吞走 isnssdk,不直连抖音评论区和发评论都会挂。
+  - DOMAIN-SUFFIX,isnssdk.com,DIRECT
+  - DOMAIN-SUFFIX,zijieapi.com,DIRECT
+  - DOMAIN-SUFFIX,bytedance.com,DIRECT
+  # 四、广告与 DNS 劫持域名
   - RULE-SET,hijacking,广告拦截
   - RULE-SET,reject,广告拦截
   # 四、你自己加的域名(来自原来那份覆写)
