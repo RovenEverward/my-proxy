@@ -22,19 +22,20 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/probeagent"
 )
 
-// probeCmd 是境内常驻探测点的命令组(UC-12):
+// probeCmd 是境内常驻探测点的命令组:探测点现在的唯一职责是 CDN IP
+// 优选(UC-21)。境内活性探测与剔除已在 UC-30 退役。
 //
 //	add     在控制面登记一台探测点,返回一次性接入命令
 //	list    列出全部探测点与在线状态
-//	rm      删除一台探测点(它的判定一并清)
+//	rm      删除一台探测点(它的凭据与历史数据一并清)
 //	rotate  吊销并换发凭据
-//	run     在探测点主机上运行探测循环(接入 + 轮转探测)
+//	run     在探测点主机上运行常驻循环(接入 + CDN 优选任务)
 var probeCmd = &cobra.Command{
 	Use:   "probe",
-	Short: "管理境内探测点(UC-12)",
-	Long: `探测点是境内的一台常驻主机,它替控制面回答「这个节点/端点从大陆
-能不能连上」。登记只发生在控制面上;探测端凭一次性接入命令换正式凭据,
-之后按周期轮流探测每个对象,结果回传控制面,不通的对象可以从订阅里剔除。`,
+	Short: "管理境内探测点",
+	Long: `探测点是境内的一台常驻主机,替控制面做 CDN IP 优选探测。
+登记只发生在控制面上;探测端凭一次性接入命令换正式凭据,之后常驻领
+优选任务、回传结果。`,
 }
 
 var probeAddCmd = &cobra.Command{
@@ -174,7 +175,6 @@ var probeRunFlags struct {
 	join   string
 	fp     string
 	once   bool
-	tick   time.Duration
 }
 
 // probeConfig 是探测端记住的接入信息,与操作者 config.json 分文件:
@@ -277,15 +277,14 @@ func (c *probeHTTP) call(method, path string, body any) ([]byte, error) {
 
 var probeRunCmd = &cobra.Command{
 	Use:   "run",
-	Short: "在境内主机上运行探测循环",
+	Short: "在境内主机上运行常驻循环",
 	Long: `探测端主循环:先用一次性 join token 换正式凭据(只跑一次,之后记住),
-然后按控制面给的周期轮流探测每个对象 —— 一次一个或一小批,不是全量扫。
-境内侧探测本机跑;控制面侧探测由本机请求控制面代探。
+然后常驻向控制面领 CDN 优选任务、回传结果。
 
 凭据存在 ~/.config/mpx/probe.json,与操作者配置互不影响。`,
 	Example: `  mpx probe run --server https://cp.example.com --join <一次性token> --fp <指纹>
   mpx probe run            # 已接入过,直接用记住的凭据
-  mpx probe run --once     # 只探一轮到期对象就退出(调试/手动触发用)`,
+  mpx probe run --once     # 只跑一轮任务就退出(调试用)`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := ensureProbeJoined(probeRunFlags.server, probeRunFlags.join, probeRunFlags.fp)
@@ -296,14 +295,14 @@ var probeRunCmd = &cobra.Command{
 		c := &probeHTTP{server: strings.TrimSuffix(cfg.Server, "/"), token: cfg.Token, http: &http.Client{Transport: tr}}
 		call := func(method, path string, body any) ([]byte, error) { return c.call(method, path, body) }
 		logf := func(format string, args ...any) {
-			fmt.Fprintf(os.Stderr, "探测警告: "+format+"\n", args...)
+			fmt.Fprintf(os.Stderr, "警告: "+format+"\n", args...)
 		}
 		if probeRunFlags.once {
 			return probeagent.Tick(cmd.Context(), call, logf)
 		}
-		fmt.Printf("探测点已就绪,连的是 %s。按控制面周期轮转探测,Ctrl-C 结束。\n", cfg.Server)
+		fmt.Printf("探测点已就绪,连的是 %s。常驻执行 CDN 优选任务,Ctrl-C 结束。\n", cfg.Server)
 		probeagent.Loop(cmd.Context(), call, logf, func(err error) {
-			fmt.Fprintf(os.Stderr, "这一轮探测失败: %v\n", err)
+			fmt.Fprintf(os.Stderr, "这一轮任务失败: %v\n", err)
 		})
 		return nil
 	},
@@ -376,7 +375,6 @@ func init() {
 	probeRunCmd.Flags().StringVar(&probeRunFlags.server, "server", "", "控制面地址(首次接入必填)")
 	probeRunCmd.Flags().StringVar(&probeRunFlags.join, "join", "", "一次性接入 token(mpx probe add 给的)")
 	probeRunCmd.Flags().StringVar(&probeRunFlags.fp, "fp", "", "控制面证书指纹(https 必填)")
-	probeRunCmd.Flags().BoolVar(&probeRunFlags.once, "once", false, "只探一轮到期对象就退出")
-	probeRunCmd.Flags().DurationVar(&probeRunFlags.tick, "tick", time.Minute, "调度间隔(默认 1 分钟)")
+	probeRunCmd.Flags().BoolVar(&probeRunFlags.once, "once", false, "只跑一轮任务就退出(调试用)")
 	probeCmd.AddCommand(probeAddCmd, probeListCmd, probeRmCmd, probeRotateCmd, probeRunCmd)
 }

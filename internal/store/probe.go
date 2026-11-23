@@ -2,12 +2,10 @@ package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
-	"github.com/RovenEverward/my-proxy/internal/reach"
 )
 
 // ---- 探测点(UC-12) ----
@@ -170,158 +168,16 @@ func (s *Store) DeleteProbePoint(id int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	// 顺手清掉它作为探测来源留下的历史数据(UC-30 后表不再读写,
+	// 但删除探测点的语义不变)。
 	if _, err := tx.Exec(`DELETE FROM reach_source_checks WHERE source_id=?`, fmt.Sprintf("probe:%d", id)); err != nil {
 		return err
 	}
-	if err := deleteSubjectMetrics(tx, "WHERE source_id=?", fmt.Sprintf("probe:%d", id)); err != nil {
+	if _, err := tx.Exec(`DELETE FROM reach_source_samples WHERE source_id=?`, fmt.Sprintf("probe:%d", id)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM bandwidth_samples WHERE source_id=?`, fmt.Sprintf("probe:%d", id)); err != nil {
 		return err
 	}
 	return tx.Commit()
-}
-
-// ---- 对象级触达存档(UC-12) ----
-
-// SaveSubjectCheck 覆盖一个对象的触达存档;同一对象后来写的覆盖先写的。
-func (s *Store) SaveSubjectCheck(c model.ReachSubjectCheck) error {
-	if c.SubjectKey == "" || c.CheckedAt.IsZero() || !model.ReachVerdicts[c.Verdict] {
-		return fmt.Errorf("触达存档缺少对象、时间或判定")
-	}
-	if len(c.Report) > reachReportLimit || !json.Valid(c.Report) {
-		return fmt.Errorf("触达检查报告无效或超过 256 KiB")
-	}
-	_, err := s.db.Exec(`INSERT INTO reach_subject_checks(subject_key,checked_at,verdict,report) VALUES(?,?,?,?)
- ON CONFLICT(subject_key) DO UPDATE SET checked_at=excluded.checked_at,verdict=excluded.verdict,report=excluded.report`,
-		string(c.SubjectKey), c.CheckedAt.Unix(), c.Verdict, string(c.Report))
-	return err
-}
-
-// ListSubjectChecks 返回全部对象级存档。
-func (s *Store) ListSubjectChecks() ([]model.ReachSubjectCheck, error) {
-	rows, err := s.db.Query(`SELECT subject_key,checked_at,verdict,report FROM reach_subject_checks`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.ReachSubjectCheck
-	for rows.Next() {
-		var c model.ReachSubjectCheck
-		var at int64
-		var key, raw string
-		if err := rows.Scan(&key, &at, &c.Verdict, &raw); err != nil {
-			return nil, err
-		}
-		c.SubjectKey = model.ProbeSubjectKey(key)
-		c.CheckedAt = time.Unix(at, 0).UTC()
-		c.Report = json.RawMessage(raw)
-		out = append(out, c)
-	}
-	return out, rows.Err()
-}
-
-// DeleteSubjectResults 清掉一个对象的存档与来源结果(节点删除时调用)。
-func (s *Store) DeleteSubjectResults(key model.ProbeSubjectKey) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, q := range []string{
-		`DELETE FROM reach_subject_checks WHERE subject_key=?`,
-		`DELETE FROM reach_source_checks WHERE subject_key=?`,
-	} {
-		if _, err := tx.Exec(q, string(key)); err != nil {
-			return err
-		}
-	}
-	if err := deleteSubjectMetrics(tx, "WHERE subject_key=?", string(key)); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-// DeleteSubjectResultsByPrefix 按身份前缀清存档与来源结果(来源删除时清掉
-// "s:<id>:%" 的全部端点)。
-func (s *Store) DeleteSubjectResultsByPrefix(prefix string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, q := range []string{
-		`DELETE FROM reach_subject_checks WHERE subject_key LIKE ?`,
-		`DELETE FROM reach_source_checks WHERE subject_key LIKE ?`,
-	} {
-		if _, err := tx.Exec(q, prefix+"%"); err != nil {
-			return err
-		}
-	}
-	if err := deleteSubjectMetrics(tx, "WHERE subject_key LIKE ?", prefix+"%"); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-// ---- (对象 × 来源)原始探测结果 ----
-
-// SaveSourceCheck 覆盖一条(对象,来源)的探测结果;summary 与 results 由
-// 上层按 internal/reach 线形编码成 JSON,这里只存不解析。
-func (s *Store) SaveSourceCheck(subjectKey model.ProbeSubjectKey, sourceID, scope string, checkedAt time.Time, summary, results json.RawMessage) error {
-	if subjectKey == "" || sourceID == "" || checkedAt.IsZero() {
-		return fmt.Errorf("触达来源结果缺少对象、来源或时间")
-	}
-	if len(summary) > reachReportLimit || !json.Valid(summary) {
-		return fmt.Errorf("触达来源摘要无效或超过 256 KiB")
-	}
-	if len(results) > reachReportLimit || (len(results) > 0 && !json.Valid(results)) {
-		return fmt.Errorf("触达来源明细无效或超过 256 KiB")
-	}
-	var res sql.NullString
-	if len(results) > 0 {
-		res = sql.NullString{String: string(results), Valid: true}
-	}
-	if _, err := s.db.Exec(`INSERT INTO reach_source_checks(subject_key,source_id,scope,checked_at,summary,results) VALUES(?,?,?,?,?,?)
- ON CONFLICT(subject_key,source_id) DO UPDATE SET scope=excluded.scope,checked_at=excluded.checked_at,summary=excluded.summary,results=excluded.results`,
-		string(subjectKey), sourceID, scope, checkedAt.Unix(), string(summary), res); err != nil {
-		return err
-	}
-	// UC-20:同一摘要留成稳定度样本,reach_source_checks 仍是判定的最新行。
-	var sum reach.SourceSummary
-	if err := json.Unmarshal(summary, &sum); err != nil {
-		// 摘要本就校验过 json.Valid;坏形状时样本不追加但不阻断存档。
-		return nil
-	}
-	return s.AppendSourceSample(subjectKey, sourceID, scope, checkedAt, sum)
-}
-
-// ListSourceChecks 返回某对象的全部来源结果(subject 空串返回全表)。
-func (s *Store) ListSourceChecks(subject model.ProbeSubjectKey) ([]model.ReachSourceCheck, error) {
-	query := `SELECT subject_key,source_id,scope,checked_at,summary,results FROM reach_source_checks`
-	args := []any{}
-	if subject != "" {
-		query += ` WHERE subject_key=?`
-		args = append(args, string(subject))
-	}
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.ReachSourceCheck
-	for rows.Next() {
-		var c model.ReachSourceCheck
-		var at int64
-		var key, sum string
-		var results sql.NullString
-		if err := rows.Scan(&key, &c.SourceID, &c.Scope, &at, &sum, &results); err != nil {
-			return nil, err
-		}
-		c.SubjectKey = model.ProbeSubjectKey(key)
-		c.CheckedAt = time.Unix(at, 0).UTC()
-		c.Summary = json.RawMessage(sum)
-		if results.Valid {
-			c.Results = json.RawMessage(results.String)
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }

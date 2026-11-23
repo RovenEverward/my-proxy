@@ -37,20 +37,11 @@ const authMasterKey ctxKey = 3
 
 type ctxKey int
 
-// probeAllowed 是探测点凭据够得着的接口(UC-12):拉目标、回结果、让控制面
-// 代探。管理面其余接口它一律不可见。
+// probeAllowed 是探测点凭据够得着的接口:UC-30 后只剩 CDN 优选 ——
+// 领名单与回结果走同一对凭据可达接口。管理面其余接口它一律不可见。
 var probeAllowed = map[string]bool{
-	"GET /api/reach/targets":  true,
-	"POST /api/reach/results": true,
-	"POST /api/reach/probe":   true,
-	// UC-21:CDN 优选,探测点领名单与回结果走同一对凭据可达接口。
 	"GET /api/cdn-optimize/targets":  true,
 	"POST /api/cdn-optimize/results": true,
-	// UC-23:CDN 入口自动测速。targets 返回端点凭据 —— 探测点本就需要
-	// 靠它起 sing-box 实测,权界与 reach targets 下发目标凭据一致(探
-	// 测点是操作者自有资产,凭据丢了本身就意味着内网失守)。
-	"GET /api/bandwidth/targets":  true,
-	"POST /api/bandwidth/results": true,
 }
 
 // probeTouchEvery 是记"最近上报"的最小间隔:每个请求都写一次库没有意义。

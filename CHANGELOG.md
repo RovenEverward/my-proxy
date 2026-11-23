@@ -11,6 +11,13 @@
 - 订阅镜像(UC-10):在名单内一台节点上开放 /sub 入口,订阅地址可不止控制面一个 IP。节点侧是核心自带的 TCP 转发(dokodemo-door / sing-box direct),不装 MPX 组件;内容与鉴权以控制面为唯一真相。新增 `mpx mirror add|list|set|rm`,API `GET/POST/PUT/DELETE /api/mirrors`,`mpx serve --sub-addr` 可开一个只路由 /sub 的专用监听(节点镜像指到它时 /api 不出现在镜像端口)。订阅页与用户链接列出"镜像 · <节点>"入口。
 - 控制面迁移后,`mpx mirror set <id> --upstream <新控制面>:<端口>` 让既有镜像跟随新控制面。
 
+### 兼容性(破坏性变更,UC-30)
+- **退役:境内活性探测与自动剔除(UC-06/12/18/25)、境内指标与带宽测量(UC-20/23)**。删除 `GET /api/reach`、`GET /api/reach/last`、`GET /api/reach/targets`、`POST /api/reach/probe`、`POST /api/reach/results`、`PUT /api/reach/keep`、`GET /api/metrics`、`GET /api/bandwidth/endpoint`、`GET /api/bandwidth/targets`、`POST /api/bandwidth/results`;移除 `mpx node check`、`mpx node bandwidth`、`mpx reach` 命令;管理台的境内列、触达判定筛选、测速按钮、剔除开关与保留按钮一并撤下。
+- **探测点职责收窄为 CDN IP 优选**:`/api/probes*`、`mpx probe` 保留,探测端凭据只放 `GET/POST /api/cdn-optimize/*` 两个接口。
+- **数据无损**:`reach_checks`、`reach_subject_checks`、`reach_source_checks`、`reach_source_samples`、`bandwidth_samples` 表保留不再读写,老库升级不受影响;settings 里的 `reach_*`/`bandwidth_test_url` 键停止读取。
+- **订阅输出**:自动剔除标记与带宽后缀消失,只剩「排水」一个结构性剔除;老订阅客户端无影响。
+- 本次破契约经主人显式授权(UC-30),后续版本恢复「API 只增不破」。
+
 ### 兼容性(破坏性变更,UC-26,没有并行期)
 - **退役**:`mpx ui` 本地服务、MPX 桌面程序、`mpx login`/设备密码/`POST /api/connect`/`/api/devices*` 全部移除;旧版 CLI 与旧界面**连不上新版控制面**。
 - **升级顺序**:先在操作机上装新版 `mpx`(`mpx-cli_*` 安装包或一行脚本),再从旧控制面跑 `mpx update apply control`;或者直接在服务器上跑 `deploy/install.sh` 升级。旧库升级后先在服务器上用 `MPX_TOKEN=... mpx admin create` 建管理员账号,再 `mpx connect` 接入。

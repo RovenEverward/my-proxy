@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"fmt"
-
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
 	"github.com/RovenEverward/my-proxy/internal/source"
@@ -63,7 +61,7 @@ type sourcePlanRef struct {
 }
 
 // sourceNodeRef 是外部节点的最小展示字段。Key 是对象身份(UC-12),
-// Excluded 标它当前是否被自动剔除。Name 是清洗后的订阅名(UC-17),
+// Excluded 标它当前是否被剔除(UC-30 后只剩排水)。Name 是清洗后的订阅名(UC-17),
 // RawName 保留上游原名,供界面展开与回溯。
 type sourceNodeRef struct {
 	Name     string `json:"name"`
@@ -96,7 +94,6 @@ func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
 	_ = json.Unmarshal(src.Snapshot, &eps)
 	v.NodeCount = len(eps)
 	v.Nodes = make([]sourceNodeRef, 0, len(eps))
-	excl, _ := s.exclusion() // 读不到设置时当没开:可见性是锦上添花,不能拖垮列表
 	extMeta, _ := s.store.ListExternalMetadata(src.ID)
 	for _, ep := range eps {
 		ep.SourceID = src.ID
@@ -106,7 +103,6 @@ func (s *Server) viewSource(src *model.SubscriptionSource) sourceView {
 			Protocol: render.ProtocolShort(ep),
 			Key:      string(ep.Key()),
 		}
-		ref.Excluded = excl.excluded(ref.Key)
 		v.Nodes = append(v.Nodes, ref)
 	}
 	for _, f := range sourceFormats {
@@ -244,11 +240,6 @@ func (s *Server) handleDeleteSource(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteSource(id); err != nil {
 		s.writeStoreError(w, err, "订阅源")
 		return
-	}
-	// 这个来源名下全部端点的触达存档一并清(UC-12):对象身份长在来源 ID
-	// 上,来源没了,它的判定再留着就只剩误导。
-	if err := s.store.DeleteSubjectResultsByPrefix(fmt.Sprintf("s:%d:", id)); err != nil {
-		s.logger.Warn("清理来源触达存档失败", "source", id, "err", err)
 	}
 	s.invalidateSubCache()
 	w.WriteHeader(http.StatusNoContent)
@@ -481,21 +472,19 @@ func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Reques
 			}
 			nodes = append(nodes, n)
 		}
-		// UC-12/19:剔除行直接读清洗池 —— 池里带着每个对象为什么不在订阅
-		// 里的原因(活性判定或排水),预览不再自己重算一遍探测目标。
-		if excl, err := s.exclusion(); err == nil && excl.on {
-			if pool, err := s.poolEndpointsFor(u, excl); err == nil {
-				for _, pe := range pool.Pool {
-					if !pe.Excluded {
-						continue
-					}
-					nodes = append(nodes, subscriptionPreviewNode{
-						Name: pe.Remark, Protocol: render.ProtocolShort(pe.Endpoint),
-						SourceID: pe.SourceID, SourceName: names[pe.SourceID],
-						Reasons: []string{pe.ExcludeReason}, Excluded: true,
-						Groups: []string{},
-					})
+		// UC-19:剔除行直接读清洗池 —— 池里带着每个对象为什么不在订阅(排水)
+		// 里的原因(目前只有排水),预览不再自己重算一遍。
+		if pool, err := s.poolEndpointsFor(u); err == nil {
+			for _, pe := range pool.Pool {
+				if !pe.Excluded {
+					continue
 				}
+				nodes = append(nodes, subscriptionPreviewNode{
+					Name: pe.Remark, Protocol: render.ProtocolShort(pe.Endpoint),
+					SourceID: pe.SourceID, SourceName: names[pe.SourceID],
+					Reasons: []string{pe.ExcludeReason}, Excluded: true,
+					Groups: []string{},
+				})
 			}
 		}
 	}

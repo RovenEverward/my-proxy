@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/RovenEverward/my-proxy/internal/reach"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -59,7 +58,6 @@ type sourceNodeView struct {
 	RawName  string `json:"raw_name"`
 	Protocol string `json:"protocol"`
 	Key      string `json:"key"`
-	Excluded bool   `json:"excluded"`
 }
 
 // sourceIssue 是快照里被跳过条目的一条说明:位置、显示名与原因。
@@ -67,49 +65,6 @@ type sourceIssue struct {
 	Index  int    `json:"index"`
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
-}
-
-// fetchExtLiveness 拉 /api/reach 的外部端点存档,按 subject_key 索引。
-// 拿失败(旧控制面没这接口、网络抖)时返回空表,活性列显示「未探」,
-// 不阻塞 source show 主表。
-func fetchExtLiveness(cl *Client) map[string]extLivenessRow {
-	out := map[string]extLivenessRow{}
-	raw, err := cl.do("GET", "/api/reach", nil)
-	if err != nil {
-		return out
-	}
-	var body struct {
-		Ext []extLivenessRow `json:"ext"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return out
-	}
-	for _, e := range body.Ext {
-		out[e.SubjectKey] = e
-	}
-	return out
-}
-
-// extLivenessRow 是 reach 存档里一个外部端点的活性摘要(UC-18),
-// 跟 GET /api/reach 的 ext 数组一一对应;source show 按端点 key 对到行。
-type extLivenessRow struct {
-	SubjectKey string              `json:"subject_key"`
-	Verdict    string              `json:"verdict"`
-	Local      reach.SourceSummary `json:"local"`
-	CheckedAt  string              `json:"checked_at"`
-}
-
-// text 是活性单元格:判定 + 境内侧结果 + 探测距今多久;已剔除在调用处补。
-func (r extLivenessRow) text() string {
-	v := reachVerdictText[r.Verdict]
-	if v == "" {
-		v = r.Verdict
-	}
-	s := reachSourceText(r.Local)
-	if t, err := time.Parse(time.RFC3339, r.CheckedAt); err == nil {
-		return fmt.Sprintf("%s · %s · %s前", v, s, humanDuration(time.Since(t)))
-	}
-	return v + " · " + s
 }
 
 // sourceFormat 是某个输出格式下这批节点的兼容结果。
@@ -852,22 +807,13 @@ func printSourceDetail(cl *Client, v *sourceView) error {
 		}
 	}
 	// 成员端点名(UC-17):清洗名 + 上游原名;source meta 的端点名按这两列匹配。
-	// 活性列(UC-18):按端点 key 对到 reach 存档,给出判定、境内侧结果与剔除态。
 	if len(v.Nodes) > 0 {
 		fmt.Println("节点:")
-		liveness := fetchExtLiveness(cl)
 		rows := [][]string{}
 		for _, n := range v.Nodes {
-			lv := "未探"
-			if e, ok := liveness[n.Key]; ok {
-				lv = e.text()
-			}
-			if n.Excluded {
-				lv += " · 已剔除"
-			}
-			rows = append(rows, []string{dash(n.Name), dash(n.RawName), dash(n.Protocol), lv})
+			rows = append(rows, []string{dash(n.Name), dash(n.RawName), dash(n.Protocol)})
 		}
-		if err := writeTable([]string{"清洗名", "上游原名", "协议", "活性"}, rows); err != nil {
+		if err := writeTable([]string{"清洗名", "上游原名", "协议"}, rows); err != nil {
 			return err
 		}
 	}

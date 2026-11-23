@@ -31,7 +31,7 @@ func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use: "pool", Short: "查看清洗池:全部端点的统一视图与剔除原因",
 		Long: `清洗池是订阅装配读数的唯一视图(UC-19):自建与外部端点过同一管线(命名+活性判定)后落在这里。
-剔除不删行 —— 标 Excluded 的端点仍在池里,带着它为什么不在订阅里的原因(活性判定或排水)。`,
+剔除不删行 —— 标 Excluded 的端点仍在池里,带着它为什么不在订阅里的原因(排水)。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := newClient()
@@ -53,7 +53,7 @@ func init() {
 			for _, r := range v.Rows {
 				state := "可用"
 				if r.Excluded {
-					state = "剔除:" + r.ExcludeReason
+					state = "排水:" + r.ExcludeReason
 				}
 				rows = append(rows, []string{
 					r.Name, r.Protocol, r.Origin,
@@ -64,7 +64,7 @@ func init() {
 			if err := writeTable([]string{"名称", "协议", "来源", "地址", "地区", "状态"}, rows); err != nil {
 				return err
 			}
-			fmt.Printf("\n清洗池:共 %d 个端点,订阅实际输出 %d 个,剔除 %d 个\n", v.Total, v.Included, v.Excluded)
+			fmt.Printf("\n清洗池:共 %d 个端点,订阅实际输出 %d 个,排水 %d 个\n", v.Total, v.Included, v.Excluded)
 			return nil
 		},
 	})

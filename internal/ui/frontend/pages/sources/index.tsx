@@ -7,22 +7,18 @@ import { usePageData } from "../../runtime/query";
 import type { Settings, User } from "../../runtime/types";
 import { NODE_TABS, sinceText } from "../../domain/nodes";
 import { errorMessage, readSubscriptionUsers, sourcePath, type SubscriptionSource } from "../../domain/routing";
-import { bandwidthText, metricsMap, stabilityText, type MetricsResponse, type SubjectMetrics } from "../../domain/metrics";
-import { APIError } from "../../runtime/api";
 import { SourceFormatsSummary, SourceGrantsSummary, sourceInterval, SourceStatus } from "./components";
 import { MixedPreviewModal } from "./MixedPreview";
 import { SourceDrawer, type SourceDrawerTab } from "./SourceEditor";
 
-interface SourcesData { sources: SubscriptionSource[]; users: User[]; excludeOn: boolean; metrics?: MetricsResponse | null }
+interface SourcesData { sources: SubscriptionSource[]; users: User[] }
 
 export function SourcesPage() {
   const app = useApp();
   usePageTitle([{ label: "节点", href: "#nodes" }, { label: "外部订阅" }]);
   const page = usePageData<SourcesData>("sources", async read => {
-    const [sources, users, settings, metrics] = await Promise.all([read<SubscriptionSource[]>("/api/sources"), readSubscriptionUsers(read), read<Settings>("/api/settings").catch(() => null),
-      // UC-20:成员行的境内指标;老控制面 404 时按没有处理。
-      read<MetricsResponse>("/api/metrics").catch((error: unknown) => error instanceof APIError && error.status === 404 ? null : Promise.reject(error))]);
-    return { sources, users, excludeOn: !!settings?.reach_exclude, metrics };
+    const [sources, users] = await Promise.all([read<SubscriptionSource[]>("/api/sources"), readSubscriptionUsers(read)]);
+    return { sources, users };
   });
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   const [refreshing, setRefreshing] = useState<Set<number>>(() => new Set());
@@ -52,17 +48,6 @@ export function SourcesPage() {
     });
   }
 
-  // UC-12:单个外部端点的保留豁免。成员行只在剔除生效时给操作位。
-  async function keepMember(member: { name: string; key?: string; kept?: boolean }) {
-    if (!member.key) return;
-    const next = !member.kept;
-    try {
-      await write("PUT", "/api/reach/keep", { subject: member.key, keep: next });
-      app.toast(next ? `${member.name} 已保留：不受剔除影响` : `${member.name} 撤销保留：按判定剔除`);
-      await page.refresh();
-    } catch (reason) { app.toast(errorMessage(reason), true); }
-  }
-
   async function refreshSource(source: SubscriptionSource) {
     if (refreshing.has(source.id)) return;
     setRefreshing(previous => new Set(previous).add(source.id));
@@ -77,7 +62,6 @@ export function SourcesPage() {
     }
   }
 
-  const metricBy = metricsMap(page.data?.metrics);
   const canCreate = app.can("POST", "/api/sources");
 
   return <>
@@ -176,13 +160,13 @@ export function SourcesPage() {
                       <td>
                         <span className="src-member-name" title={member.raw_name && member.raw_name !== member.name ? `上游原名：${member.raw_name}` : undefined}><FlagText>{member.name}</FlagText></span>
                         <span className="tag src-member-proto-m">{member.protocol}</span>
-                        {member.key && metricBy.get(member.key) && <div className="sub src-member-metric" data-act="member-metric">{memberMetric(metricBy.get(member.key)!)}</div>}
+
                       </td>
-                      <td>{member.excluded ? <span className="tag x-tag">已剔除</span> : member.kept ? <span className="tag k-tag">保留中</span> : <span className="sub">只读外部节点</span>}</td>
+                      <td><span className="sub">只读外部节点</span></td>
                       <td className="hide-m" />
                       <td className="hide-m"><span className="tag">{member.protocol}</span></td>
                       <td className="num sub hide-m" />
-                      <td className="num">{member.key && <span className="row-btns">{page.data?.excludeOn && app.can("PUT", "/api/reach/keep") && <Button size="sm" data-act="reach-keep-ext" data-key={member.key} onClick={event => { event.stopPropagation(); void keepMember(member); }}>{member.kept ? "撤销保留" : "保留"}</Button>}</span>}</td>
+                      <td className="num" />
                     </tr>
                   )) : (
                     <tr className="src-member">
@@ -199,9 +183,3 @@ export function SourcesPage() {
   </>;
 }
 
-// memberMetric 是外部端点成员行的指标文案:稳定度 + 带宽。
-function memberMetric(m: SubjectMetrics): string {
-  const st = stabilityText(m.stability);
-  const bt = bandwidthText(m.bandwidth);
-  return `境内 ${st.text} · ${bt.text}${m.bandwidth.measured_at ? ` · ${sinceText(m.bandwidth.measured_at)}` : ""}`;
-}

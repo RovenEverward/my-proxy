@@ -321,18 +321,13 @@ func inboundOccupancy(users []model.User, inbounds []model.Inbound, now time.Tim
 // 订阅是「所有节点合成一份」,所以这里把全部节点都过一遍;入站授权和状态由
 // render.Resolve 与 placeholder 逻辑负责。
 func (s *Server) endpointsFor(user *model.User) ([]render.Endpoint, error) {
-	excl, err := s.exclusion()
-	if err != nil {
-		return nil, err
-	}
-	return s.managedEndpointsFor(user, excl)
+	return s.managedEndpointsFor(user)
 }
 
-// managedEndpointsFor 与 endpointsFor 同逻辑,剔除视图由调用方给:
-// subscriptionEndpointsFor 自建与外部共用同一份判定,算一次就够。
-// UC-19:剔除过滤仍在函数内 —— 它的消费方要的就是「可渲染」集合;
-// 清洗池要「含剔除行」的全集,走 resolveManagedEndpoints。
-func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]render.Endpoint, error) {
+// managedEndpointsFor 与 endpointsFor 同逻辑。
+// UC-19:排水过滤仍在函数内 —— 它的消费方要的就是「可渲染」集合;
+// 清洗池要「含剔除(排水)行」的全集,走 resolveManagedEndpoints。
+func (s *Server) managedEndpointsFor(user *model.User) ([]render.Endpoint, error) {
 	if status := user.Status(time.Now()); status != model.StatusActive {
 		return []render.Endpoint{placeholderEndpoint(user, status)}, nil
 	}
@@ -345,10 +340,6 @@ func (s *Server) managedEndpointsFor(user *model.User, excl exclusionState) ([]r
 		// 排水中的节点不再出现在订阅里:已连上的用户会随下一次刷新订阅自然漂
 		// 走,不主动掐线。
 		if rm.Draining {
-			continue
-		}
-		// UC-12:自动剔除同理 —— 判定为不通且未被保留的节点不进订阅。
-		if excl.on && excl.nodes[rm.NodeID] {
 			continue
 		}
 		eps = append(eps, rm.Endpoint)
@@ -367,9 +358,9 @@ type resolvedManaged struct {
 	Draining    bool
 }
 
-// resolveManagedEndpoints 是清洗池的托管端点原始流:不过滤剔除与排水,
+// resolveManagedEndpoints 是清洗池的托管端点原始流:不过滤排水,
 // 产出 (Endpoint, NodeID, Draining) 让调用方按自己的视图筛。UC-12 的
-// 排水与剔除只是「这个端点为什么不在订阅里」的两种原因,池里都要留行。
+// 排水只是「这个端点为什么不在订阅里」的原因,池里要留行。
 func (s *Server) resolveManagedEndpoints(user *model.User) ([]resolvedManaged, error) {
 	nodes, err := s.store.ListNodes()
 	if err != nil {
