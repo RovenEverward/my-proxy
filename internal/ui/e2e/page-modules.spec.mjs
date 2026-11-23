@@ -28,7 +28,6 @@ test.afterAll(async () => { await env?.stop(); });
 // HTTP 404 is an existing optional-API result, not an uncaught script error.
 // Keep these exact cases in the report, so an unexpected 404 remains a failure.
 const optional404 = pathname => pathname === "/api/sources"
-  || pathname === "/api/reach/last"
   || /^\/api\/nodes\/\d+\/diagnostics$/.test(pathname);
 function observeHealth(page) {
   const scriptErrors = [], consoleErrors = [], resourceErrors = [], optionalResponses = [];

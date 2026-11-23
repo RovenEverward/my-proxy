@@ -73,22 +73,9 @@ type Settings struct {
 	// 客户端直连上游,"privatized" 由控制面镜像、客户端改从控制面取。
 	RulesetMode string `json:"ruleset_mode"`
 
-	// ReachExclude 开启后,触达判定为 blocked / down 且未过期的对象不再进入
-	// 订阅输出(UC-12)。默认关闭;关闭时订阅行为与开启前逐字节一致。
-	ReachExclude bool `json:"reach_exclude"`
-	// ReachIntervalMinutes 是触达检查的探测周期,单位分钟;0 取默认值。
-	ReachIntervalMinutes int `json:"reach_interval_minutes"`
-	// ReachKeeps 是按对象身份的剔除豁免名单:键为 ProbeSubjectKey,值为真
-	// 表示该对象不受自动剔除影响。
-	ReachKeeps map[string]bool `json:"reach_keeps,omitempty"`
-
 	// CDNOptimize 是 UC-21 CDN IP 优选总开关:开了探测点才领
 	// cdn-optimize 任务、控制面才把优选 IP 落成 Host。
 	CDNOptimize bool `json:"cdn_optimize"`
-
-	// BandwidthTestURL 是带宽测量(UC-20)的测速下载地址;空值由测量侧
-	// 用内置默认(cloudflare speed 定量下载)。
-	BandwidthTestURL string `json:"bandwidth_test_url"`
 
 	// ACMEDomain 是网页管理台的公网域名(如 cp.example.net,UC-26)。空串
 	// 表示未配 —— 管理台没有受信证书,等于不公网可用。
@@ -107,17 +94,6 @@ type Settings struct {
 	// 受信),默认 false。切换 staging/正式会废弃已签证书重签:staging 证书
 	// 浏览器不认,留着反而比没有更糟。
 	ACMEStaging bool `json:"acme_staging"`
-}
-
-// DefaultReachIntervalMinutes 是探测周期的默认值。
-const DefaultReachIntervalMinutes = 60
-
-// ReachInterval 返回生效的探测周期(分钟)。
-func (s *Settings) ReachInterval() int {
-	if s == nil || s.ReachIntervalMinutes <= 0 {
-		return DefaultReachIntervalMinutes
-	}
-	return s.ReachIntervalMinutes
 }
 
 // RulesetModePrivatized 是设置里「规则集由控制面镜像」的取值。

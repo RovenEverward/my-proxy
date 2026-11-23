@@ -102,8 +102,8 @@ type Server struct {
 	backoff   BackoffOps
 	updates   UpdateSource
 	// acme 是 UC-26 的 ACME 证书管理器;nil 时签发类接口 503、只读接口照常。
-	acme      *acme.Manager
-	dbPath    string
+	acme   *acme.Manager
+	dbPath string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
 	updateDir string
@@ -131,11 +131,6 @@ type Server struct {
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
 	// 全清它(见 invalidateSubCache),所以不会把过期内容发出去。
 	subCache subCache
-
-	// orphanLast/orphanMu 是孤儿指标清理的节流(UC-20):探测端每轮都会
-	// 拉 /api/reach/targets,顺带清一次即可,不需要单独周期。
-	orphanMu   sync.Mutex
-	orphanLast time.Time
 
 	// templateHashCache 缓存「输入指纹 → 渲染出的节点模板哈希」(ISS-04):
 	// 指纹由节点+入站+镜像算出,输入变指纹变,不需要主动失效。
@@ -174,14 +169,14 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		logger = slog.Default()
 	}
 	s := &Server{
-		store:      st,
-		token:      token,
-		logger:     logger,
-		mux:        http.NewServeMux(),
+		store:          st,
+		token:          token,
+		logger:         logger,
+		mux:            http.NewServeMux(),
 		subLimiter:     newSubLimiter(),
 		rulesetLimiter: newRulesetLimiter(),
 		apiLimiter:     newAPILimiter(),
-		adminLogin: newLoginGuard(),
+		adminLogin:     newLoginGuard(),
 	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
@@ -261,8 +256,6 @@ func (s *Server) routes() {
 	s.sourceRoutes(api)
 	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
-	s.reachRoutes(api)
-	s.metricRoutes(api)
 	s.probeRoutes(api)
 	s.qualityRoutes(api)
 	s.cdnRoutes(api)

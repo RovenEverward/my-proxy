@@ -163,7 +163,8 @@ func xrayTemplateOutbounds(v any) ([]string, error) {
 
 // xrayNode 把一个端点渲染成 xray 的 outbound。
 // XrayOutbound 把单个端点渲染成 xray 客户端 outbound。
-// bwtest 起外部 xray 二进制测速(xhttp 这类 xray 专有传输 sing-box 说不出)
+// bwtest 已随 UC-30 退役;xray 专有传输(xhttp 这类 sing-box 说不出的)
+// 仍由这里渲染,注释留着说明历史结构。
 // 与将来任何 xray 客户端渲染都走这一个实现。
 func XrayOutbound(ep Endpoint, tag string) (map[string]any, error) {
 	return xrayNode(ep, tag)

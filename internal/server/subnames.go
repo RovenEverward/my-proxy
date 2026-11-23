@@ -60,15 +60,6 @@ func (s *Server) subscriptionNames() (map[subNameKey]subName, error) {
 		auto[i] = ep.AutoRemark
 	}
 	eps = render.DedupeRemarks(render.AddProtocolSuffix(eps))
-	// 订阅端点名归一化处已加过带宽后缀 —— 这里只复现同一条流水线,
-	// 界面看到的 SubName 与客户端名字保持逐字一致。
-	if bw, err := s.store.LatestBandwidthViews(); err == nil {
-		for i := range eps {
-			if v := bandwidthOf(eps[i], bw); v != "" {
-				eps[i].Remark += " · " + v
-			}
-		}
-	}
 	out := make(map[subNameKey]subName, len(eps))
 	for i, ep := range eps {
 		out[subNameKey{ep.InboundID, ep.HostID}] = subName{name: ep.Remark, auto: auto[i]}

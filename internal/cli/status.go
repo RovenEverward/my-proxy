@@ -103,7 +103,7 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 }
 
 // probeText 汇总境内探测点状态。没登记过返回 "-";全在线时写"N 台在线",
-// 有掉线的单独标出来——自动剔除依赖它们一直在,掉了得显眼。
+// 有掉线的单独标出来——CDN 优选靠它们常驻,掉了得显眼。
 func probeText(st model.ControlStatus, now time.Time) string {
 	if st.ProbeTotal == 0 {
 		return "-"
