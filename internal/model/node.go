@@ -252,8 +252,7 @@ type CertificateInfo struct {
 // 失败是一次有结果的观察,Reachable=false 会写在 Status 里。
 type NodeView struct {
 	Node
-	Status       *NodeStatus        `json:"status"`
-	Capabilities []CapabilityResult `json:"capabilities"`
+	Status *NodeStatus `json:"status"`
 	// Display 是只读的显示名(旗帜 + 城市/国家 + 字母),由节点元数据拼出;没有地区时为空。
 	Display string `json:"display,omitempty"`
 }

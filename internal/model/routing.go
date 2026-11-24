@@ -153,10 +153,9 @@ type ProxyGroup struct {
 	Name         string    `json:"name"`
 	Icon         string    `json:"icon,omitempty"`
 	Mode         GroupMode `json:"mode"`
-	Regions      []string  `json:"regions,omitempty"`      // 国家码,任一
-	Protocols    []string  `json:"protocols,omitempty"`    // 协议短名(与订阅名后缀一致,如 Reality、Hy2),任一
-	Capabilities []string  `json:"capabilities,omitempty"` // 能力检测,全部通过
-	Tags         []string  `json:"tags,omitempty"`         // 节点/入口标签,任一
+	Regions   []string  `json:"regions,omitempty"`   // 国家码,任一
+	Protocols []string  `json:"protocols,omitempty"` // 协议短名(与订阅名后缀一致,如 Reality、Hy2),任一
+	Tags      []string  `json:"tags,omitempty"`      // 节点/入口标签,任一
 	TestURL      string    `json:"test_url,omitempty"`
 	Interval     int       `json:"interval,omitempty"` // 秒
 }
@@ -209,11 +208,6 @@ func (g ProxyGroup) Validate() error {
 			return fmt.Errorf("未知协议 %q(可选 %s)", p, strings.Join(ProtocolShortNames, " / "))
 		}
 	}
-	for _, c := range g.Capabilities {
-		if !ValidCapabilityTarget(c) {
-			return fmt.Errorf("能力条件只能是 egress / youtube / netflix")
-		}
-	}
 	for _, t := range g.Tags {
 		if !tagSlug.MatchString(t) {
 			return fmt.Errorf("无效标签 %q", t)
@@ -233,24 +227,18 @@ var ProtocolShortNames = []string{"Reality", "Hy2", "TUIC", "SS", "WG", "WS", "g
 
 // GroupCandidate 是判断策略组成员需要的入口属性。
 type GroupCandidate struct {
-	Region       string
-	Protocol     string // 协议短名,见 render.ProtocolShort
-	Tags         []string
-	Capabilities map[string]bool // 已稳定判定为可用的能力
+	Region   string
+	Protocol string // 协议短名,见 render.ProtocolShort
+	Tags     []string
 }
 
-// Admits 判断一个入口是否进组:各类条件之间同时满足,类内任一(能力为全部)。
+// Admits 判断一个入口是否进组:各类条件之间同时满足,类内任一。
 func (g ProxyGroup) Admits(c GroupCandidate) bool {
 	if len(g.Regions) > 0 && !containsString(g.Regions, c.Region) {
 		return false
 	}
 	if len(g.Protocols) > 0 && !containsString(g.Protocols, c.Protocol) {
 		return false
-	}
-	for _, cap := range g.Capabilities {
-		if !c.Capabilities[cap] {
-			return false
-		}
 	}
 	if len(g.Tags) == 0 {
 		return true

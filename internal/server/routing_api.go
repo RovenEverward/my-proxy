@@ -369,17 +369,16 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 type previewEntry struct {
-	NodeID       int64    `json:"node_id"`
-	SourceID     int64    `json:"source_id,omitempty"`
-	InboundID    int64    `json:"inbound_id"`
-	HostID       int64    `json:"host_id"`
-	Name         string   `json:"name"`
-	Protocol     string   `json:"protocol"`
-	Region       string   `json:"region,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Admitted     bool     `json:"admitted"`
-	Reasons      []string `json:"reasons,omitempty"`
+	NodeID    int64    `json:"node_id"`
+	SourceID  int64    `json:"source_id,omitempty"`
+	InboundID int64    `json:"inbound_id"`
+	HostID    int64    `json:"host_id"`
+	Name      string   `json:"name"`
+	Protocol  string   `json:"protocol"`
+	Region    string   `json:"region,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Admitted  bool     `json:"admitted"`
+	Reasons   []string `json:"reasons,omitempty"`
 }
 
 // handlePreviewGroup 给一个草稿策略组,返回全部入口各自进不进组、为什么。
@@ -422,10 +421,7 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// 能力结果只在有能力条件时才查;预览总是带上,方便界面显示。
-	probe := g
-	probe.Capabilities = model.CapabilityTargets
-	cands, err := s.groupCandidates(eps, []model.ProxyGroup{probe})
+	cands, err := s.groupCandidates(eps, []model.ProxyGroup{g})
 	if err != nil {
 		s.writeStoreError(w, err, "入口")
 		return
@@ -453,21 +449,11 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 		if !model.OriginAllowed(origins, ep.SourceID) {
 			e.Reasons = append(e.Reasons, "来源不符")
 		}
-		for _, t := range model.CapabilityTargets {
-			if c.Capabilities[t] {
-				e.Capabilities = append(e.Capabilities, t)
-			}
-		}
 		if len(g.Regions) > 0 && !contains(g.Regions, c.Region) {
 			e.Reasons = append(e.Reasons, "地区不符")
 		}
 		if len(g.Protocols) > 0 && !contains(g.Protocols, c.Protocol) {
 			e.Reasons = append(e.Reasons, "协议不符")
-		}
-		for _, cap := range g.Capabilities {
-			if !c.Capabilities[cap] {
-				e.Reasons = append(e.Reasons, cap+" 检测未通过")
-			}
 		}
 		if len(g.Tags) > 0 && !anyIn(g.Tags, c.Tags) {
 			e.Reasons = append(e.Reasons, "没有所选标签")

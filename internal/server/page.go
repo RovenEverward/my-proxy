@@ -31,9 +31,8 @@ type subPageData struct {
 	Token      string
 	// Rotated 非空表示刚换过地址,页面上要把新地址亮出来 —— 这一次渲染是用户
 	// 保存新地址的唯一机会。
-	Capabilities []subCapability
-	Rotated      string
-	Links        []subPageLink
+	Rotated string
+	Links   []subPageLink
 	// QRSVG 是 Links 第一条地址的二维码,在服务端画成内联 SVG,页面不依赖外部脚本。
 	QRSVG  template.HTML
 	QRName string
@@ -77,13 +76,6 @@ func (s *Server) serveSubPage(w http.ResponseWriter, r *http.Request, user *mode
 	// 用户在哪台节点能通就用哪个;镜像不可用时页面仍能渲染,只是入口会 404。
 	for _, e := range s.mirrorEndpoints() {
 		data.Links = append(data.Links, subPageLink{Name: "镜像 · " + e.Name, URL: e.Endpoint + "/sub/" + user.SubToken})
-	}
-
-	var err error
-	data.Capabilities, err = s.subscriberCapabilities(user, now)
-	if err != nil {
-		s.writeStoreError(w, err, "节点能力")
-		return
 	}
 
 	if len(data.Links) > 0 {
@@ -339,13 +331,6 @@ button.warn:hover { background: var(--bad); color: #fff; }
 {{if .QRSVG}}<section class="card qr">
 {{.QRSVG}}
 <div><p class="eyebrow">扫码导入</p><p class="for">「{{.QRName}}」链接</p><code>{{(index .Links 0).URL}}</code><p class="muted">用手机客户端扫描,导入的就是上面列表里的第一条。</p></div>
-</section>{{end}}
-
-{{if .Capabilities}}<section class="card">
-<h2>节点能力</h2>
-<p class="muted" style="margin:0 0 8px">结果来自指定入口的代理出口。YouTube 表示连通；Netflix 表示目录检测，不能保证登录播放。过期或变化的结果显示未知。</p>
-{{range .Capabilities}}<details><summary>{{.Entrance}} · {{.Target}} · {{.Status}}{{if .Region}} · {{.Region}}{{end}}</summary>
-<p>{{if .ExitIP}}出口 IP:{{.ExitIP}}<br>{{end}}检测时间:{{.Checked}}<br>有效至:{{.Expires}}<br>检测位置:{{.Location}}{{if .Reason}}<br>{{.Reason}}{{end}}</p></details>{{end}}
 </section>{{end}}
 
 <section class="card danger">

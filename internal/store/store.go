@@ -340,9 +340,6 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_traffic_samples_user ON traffic_samples(username, id)`); err != nil {
 		return err
 	}
-	if err := s.migrateCapabilities(); err != nil {
-		return err
-	}
 	if err := s.migrateMetadata(); err != nil {
 		return err
 	}
@@ -370,9 +367,6 @@ func (s *Store) migrate() error {
 	if err := s.dropLegacyDevice(); err != nil {
 		return err
 	}
-	if err := s.migrateDiagnostics(); err != nil {
-		return err
-	}
 	if err := s.migrateNodePending(); err != nil {
 		return err
 	}
@@ -382,24 +376,8 @@ func (s *Store) migrate() error {
 	if err := s.migrateJobs(); err != nil {
 		return err
 	}
-	if err := s.migrateReach(); err != nil {
-		return err
-	}
-	// UC-12 探测点与对象级触达存档;旧 reach_checks 在这里搬进新表。
-	if err := s.migrateProbes(); err != nil {
-		return err
-	}
-	if err := s.migrateQuality(); err != nil {
-		return err
-	}
-	// UC-17 外部端点清洗层与降级探测存档。
+	// UC-17 外部端点清洗层。
 	if err := s.migrateExternal(); err != nil {
-		return err
-	}
-	if err := s.migrateCDN(); err != nil {
-		return err
-	}
-	if err := s.migrateMetrics(); err != nil {
 		return err
 	}
 	// 套餐迁移放最后:它要读节点元数据与入站,且必须在其它表都建好之后。

@@ -26,7 +26,7 @@ func TestSourceRestartResumesDueRefresh(t *testing.T) {
 	defer upstream.Close()
 	start := func() func() {
 		ctx, cancel := context.WithCancel(context.Background())
-		cmd := exec.CommandContext(ctx, e.mpx, "serve", "--addr", fmt.Sprintf("127.0.0.1:%d", port), "--db", db, "--token", e.token, "--auto-locate=false", "--interval", "1h")
+		cmd := exec.CommandContext(ctx, e.mpx, "serve", "--addr", fmt.Sprintf("127.0.0.1:%d", port), "--db", db, "--token", e.token, "--interval", "1h")
 		cmd.Env = append(os.Environ(), "HOME="+e.home, "MPX_AUTO_LOCATE=0", "MPX_SERVER=", "MPX_TOKEN=")
 		log, err := os.CreateTemp(t.TempDir(), "serve-*.log")
 		if err != nil {

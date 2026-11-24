@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,27 +14,6 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
 )
-
-// fakeExtProber 回放安排好的降级探测报告;address → report。
-type fakeExtProber struct {
-	rep map[string]model.QualityReport
-}
-
-func (f *fakeExtProber) ProbeExternal(_ context.Context, address, _, _ string) model.QualityReport {
-	if r, ok := f.rep[address]; ok {
-		return r
-	}
-	return model.QualityReport{Error: "没安排", Steps: []model.QualityStep{{Name: "resolve", Status: "failed", Reason: "没安排"}}}
-}
-
-// extReport 拼一份 fake 探测报告。
-func extReport(ip, cc, city string, score int) model.QualityReport {
-	return model.QualityReport{
-		EgressIP: ip, Region: cc, CityEn: city, City: model.CityZh(city),
-		Flags: map[string]bool{}, Score: score,
-		Steps: []model.QualityStep{{Name: "resolve", Status: "ok"}, {Name: "ipwho.is", Status: "ok"}},
-	}
-}
 
 // seedExternalSource 建一个来源并直接写入快照(不经网络刷新):
 // 端点是手写的小 JSON,SourceKey 用短串,测试只关心键的稳定性。
@@ -110,126 +88,6 @@ func subNames(t *testing.T, e *env, token string) []string {
 		}
 	}
 	return names
-}
-
-func TestProbeExternalQuality(t *testing.T) {
-	e := newEnv(t)
-	e.s.extProber = &fakeExtProber{rep: map[string]model.QualityReport{
-		"jp.example.test":   extReport("1.2.3.4", "JP", "Tokyo", 90),
-		"fail.example.test": {Error: "域名解析失败", Steps: []model.QualityStep{{Name: "resolve", Status: "failed", Reason: "域名解析失败"}}},
-	}}
-	src := seedExternalSource(t, e, "星空", []render.Endpoint{
-		extEP("k1", "日本 01", "jp.example.test"),
-		extEP("k2", "坏域名", "fail.example.test"),
-	})
-	code, raw := e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/k1/quality", src.ID), nil)
-	if code != 200 {
-		t.Fatalf("probe k1: %d %s", code, raw)
-	}
-	var q model.ExternalQuality
-	json.Unmarshal(raw, &q)
-	if q.Verdict != "ok" || q.Score != 90 {
-		t.Fatalf("k1: %+v", q)
-	}
-	code, raw = e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/k2/quality", src.ID), nil)
-	if code != 200 {
-		t.Fatalf("probe k2: %d %s", code, raw)
-	}
-	json.Unmarshal(raw, &q)
-	if q.Verdict != "untested" {
-		t.Fatalf("k2 应 untested: %+v", q)
-	}
-	// 单点与列表查询
-	code, _ = e.api("GET", fmt.Sprintf("/api/sources/%d/endpoints/k1/quality", src.ID), nil)
-	if code != 200 {
-		t.Fatalf("get k1: %d", code)
-	}
-	code, raw = e.api("GET", fmt.Sprintf("/api/sources/%d/quality", src.ID), nil)
-	var list struct {
-		Endpoints []model.ExternalQuality `json:"endpoints"`
-	}
-	json.Unmarshal(raw, &list)
-	if code != 200 || len(list.Endpoints) != 2 {
-		t.Fatalf("list: %d %d", code, len(list.Endpoints))
-	}
-	// 快照里没有的指纹 → 404
-	code, _ = e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/ghost/quality", src.ID), nil)
-	if code != 404 {
-		t.Fatalf("ghost: %d", code)
-	}
-	// 带路由身份前缀的 key → 400(格式错误显式报出,不再静默 404)
-	code, raw = e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/s:%d:k1/quality", src.ID, src.ID), nil)
-	if code != 400 {
-		t.Fatalf("s: 前缀 key 应 400: %d %s", code, raw)
-	}
-}
-
-func TestRegradeIncludesExternal(t *testing.T) {
-	e := newEnv(t)
-	e.s.extProber = &fakeExtProber{rep: map[string]model.QualityReport{
-		"a.example.test": extReport("1.1.1.1", "JP", "Tokyo", 95),
-		"b.example.test": extReport("1.1.1.2", "JP", "Tokyo", 60),
-	}}
-	src := seedExternalSource(t, e, "星空", []render.Endpoint{
-		extEP("ka", "日本 A", "a.example.test"),
-		extEP("kb", "日本 B", "b.example.test"),
-	})
-	// 预先排好的字母:kb=B,ka=C(模拟回填先按顺序排的)。
-	if err := e.st.SaveExternalMetadataBatch([]model.ExternalMetadata{
-		{SourceID: src.ID, SourceKey: "ka", Region: "JP", City: "东京", Letter: "C", Kind: "auto"},
-		{SourceID: src.ID, SourceKey: "kb", Region: "JP", City: "东京", Letter: "B", Kind: "auto"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for _, k := range []string{"ka", "kb"} {
-		code, raw := e.api("POST", fmt.Sprintf("/api/sources/%d/endpoints/%s/quality", src.ID, k), nil)
-		if code != 200 {
-			t.Fatalf("probe %s: %d %s", k, code, raw)
-		}
-	}
-	code, raw := e.api("POST", "/api/regrade", nil)
-	if code != 200 {
-		t.Fatalf("preview: %d %s", code, raw)
-	}
-	var pkt struct {
-		Rows []RegradeRow `json:"rows"`
-	}
-	json.Unmarshal(raw, &pkt)
-	byKey := map[string]RegradeRow{}
-	for _, r := range pkt.Rows {
-		if r.Kind == "external" {
-			byKey[r.SourceKey] = r
-		}
-	}
-	// ka 95 分应拿 A;kb 60 分顺延 B(字母池里 A、B 都没被未测项占用)。
-	if !byKey["ka"].Changed || byKey["ka"].New != "🇯🇵 东京 A" {
-		t.Fatalf("ka: %+v", byKey["ka"])
-	}
-	// kb 已在 B:名次取最小空位,B 被 ka 让出来后它又回到原位 → 不写入。
-	if byKey["kb"].Changed && byKey["kb"].New != "🇯🇵 东京 B" {
-		t.Fatalf("kb: %+v", byKey["kb"])
-	}
-	code, raw = e.api("POST", "/api/regrade", map[string]bool{"apply": true})
-	if code != 200 {
-		t.Fatalf("apply: %d %s", code, raw)
-	}
-	metas, err := e.st.ListExternalMetadata(src.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if metas[externalMetaKey(src.ID, "ka")].Letter != "A" || metas[externalMetaKey(src.ID, "ka")].Kind != "graded" {
-		t.Fatalf("ka apply: %+v", metas)
-	}
-	// 订阅里 ka 应显示 星空 · 🇯🇵 东京 A
-	user := e.createUser("lzd")
-	names := subNames(t, e, user.SubToken)
-	found := map[string]bool{}
-	for _, n := range names {
-		found[n] = true
-	}
-	if !found["星空 · 🇯🇵 东京 A"] || !found["星空 · 🇯🇵 东京 B"] {
-		t.Fatalf("apply 后订阅名不对: %v", names)
-	}
 }
 
 // TestSourceRefreshBackfillsExternalMetadata:快照刷新后,能解析地区的端点

@@ -124,6 +124,21 @@ func (s *Store) ResetCoreTrafficBaselines(nodeID int64, core model.Core, now tim
 	return err
 }
 
+// PruneTrafficSamples 删除早于 before 的旧采样行,但每个 (node_id, core, username)
+// 始终保留最新一条基准行,确保后续流量增量计算不丢基准、同时避免 traffic_samples 无限膨胀。
+func (s *Store) PruneTrafficSamples(before time.Time) (int64, error) {
+	res, err := s.db.Exec(`
+		DELETE FROM traffic_samples
+		WHERE sampled_at < ?
+		  AND id NOT IN (
+		    SELECT MAX(id) FROM traffic_samples GROUP BY node_id, core, username
+		  )`, normalizeTime(before).Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // ListTrafficSamples 保留用户在两个核心上的完整历史,每行携带 Core。
 func (s *Store) ListTrafficSamples(username string, nodeID int64, from, to time.Time) ([]model.TrafficSample, error) {
 	return s.listTrafficSamples(username, nodeID, from, to, "")

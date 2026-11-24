@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"strconv"
@@ -76,7 +75,7 @@ func init() {
 // 要等半分钟的命令了。想现场问一次用 node status。
 var nodeHeaders = []string{
 	"名称", "内部名", "地址", "SSH 端口", "SSH 用户", "API 端口", "配置路径", "服务名",
-	"出口 IP", "状态", "版本", "漂移", "最后检查", "证书最短", "能力", "ID",
+	"出口 IP", "状态", "版本", "漂移", "最后检查", "证书最短", "ID",
 }
 
 // nodeRow 按表格要展示的顺序取字段;留空的一律显示成生效的默认值,
@@ -104,7 +103,6 @@ func nodeRow(v model.NodeView, now time.Time) []string {
 		driftCell(v),
 		checkedCell(v, now),
 		certCell(v),
-		capabilitySummary(v.Capabilities),
 		strconv.FormatInt(n.ID, 10),
 	}
 }
@@ -532,15 +530,11 @@ var nodeAddCmd = &cobra.Command{
 		if opts.output == outputJSON {
 			return emitJSON(raw)
 		}
-		created, err := decode[createdNode](raw)
+		created, err := decode[model.Node](raw)
 		if err != nil {
 			return err
 		}
-		if err := report(raw, "已创建节点 %d(%s)", created.ID, created.Name); err != nil {
-			return err
-		}
-		created.printLocate(os.Stdout)
-		return nil
+		return report(raw, "已创建节点 %d(%s)", created.ID, created.Name)
 	},
 }
 
@@ -1120,20 +1114,4 @@ func explicitMetadata(m model.LocationMetadata) any {
 		City   string `json:"city"`
 		Letter string `json:"letter"`
 	}{m, m.City, m.Letter}
-}
-
-// createdNode 是 POST /api/nodes 的回答:节点本身,加上控制面自动识别出的显示名或提示。
-type createdNode struct {
-	model.Node
-	Display    string `json:"display"`
-	LocateNote string `json:"locate_note"`
-}
-
-func (c createdNode) printLocate(w io.Writer) {
-	if c.Display != "" {
-		fmt.Fprintf(w, "显示名:%s(按 IP 自动识别,ipwho.is;不对就用 mpx node edit 改)\n", c.Display)
-	}
-	if c.LocateNote != "" {
-		fmt.Fprintf(w, "提示:%s\n", c.LocateNote)
-	}
 }

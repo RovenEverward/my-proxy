@@ -1,7 +1,6 @@
 package model
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -39,17 +38,6 @@ func (m ExternalMetadata) Validate() error {
 		return fmt.Errorf("外部清洗记录类型必须是 auto 或 graded")
 	}
 	return m.AsLocation().Validate()
-}
-
-// ExternalQuality 是一个外部端点最近一次降级探测的存档:判定 + 加权分 + 明细。
-// 与 NodeQuality 同形态,身份换成 (source_id, source_key)。
-type ExternalQuality struct {
-	SourceID  int64           `json:"source_id"`
-	SourceKey string          `json:"source_key"`
-	CheckedAt time.Time       `json:"checked_at"`
-	Verdict   string          `json:"verdict"` // ok / partial / untested
-	Score     int             `json:"score"`
-	Report    json.RawMessage `json:"report"`
 }
 
 // ExternalRemark 是外部端点在订阅里的显示名:

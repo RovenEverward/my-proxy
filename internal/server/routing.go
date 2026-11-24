@@ -1,8 +1,6 @@
 package server
 
 import (
-	"time"
-
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/render"
 )
@@ -74,35 +72,6 @@ func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGrou
 	if err != nil {
 		return nil, err
 	}
-	caps := map[[2]int64]map[string]bool{}
-	needCaps := false
-	for _, g := range groups {
-		if len(g.Capabilities) > 0 {
-			needCaps = true
-		}
-	}
-	if needCaps {
-		nodes, err := s.store.ListNodes()
-		if err != nil {
-			return nil, err
-		}
-		projected, err := s.capabilityResultsForNodes(nodes, time.Now())
-		if err != nil {
-			return nil, err
-		}
-		for _, results := range projected {
-			for _, r := range results {
-				if r.Status != model.CapabilityAvailable {
-					continue
-				}
-				k := [2]int64{r.InboundID, r.HostID}
-				if caps[k] == nil {
-					caps[k] = map[string]bool{}
-				}
-				caps[k][r.Target] = true
-			}
-		}
-	}
 	out := make([]model.GroupCandidate, len(eps))
 	for i, ep := range eps {
 		if ep.SourceID > 0 {
@@ -110,7 +79,7 @@ func (s *Server) groupCandidates(eps []render.Endpoint, groups []model.ProxyGrou
 			continue
 		}
 		m := model.EffectiveLocationMetadata(nodeMeta[ep.NodeID], hostMeta[ep.HostID])
-		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep), Capabilities: caps[[2]int64{ep.InboundID, ep.HostID}]}
+		out[i] = model.GroupCandidate{Region: m.Region, Protocol: render.ProtocolShort(ep)}
 	}
 	return out, nil
 }

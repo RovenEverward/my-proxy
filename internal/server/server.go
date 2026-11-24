@@ -89,15 +89,12 @@ type Server struct {
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
 	logger         *slog.Logger
-	mux            *http.ServeMux
-	nodeOps        NodeOps
-	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
-	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
-	extProber externalProber
-	status    StatusSource
-	backoff   BackoffOps
-	updates   UpdateSource
-	dbPath    string
+	mux     *http.ServeMux
+	nodeOps NodeOps
+	status  StatusSource
+	backoff BackoffOps
+	updates UpdateSource
+	dbPath  string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
 	updateDir string
@@ -116,10 +113,6 @@ type Server struct {
 	// nodeUpdate 是节点核心升级任务的内存状态。任务只跑在控制面进程里,重启即
 	// 清空 —— 这是有意的:升级是操作者此刻发起的一件事,不是要落库的历史。
 	nodeUpdate nodeUpdateState
-
-	// autoLocate 为真时,新建节点后自动按 IP 问 ipwho.is 并写入显示名(见 autoLocateNode)。
-	// New 默认关(测试不出网),Serve 按 ServeOptions.NoAutoLocate 打开。
-	autoLocate bool
 
 	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
@@ -178,12 +171,6 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
 	}
 	s.sources = source.NewManager(st, s.invalidateSubCache)
-	// UC-17:备注解析不出地区的新端点(如 JMS 主机名轮换),由控制面直连
-	// ipwho.is 兜底查地址 geo,查到就自动建 auto 清洗记录。
-	s.sources.SetGeoProbe(func(ctx context.Context, address string) (string, string) {
-		region, city, _ := probeGeoOnly(ctx, address)
-		return region, city
-	})
 	s.resolveXray = s.defaultResolveXray
 	s.upgradeXray = s.defaultUpgradeXray
 	s.routes()
@@ -245,7 +232,6 @@ func (s *Server) routes() {
 	s.planRoutes(api)
 	s.sourceRoutes(api)
 	s.jobRoutes(api)
-	s.qualityRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)
@@ -284,9 +270,6 @@ func (s *Server) routes() {
 	// 人工重试退避中的节点:清掉跳过窗口,当场跑一轮采样与收敛。
 	api.HandleFunc("POST /api/nodes/{id}/backoff/retry", s.handleRetryNodeBackoff)
 	api.HandleFunc("GET /api/nodes/{id}/online", s.handleNodeOnline)
-	api.HandleFunc("GET /api/nodes/{id}/capabilities", s.handleGetCapabilities)
-	api.HandleFunc("PUT /api/nodes/{id}/capabilities", s.handlePutCapabilities)
-	api.HandleFunc("POST /api/nodes/{id}/capabilities/probe", s.handleProbeCapabilities)
 
 	api.HandleFunc("GET /api/inbounds", s.handleListInbounds)
 	api.HandleFunc("POST /api/inbounds", s.handleCreateInbound)

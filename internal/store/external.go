@@ -23,14 +23,6 @@ func (s *Store) migrateExternal() error {
 		 kind TEXT NOT NULL DEFAULT 'auto',
 		 updated_at INTEGER NOT NULL,
 		 PRIMARY KEY(source_id, source_key))`,
-		`CREATE TABLE IF NOT EXISTS external_quality (
-		 source_id INTEGER NOT NULL REFERENCES subscription_sources(id) ON DELETE CASCADE,
-		 source_key TEXT NOT NULL,
-		 checked_at INTEGER NOT NULL,
-		 verdict TEXT NOT NULL,
-		 score INTEGER NOT NULL,
-		 report TEXT NOT NULL,
-		 PRIMARY KEY(source_id, source_key))`,
 	} {
 		if _, err := s.db.Exec(ddl); err != nil {
 			return fmt.Errorf("外部端点清洗层建表: %w", err)
@@ -192,54 +184,6 @@ func (s *Store) SyncExternalMetadata(sourceID int64, snapshotKeys []string, upse
 		}
 	}
 	return tx.Commit()
-}
-
-// SaveExternalQuality 覆盖一个外部端点的质量存档;别的端点记录不受影响。
-func (s *Store) SaveExternalQuality(q model.ExternalQuality) error {
-	if q.SourceID <= 0 || q.SourceKey == "" || q.CheckedAt.IsZero() || !model.NodeQualityVerdicts[q.Verdict] {
-		return fmt.Errorf("质量记录缺来源、指纹、时间或判定")
-	}
-	if q.Score < 0 || q.Score > 100 || len(q.Report) == 0 || len(q.Report) > qualityReportLimit || !json.Valid(q.Report) {
-		return fmt.Errorf("质量报告无效或超过 64 KiB")
-	}
-	var exists int
-	if err := s.db.QueryRow(`SELECT 1 FROM subscription_sources WHERE id=?`, q.SourceID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	} else if err != nil {
-		return err
-	}
-	_, err := s.db.Exec(`INSERT INTO external_quality(source_id,source_key,checked_at,verdict,score,report) VALUES(?,?,?,?,?,?)
-	 ON CONFLICT(source_id,source_key) DO UPDATE SET checked_at=excluded.checked_at,verdict=excluded.verdict,score=excluded.score,report=excluded.report`,
-		q.SourceID, q.SourceKey, q.CheckedAt.Unix(), q.Verdict, q.Score, string(q.Report))
-	return err
-}
-
-// ListExternalQuality 返回外部端点的质量记录;sourceID=0 时全量返回。
-func (s *Store) ListExternalQuality(sourceID int64) ([]model.ExternalQuality, error) {
-	query := `SELECT source_id,source_key,checked_at,verdict,score,report FROM external_quality`
-	args := []any{}
-	if sourceID > 0 {
-		query += ` WHERE source_id=?`
-		args = append(args, sourceID)
-	}
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []model.ExternalQuality
-	for rows.Next() {
-		var q model.ExternalQuality
-		var at int64
-		var raw string
-		if err := rows.Scan(&q.SourceID, &q.SourceKey, &at, &q.Verdict, &q.Score, &raw); err != nil {
-			return nil, err
-		}
-		q.CheckedAt = time.Unix(at, 0).UTC()
-		q.Report = json.RawMessage(raw)
-		out = append(out, q)
-	}
-	return out, rows.Err()
 }
 
 // DeleteExternalMetadata 删一条清洗记录;不存在时返回 ErrNotFound。

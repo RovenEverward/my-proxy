@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +20,7 @@ func (s *Server) sourceRoutes(api *http.ServeMux) {
 	api.HandleFunc("PATCH /api/sources/{id}", s.handlePatchSource)
 	api.HandleFunc("DELETE /api/sources/{id}", s.handleDeleteSource)
 	api.HandleFunc("POST /api/sources/{id}/refresh", s.handleRefreshSource)
+	api.HandleFunc("PATCH /api/sources/{id}/endpoints/{key}", s.handlePatchExternalMetadata)
 	api.HandleFunc("GET /api/sources/{id}/grants", s.handleSourceGrants)
 	api.HandleFunc("PUT /api/sources/{id}/grants", s.handleReplaceSourceGrants)
 	api.HandleFunc("PUT /api/sources/{id}/grants/{username}", s.handleSourceGrant)
@@ -456,9 +458,6 @@ func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Reques
 						if len(group.Protocols) > 0 && !contains(group.Protocols, n.Protocol) {
 							reasons = append(reasons, "协议不符")
 						}
-						if len(group.Capabilities) > 0 {
-							reasons = append(reasons, "没有所需能力检测结果")
-						}
 						if len(group.Tags) > 0 {
 							reasons = append(reasons, "旧标签条件不匹配")
 						}
@@ -487,4 +486,113 @@ func (s *Server) handleSubscriptionPreview(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes, "issues": set.Issues, "status": u.Status(time.Now()), "format": f})
+}
+
+func bareExternalKey(w http.ResponseWriter, r *http.Request) (string, bool) {
+	key := r.PathValue("key")
+	if strings.HasPrefix(key, "s:") {
+		writeError(w, http.StatusBadRequest,
+			"端点 key 不能带 \"s:<source_id>:\" 前缀,请用 nodes[].key 里的指纹部分")
+		return "", false
+	}
+	return key, true
+}
+
+func snapshotEndpoint(src *model.SubscriptionSource, key string) (render.Endpoint, bool) {
+	var eps []render.Endpoint
+	if err := json.Unmarshal(src.Snapshot, &eps); err != nil {
+		return render.Endpoint{}, false
+	}
+	for _, ep := range eps {
+		if ep.SourceKey == key {
+			ep.SourceID = src.ID
+			return ep, true
+		}
+	}
+	return render.Endpoint{}, false
+}
+
+// handlePatchExternalMetadata 人工写/清一个外部端点的地区与城市。
+func (s *Server) handlePatchExternalMetadata(w http.ResponseWriter, r *http.Request) {
+	src, ok := s.sourceFromPath(w, r)
+	if !ok {
+		return
+	}
+	key, ok := bareExternalKey(w, r)
+	if !ok {
+		return
+	}
+	ep, found := snapshotEndpoint(src, key)
+	if !found {
+		writeError(w, http.StatusNotFound, "这个端点不在当前快照里")
+		return
+	}
+	var in struct {
+		Region *string `json:"region"`
+		City   *string `json:"city"`
+	}
+	if !decodeBody(w, r, &in) {
+		return
+	}
+	region, err := normalizeExternalRegion(in.Region)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	metadataMu.Lock()
+	defer metadataMu.Unlock()
+	if region == "" {
+		if err := s.store.DeleteExternalMetadata(src.ID, key); err != nil {
+			s.writeStoreError(w, err, "外部端点元数据")
+			return
+		}
+		s.invalidateSubCache()
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
+		return
+	}
+	existingAll, err := s.store.ListExternalMetadata(src.ID)
+	if err != nil {
+		s.writeStoreError(w, err, "外部端点元数据")
+		return
+	}
+	existing := map[string]model.ExternalMetadata{}
+	for _, m := range existingAll {
+		existing[m.SourceKey] = m
+	}
+	m := existing[key]
+	m.SourceID, m.SourceKey = src.ID, key
+	m.Region = region
+	if in.City != nil {
+		m.City = strings.TrimSpace(*in.City)
+	}
+	if m.Letter == "" {
+		existing[key] = m
+		assigned := model.AssignExternalLetters(src.ID, []string{key}, map[string]string{key: m.Region}, existing)
+		m = assigned[key]
+	}
+	m.Kind = "graded"
+	if err := s.store.SaveExternalMetadataBatch([]model.ExternalMetadata{m}); err != nil {
+		s.writeStoreError(w, err, "外部端点元数据")
+		return
+	}
+	s.invalidateSubCache()
+	writeJSON(w, http.StatusOK, map[string]any{"key": key, "name": ep.Remark, "metadata": m})
+}
+
+func normalizeExternalRegion(v *string) (string, error) {
+	if v == nil {
+		return "", nil
+	}
+	raw := strings.TrimSpace(*v)
+	if raw == "" {
+		return "", nil
+	}
+	up := strings.ToUpper(raw)
+	if model.RegionFlag(up) != "" {
+		return up, nil
+	}
+	if r := model.RegionFromRemark(raw); r != "" {
+		return r, nil
+	}
+	return "", fmt.Errorf("地区 %q 认不出来:两位国家码(如 US)或常见写法(美国/japan)都行", raw)
 }

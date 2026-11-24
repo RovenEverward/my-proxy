@@ -175,3 +175,33 @@ func TestTrafficSamplesFollowNodeDeletion(t *testing.T) {
 		t.Fatalf("节点删掉后采样应当一起走,实际还剩 %d 行", len(rows))
 	}
 }
+
+func TestPruneTrafficSamplesKeepsLatestBaseline(t *testing.T) {
+	s := newTestStore(t)
+	n := newTestNode(t, s, "hk")
+	old1 := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	old2 := time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+
+	// alice has 2 old + 1 recent; bob has ONLY 2 old (must keep latest baseline old2!).
+	recordSample(t, s, model.TrafficSample{Username: "alice", NodeID: n.ID, SampledAt: old1, Uplink: 10, Downlink: 10})
+	recordSample(t, s, model.TrafficSample{Username: "alice", NodeID: n.ID, SampledAt: old2, Uplink: 20, Downlink: 20})
+	recordSample(t, s, model.TrafficSample{Username: "alice", NodeID: n.ID, SampledAt: recent, Uplink: 30, Downlink: 30})
+	recordSample(t, s, model.TrafficSample{Username: "bob", NodeID: n.ID, SampledAt: old1, Uplink: 5, Downlink: 5})
+	recordSample(t, s, model.TrafficSample{Username: "bob", NodeID: n.ID, SampledAt: old2, Uplink: 15, Downlink: 15})
+
+	pruned, err := s.PruneTrafficSamples(time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 3 {
+		t.Fatalf("pruned = %d, want 3 (alice old1+old2, bob old1)", pruned)
+	}
+	latest, err := s.LatestTrafficSamples(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest["alice"].Uplink != 30 || latest["bob"].Uplink != 15 {
+		t.Fatalf("latest baselines corrupted: %+v", latest)
+	}
+}

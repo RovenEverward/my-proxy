@@ -95,7 +95,6 @@ func startLive(t *testing.T) *liveEnv {
 		"--addr", fmt.Sprintf("127.0.0.1:%d", port),
 		"--db", db,
 		"--token", e.token,
-		"--auto-locate=false",
 		"--interval", "1h") // 收敛与采样别来搅场:本测试不验证它们
 	serve.Env = append(os.Environ(),
 		"HOME="+e.home,

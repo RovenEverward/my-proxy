@@ -256,6 +256,14 @@ func (t *Task) Tick(ctx context.Context) {
 	t.notifyUsers(ctx, t.now())
 	t.checkUpdates(ctx)
 	t.sweepNodeStatus(ctx, nodes, t.now())
+	// 每 120 轮（约每小时）裁剪 7 天前的旧流量采样，每 (node, core, user) 保留最新基准行。
+	if t.ticks%120 == 1 {
+		if pruned, err := t.store.PruneTrafficSamples(started.AddDate(0, 0, -7)); err != nil {
+			t.logger.Warn("裁剪历史流量采样失败", "error", err)
+		} else if pruned > 0 {
+			t.logger.Info("已裁剪历史流量采样", "deleted", pruned)
+		}
+	}
 }
 
 // onlineWorkers 是后台并行刷新在线名单的并发上限(ISS-03):4 台同时问,

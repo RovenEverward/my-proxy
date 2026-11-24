@@ -52,10 +52,6 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 	if err != nil {
 		return nil, err
 	}
-	capabilities, err := s.capabilityResultsForNodes(nodes, time.Now())
-	if err != nil {
-		return nil, err
-	}
 	meta, err := s.store.ListLocationMetadata("nodes")
 	if err != nil {
 		return nil, err
@@ -80,7 +76,7 @@ func (s *Server) nodeViews(nodes []model.Node) ([]model.NodeView, error) {
 
 	views := make([]model.NodeView, 0, len(nodes))
 	for _, n := range nodes {
-		v := model.NodeView{Node: n, Capabilities: capabilities[n.ID], Display: model.NodeDisplay(meta[n.ID])}
+		v := model.NodeView{Node: n, Display: model.NodeDisplay(meta[n.ID])}
 		s.markTemplateDrift(&v, inboundsByNode[n.ID], mirrorsByNode[n.ID])
 		if st, ok := statuses[n.ID]; ok {
 			// 拷一份再取地址:循环变量每轮复用,直接 &st 会让所有视图指向同一个值。
@@ -225,15 +221,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.invalidateSubCache()
-	// 所有建节点的入口(node add、UI、init)都走这里,所以自动识别放在服务端;
-	// 失败不影响建节点,只在回答里带一句提示。
-	display, locateNote, locateUI := s.autoLocateNode(r.Context(), n)
-	writeJSON(w, http.StatusCreated, struct {
-		model.Node
-		Display    string `json:"display,omitempty"`
-		LocateNote string `json:"locate_note,omitempty"`
-		LocateUI   string `json:"locate_ui,omitempty"`
-	}{n, display, locateNote, locateUI})
+	writeJSON(w, http.StatusCreated, n)
 }
 
 // handleGetNode 回答一台节点,连同它最近一次的状态。
@@ -266,11 +254,6 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.markTemplateDrift(&view, inbounds, mirrors)
-	view.Capabilities, err = s.capabilityResults(*n, time.Now())
-	if err != nil {
-		s.writeStoreError(w, err, "节点能力")
-		return
-	}
 	if r.URL.Query().Get("fresh") == "1" {
 		st, err := s.freshNodeStatus(r.Context(), *n, time.Now())
 		if err != nil {

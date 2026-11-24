@@ -11,7 +11,6 @@ import (
 func (s *Server) metadataRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/nodes/{id}/metadata", s.handleGetMetadata)
 	api.HandleFunc("PUT /api/nodes/{id}/metadata", s.handlePutMetadata)
-	api.HandleFunc("POST /api/nodes/{id}/locate", s.handleLocateNode)
 	api.HandleFunc("GET /api/hosts/{id}/metadata", s.handleGetMetadata)
 	api.HandleFunc("PUT /api/hosts/{id}/metadata", s.handlePutMetadata)
 }

@@ -25,9 +25,7 @@ type ServeOptions struct {
 	DBPath   string        // SQLite 文件路径
 	Token    string        // 管理 token;为空表示不校验,只适合本机开发
 	Interval time.Duration // 后台任务间隔,0 用 control.DefaultInterval
-	Logger   *slog.Logger
-	// NoAutoLocate 关掉「新建节点后自动识别地区」(mpx serve --auto-locate=false 或 MPX_AUTO_LOCATE=0)。
-	NoAutoLocate bool
+	Logger *slog.Logger
 	// SubAddr 是订阅专用监听(UC-10),例如 0.0.0.0:8081;空串不起。
 	// 节点镜像把 /sub 流量转到这个口,管理 /api 不会出现在这个监听上,
 	// 也不需要经过 TLS 嗅探分流(它就是纯 HTTP)。
@@ -100,7 +98,6 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	srv.sshKeyPath = filepath.Join(filepath.Dir(opt.DBPath), ".ssh", "id_ed25519")
 	// 下发通道接在控制面进程里:能 SSH 到节点的是它,不是操作者手边那台笔记本。
 	srv.SetNodeOps(ctrl)
-	srv.autoLocate = !opt.NoAutoLocate
 	// 还有用途的 template 老库不能自动迁移(新迁移不读用途,会丢数据),直接拒绝。
 	if n, err := st.LegacyPurposeCount(); err != nil {
 		return err
@@ -139,10 +136,6 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 		// 在中途被切断好。读写超时留给反向代理那一层去定。
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
-
-	capabilityDone := make(chan struct{})
-	go func() { defer close(capabilityDone); ctrl.RunCapabilityChecks(ctx) }()
-	defer func() { stopWorkers(); <-capabilityDone }()
 
 	taskDone := make(chan struct{})
 	go func() {

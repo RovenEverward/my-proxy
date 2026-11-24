@@ -44,7 +44,7 @@ func TestRouteRuleValidate(t *testing.T) {
 }
 
 func TestProxyGroupValidateAndAdmits(t *testing.T) {
-	g := ProxyGroup{Name: "美国", Regions: []string{"us"}, Protocols: []string{"Reality"}, Capabilities: []string{"netflix"}}
+	g := ProxyGroup{Name: "美国", Regions: []string{"us"}, Protocols: []string{"Reality"}}
 	g.Normalize()
 	if err := g.Validate(); err != nil {
 		t.Fatal(err)
@@ -52,14 +52,13 @@ func TestProxyGroupValidateAndAdmits(t *testing.T) {
 	if g.Mode != GroupAuto || g.Interval != 300 || g.Regions[0] != "US" {
 		t.Fatalf("默认值不对: %+v", g)
 	}
-	in := GroupCandidate{Region: "US", Protocol: "Reality", Capabilities: map[string]bool{"netflix": true}}
+	in := GroupCandidate{Region: "US", Protocol: "Reality"}
 	if !g.Admits(in) {
 		t.Fatal("应当收进")
 	}
 	for _, c := range []GroupCandidate{
-		{Region: "JP", Protocol: "Reality", Capabilities: map[string]bool{"netflix": true}},
-		{Region: "US", Protocol: "Hy2", Capabilities: map[string]bool{"netflix": true}},
-		{Region: "US", Protocol: "Reality"},
+		{Region: "JP", Protocol: "Reality"},
+		{Region: "US", Protocol: "Hy2"},
 	} {
 		if g.Admits(c) {
 			t.Errorf("不应收进 %+v", c)
@@ -75,7 +74,7 @@ func TestProxyGroupValidateAndAdmits(t *testing.T) {
 	for _, bad := range []ProxyGroup{
 		{Name: ""}, {Name: "DIRECT"}, {Name: "流媒体"}, {Name: "a,b"},
 		{Name: "x", Mode: "fast"}, {Name: "x", Protocols: []string{"reality"}},
-		{Name: "x", Capabilities: []string{"ai"}}, {Name: "x", Regions: []string{"USA"}},
+		{Name: "x", Regions: []string{"USA"}},
 	} {
 		bad.Normalize()
 		if bad.Validate() == nil {

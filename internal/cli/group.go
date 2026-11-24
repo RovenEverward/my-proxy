@@ -14,16 +14,15 @@ import (
 // mpx group:策略组,即按地区 / 协议 / 能力 / 标签自动收进来的一组入口。
 
 type groupFlags struct {
-	regions, protocols, caps, tags []string
-	sources                        []string
-	mode, icon, testURL            string
-	interval                       int
+	regions, protocols, tags []string
+	sources                  []string
+	mode, icon, testURL      string
+	interval                 int
 }
 
 func (f *groupFlags) bind(c *cobra.Command) {
 	c.Flags().StringSliceVar(&f.regions, "region", nil, "地区代码,任一即可,如 JP,US")
 	c.Flags().StringSliceVar(&f.protocols, "protocol", nil, "协议短名,任一即可,如 Reality,Hy2")
-	c.Flags().StringSliceVar(&f.caps, "capability", nil, "要求的能力检测,全部通过:egress / youtube / netflix")
 	c.Flags().StringSliceVar(&f.tags, "tag", nil, "标签,任一即可")
 	c.Flags().StringSliceVar(&f.sources, "source", nil, "候选来源,managed 或 source:<id>;不设 = 全部来源(旧语义),多个取并集")
 	c.Flags().StringVar(&f.mode, "mode", "", "auto(自动选最快)或 manual(手动选)")
@@ -49,9 +48,6 @@ func (f *groupFlags) apply(c *cobra.Command, g *model.ProxyGroup) {
 	if c.Flags().Changed("protocol") {
 		g.Protocols = clean(f.protocols)
 	}
-	if c.Flags().Changed("capability") {
-		g.Capabilities = clean(f.caps)
-	}
 	if c.Flags().Changed("tag") {
 		g.Tags = clean(f.tags)
 	}
@@ -76,9 +72,6 @@ func groupConds(g model.ProxyGroup) string {
 	}
 	if len(g.Protocols) > 0 {
 		p = append(p, "协议 "+strings.Join(g.Protocols, "/"))
-	}
-	if len(g.Capabilities) > 0 {
-		p = append(p, "能力 "+strings.Join(g.Capabilities, "+"))
 	}
 	if len(g.Tags) > 0 {
 		p = append(p, "标签 "+strings.Join(g.Tags, "/"))
