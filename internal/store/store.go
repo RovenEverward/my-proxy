@@ -473,6 +473,9 @@ var addedColumns = []struct{ table, column, ddl string }{
 	// /sub/{token} 解不出用户会按 Marzban 铸法验签后按用户名找人。
 	{"settings", "marzban_sub_secret",
 		`ALTER TABLE settings ADD COLUMN marzban_sub_secret TEXT NOT NULL DEFAULT ''`},
+	// 订阅里自建节点名的全局前缀(空串=不加,老库升级上来语义不变)。
+	{"settings", "sub_node_prefix",
+		`ALTER TABLE settings ADD COLUMN sub_node_prefix TEXT NOT NULL DEFAULT ''`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

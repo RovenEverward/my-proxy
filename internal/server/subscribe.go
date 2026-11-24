@@ -402,6 +402,10 @@ func (s *Server) resolveManagedEndpoints(user *model.User) ([]resolvedManaged, e
 	if err != nil {
 		return nil, err
 	}
+	settings, err := s.store.GetSettings()
+	if err != nil {
+		return nil, err
+	}
 
 	// 各入站此刻"占用着"几个名额。判定唯一走 AllowsInbound —— 没挂套餐且没限定
 	// 入站的用户能用全部入站,挂了套餐的用户按套餐范围算,两处都不能各自解释,
@@ -428,6 +432,11 @@ func (s *Server) resolveManagedEndpoints(user *model.User) ([]resolvedManaged, e
 	for _, n := range nodes {
 		eps := render.AddProtocolSuffix(render.ResolveNamed(n, model.NodeDisplay(meta[n.ID]), byNode[n.ID], byInbound, user))
 		for _, ep := range eps {
+			// 前缀对托管端点统一生效:它的用途是跟外采/转发订阅并排时认出
+			// 自建,只看 remark 是不是手写的反而会把一部分自建漏掉。
+			if settings.SubNodePrefix != "" {
+				ep.Remark = settings.SubNodePrefix + ep.Remark
+			}
 			out = append(out, resolvedManaged{Endpoint: ep, NodeID: n.ID, NodeAddress: n.Address, Draining: n.Draining})
 		}
 	}

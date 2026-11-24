@@ -103,6 +103,11 @@ type Settings struct {
 	// MarzbanSubSecretSet 与 acme_cf_token_set 同待遇,只读出参。
 	MarzbanSubSecretSet bool `json:"marzban_sub_secret_set"`
 
+	// SubNodePrefix 是订阅里 MPX 托管节点名的全局前缀,空串不加。对托管端点
+	// 统一生效(手写 remark 的也加 —— 用途是跟机场/转发订阅并排时一眼认出
+	// 自建,只看自动名会漏掉一部分)。
+	SubNodePrefix string `json:"sub_node_prefix"`
+
 	// ACMEStaging 用 Let's Encrypt 的 staging 目录签测试证书(不签发即
 	// 受信),默认 false。切换 staging/正式会废弃已签证书重签:staging 证书
 	// 浏览器不认,留着反而比没有更糟。

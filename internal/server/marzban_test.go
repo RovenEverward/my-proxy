@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -28,6 +29,8 @@ func (e *env) saveSettings(mutate func(*model.Settings)) {
 	if err := e.st.SaveSettings(st); err != nil {
 		e.t.Fatalf("写设置: %v", err)
 	}
+	// 直改库不走 handler 的 invalidateSubCache,补一刀。
+	e.s.invalidateSubCache()
 }
 
 // TestMarzbanTokenFallback 迁库场景:用户的 sub_token 是 MPX 自己那串,客户端
@@ -122,4 +125,49 @@ func TestCreateUserWithExplicitSubToken(t *testing.T) {
 	if got.SubToken == "bad token/with:chars" || got.SubToken == "" {
 		t.Fatalf("非法 token 不应被采纳: %q", got.SubToken)
 	}
+}
+
+// TestSubNodePrefix 订阅端点上的全局前缀:对所有托管端点统一生效(用途是
+// 跟外采/转发订阅并排时认出自建),清空恢复原名。
+func TestSubNodePrefix(t *testing.T) {
+	e := newEnv(t)
+	n := e.createNode("hk", "node.example.com")
+	in := e.createInbound(n.ID, "vless-ws", 8443)
+	e.createHost(in.ID, "香港", "node.example.com")
+	user := e.createUser("alice")
+
+	readName := func() string {
+		code, _, body := e.sub("/sub/"+user.SubToken+"/links", "v2rayng")
+		if code != http.StatusOK {
+			t.Fatalf("订阅: got %d", code)
+		}
+		line := strings.TrimSpace(strings.SplitN(string(body), "\n", 2)[0])
+		if i := strings.LastIndexByte(line, '#'); i >= 0 {
+			name, _ := url.QueryUnescape(line[i+1:])
+			return name
+		}
+		return line
+	}
+
+	t.Run("默认无前缀", func(t *testing.T) {
+		if got := readName(); !strings.Contains(got, "香港") {
+			t.Fatalf("默认名里没有 remark: %q", got)
+		}
+	})
+
+	t.Run("配了前缀端点名被加上", func(t *testing.T) {
+		e.saveSettings(func(st *model.Settings) { st.SubNodePrefix = "[自建] " })
+		got := readName()
+		if !strings.HasPrefix(got, "[自建]") {
+			t.Fatalf("前缀没生效: %q", got)
+		}
+	})
+
+	t.Run("清空前缀恢复原名", func(t *testing.T) {
+		e.saveSettings(func(st *model.Settings) { st.SubNodePrefix = "" })
+		got := readName()
+		if strings.Contains(got, "[自建]") {
+			t.Fatalf("清空后还带前缀: %q", got)
+		}
+	})
 }

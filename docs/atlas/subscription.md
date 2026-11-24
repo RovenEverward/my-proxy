@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/server/settings.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/model/settings.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
-verified: 2026-11-24 @ 9273312 + marzban-sub-token
+verified: 2026-11-24 @ HEAD + sub_node_prefix
 ---
 # 订阅与分流
 
@@ -40,3 +40,4 @@ verified: 2026-11-24 @ 9273312 + marzban-sub-token
 - 节点名里写 `{USERNAME}` → 会被抹成空串，只在订阅名里生效 → 见 [缺口与待定项] 第 3 条。
 - 订阅走明文 HTTP → token 可被链路窃听 → 已接受的代价，换地址用 `/sub/{token}/rotate`。
 - Marzban 迁库兜底(`settings.marzban_sub_secret`,GET 只回 `marzban_sub_secret_set`):`/sub/{token}` 精确查不到时,再按 Marzban 铸法(数据 base64url(用户名,unix秒) + sha256(数据+secret) 前 10 字符签名)验签,过了按用户名找人 → 用户客户端里任何一枚旧 token 都认得(它本来就不落库、每次请求重铸),旧订阅链接不用换。精确匹配仍优先,同名用户没建过去不会串号。`revoke-sub` / 旋转 token 不受影响 —— 那两条路径只认 MPX 自己的 token。
+- `settings.sub_node_prefix`(空串=不加)给 MPX 托管端点的订阅名统一加前缀:所有 ResolveNamed 产出的端点都带,不管 remark 是不是手写的 —— 用途是跟外采/转发订阅并排时认出自建;外采源(resolveExternalRemark 那一路)不带。
