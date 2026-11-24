@@ -1,17 +1,16 @@
 # MPX
-自建 xray / sing-box 多节点代理的控制面：一台控制面管住所有节点，操作者在浏览器打开 `https://<控制面地址>/admin/` 管理，或在自己电脑上用 `mpx` 命令行操作。
+自建 xray / sing-box 多节点代理的 Agent-Native 极简控制面与 CLI：纯 Go 单体 + SQLite 管住所有节点，操作者或 AI Agent 通过 `mpx` 命令行（`-o json` / `--ssh` 通道）管理。
 
 ## 地图
-- `cmd/mpx/`：唯一的二进制入口；CLI、控制面（`mpx serve`，内嵌 `/admin/` 网页管理台）都是它
+- `cmd/mpx/`：唯一的纯 Go 二进制入口；CLI 与控制面（`mpx serve`）都是它
 - `internal/server/`、`internal/store/`、`internal/model/`：控制面的接口、SQLite、领域对象
 - `internal/control/`、`internal/node/`：后台循环与 SSH 驱动节点
 - `internal/render/`：订阅渲染与节点配置渲染（两套，不共用）
-- `internal/cli/`：操作机命令行入口；`internal/ui/`：嵌入控制面的网页管理台资源与源码；`deploy/`：安装脚本与 systemd 单元
+- `internal/cli/`：操作机命令行入口；`skills/mpx/SKILL.md`：随仓分发的官方 Agent Skill；`deploy/`：安装脚本与 systemd 单元
 - 整体怎么配合、每块的边界和坑见 [docs/atlas/README.md](docs/atlas/README.md)
 
 ## 验证
-- `go vet ./... && go test ./... -count=1`：改 Go 代码必须通过（约 1 分钟）
-- `npx playwright test -c internal/ui/e2e`：改 `internal/ui/` 必须通过（约 5 分钟，先 `npm ci`）
+- `go vet ./... && go test ./... -count=1`：改 Go 代码必须通过（纯 Go，无需 Node.js）
 - `npm run docs:build`：改 `docs/` 下用户文档必须通过
 - `python3 scripts/atlas_audit.py`：改 atlas 或新增文档时跑
 
@@ -34,9 +33,9 @@
 | 下发、收敛、巡检、核心安装（internal/control/*、internal/node/*、internal/render/xray.go） | [节点](docs/atlas/nodes.md) |
 | 用户、套餐、流量、重置（internal/model/plan.go、internal/store/user.go、internal/cli/user*.go） | [用户、套餐与计量](docs/atlas/users.md) |
 | 订阅、规则、策略组（internal/server/subscribe.go、internal/render/clash.go、singbox.go、routing*.go） | [订阅与分流](docs/atlas/subscription.md) |
-| CLI、网页管理台、管理员账号（internal/cli/*、internal/ui/*、internal/server/admin*.go） | [本机入口](docs/atlas/operator-entry.md)；界面修改另读 [UX 规范](internal/ui/ux/README.md) |
+| CLI、SSH 通道、管理员账号与官方 Skill（internal/cli/*、internal/server/admin.go、skills/mpx/） | [本机入口](docs/atlas/operator-entry.md) |
 | 安装、升级、发版（internal/cli/init*.go、internal/cli/update*.go、internal/selfupdate/*、deploy/*） | [安装与升级](docs/atlas/install-update.md) |
-| 能力检测、体检、自检（internal/diagnostics/*、internal/fusion/*、internal/cli/doctor.go） | [体检与诊断](docs/atlas/diagnostics.md) |
+| 能力检测、质量评级、自检（internal/cli/doctor.go、internal/control/capability.go、internal/server/quality.go） | [体检与诊断](docs/atlas/diagnostics.md) |
 
 ## 维护
 - 改了某一块的边界、流程，或踩到新坑：同一次改动里更新对应的 atlas 节点，刷新 verified。

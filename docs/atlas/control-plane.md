@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/, internal/store/, internal/model/, internal/backup/]
-verified: 2026-11-23 @ 3c427e3
+verified: 2026-11-24 @ 16d41cd
 ---
 # 控制面与数据
 
@@ -10,9 +10,9 @@ verified: 2026-11-23 @ 3c427e3
 
 ## 边界
 
-负责：存数据、校验写入、提供管理接口和订阅接口、鉴权（管理员会话 cookie、CLI 会话 token、探测点凭据、env 救援 token）、限流、备份与恢复。
+负责：存数据、校验写入、提供管理接口和订阅接口、鉴权（CLI 会话 token、env 主钥匙 / SSH `api-relay`）、限流、备份与恢复。
 
-不负责：碰节点（交给 [节点](nodes.md) 那一块的后台循环）；渲染订阅内容（交给 [订阅与分流](subscription.md)）；承载用户流量（控制面不进数据通路）。
+不负责：碰节点（交给 [节点](nodes.md) 那一块的后台循环）；渲染订阅内容（交给 [订阅与分流](subscription.md)）；承载用户流量（控制面不进数据通路）；伺服网页管理台或常驻探测点（UC-32 已退役）。
 
 ## 怎么运转
 
@@ -39,7 +39,7 @@ sequenceDiagram
 8. IP 质量评分(UC-14)存 `node_quality` 表(节点外键级联，一节点一行,重测覆盖)；`POST /api/regrade` 在 `metadataMu` 下重算分组字母后经 `SaveLocationMetadataBatch` 事务批量写 `node_metadata`——不走逐节点 PUT 元数据，否则交换两个字母时第一笔下冲突 409。写完 `invalidateSubCache()` 让新订阅立即用新显示名。
 9. 外部端点清洗(UC-17)分两层:快照 (`source_snapshots.endpoints`) 永远留上游原始 `Remark` 供回溯；清洗结果存 `external_metadata` 表（`source_id+source_key` 复合主键、来源外键级联，`kind` 区分 `auto` 回填与 `graded` 重排）。订阅装配与来源视图只读清洗层：`resolveExternalRemark` 拼 `源名 · 旗帜 城市/地区 字母`，无记录的端点回退 `源名 · 上游原名`。身份键是连接参数指纹 (`Endpoint.SourceKey`)，上游改名不换键。快照刷新成功后 `Manager.syncExternalMetadata` 解析地区、`AssignExternalLetters` 补字母（同地区继承已排记录的城市保持同组），`SyncExternalMetadata` 事务删去消失键并差量 upsert；地区解析顺序是旗帜 emoji → token 级 ISO 短码 → 写法表子串 → 来源「默认地区」兜底（`subscription_sources.region`），都不中不建记录。还不中的新端点由 `Manager.backfillOrphanGeo` 后台串行用 `SetGeoProbe` 注入的降级探针（resolve + ipwho.is，`probeGeoOnly`）按地址真查，查到地区自动建 `auto` 记录——JMS 轮换主机名后新端点自己长出干净名，不等人手工 grade；已有记录（含 `graded`）不碰。它永不覆盖 `graded` 行；`PATCH /api/sources/{id}/endpoints/{key}` 人工写地区/城市（输入经 `normalizeExternalRegion` 归一：ISO 或常见写法都收），写成 `graded`，空 region 删记录回退原名。降级评分存 `external_quality`（同键级联、重测覆盖），`POST /api/sources/{id}/endpoints/{key}/quality` 由控制面直连 ipwho.is/ipapi.is/可选 AbuseIPDB（不走 SSH，复用 `QualityScore` 权重与 `qualitySlot` 并发闸），结果并入 `POST /api/regrade` 的同一排序循环，apply 时 `SaveExternalMetadataBatch` 与 `SaveLocationMetadataBatch` 在同一个 `metadataMu` 区间写入。端点消失只清 `external_metadata`，`external_quality` 记录保留。
 10. 控制面域名 + ACME 自动证书(UC-26,`internal/acme/`):`PUT/DELETE /api/acme/config` 管 `acme_domain`/`acme_cf_token`/`acme_staging` 三个 settings 键(`PUT /api/settings` 只保留不动,token 不回明文);签发走 `POST /api/acme/issue` + `GET /api/acme/issue?since=N` 的单飞后台任务(事件带 seq)。`acme_state` 单行表存账户私钥/证书 PEM/签发时刻/失败计数;换域名或换 CA 清证书行,签发或续期失败按 `1m<<(f-1)` 退避到 `next_retry_at` 而证书照旧服役。签发是 DNS-01 打 Cloudflare(`internal/acme/cloudflare.go`),`acme.Manager.GetCertificate` 按 SNI 在「ACME 证书 / 自签身份」间选;续期在 `Manager.Run` 里每小时看一次,到期前 30 天触发。CLI 侧 `connect` 对域名地址先探系统信任(`probeCA`),信则走 `pin.Transport("")` + `Profile.CA`,不信或 `--fp` 显式给指纹仍走指纹流程;IP 字面量跳过探测。
-11. 境内活性探测与剔除(UC-06/12/18/25)、境内指标与带宽测量(UC-20/23)已在 UC-30 整体退役:`/api/reach/*`、`/api/metrics`、`/api/bandwidth/*` 全部删除,`internal/reach`、`internal/bwtest` 包移除,`reach_*`/`bandwidth_*` 表保留只迁移不再读写(老库升级无损)。探测点(`probe_points` + `/api/probes*`)保留,但职责收窄为 CDN IP 优选 —— 探测端只拿 `GET/POST /api/cdn-optimize/*` 两个权限(`probeAllowed`),`mpx probe run` 常驻领优选任务、回传结果。订阅剔除只剩「排水」一个结构性来源(`PoolEndpoint.Excluded`)。
+11. 退役模块与非破坏性迁移（UC-30 / UC-32）：境内活性探测与剔除、带宽测量（UC-30）、网页管理台 `/admin/`、内置 CDN 自动优选与探测点（`/api/cdn-optimize/*`、`/api/cdn-pool`、`/api/probes*`）及重型体检（`/api/nodes/{id}/diagnostics*`）均已移除。对应的历史表（`reach_*`、`bandwidth_samples`、`probe_points`、`cdn_pool`、`diagnostic_reports`）与 `settings` 旧列保留迁移不再读写，确保老库无损平滑升级；订阅剔除只剩「排水」一个结构性来源（`PoolEndpoint.Excluded`）。
 
 ## 为什么这样设计
 

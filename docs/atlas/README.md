@@ -49,9 +49,9 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 | 节点：下发、收敛与巡检 | 把真相送到节点上，按人计量，发现漂移 | 改 `internal/control`、`internal/node`、节点配置渲染 | [nodes.md](nodes.md) |
 | 用户、套餐与计量 | 谁能用哪些入站、用了多少、什么时候停 | 改用户字段、配额、重置、套餐 | [users.md](users.md) |
 | 订阅与分流 | 同一条地址按客户端出格式，按规则表分流 | 改 `/sub`、`internal/render`、规则和策略组 | [subscription.md](subscription.md) |
-| 本机入口：CLI 与网页管理台 | 操作者手里的全部入口 | 改 `internal/cli`、`internal/ui`、`internal/pin` | [operator-entry.md](operator-entry.md) |
+| 本机入口：CLI 与 Agent Skill | 操作者与 AI Agent 的统一入口 | 改 `internal/cli`、`internal/pin`、`skills/mpx/` | [operator-entry.md](operator-entry.md) |
 | 安装与升级 | 从一台裸 VPS 到可用，再到远程升级回滚 | 改 `mpx init`、`deploy/`、`mpx update`、发版 | [install-update.md](install-update.md) |
-| 体检与诊断 | 入口能力检测、一键体检、自检 | 改 `internal/diagnostics`、`internal/fusion`、`doctor` | [diagnostics.md](diagnostics.md) |
+| 能力检测、质量评级与自检 | 入口能力检测、IP 质量评级、`doctor` 自检 | 改 `doctor`、`capability`、`quality` | [diagnostics.md](diagnostics.md) |
 
 ## 怎么配合
 
@@ -87,6 +87,7 @@ flowchart LR
 | 文档 | 在哪 | 给谁 | 活的 / 冻结 | 谁维护 |
 |---|---|---|---|---|
 | 项目介绍与快速开始 | [README.md](../../README.md) | 路过的人、新用户 | 活的 | 主人 |
+| 官方 Agent Skill | [skills/mpx/SKILL.md](../../skills/mpx/SKILL.md) | Coding Agent / 自动化运维 | 活的 | 随 CLI 契约 |
 | 贡献指南（测试、文档站、发布） | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 贡献者 | 活的 | 主人 |
 | 更新记录 | [CHANGELOG.md](../../CHANGELOG.md) | 用户、升级的人 | 只追加 | 发版时 |
 | Agent 入口 | [AGENTS.md](../../AGENTS.md) | 进仓库的 Agent | 活的 | 主人（硬约束是守护层） |

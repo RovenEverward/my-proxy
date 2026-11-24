@@ -1,50 +1,40 @@
 ---
 kind: part
 parent: README.md
-code: [internal/cli/, internal/ui/, internal/pin/, internal/server/admin.go, internal/server/admin_page.go, cmd/mpx/, scripts/ui-interaction-audit.mjs, scripts/check-ui-system.mjs, scripts/sync-ui-icons.mjs, scripts/package-ui.mjs]
-verified: 2026-11-23 @ 3c427e3
+code: [internal/cli/, internal/pin/, internal/server/admin.go, cmd/mpx/, skills/mpx/]
+verified: 2026-11-24 @ 16d41cd
 ---
-# 操作入口：CLI 与网页管理台
+# 操作入口：CLI 与 Agent Skill
 
-> **30 秒版**：操作者在浏览器打开 `https://<控制面地址>/admin/` 干活 —— 页面由 `mpx serve` 自己伺服（内嵌 `internal/ui` 构建产物），用单管理员账号登录拿会话 cookie；`mpx` 命令行是 `/api` 的纯客户端，`mpx connect` 用同一套账号密码换一枚 CLI 会话 token 存进本机配置档，按证书指纹认控制面。本机 `mpx ui` 本地服务、桌面程序与设备密码已在 UC-26 退役，没有并行期。
+> **30 秒版**：UC-32 起网页管理台（`/admin/`、`internal/ui`）彻底退役，MPX 回归纯 Go 单体。`mpx` 命令行是 `/api` 的唯一客户端（全命令支持 `-o json` 结构化输出与失败 JSON stderr），推荐用 `mpx connect --ssh` 经 SSH 通道免密接入，也保留账号密码 + 证书指纹/ACME 受信证书接入。仓库同时提供 [skills/mpx/SKILL.md](../../skills/mpx/SKILL.md) 给 AI Agent 按契约安全运维。
 
 ## 边界
 
-负责：把操作拼成请求、把结果显示给人；CLI 多控制面配置档；管理员账号（`mpx admin` 建号 / 改密码）与接入；本机才能做的事（`mpx init` 首次安装、`mpx connect` 接入、relabel 查 IP 归属）。IP 质量评级（`mpx node grade` / `mpx node regrade`、节点列表「IP 质量评级」弹窗）是两条控制面接口的普通调用：探测走 `POST /api/nodes/{id}/quality`（外部端点是 `mpx source grade` 打 `POST /api/sources/{id}/endpoints/{key}/quality`），预览与写库走 `POST /api/regrade`。UC-30 已退役带宽测量与境内活性探测(`mpx node bandwidth`、`mpx node check`、`mpx reach` 全部删除,`internal/bwtest`、`internal/reach` 包移除);探测点收窄为 CDN IP 优选工作端,`mpx probe run` 常驻向控制面领 `cdn-optimize` 任务、回传结果(金丝雀 `cdn.TrustedPath` 放在 internal/cdn,防被代理接管时拨错出口)。mpx 二进制编进去的标签固定 `with_utls,with_quic`(reality 指纹 + hysteria2 出站都要),发布/CI/安装脚本同口径。`/local/*` 本地 job 面已随 `mpx ui` 退役;管理台同源直接调 `/api`,没有转发层与白名单。
+负责：把操作拼成 `/api` 请求并输出表格或 JSON；CLI 多控制面配置档与 `--ssh` 通道转发；管理员账号（`mpx admin` 建号 / 改密码）与接入（`mpx connect`）；本机编排（`mpx init` 首次安装、`mpx node relabel`）；下发前预检（`mpx node sync --dry-run` 渲染并比对 SHA-256 哈希，零 SSH 不重启）；IP 质量评级（`mpx node grade` / `mpx source grade` / `mpx node regrade`）。
 
-不负责：碰数据库和节点（`mpx init` 是唯一例外，因为那时控制面还不存在，见 [安装与升级](install-update.md)）；长出控制面接口之外的能力。管理台只是 `/api` 的另一种客户端,同源调用,不承担鉴权之外的转发职责。
+已退役：
+- UC-26 退役 `mpx ui` 本地服务、桌面程序与设备密码。
+- UC-30 退役带宽测量与境内活性探测（`mpx node bandwidth`、`mpx node check`、`mpx reach`）。
+- UC-32 退役网页管理台（`internal/ui`、`/admin/`、Node/Playwright 工具链）、内置 CDN 自动优选与探测点（`mpx cdn`、`mpx probe`、`internal/cdn`、`internal/probeagent`）以及重型内置体检（`mpx diagnose`、`mpx node diagnose`、`internal/diagnostics`、`internal/fusion`）。
+
+不负责：碰数据库和节点（`mpx init` 是唯一例外，因为那时控制面还不存在，见 [安装与升级](install-update.md)）；常驻 CDN 测速或后台探测（CDN 优选由操作者或 AI Agent 在真实本机网络按需执行后经 `mpx host` 写入）。
 
 ## 怎么运转
 
 ```mermaid
 flowchart LR
-  B["浏览器"] -- "HTTPS /admin/ · 会话 cookie" --> CP["控制面 mpx serve"]
-  T["终端 mpx（internal/cli）"] -- "HTTPS + 会话 token · 按指纹" --> CP
-  CP -. "内嵌 internal/ui/assets" .-> B
-  T -- "mpx init（唯一的 SSH 编排）" --> VPS["新 VPS"]
+  A["操作者 / AI Agent<br/>mpx CLI (-o json) + skills/mpx/SKILL.md"] -- "SSH 通道 (mpx api-relay)<br/>或 HTTPS + 会话 token" --> CP["控制面 mpx serve"]
+  A -- "mpx init（唯一的 SSH 编排）" --> VPS["新 VPS"]
 ```
 
-1. CLI 每条命令都能用 `curl` 等价做出来，不缓存数据，每次都问控制面。`mpx connect <地址>` 走 `POST /api/admin/login`（`kind: "cli"`）拿 bearer 会话 token,连同证书指纹写进本机配置档(`--profile` 分档);账号密码只出现在登录这一次,之后请求都带 token。改密码（`mpx admin password`）吊销全部会话与 CLI token,各处重新登录。
-2. 网页管理台使用 React + TypeScript + Vite + shadcn/ui,构建产物嵌进二进制,由 `mpx serve` 挂在 `/admin/`（hash 路由）。`/admin` 与登录接口只受理 TLS 或回环请求;未配域名时不对公网开放,想远程管走 SSH 隧道到回环。[界面源码]。
-   连接方式只在节点详情的「连接方式」卡片管理；旧地址 `#inbounds`（含子路径）跳到节点列表。详情头部有未应用改动、配置不一致或从未应用时才出现「应用到节点」主按钮，其余时候它和刷新状态、暂停 / 恢复分配、编辑一起收在「⋯」菜单。体检页行内的「应用到<节点>」不直接下发：它只跳到节点详情并留一个 10 秒有效的标记，由详情页弹确认框（用户确认才下发）；节点连不上时详情头部的「应用到节点」带 `aria-disabled`，React 事件处理检查不可用状态，只提示先刷新状态。
-   界面规范由[UX 入口](../../internal/ui/ux/README.md)连接设计意图、交互模式、组件与验收。`styles/tokens.css` 是唯一项目 Token 真源，全站共用同一套语义 Token，浮层继承当前主题；[共用组件](../../internal/ui/frontend/components/primitives.tsx)与 Radix 包装共用语义 CSS。图标注册表由固定版本官方 Lucide 素材生成，运行时使用 `lucide-react`。应用装配、外壳、更新状态与弹窗和页面分别持有各自职责。本机 `/components.html` 复用真实基础组件且不启动业务读取；`npm run ui:check` 校验来源与结构。实际截图和审查见[React 界面验收](../../.visual-design/react-components/review.md)。
-   控制面入口在顶栏右侧状态区：会话胶囊（圆点 + 管理员名 + 主机）点开单层浮层，列出地址、版本、证书指纹（4 位一组可复制）与「退出登录」（`SessionMenu`）；侧栏只放品牌标与业务导航。管理台只对着当前这台控制面,没有切换对象 —— 换控制面就换网址,CLI 侧才有多配置档。
-   总览已完成的开始清单收进页头，节点优先展示最需注意的六个，通知在页底横条中查看并跳到系统修改。首次使用默认为浅色，保存过的手动主题保持不变；Mac 使用系统滚动条，其他平台只在滚动或悬停滑块时显示细条。
-   过期用户在总览和用户列表中置灰；总览只展示最近 30 天内过期的用户，较早记录通过提示跳到已过期筛选，人数仍受总览前 1000 人采样限制。续期共用确认框，按天或指定日期，超限时可另选清零；已过期筛选的多选只保留当前页，批量删除逐个调用现有接口，部分失败只重试失败名单。续期和批删提交时锁定确认框，Esc 和取消不会中断正在执行的写操作。
-   订阅页是行式清单，三张卡：第一张放订阅链接行和四个字段行（链接开头、订阅名、刷新间隔、帮助链接，没有客户端预览），第二张是客户端格式对照，第三张放外部订阅入口和订阅底稿行（默认折叠，展开才取正文，会话内记住状态）。字段和识别规则先改草稿，统一由保存条通过 `modifySettings` 先读后写；放弃后的撤销只恢复当时改过的键，不覆盖后台刷新收到的其他设置。离页和切换控制面共用草稿确认，保存成功或选择不保存后才继续；对话框约束 Tab 焦点并在关闭后还原。底稿仍由原抽屉单独保存。预览用户只决定订阅链接里显示谁的链接，默认最近拉过订阅的用户，可切换；无用户时标「示例」。链接开头只由控制面在写入新值时校验，旧值未改可保存其他字段；预览保留原始链接，改链接开头后才用最后一段令牌拼接并去掉尾斜杠。规则按 Go 正则保存，浏览器无法编译时只提示无法预览、不拦截完成，空规则仍拦截；改规则后保留键盘焦点。`#sub/info`（旧的 `#sub/look` 也认）滚到 `#sec-info`，`#sub/clients` 滚到 `#sec-clients`，`#sub/templates` 展开并滚到 `#sec-adv`，旧设置路由继续映射。
-   用户详情是基页上的独立叠层：打开、换人、关闭、后退只更新抽屉和面包屑，保留列表 DOM、筛选和滚动，关闭不重读列表。已有用户字段立即显示，链接、最近连接和设置并行补全，失败只在对应区块重试；二维码复用已读取的链接，不再二次查询控制面。来自分享地址且列表不含该用户时，另取用户资料。只读详情期间，基页在途后台读取只更新展示缓存，不改当前基页数据和 DOM；关闭也不补画，下一次正常刷新再采用。写后的明确刷新仍同步列表与详情。
-   返回已访问的页面先显示会话内成功数据，再后台读取；最多保留最近 16 个页面或详情，键含实际读取路由和完整筛选／作用域，取存均复制。缓存命中后读取失败只提示；写开始和完成按同一资源依赖失效。节点详情也先显示成功列表中的字段，连接、报告和任务区域等待补全。订阅状态与其他独立读取并行。
-   路由按目标视图立即切换标题、面包屑和加载框架，`main` 的 `aria-busy` 随框架一起输出；切换视图归零滚动，同一视图刷新保留位置。失败留在目标页重试，过期响应丢弃；后台轮询失败只提示并保留数据，手动刷新失败保留页面错误与重试。分流加载框架保留标签和规则作用域，只将列表换为骨架。异步抽屉先显示目标标题和读取状态，再通过 `usePageData` 补全内容；关闭、换页或换抽屉后不再提交旧结果。覆盖层关闭与路由变化分开处理，换页关闭旧抽屉不改写目标地址。订阅同页锚点保留草稿并立即定位，控制面切换先显示连接中，成功后重载。守卫见 `nav-loading.spec.mjs`。
-   异步交互通过 `Button loading` 与局部忙态立即显示进行中状态，原生控件值不冒充保存成功；失败恢复原选择并保留原页面错误提示。`usePageData` 加载器的 `read` 只在明确的局部刷新中复用当前页面成功整页读取的快照，键包含完整接口路径、查询参数、方法和只读请求体；作用域与筛选不会串用。只有当前代次的完整读取可替换快照，局部读取返回副本且不回写。写开始、完成均失效相关资源；用户列表、计数和套餐人数一起失效。手动刷新、切页和每 30 秒轮询仍读远端，不复用旧请求快照；切页重新读取，完整成功后更新请求快照；展示缓存先呈现。`node scripts/ui-interaction-audit.mjs` 在现有 e2e 路径中加入 150–300ms 响应延迟，输出交互反馈、完成和接口耗时表；正式延迟守卫在 `interaction-latency.spec.mjs`。
-   本机转发与 CLI 的连接池每主机保留最多 16 个空闲连接，证书钉住和 HTTP/1.1 不变；控制面仅对已鉴权管理 JSON 协商 gzip，大于等于 1KB 才压缩，解压字节保持原样。备份流和订阅不经过 JSON 压缩。相关守卫见 `data-reuse.spec.mjs`。
-   外部订阅与自建节点共同收纳在「节点」页的二级页签（`自建节点 | 外部订阅 | 探测点`，对应 `#nodes` / `#nodes/sources` / `#nodes/probes`，旧地址 `#sources` 跳到外部订阅）；订阅页第三张卡仍保留跳转入口。UC-30 后节点列表不再有「境内」列、触达判定筛选与「测速」按钮,节点详情无「境内指标」行。「探测点」页签只有探测点名册（增删、凭据轮换，接入命令只在创建时给一次）,说明文字收窄为 CDN IP 优选工作端。页面通过来源接口在单张可展开来源表内展示接收用户与状态，行内按需展开只读节点成员，点来源进入分段详情抽屉（`配置与授权` / `节点与格式` 单次保存；接收用户分按人、按套餐两块勾选，保存同发 `users` 与 `plan_ids`），混合订阅预览按需弹窗查看。对应命令为 `mpx source`，`grant`/`revoke` 同时接受 `--user` 与 `--plan`（套餐名唯一，按名定位）。来源详情只显示遮蔽地址和元数据，刷新结果独立轮询，不覆盖正在编辑的表单。混合预览按用户与格式生成，策略组支持来源条件和按用户预览；来源条件使用专用接口保存。截图与独立审查记录见[混合订阅界面验收](../../.visual-design/mixed-sources/review.md)。
-3. 接入与凭据：控制面自签证书，CLI 记指纹；控制面配了域名(`mpx acme` / 管理台「域名与证书」)后 `mpx connect <域名>:<端口>` 会先探系统是否信任其证书，信则记 `ca: true` 走普通 TLS，否则仍回落到按指纹认自签的那条路 —— `--fp` 显式给指纹时跳过探测直连指纹模式。设备密码与逐台吊销已删（`device_password` 表、`POST /api/connect`、`/api/devices*` 全退役）;单设备丢失的吊销粒度是「改密码吊销全部会话与 CLI 凭据」。
-   SSH 通道接入（UC-29）：`mpx connect <地址> --ssh [目标]` 不问密码、不核指纹、不存 token —— profile 只记 `ssh` 目标。之后每条 API 请求把 HTTP 报文喂给 `ssh <目标> 'mpx api-relay --port <控制面端口>'`；远端 relay 用 `/etc/mpx/env` 的主钥匙注入 Authorization、打到 `127.0.0.1` 的控制面，响应原样回吐（一条请求一条 ssh）。SSH 本身就是认证：密钥、agent、ProxyJump、known_hosts 全归系统 ssh 管，token 永不落到操作机，没有过期与续期这回事。`mpx init` 收尾把 init 用的 `user@host -p port` 写进 profile，装完即走通道。`--ssh-cmd` 覆盖默认远端命令；目标串按空白切开转给 `ssh`。`api-relay` 是 hidden 子命令，授权依据是「能 ssh 进来执行它的人本来就能读 env 拿主钥匙」。没有 SSH 通道的环境照旧 `connect` 密码路径拿 `cli` 会话 —— 两条客户端路径互不相交：CLI 走 SSH 通道，网页走账号+会话 cookie。
+1. **纯客户端语义**：CLI 不缓存数据，每条写操作都能用 `curl` 等价复现。`-o json` 模式下成功向 stdout 打缩进 JSON，失败向 stderr 打 `{"error","status_code"}` 并返回非零退出码（`doctor` 故障为 `3`）。
+2. **SSH 通道优先（UC-29）**：`mpx connect <地址> --ssh [目标]` 不问密码、不核指纹、不存 token —— profile 只记 `ssh` 目标。之后每条 API 请求经 `ssh <目标> 'mpx api-relay --port <控制面端口>'` 转发至控制面回环并由远端读 `/etc/mpx/env` 注入主钥匙。`mpx init` 收尾自动切入该模式。
+3. **密码与 TLS 兜底**：无 SSH 通道的环境走 `mpx connect <地址>`（支持 `--password-stdin` 非交互），经 `POST /api/admin/login`（`kind: "cli"`）换 30 天 bearer 会话 token 存入本机配置档；控制面配了 `mpx acme` 受信域名证书时自动走系统 CA 校验，否则按 `--fp` 钉自签证书指纹。改密码（`mpx admin password`）吊销全部会话。
+4. **结构变更预检**：`mpx node sync --dry-run <节点>` 调用 `GET /api/nodes/{id}` 与 `GET /api/nodes/{id}/config`，计算渲染结果的 SHA-256 并与 `deployed_hash` / `observed_hash` 比对，确认影响面后再执行 `mpx node sync`。
+5. **二进制构建口径**：发布、CI 与安装脚本统一使用 `CGO_ENABLED=0 go build -trimpath -tags with_utls,with_quic ./cmd/mpx`（无需 Node.js）。
 
 ## 坑
 
-- 给管理台加功能时直接调一个新接口 → 没有转发白名单拦,但「每个写操作要有等价命令」的边界还在 → 先确认 CLI 有对应能力。
-- 页面轮询远端任务（升级、签发证书）要走「按 seq 增量拉事件」的形状,不整包重读。
-- 窗口里不出现命令行用语（v0.9.1 起）→ 控制面原话带命令的错误和自检建议另给 `ui_hint`，页面优先显示，CLI 照旧用原话（[对外契约](../internal/contracts.md)）→ 新加报错时别把 `mpx …` 写进只会出现在页面里的文字。
-- 撞上控制面限流 → CLI 自己等，不把 429 甩给使用者。
-- 登录接口限速与锁定复用 `/api/connect` 时代的三道闸（IP 限速 + 连续失败锁 15 分钟）;测试环境用 `MPX_API_BURST` 放宽。
+- 撞上控制面限流 → CLI 自动按 `Retry-After` 等待重试，不把 429 甩给调用方。
+- 忘记 `node sync` 与自动收敛的边界 → 改用户/套餐每 30 秒热收敛、改 host/rule/group/source 立即进订阅，都不需要重启节点；只有改入站结构/证书/出口 IP 策略/镜像才需要 `mpx node sync`。
+- 登录接口限速与锁定有 IP 限速 + 连续失败锁 15 分钟三道闸；测试环境用 `MPX_API_BURST` 放宽。
