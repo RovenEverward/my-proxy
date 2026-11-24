@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +66,7 @@ func init() {
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.region, "region", "", "地区(两位国家码,如 US),显示名的旗帜与国家")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.city, "city", "", "城市,如 洛杉矶;空表示用国家名")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.letter, "letter", "", "字母(A、B…AA);空表示自动取最小空闲字母")
+	nodeSyncCmd.Flags().BoolVar(&nodeSyncDryRun, "dry-run", false, "只渲染并比对配置哈希,不下发也不重启节点核心")
 }
 
 // nodeHeaders 是节点表格的表头。列表与 show 共用同一套列。
@@ -763,20 +766,40 @@ var nodeConfigCmd = &cobra.Command{
 	},
 }
 
+var nodeSyncDryRun bool
+
+type nodeSyncDryRunResult struct {
+	DryRun        bool   `json:"dry_run"`
+	NodeID        int64  `json:"node_id"`
+	Node          string `json:"node"`
+	Address       string `json:"address"`
+	Changed       bool   `json:"changed"`
+	Drifted       bool   `json:"drifted"`
+	TemplateDrift bool   `json:"template_drift"`
+	WouldRestart  bool   `json:"would_restart"`
+	RenderedHash  string `json:"rendered_hash"`
+	DeployedHash  string `json:"deployed_hash,omitempty"`
+	ObservedHash  string `json:"observed_hash,omitempty"`
+	ConfigBytes   int    `json:"config_bytes"`
+}
+
 var nodeSyncCmd = &cobra.Command{
 	Use:   "sync <节点>",
-	Short: "把当前配置下发到节点并重启它的 xray",
-	Long: `把当前配置下发到节点并重启它的 xray。
+	Short: "把当前配置下发到节点并重启它的核心(支持 --dry-run 预检)",
+	Long: `把当前配置下发到节点并重启它的核心。
 
 配置由控制面渲染并送达(它才是能 SSH 到节点的那一方),这条命令只负责说"该
-下发了"。这是唯一会重启节点 xray 的动作,该节点上所有人的连接会断一次,所以
+下发了"。这是唯一会重启节点核心的动作,该节点上所有人的连接会断一次,所以
 它不会自动发生:新增入站、改端口、换证书这类结构改动只有跑过它才生效。
 
 日常的加人、删人、到期、超限不走这里 —— 控制面每 30 秒自动收敛一次人员名单,
-不需要重启。下发前想看看到底会推什么,用 mpx node config。`,
+不需要重启。
+
+下发前建议先跑 --dry-run(可配合 -o json):控制面只渲染并比对新配置哈希与
+已下发/节点当前哈希,不发 SSH 也不重启;看完整 JSON 用 mpx node config。`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := resolveNodeID(args[0], true)
+		id, err := resolveNodeID(args[0], !nodeSyncDryRun)
 		if err != nil {
 			return err
 		}
@@ -784,12 +807,68 @@ var nodeSyncCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if nodeSyncDryRun {
+			return runNodeSyncDryRun(c, id)
+		}
 		raw, err := c.do("POST", nodePath(id)+"/sync", nil)
 		if err != nil {
 			return err
 		}
-		return report(raw, "已下发节点 %d,它的 xray 已重启", id)
+		return report(raw, "已下发节点 %d,它的核心已重启", id)
 	},
+}
+
+func runNodeSyncDryRun(c *Client, id int64) error {
+	rawNode, err := c.do("GET", nodePath(id), nil)
+	if err != nil {
+		return err
+	}
+	v, err := decode[model.NodeView](rawNode)
+	if err != nil {
+		return err
+	}
+	cfg, err := c.do("GET", nodePath(id)+"/config", nil)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(cfg)
+	renderedHash := hex.EncodeToString(sum[:])
+	observedHash := ""
+	if v.Status != nil {
+		observedHash = v.Status.ObservedHash
+	}
+	res := nodeSyncDryRunResult{
+		DryRun:        true,
+		NodeID:        v.Node.ID,
+		Node:          v.Node.Name,
+		Address:       v.Node.Address,
+		Changed:       v.Node.DeployedHash == "" || renderedHash != v.Node.DeployedHash,
+		Drifted:       v.Node.Drift(v.Status),
+		TemplateDrift: v.Node.TemplateDrift,
+		WouldRestart:  true,
+		RenderedHash:  renderedHash,
+		DeployedHash:  v.Node.DeployedHash,
+		ObservedHash:  observedHash,
+		ConfigBytes:   len(cfg),
+	}
+	if opts.output == outputJSON {
+		return emitJSONValue(res)
+	}
+	if err := writeKV([][2]string{
+		{"模式", "dry-run（仅预检,未下发、未重启）"},
+		{"节点", fmt.Sprintf("%s(ID %d, %s)", res.Node, res.NodeID, res.Address)},
+		{"待下发变化", yesNo(res.Changed)},
+		{"节点配置漂移", yesNo(res.Drifted)},
+		{"模板漂移", yesNo(res.TemplateDrift)},
+		{"新配置哈希", shortHash(res.RenderedHash)},
+		{"已下发哈希", dash(shortHash(res.DeployedHash))},
+		{"节点当前哈希", dash(shortHash(res.ObservedHash))},
+		{"配置大小", fmt.Sprintf("%d 字节", res.ConfigBytes)},
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("确认无误后执行:mpx node sync %s（查看完整渲染配置:mpx node config %s）\n", res.Node, res.Node)
+	return nil
 }
 
 var nodeInstallFlags struct {

@@ -1,6 +1,0 @@
-{
-  "compilerOptions": {
-    "paths": { "@/*": ["./internal/ui/frontend/*"] }
-  },
-  "files": []
-}

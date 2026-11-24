@@ -106,13 +106,13 @@ type Inbound struct {
 	// 为空回到旧语义:文件缺失时控制面签自签,订阅端 AllowInsecure。
 	// 与 reality_priv 一个待遇:只进不出,API 响应不带。
 	CertPEM string `json:"-"`
-	KeyPEM string `json:"-"`
+	KeyPEM  string `json:"-"`
 	// Cert 是 CertPEM 解析出的展示信息,服务端在响应时临时填,不落库。
-	Cert *InboundCertInfo `json:"cert,omitempty"`
-	RealityDest string   `json:"reality_dest,omitempty"` // REALITY 回落目标,如 www.microsoft.com:443
-	RealityPriv string   `json:"-"`                      // REALITY 私钥,不下发到客户端
-	RealityPub  string   `json:"reality_pub,omitempty"`
-	ShortIDs    []string `json:"short_ids,omitempty"`
+	Cert        *InboundCertInfo `json:"cert,omitempty"`
+	RealityDest string           `json:"reality_dest,omitempty"` // REALITY 回落目标,如 www.microsoft.com:443
+	RealityPriv string           `json:"-"`                      // REALITY 私钥,不下发到客户端
+	RealityPub  string           `json:"reality_pub,omitempty"`
+	ShortIDs    []string         `json:"short_ids,omitempty"`
 
 	CongestionControl string `json:"congestion_control,omitempty"` // TUIC: cubic/new_reno/bbr;空为 bbr
 
@@ -265,29 +265,3 @@ const (
 	// CertFailDays 以内是故障:随时可能中断。
 	CertFailDays = 3
 )
-
-// CDNResult 是探测点回传的一个优选 IP 结果(internal/cdn.Result 的
-// 传输形状 —— server 收 API 用这套,不反向依赖 probe 包)。
-type CDNResult struct {
-	IP        string  `json:"ip"`
-	Reachable bool    `json:"reachable"`
-	LatencyMs int     `json:"latency_ms"`
-	Loss      float64 `json:"loss"`       // TCP 握手丢包率 0~1(UC-31)
-	Edge      bool    `json:"edge"`
-	Colo      string  `json:"colo,omitempty"`
-	SpeedMbps float64 `json:"speed_mbps"` // 限时下载测速 MB/s,未测/失败为 0(UC-31)
-}
-
-// CDNIP 是优选池里的一行(cdn_pool 表),附首次/最近命中与连续 miss
-// 计数 —— miss 是「当轮复检未通过」(UC-24;旧探测端只报通过项时缺席
-// 也计 miss),累计超过阈值出池,misses=0 才参与 CDN 入口选优。
-type CDNIP struct {
-	IP        string    `json:"ip"`
-	LatencyMs int       `json:"latency_ms"`
-	Loss      float64   `json:"loss"`
-	SpeedMbps float64   `json:"speed_mbps"`
-	Colo      string    `json:"colo"`
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen"`
-	Misses    int       `json:"misses"`
-}

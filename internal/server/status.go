@@ -55,17 +55,5 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		out.AdminAccountSet = true
 	}
 	out.LoginLockedUntil = s.adminLogin.LockedUntil(time.Now())
-	if ps, err := s.store.ListProbePoints(); err == nil {
-		out.ProbeTotal = len(ps)
-		for _, p := range ps {
-			if !p.Online {
-				out.ProbeOffline++
-			}
-			if p.LastSeenAt != nil && (out.ProbeLastSeenAt == nil || p.LastSeenAt.After(*out.ProbeLastSeenAt)) {
-				at := *p.LastSeenAt
-				out.ProbeLastSeenAt = &at
-			}
-		}
-	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -95,27 +95,10 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"对外入口", strconv.Itoa(st.Counts.Hosts)},
 		{"用户", strconv.Itoa(st.Counts.Users)},
 		{"退避中的节点", backoff},
-		{"探测点", probeText(st, now)},
 		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
 		{"管理员账号", adminLoginText(st)},
 	}
-}
-
-// probeText 汇总境内探测点状态。没登记过返回 "-";全在线时写"N 台在线",
-// 有掉线的单独标出来——CDN 优选靠它们常驻,掉了得显眼。
-func probeText(st model.ControlStatus, now time.Time) string {
-	if st.ProbeTotal == 0 {
-		return "-"
-	}
-	base := fmt.Sprintf("%d/%d 离线", st.ProbeOffline, st.ProbeTotal)
-	if st.ProbeOffline == 0 {
-		base = fmt.Sprintf("%d 台在线", st.ProbeTotal)
-	}
-	if st.ProbeLastSeenAt != nil {
-		base += " · 最近上报 " + humanDuration(now.Sub(*st.ProbeLastSeenAt)) + "前"
-	}
-	return base
 }
 
 // versionText 写控制面报的版本。
@@ -203,7 +186,7 @@ func humanDuration(d time.Duration) string {
 // adminLoginText 写一行管理员登录的状况:账号建没建、登录锁没锁。
 func adminLoginText(st model.ControlStatus) string {
 	if !st.AdminAccountSet {
-		return "未建(网页与 mpx connect 都登不进去;服务器上 MPX_TOKEN mpx admin create 建号)"
+		return "未建(密码模式 mpx connect 登不进去;服务器上 MPX_TOKEN mpx admin create 建号,或直接用 mpx connect --ssh)"
 	}
 	if st.LoginLockedUntil != nil {
 		return "已建,密码连续输错,登录锁定到 " + st.LoginLockedUntil.Format("15:04:05")

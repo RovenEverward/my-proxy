@@ -8,27 +8,21 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/store"
 )
 
-// 鉴权认三类凭据(UC-26 起,设备模型已退役):
+// 鉴权认两类凭据(UC-32 退役探测点后只剩管理面凭据):
 //
-//   - 管理台会话:浏览器 cookie 与 CLI Bearer 携带同一枚 token,存
+//   - 管理会话:CLI Bearer(或兼容 cookie)携带同一枚 token,存
 //     admin_sessions 表,30 天到期、可逐枚吊销;改密码时整表清空。
 //   - 管理 token(/etc/mpx/env 的 MPX_TOKEN):主钥匙。不在会话表里、不能吊销,
-//     是忘了密码时的应急入口(服务器上 mpx admin password 走的就是它)。
-//   - 探测点 join token:只放行探测接口,见 probeAllowed。
+//     SSH 通道(mpx api-relay)和忘了密码时的应急入口都走它。
 //
-// 仍然没有角色和权限分级:谁登进来了,谁就是这个控制面的主人。
-
-// probeIDKey 把探测点身份挂进请求上下文;值为 0 表示这条请求不是探测点发的。
-const probeIDKey ctxKey = 2
+// 没有角色和权限分级:谁登进来了,谁就是这个控制面的主人。
 
 // authMasterKey 标记这次请求凭的是 env 主钥匙(MPX_TOKEN)。主钥匙不受任何
 // 吊销管理,是「忘了密码/丢了会话」时的救援凭据;改管理员口令时它免验旧密码
@@ -36,16 +30,6 @@ const probeIDKey ctxKey = 2
 const authMasterKey ctxKey = 3
 
 type ctxKey int
-
-// probeAllowed 是探测点凭据够得着的接口:UC-30 后只剩 CDN 优选 ——
-// 领名单与回结果走同一对凭据可达接口。管理面其余接口它一律不可见。
-var probeAllowed = map[string]bool{
-	"GET /api/cdn-optimize/targets":  true,
-	"POST /api/cdn-optimize/results": true,
-}
-
-// probeTouchEvery 是记"最近上报"的最小间隔:每个请求都写一次库没有意义。
-const probeTouchEvery = time.Minute
 
 // requireAuth 校验管理接口凭据。管理 token 为空时不校验(只用于本机
 // 开发,启动时已保证这种情况只能绑回环)。
@@ -55,11 +39,6 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// UC-26:管理台会话是第一类凭据。cookie(浏览器)与 Bearer(CLI)携带
-		// 同一枚 token,查同一张 admin_sessions 表;命中未过期行即放行。
-		// 凭 cookie 进来的写请求(没带 Authorization)先过一次同源校验:
-		// SameSite=Lax 挡住了大多数跨站 POST,这里再把 Origin/Fetch-Site
-		// 也查掉,作为纵深;Bearer 形态(CLI)没有 Origin 一说,不查。
 		if tok := adminSessionToken(r); tok != "" {
 			if r.Header.Get("Authorization") == "" && !readMethod(r.Method) && !adminOriginOK(r) {
 				writeAdminOriginRejected(w)
@@ -78,24 +57,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authMasterKey, true)))
 			return
 		}
-		if got != "" {
-			// 探测点凭据是第三类(UC-12):只放行它够得着的探测接口。
-			p, perr := s.store.ProbeByToken(hashToken(got))
-			if perr == nil {
-				if !probeAllowed[r.Method+" "+r.URL.Path] {
-					writeError(w, http.StatusForbidden, "探测点凭据不能访问管理接口")
-					return
-				}
-				s.touchProbe(p.ID, r)
-				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), probeIDKey, p.ID)))
-				return
-			}
-			if !errors.Is(perr, store.ErrNotFound) {
-				s.writeStoreError(w, perr, "探测点")
-				return
-			}
-		}
-		writeErrorHint(w, http.StatusUnauthorized, "凭据不正确或会话已过期;重新登录(浏览器)或重新 mpx connect(CLI)",
+		writeErrorHint(w, http.StatusUnauthorized, "凭据不正确或会话已过期;请重新 mpx connect",
 			"登录已失效或会话被吊销:请重新登录")
 	})
 }
@@ -115,33 +77,10 @@ func hashToken(token string) string {
 }
 
 // newToken 生成一枚随机 token:32 字节随机数,URL 安全的 base64。
-// 管理台会话与探测点 join token 都用它。
 func newToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-var touchMu sync.Mutex
-
-var probeTouched = map[int64]time.Time{}
-
-func (s *Server) touchProbe(id int64, r *http.Request) {
-	now := time.Now()
-	touchMu.Lock()
-	if now.Sub(probeTouched[id]) < probeTouchEvery {
-		touchMu.Unlock()
-		return
-	}
-	probeTouched[id] = now
-	touchMu.Unlock()
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		ip = r.RemoteAddr
-	}
-	if err := s.store.TouchProbe(id, ip); err != nil {
-		s.logger.Warn("记录探测点最近上报失败", "probe", id, "err", err)
-	}
 }

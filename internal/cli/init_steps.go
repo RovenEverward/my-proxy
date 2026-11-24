@@ -266,7 +266,7 @@ func runInitSteps(ctx context.Context, p *initParams, prog initProgress) (*initR
 	}
 	fmt.Fprintln(prog.Stdout())
 	fmt.Fprintln(prog.Stdout(), "同一个端口上,管理接口走 HTTPS(控制面自签证书,按上面的指纹认),订阅走 HTTP。")
-	fmt.Fprintln(prog.Stdout(), "网页管理台( /admin/ )需要域名加受信证书才适合对外开;配好 DNS(Cloudflare 托管、A 记录指到这台机器)后跑:")
+	fmt.Fprintln(prog.Stdout(), "如需给控制面配域名与受信证书(让 mpx connect <域名> 免指纹校验),配好 Cloudflare DNS 后跑:")
 	fmt.Fprintln(prog.Stdout(), "  mpx acme set --domain <域名> --cf-token-stdin < token.txt")
 	return &initResult{HostPort: hostport, Server: server, Fingerprint: fp, Connected: true}, nil
 }

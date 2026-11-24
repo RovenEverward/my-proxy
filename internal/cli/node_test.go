@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -196,5 +201,101 @@ func TestNodeRowNormalizesEmptyOutboundIP(t *testing.T) {
 		if h == "出口 IP" && got[i] != "v4v6" {
 			t.Errorf("出口 IP = %q,想要 v4v6", got[i])
 		}
+	}
+}
+
+func TestNodeSyncDryRunJSON(t *testing.T) {
+	prevDry := nodeSyncDryRun
+	prevOut := opts.output
+	t.Cleanup(func() {
+		nodeSyncDryRun = prevDry
+		opts.output = prevOut
+		rootCmd.SetArgs(nil)
+	})
+
+	rendered := []byte(`{"inbounds":[{"port":443}]}`)
+	sum := sha256.Sum256(rendered)
+	wantHash := hex.EncodeToString(sum[:])
+
+	posted := false
+	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/nodes/2":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(mustJSON(t, model.NodeView{
+				Node:   model.Node{ID: 2, Name: "la-1", Address: "203.0.113.10", DeployedHash: "oldhash"},
+				Status: &model.NodeStatus{NodeID: 2, Reachable: true, ObservedHash: "oldhash"},
+			}))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/nodes/2/config":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(rendered)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/nodes/2/sync":
+			posted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("意外的请求: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	origStdout := os.Stdout
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = pw
+	t.Cleanup(func() { os.Stdout = origStdout })
+
+	code := Execute("-o", "json", "node", "sync", "--dry-run", "2")
+	_ = pw.Close()
+	os.Stdout = origStdout
+
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(pr)
+	_ = pr.Close()
+
+	if code != 0 {
+		t.Fatalf("dry-run 退出码 = %d, want 0", code)
+	}
+	if posted {
+		t.Fatal("--dry-run 不应调用 POST /api/nodes/2/sync")
+	}
+	var got nodeSyncDryRunResult
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("解析 dry-run JSON 失败: %v\n%s", err, buf.String())
+	}
+	if !got.DryRun || got.NodeID != 2 || got.Node != "la-1" || !got.Changed || got.Drifted || !got.WouldRestart {
+		t.Fatalf("dry-run 结果不对: %+v", got)
+	}
+	if got.RenderedHash != wantHash || got.DeployedHash != "oldhash" || got.ConfigBytes != len(rendered) {
+		t.Fatalf("哈希或字节数不对: %+v", got)
+	}
+}
+
+func TestWriteCLIErrorJSONFormat(t *testing.T) {
+	prevOut := opts.output
+	t.Cleanup(func() { opts.output = prevOut })
+
+	opts.output = outputJSON
+	var buf bytes.Buffer
+	writeCLIError(&buf, &APIError{StatusCode: http.StatusConflict, Message: "端口 443 被占用"})
+	var got struct {
+		Error      string `json:"error"`
+		StatusCode int    `json:"status_code"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("JSON 错误解不开: %v (%q)", err, buf.String())
+	}
+	if got.Error != "端口 443 被占用" || got.StatusCode != http.StatusConflict {
+		t.Fatalf("got %+v", got)
+	}
+
+	buf.Reset()
+	writeCLIError(&buf, errors.New("参数不合法"))
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("普通错误 JSON 解不开: %v (%q)", err, buf.String())
+	}
+	if got.Error != "参数不合法" {
+		t.Fatalf("got %+v", got)
 	}
 }

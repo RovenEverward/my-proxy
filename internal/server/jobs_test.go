@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RovenEverward/my-proxy/internal/control"
-	"github.com/RovenEverward/my-proxy/internal/diagnostics"
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
@@ -20,33 +17,6 @@ import (
 type jobEnvelope struct {
 	Job    model.Job `json:"job"`
 	Reused bool      `json:"reused"`
-}
-
-// blockingCheckup 是一份会卡住的体检:第一次进来就等 release 关上,这样测试能
-// 看到"接口已经回了、任务还在跑"的那一刻。
-type blockingCheckup struct {
-	fakeNodeOps
-	started chan struct{}
-	release chan struct{}
-	err     error
-	once    sync.Once
-}
-
-func newBlockingCheckup() *blockingCheckup {
-	return &blockingCheckup{started: make(chan struct{}), release: make(chan struct{})}
-}
-
-func (b *blockingCheckup) CheckupNode(ctx context.Context, n model.Node, cfg diagnostics.Config, now time.Time) (model.DiagnosticRecord, error) {
-	b.once.Do(func() { close(b.started) })
-	// 不理会 ctx:关掉页面也不该把后台体检打断 —— 这正是这条接口存在的理由。
-	<-b.release
-	if b.err != nil {
-		return model.DiagnosticRecord{}, b.err
-	}
-	return model.DiagnosticRecord{
-		NodeID: n.ID, Source: "node", CheckedAt: now,
-		Report: json.RawMessage(`{"position":"node","verdict":"ok"}`),
-	}, nil
 }
 
 // waitJob 轮询到任务离开 running 或超时。
@@ -66,108 +36,6 @@ func (e *env) waitJob(id int64) model.Job {
 	}
 	e.t.Fatalf("任务 %d 一直没结束", id)
 	return model.Job{}
-}
-
-func TestDiagnoseJobRunsInBackgroundAndReuses(t *testing.T) {
-	ops := newBlockingCheckup()
-	e := newEnvWith(t, ops)
-	n := e.createNode("hk", "node.example.com")
-	path := fmt.Sprintf("/api/nodes/%d/diagnostics/jobs", n.ID)
-
-	code, data := e.api("POST", path, map[string]any{"network_only": false})
-	if code != http.StatusAccepted {
-		t.Fatalf("新任务该回 202,得到 %d %s", code, data)
-	}
-	first := decodeJSON[jobEnvelope](t, data)
-	if first.Reused || first.Job.Status != model.JobStatusRunning || first.Job.Kind != model.JobKindDiagnose || first.Job.NodeID != n.ID {
-		t.Fatalf("新任务不对: %+v", first)
-	}
-	<-ops.started
-
-	// 还没跑完,再点一次:回 200、同一件,不起第二份。
-	code, data = e.api("POST", path, map[string]any{"network_only": false})
-	if code != http.StatusOK {
-		t.Fatalf("已在跑时该回 200,得到 %d %s", code, data)
-	}
-	again := decodeJSON[jobEnvelope](t, data)
-	if !again.Reused || again.Job.ID != first.Job.ID {
-		t.Fatalf("该复用 %d,得到 %+v", first.Job.ID, again)
-	}
-
-	// 列表里能看到它正在跑。
-	code, data = e.api("GET", fmt.Sprintf("/api/nodes/%d/jobs?active=1", n.ID), nil)
-	if code != http.StatusOK {
-		t.Fatalf("列任务: got %d %s", code, data)
-	}
-	list := decodeJSON[struct {
-		Jobs []model.Job `json:"jobs"`
-	}](t, data)
-	if len(list.Jobs) != 1 || list.Jobs[0].ID != first.Job.ID {
-		t.Fatalf("在跑的任务列表不对: %s", data)
-	}
-
-	close(ops.release)
-	done := e.waitJob(first.Job.ID)
-	if done.Status != model.JobStatusDone || done.Code != http.StatusOK || done.FinishedAt == nil {
-		t.Fatalf("跑完该是 done/200: %+v", done)
-	}
-	record := decodeJSON[model.DiagnosticRecord](t, done.Result)
-	var report struct {
-		Verdict string `json:"verdict"`
-	}
-	if err := json.Unmarshal(record.Report, &report); err != nil {
-		t.Fatalf("结果里的报告解不开: %v\n%s", err, done.Result)
-	}
-	if record.NodeID != n.ID || record.Source != "node" || report.Verdict != "ok" {
-		t.Fatalf("结果里没有体检报告: %s", done.Result)
-	}
-}
-
-func TestDiagnoseJobBodyValidationMatchesSync(t *testing.T) {
-	ops := newBlockingCheckup()
-	e := newEnvWith(t, ops)
-	n := e.createNode("hk", "node.example.com")
-	path := fmt.Sprintf("/api/nodes/%d/diagnostics/jobs", n.ID)
-	for _, body := range []string{
-		`{"position":"local"}`, `{"socks_url":"socks5h://127.0.0.1:1080"}`, `{"engine":"fusion","position":"control"}`,
-		`{"engine":"light","hardware":true}`, `{"abuse_ipdb_key":"secret"}`, `{} {}`, `null`,
-	} {
-		if code, raw := e.requestRaw("POST", path, []byte(body)); code != http.StatusBadRequest {
-			t.Errorf("%s => %d %s", body, code, raw)
-		}
-	}
-	if code, _ := e.api("POST", "/api/nodes/99999/diagnostics/jobs", map[string]any{}); code != http.StatusNotFound {
-		t.Errorf("节点不存在该 404,得到 %d", code)
-	}
-	if jobs, err := e.st.ListNodeJobs(n.ID, "", false, 0); err != nil || len(jobs) != 0 {
-		t.Fatalf("不合法的请求不该留下任务: %+v err=%v", jobs, err)
-	}
-
-	legacy := newEnvWith(t, &fakeDiagnosticOps{})
-	ln := legacy.createNode("legacy", "node.example.com")
-	if code, _ := legacy.api("POST", fmt.Sprintf("/api/nodes/%d/diagnostics/jobs", ln.ID), map[string]any{}); code != http.StatusNotImplemented {
-		t.Errorf("没接上体检该 501,得到 %d", code)
-	}
-}
-
-func TestDiagnoseJobBusyIsFailedWithConflict(t *testing.T) {
-	ops := &fakeCheckupOps{fakeDiagnosticOps: fakeDiagnosticOps{err: fmt.Errorf("wrapped: %w", control.ErrDiagnosticBusy)}}
-	e := newEnvWith(t, ops)
-	n := e.createNode("hk", "node.example.com")
-	code, data := e.api("POST", fmt.Sprintf("/api/nodes/%d/diagnostics/jobs", n.ID), map[string]any{})
-	if code != http.StatusAccepted {
-		t.Fatalf("受理该回 202,得到 %d %s", code, data)
-	}
-	job := e.waitJob(decodeJSON[jobEnvelope](t, data).Job.ID)
-	if job.Status != model.JobStatusFailed || job.Code != http.StatusConflict || !strings.Contains(job.Error, "wrapped") {
-		t.Fatalf("该是 failed/409: %+v", job)
-	}
-	var view struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(job.Result, &view); err != nil || view.Error != job.Error {
-		t.Fatalf("结果里该是同步接口的错误正文: %s", job.Result)
-	}
 }
 
 func TestInstallJobSuccessAndFailure(t *testing.T) {

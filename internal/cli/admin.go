@@ -17,7 +17,7 @@ import (
 
 var adminCmd = &cobra.Command{
 	Use:   "admin",
-	Short: "管理网页管理台的管理员账号(UC-26)",
+	Short: "管理控制面的管理员账号",
 }
 
 var adminCreateFlags struct {
@@ -29,7 +29,7 @@ var adminCreateFlags struct {
 var adminCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "建管理员账号(只在还没有账号时有效;已有账号则改用户名)",
-	Long: `建网页管理台的登录账号。没有账号时创建;已有账号时只改用户名,不改密码
+	Long: `建控制面的登录账号(供 mpx connect 密码模式使用)。没有账号时创建;已有账号时只改用户名,不改密码
 (换密码走 mpx admin password,那里要验旧密码)。
 
 凭据用全局的 --token / MPX_TOKEN:这条命令是给控制面所有者用的,典型场景是

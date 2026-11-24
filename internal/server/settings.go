@@ -96,14 +96,6 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		writeErrorField(w, http.StatusBadRequest, err.Error(), "webhook_url")
 		return
 	}
-	// cdn_speed_url 是探测端拿去下载测速的地址,只认 https —— http
-	// 会被探测端拒(也要 TLS+Host 才有 SNI 语义)。
-	if v.CDNSpeedURL != cur.CDNSpeedURL && v.CDNSpeedURL != "" {
-		if u, err := url.Parse(v.CDNSpeedURL); err != nil || u.Scheme != "https" || u.Host == "" {
-			writeErrorField(w, http.StatusBadRequest, "测速地址要以 https:// 开头", "cdn_speed_url")
-			return
-		}
-	}
 	// ruleset_mode 空串即 upstream(老客户端不带这个字段,零值兼容),
 	// 其余只认枚举值。
 	if !model.RulesetModeValid(v.RulesetMode) {

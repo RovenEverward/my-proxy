@@ -239,9 +239,6 @@ func (s *Server) routes() {
 	sub.HandleFunc("GET /sub/{token}/{format}", s.handleSubscribe)
 	// 订阅页上的"换个订阅地址":鉴权就是这个 token 本身(见 handleRotateSub)。
 	sub.HandleFunc("POST /sub/{token}/rotate", s.handleRotateSub)
-	// 订阅页的内置字体。挂在 /sub/ 下、用四段路径,是为了让只转发 /sub/ 的
-	// 反向代理也能取到字体,而且永远不会撞上三段式的 /sub/{token}/{format}。
-	sub.HandleFunc("GET /sub/-/fonts/{name}", s.handleSubFont)
 	// UC-05:镜像出来的规则集文件。四段路径不会撞上 /sub/{token}/{format}
 	// ({format} 是单段);fmt/name 的白名单在处理器里校验。
 	sub.HandleFunc("GET /sub/{token}/ruleset/{fmt}/{name}", s.handleRulesetFile)
@@ -254,11 +251,8 @@ func (s *Server) routes() {
 	s.rulesetRoutes(api)
 	s.planRoutes(api)
 	s.sourceRoutes(api)
-	s.diagnosticRoutes(api)
 	s.jobRoutes(api)
-	s.probeRoutes(api)
 	s.qualityRoutes(api)
-	s.cdnRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)
@@ -337,13 +331,12 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/backup", s.handleBackup)
 	api.HandleFunc("POST /api/restore", s.handleRestore)
 
-	// UC-26:管理台账号。建号(尚无账号时)与改名共用一个口;改口令单独一条,
+	// 管理员账号:建号(尚无账号时)与改名共用一个口;改口令单独一条,
 	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
 	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
 	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
-	api.HandleFunc("GET /api/admin/meta", s.handleAdminMeta)
 
-	// UC-26:管理台域名 + ACME 证书。acme_* 这组 settings 键只在这里改
+	// 控制面域名 + ACME 证书:acme_* 这组 settings 键只在这里改
 	// (PUT /api/settings 会原样保留它们,见 handleSaveSettings)。
 	api.HandleFunc("PUT /api/acme/config", s.handlePutACMEConfig)
 	api.HandleFunc("DELETE /api/acme/config", s.handleDeleteACMEConfig)
@@ -354,27 +347,10 @@ func (s *Server) routes() {
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
-	// 探测点接入不要 token:join token 即凭据,见 probes.go。
-	s.mux.HandleFunc("POST /api/probes/hello", s.handleProbeHello)
-	// UC-26:管理台登录/登出不要 token —— 登录正是来领凭据的;登出要让
-	// 已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
+	// 管理员登录/登出不要 token —— 登录正是来领凭据的(mpx connect 密码路径);
+	// 登出要让已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
 	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
 	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
-
-	// UC-26 批 2:网页管理台静态面。/admin 只受理 TLS 或回环(与登录同一道
-	// 门);flags/fonts/styles 是产物里以绝对路径引用的共享资源,登录页也
-	// 要用,故不设凭据 —— 凭据管的是 /api。
-	admin := adminTLSOnly(adminSecurityHeaders(s.adminStatic()))
-	s.mux.Handle("GET /admin/", admin)
-	s.mux.Handle("HEAD /admin/", admin)
-	s.mux.Handle("GET /admin", adminTLSOnly(adminSecurityHeaders(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
-		}))))
-	s.mux.Handle("GET /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
-	s.mux.Handle("HEAD /flags/{code}", adminSecurityHeaders(http.HandlerFunc(s.handleFlag)))
-	s.mux.Handle("GET /fonts/", adminSecurityHeaders(subStatic("/fonts/", "fonts")))
-	s.mux.Handle("GET /styles/", adminSecurityHeaders(subStatic("/styles/", "styles")))
 }
 
 // ---- 请求/响应工具 ----

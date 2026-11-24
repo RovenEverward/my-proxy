@@ -1,37 +1,14 @@
 {
   "name": "mpx-docs",
   "private": true,
-  "description": "mpx 文档站、React 管理界面与浏览器测试",
+  "description": "mpx VitePress 文档站（应用本身为纯 Go 单体，无前端依赖）",
   "type": "module",
   "scripts": {
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
-    "ui:build": "node scripts/ui-build.mjs",
-    "ui:fresh": "node scripts/check-ui-fresh.mjs",
-    "ui": "npm run ui:build && mkdir -p .tmp && go build -o .tmp/mpx ./cmd/mpx && .tmp/mpx serve",
-    "ui:typecheck": "tsc --noEmit -p internal/ui/frontend/tsconfig.json",
-    "test:ui": "playwright test -c internal/ui/e2e",
-    "ui:check": "node scripts/check-ui-system.mjs && node scripts/sync-ui-icons.mjs --check",
-    "ui:icons:check": "node scripts/sync-ui-icons.mjs --check",
-    "ui:components": "npm run ui:build && python3 -m http.server 5179 --bind 127.0.0.1 --directory internal/ui/assets",
-    "docs:shots": "node scripts/docs-shots.mjs"
+    "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.0",
-    "@types/react": "^18.3.31",
-    "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react": "^4.7.0",
-    "typescript": "^7.0.2",
-    "vite": "^5.4.21",
     "vitepress": "^1.6.4"
-  },
-  "dependencies": {
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "lucide-react": "1.70.0",
-    "radix-ui": "^1.8.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
   }
 }

@@ -5,13 +5,19 @@
 ## 未发布
 
 ### 要点
-- **网页管理台(UC-26)**:控制面自己伺服管理界面,浏览器打开 `https://<域名或IP>/admin/`,管理员账号密码登录。未配域名时 `/admin/` 只受理 TLS 或回环,远程管走 SSH 隧道。
-- **域名与证书(UC-26)**:系统页新增「域名与证书」:填 Cloudflare 域名与 API token,DNS-01 自动签发续期,签好后 `https://<域名>/admin/` 在任意浏览器直接可开。`PUT/DELETE /api/acme/config`、`POST /api/acme/issue`、`GET /api/acme/status`;CLI 侧 `mpx acme` 命令组,`mpx connect` 对域名地址自动探测系统 CA 信任。
-- **管理员账号(UC-26)**:`mpx init` 现在会建管理员账号;`mpx connect <地址>` 用账号密码换 CLI 会话 token(取代设备密码);`mpx admin create|password` 在服务器上建号/改密码,改密码吊销全部会话与 CLI 凭据。
+- **转向 Agent-Native 极简纯 Go 单体核心(UC-32)**:移除全部网页管理台与前端构建链,回归零前端依赖的单一纯 Go 二进制,聚焦多节点 `xray`/`sing-box` 声明式编排与 7×24 多格式订阅分发。
+- **Agent 契约与官方 Skill(UC-32)**:新增 `mpx node sync --dry-run`(零 SSH、不重启预检新旧配置哈希与漂移,支持 `-o json`);`-o json` 模式出错时向 `stderr` 输出结构化 JSON 错误(`{"error","status_code"}`);随仓提供官方 [skills/mpx/SKILL.md](skills/mpx/SKILL.md),覆盖 SSH 通道接入、只读自检、安全下发与按需本机 CDN 优选工作流。
+- **域名与证书(UC-26)**:支持为控制面配置 Cloudflare 域名与 ACME DNS-01 自动签发续期(`PUT/DELETE /api/acme/config`、`POST /api/acme/issue`、`GET /api/acme/status`、`mpx acme`),`mpx connect <域名>` 自动走系统 CA 校验免 `--fp` 指纹。
+- **管理员账号与 SSH 通道(UC-26 / UC-29)**:`mpx init` 自动建管理员账号并配置 `--ssh` 免密通道;`mpx connect <地址> --ssh <目标>` 通过远端 `mpx api-relay` 零凭据接入;也支持密码登录与 `mpx admin create|password` 管理。
 - 订阅镜像(UC-10):在名单内一台节点上开放 /sub 入口,订阅地址可不止控制面一个 IP。节点侧是核心自带的 TCP 转发(dokodemo-door / sing-box direct),不装 MPX 组件;内容与鉴权以控制面为唯一真相。新增 `mpx mirror add|list|set|rm`,API `GET/POST/PUT/DELETE /api/mirrors`,`mpx serve --sub-addr` 可开一个只路由 /sub 的专用监听(节点镜像指到它时 /api 不出现在镜像端口)。订阅页与用户链接列出"镜像 · <节点>"入口。
 - 控制面迁移后,`mpx mirror set <id> --upstream <新控制面>:<端口>` 让既有镜像跟随新控制面。
 
-- CDN IP 优选升级(UC-31):探测从「延迟+边缘」两段补成「丢包+延迟+吞吐」三段 —— 每 IP 4 次 TCP 拨测记丢包率,边缘通过的前 8 个对 `cdn_speed_url` 做 8 秒限时下载测速;优选池与 CDN 入口按速度降序选优,丢包超 20% 直接不参选;测速地址由 `settings.cdn_speed_url` 配(自建 Worker 或控制面静态文件),空地址退化为丢包+延迟排序。
+### 兼容性(破坏性变更,UC-32)
+- **退役网页管理台与内嵌前端**:彻底删除 `internal/ui`、`/admin/`、`/flags/`、`/fonts/`、`/styles/`、`/sub/-/fonts/` 与 `GET /api/admin/meta`,移除 React/Playwright/TypeScript 前端构建与 CI 检查。浏览器打开 `/sub/<token>` 仍保留零外链、使用系统字体的轻量用量与二维码页。
+- **退役内置 CDN 自动优选与探测点**:彻底删除 `internal/cdn`、`internal/probeagent`、`deploy/cdn-speedtest/`、`mpx cdn`、`mpx probe`、`GET/POST /api/cdn-optimize/*`、`GET /api/cdn-pool`、`/api/probes*` 与 `POST /api/probes/hello`;移除 `settings.cdn_optimize`、`settings.cdn_speed_url` 与 `/api/status` 里的 `probe_*` 字段。CDN 优选改由操作者或 AI Agent 在真实本机网络按需执行后经 `mpx host` 写入。
+- **退役重型内置体检与融合怪测评**:彻底删除 `internal/diagnostics`、`internal/fusion`、`mpx diagnose`、`mpx node diagnose`、`mpx node diagnostics`、`GET/POST /api/nodes/{id}/diagnostics` 与 `POST /api/nodes/{id}/diagnostics/jobs`;轻量只读自检 `mpx doctor` 与入口能力检测 `mpx node capability` 保留。
+- **数据与订阅完全无损**:`cdn_pool`、`probe_points`、`diagnostic_reports` 及 `settings` 旧列保留迁移不再读写,老库升级零报错;所有用户既有 `/sub/<token>` 链接与 Clash / sing-box / Xray / Base64 订阅格式保持完全兼容。
+- 本次破契约经主人显式授权(UC-32)。
 
 ### 兼容性(破坏性变更,UC-30)
 - **退役:境内活性探测与自动剔除(UC-06/12/18/25)、境内指标与带宽测量(UC-20/23)**。删除 `GET /api/reach`、`GET /api/reach/last`、`GET /api/reach/targets`、`POST /api/reach/probe`、`POST /api/reach/results`、`PUT /api/reach/keep`、`GET /api/metrics`、`GET /api/bandwidth/endpoint`、`GET /api/bandwidth/targets`、`POST /api/bandwidth/results`;移除 `mpx node check`、`mpx node bandwidth`、`mpx reach` 命令;管理台的境内列、触达判定筛选、测速按钮、剔除开关与保留按钮一并撤下。

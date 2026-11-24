@@ -51,7 +51,7 @@ func TestUIHintOnAuthAndLogin(t *testing.T) {
 	if code != http.StatusUnauthorized {
 		t.Fatalf("错 token 应 401,得到 %d", code)
 	}
-	checkUIHint(t, body, "凭据不正确或会话已过期;重新登录(浏览器)或重新 mpx connect(CLI)")
+	checkUIHint(t, body, "凭据不正确或会话已过期;请重新 mpx connect")
 
 	// 还没建管理员账号。
 	relaxAdmin(e)

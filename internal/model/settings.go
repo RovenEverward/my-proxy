@@ -73,15 +73,7 @@ type Settings struct {
 	// 客户端直连上游,"privatized" 由控制面镜像、客户端改从控制面取。
 	RulesetMode string `json:"ruleset_mode"`
 
-	// CDNOptimize 是 UC-21 CDN IP 优选总开关:开了探测点才领
-	// cdn-optimize 任务、控制面才把优选 IP 落成 Host。
-	CDNOptimize bool `json:"cdn_optimize"`
-	// CDNSpeedURL 是 UC-31 优选测速的下载地址:探测端对边缘通过的
-	// IP 用这个 URL 做限时下载测速。空串表示不测速,选优退化为
-	// 丢包+延迟(UC-21 语义)。
-	CDNSpeedURL string `json:"cdn_speed_url"`
-
-	// ACMEDomain 是网页管理台的公网域名(如 cp.example.net,UC-26)。空串
+	// ACMEDomain 是控制面 HTTPS 接口的公网域名(如 cp.example.net)。空串
 	// 表示未配 —— 管理台没有受信证书,等于不公网可用。
 	//
 	// 这组 acme_* 键只由 PUT /api/acme/config 写:那里才有「换域名废证书」

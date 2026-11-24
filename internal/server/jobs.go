@@ -1,24 +1,21 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/RovenEverward/my-proxy/internal/diagnostics"
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
 
-// 后台任务接口:体检、安装这类要跑很久的事,交给控制面在后台做完。
+// 后台任务接口:安装这类要跑很久的事,交给控制面在后台做完。
 //
-// 与同步接口的关系:校验一字不差地先走一遍(parseDiagnostic / prepareInstall),
+// 与同步接口的关系:校验一字不差地先走一遍(prepareInstall),
 // 通过之后把执行放进 goroutine,接口立刻回 202 和一件 running 的任务。执行时用
-// context.Background() —— 这是这个接口存在的理由:关掉页面、断掉连接都不影响它。
-// 结论按同步接口的样子落库(状态码 + 正文),GET /api/jobs/{id} 拿到的就是同步
-// 接口当时会回的同一份东西。
+// 独立上下文 —— 断掉连接也不影响它。结论按同步接口的样子落库(状态码 + 正文),
+// GET /api/jobs/{id} 拿到的就是同步接口当时会回的同一份东西。
 
 const (
 	// jobListDefault / jobListMax 是 GET /api/nodes/{id}/jobs 的条数范围。
@@ -29,7 +26,6 @@ const (
 func (s *Server) jobRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
 	api.HandleFunc("GET /api/nodes/{id}/jobs", s.handleListNodeJobs)
-	api.HandleFunc("POST /api/nodes/{id}/diagnostics/jobs", s.handleDiagnoseNodeJob)
 	api.HandleFunc("POST /api/nodes/{id}/install/jobs", s.handleInstallNodeJob)
 }
 
@@ -94,27 +90,6 @@ func (s *Server) handleListNodeJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
 }
 
-// handleDiagnoseNodeJob:POST /api/nodes/{id}/diagnostics/jobs,请求体与
-// POST /api/nodes/{id}/diagnostics 相同。已有同类任务在跑的,回 200 与那件任务。
-func (s *Server) handleDiagnoseNodeJob(w http.ResponseWriter, r *http.Request) {
-	n, ok := s.capabilityNode(w, r)
-	if !ok {
-		return
-	}
-	cfg, run, budget, ok := s.parseDiagnostic(w, r, n)
-	if !ok {
-		return
-	}
-	job, reused, ok := s.startJob(w, model.JobKindDiagnose, n.ID)
-	if !ok {
-		return
-	}
-	if !reused {
-		go s.runDiagnosticJob(job.ID, n, cfg, run, budget)
-	}
-	writeJobStart(w, job, reused)
-}
-
 // handleInstallNodeJob:POST /api/nodes/{id}/install/jobs?core=&version=,参数与
 // POST /api/nodes/{id}/install 相同。已有安装任务在跑的,回 200 与那件任务。
 func (s *Server) handleInstallNodeJob(w http.ResponseWriter, r *http.Request) {
@@ -149,16 +124,6 @@ func writeJobStart(w http.ResponseWriter, job model.Job, reused bool) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"job": job})
-}
-
-// runDiagnosticJob 在后台跑一次体检,跑完把结论落库。体检自带时间预算,到期
-// 由执行方按超时收场,不会一直挂着。
-func (s *Server) runDiagnosticJob(id int64, n *model.Node, cfg diagnostics.Config, run diagnosticRunner, budget time.Duration) {
-	s.finishJob(id, n, "体检", func() (int, any) {
-		ctx, cancel := context.WithTimeout(context.Background(), budget)
-		defer cancel()
-		return s.runDiagnostic(ctx, n, cfg, run)
-	})
 }
 
 // runInstallJob 在后台装一次核心,装完把结论落库。

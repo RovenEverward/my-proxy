@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -30,20 +32,19 @@ var opts struct {
 // rootCmd 定义在包级:另一个文件里的 serveCmd 要挂到它上面。
 var rootCmd = &cobra.Command{
 	Use:   "mpx",
-	Short: "xray 多节点管理",
-	Long: `mpx 是自建 xray 多节点管理工具的命令行客户端。
+	Short: "Agent-Native 极简代理编排核心（xray / sing-box 多节点控制面与 CLI）",
+	Long: `mpx 是面向极客与 AI Agent 的极简多节点代理编排核心（xray / sing-box 控制面与 CLI）。
 
-它通过控制面的 /api 管理节点、入站、对外入口、用户与订阅设置。控制面地址由
---server、MPX_SERVER、配置文件依次决定,三者都没有时用不了。
+它通过控制面的 /api 管理节点、入站、对外入口、用户、套餐、分流规则与多格式订阅。
+所有查询与写操作均支持 --output json / -o json 结构化输出，适合脚本与 Coding Agent 编排。
 
 第一次用:在你自己的电脑上跑 mpx init --host <VPS>,它经 SSH 把那台 VPS 装成控制面
-和节点,建好管理员账号,并把这台电脑接上去。之后再也不用登录 VPS。
-别的设备:mpx connect <控制面地址>,输入管理员用户名与密码即可接入。
+和节点,建好管理员账号,并把这台电脑接上去。
+别的设备:mpx connect <控制面地址> --ssh <ssh别名>（推荐,免密走 SSH 通道）,或
+mpx connect <控制面地址>（账号密码登录）。
 
-不知道下一步该敲什么,就先跑 mpx status 与 mpx doctor —— 这两条只读,不改动任何
-东西,它们会告诉你哪里不对。每个命令组(mpx node/inbound/host/user/settings)自己
-的 --help 里写了这类对象的含义与常见坑,具体子命令的 --help 里带真实可跑的例子,
-拿不准就去翻。`,
+不知道下一步该敲什么,先跑只读自检:mpx status 与 mpx doctor。
+配置变更后用 mpx node sync --dry-run <节点> 预检,确认无误再 mpx node sync <节点> 下发。`,
 	// 错误统一由 Execute 打印一次;cobra 默认还会补一份 usage,那对使用者是噪音。
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -71,7 +72,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个控制面(按保存时的名称),覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd, probeCmd)
+	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
 
 	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
 	// 而这一行最该说清的恰恰是版本号本身是从哪来的。
@@ -101,10 +102,30 @@ func Execute(args ...string) int {
 		if errors.Is(err, errDoctorFailed) {
 			return doctorFailExit
 		}
-		fmt.Fprintln(os.Stderr, err)
+		writeCLIError(os.Stderr, err)
 		return 1
 	}
 	return 0
+}
+
+// writeCLIError 输出命令行错误:在 -o json 模式下向 stderr 输出结构化 JSON
+// 错误对象,让脚本与 AI Agent 能稳定解析错误码与原因,同时保持 stdout 干净。
+func writeCLIError(w io.Writer, err error) {
+	if opts.output == outputJSON {
+		payload := struct {
+			Error      string `json:"error"`
+			StatusCode int    `json:"status_code,omitempty"`
+		}{Error: err.Error()}
+		var ae *APIError
+		if errors.As(err, &ae) && ae.StatusCode > 0 {
+			payload.StatusCode = ae.StatusCode
+		}
+		if b, merr := json.Marshal(payload); merr == nil {
+			fmt.Fprintln(w, string(b))
+			return
+		}
+	}
+	fmt.Fprintln(w, err)
 }
 
 // cliVersion 是 --version 打出来的那一行。

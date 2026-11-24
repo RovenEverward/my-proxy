@@ -7,21 +7,6 @@ on:
     branches: [main]
 
 jobs:
-  ui-system:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - name: UX tokens, React components and official icons
-        run: npm run ui:check
-      - name: Type-check and rebuild embedded React assets
-        run: npm run ui:build
-      - name: Verify committed frontend assets
-        run: git diff --exit-code -- internal/ui/assets
-
   test:
     strategy:
       fail-fast: false

@@ -18,15 +18,15 @@ import (
 // CLI 起完任务就按 seq 增量拉事件,拉到 done/failed 为止。
 var acmeCmd = &cobra.Command{
 	Use:   "acme",
-	Short: "配置管理台域名与 ACME 自动证书",
-	Long: `管理台域名与 ACME 自动证书(UC-26)。
+	Short: "配置控制面域名与 ACME 自动证书",
+	Long: `控制面域名与 ACME 自动证书。
 
-管理台要对外开,浏览器要的是一张受信证书 —— 自签证书它只给满屏警告。mpx acme
-用 Cloudflare 的 DNS-01 挑战向 Let's Encrypt 签证书:域名解析指到控制面、DNS
-由 Cloudflare 托管、给一个能改 DNS 的 API token,签发与到期续签就都自动了。
+mpx acme 用 Cloudflare 的 DNS-01 挑战向 Let's Encrypt 签发受信 TLS 证书:
+域名解析指到控制面、DNS 由 Cloudflare 托管、给一个能改 DNS 的 API token,
+签发与到期续签自动完成。
 
-配好后:浏览器开 https://<域名>/admin/;CLI 照常用 mpx connect 接入 ——
-连域名时它会自动改走系统 CA 校验(不再要指纹),连 IP 仍是指纹钉自签证书。`,
+配好后:CLI 用 mpx connect <域名> 接入时会自动改走系统 CA 校验(不再需要 --fp
+证书指纹);连裸 IP 仍走指纹钉自签证书,走 --ssh 通道则完全免指纹免密码。`,
 }
 
 var acmeSetFlags struct {
@@ -229,7 +229,7 @@ func acmeIssue(c *Client, noWait bool) error {
 		since = p.Seq
 		switch p.State {
 		case model.ACMEIssueDone:
-			fmt.Println("签发完成:管理台现在可以用 https://<域名>/admin/ 打开。")
+			fmt.Println("签发完成:控制面已启用受信 TLS 证书,可直接用 mpx connect <域名> 接入。")
 			return nil
 		case model.ACMEIssueFailed:
 			return errors.New("签发失败(细节见上面的过程;配置可用 mpx acme status 核对)")
