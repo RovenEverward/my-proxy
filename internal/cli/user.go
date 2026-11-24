@@ -343,6 +343,7 @@ var userAddFlags struct {
 	inbounds      string
 	plan          string
 	note          string
+	subToken      string
 	disabled      bool
 }
 
@@ -365,6 +366,7 @@ var userAddCmd = &cobra.Command{
 			Enabled:       !userAddFlags.disabled,
 			ResetStrategy: model.ResetStrategy(userAddFlags.resetStrategy),
 			Note:          userAddFlags.note,
+			SubToken:      userAddFlags.subToken,
 		}
 		if userAddFlags.limit != "" {
 			limit, err := parseBytes(userAddFlags.limit)
@@ -703,6 +705,7 @@ func init() {
 	userAddCmd.Flags().StringVar(&userAddFlags.inbounds, "inbounds", "", "可用的入站 id,逗号分隔;空表示全部")
 	userAddCmd.Flags().StringVar(&userAddFlags.plan, "plan", "", "挂到某个套餐(套餐名或 id);不填则空入站归默认套餐")
 	userAddCmd.Flags().StringVar(&userAddFlags.note, "note", "", "备注")
+	userAddCmd.Flags().StringVar(&userAddFlags.subToken, "sub-token", "", "指定订阅链接里的 token(迁移已有面板时用);不填自动生成")
 	userAddCmd.Flags().BoolVar(&userAddFlags.disabled, "disabled", false, "建好后先停用")
 
 	userEditCmd.Flags().StringVar(&userEditFlags.limit, "limit", "", "新的流量上限,如 100GB;给 0 表示不限")

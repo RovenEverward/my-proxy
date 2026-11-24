@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/server/settings.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/model/settings.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
-verified: 2026-11-23 @ HEAD + 抖音基建域直连工作树
+verified: 2026-11-24 @ 9273312 + marzban-sub-token
 ---
 # 订阅与分流
 
@@ -39,3 +39,4 @@ verified: 2026-11-23 @ HEAD + 抖音基建域直连工作树
 - `/sub/{token}/ruleset/*` 与订阅本体不共用限流桶（`subRateLimit` 按路径挑 `rulesetLimiter`，30/s·burst 400）→ 客户端冷启动并行拉几十个规则集文件是正常形态，共桶时 privatized 一开就批量 429（ISS-18）。桶键仍是 `RemoteAddr`，CDN 边缘聚合会把多用户折算进一个桶，量级撑不住时先考虑在边缘放行 `/sub/*/ruleset/` 再动这里。大件按 `Accept-Encoding` 协商 gzip（≥64KB、压不出收益回退原文）：clash `direct` 2.27MB→512KB；`.srs` 已压缩、gzip 无效。已在 CF 配边缘缓存：zone ruleset `MPX CDN bypass cache` 里 `sub.shiziyi.top` 且 path 含 `/ruleset/` 的请求 `cache:true`+`edge_ttl 7200`，`MISS→HIT`。注意 Cache Rules 是“可叠加、最后命中 wins”，该条必须排在 `mpx_sub_cache_bypass` 之后，否则被同主机 bypass 冲掉。
 - 节点名里写 `{USERNAME}` → 会被抹成空串，只在订阅名里生效 → 见 [缺口与待定项] 第 3 条。
 - 订阅走明文 HTTP → token 可被链路窃听 → 已接受的代价，换地址用 `/sub/{token}/rotate`。
+- Marzban 迁库兜底(`settings.marzban_sub_secret`,GET 只回 `marzban_sub_secret_set`):`/sub/{token}` 精确查不到时,再按 Marzban 铸法(数据 base64url(用户名,unix秒) + sha256(数据+secret) 前 10 字符签名)验签,过了按用户名找人 → 用户客户端里任何一枚旧 token 都认得(它本来就不落库、每次请求重铸),旧订阅链接不用换。精确匹配仍优先,同名用户没建过去不会串号。`revoke-sub` / 旋转 token 不受影响 —— 那两条路径只认 MPX 自己的 token。

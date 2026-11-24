@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/model/plan.go, internal/model/user.go, internal/model/traffic.go, internal/model/reset.go, internal/store/user.go, internal/store/plan.go, internal/store/plan_migration.go, internal/store/traffic.go, internal/cli/user.go, internal/cli/plan.go]
-verified: 2026-11-12 @ cadd0fb + ISS-10 working tree
+verified: 2026-11-24 @ 9273312 + marzban-sub-token
 ---
 # 用户、套餐与计量
 
@@ -36,5 +36,6 @@ stateDiagram-v2
 - 想把用户「移出套餐」→ 没挂套餐又没有 `inbound_ids` 的用户按旧语义能用**全部**入站，权限会悄悄放大 → 接口拒绝 `plan_id: null`，要放宽就明确改挂默认套餐。
 - 旧客户端只带 `inbound_ids` 建用户 → 不挂套餐，按旧语义只能用这些入站 → 这是有意的，避免和默认套餐取并集变成全部。
 - 迁移来的用户保留了 `inbound_ids` 作为额外授权 → 从套餐里去节点收窄不了他们 → 先清空额外授权。
+- 建用户可显式带 `sub_token`(`POST /api/users`、`mpx user add --sub-token`):服务端只对合法 token 采纳,非法仍回退自动生成 → 迁库能原样带上旧面板的订阅 token,不用等它自然轮换。
 - CSV 导入逐行独立提交→ 中途失败时前面的行已经写进去 → 看导入报告逐行处理。
 - 提醒阈值写 0 → 表示关闭，不是「到 0 才提醒」。

@@ -25,7 +25,7 @@ var rulesetNameRe = regexp.MustCompile(`^[a-zA-Z0-9@_.-]{1,128}$`)
 // 鉴权与订阅一样:路径里那个不可猜的 token 本身。失败一律回 404 —— 这条路径
 // 公网可达,不区分「没这个订阅」和「还没镜像好」,免得探测出功能是否存在。
 func (s *Server) handleRulesetFile(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.store.GetUserBySubToken(r.PathValue("token")); err != nil {
+	if _, err := s.resolveSubUser(r.PathValue("token")); err != nil {
 		writeError(w, http.StatusNotFound, "订阅不存在")
 		return
 	}

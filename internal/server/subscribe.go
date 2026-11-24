@@ -20,7 +20,7 @@ import (
 // 规则决定。这样同一条订阅链接在 Clash 和 sing-box 里各自拿到对的配置。
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	subToken := r.PathValue("token")
-	user, err := s.store.GetUserBySubToken(subToken)
+	user, err := s.resolveSubUser(subToken)
 	if err != nil {
 		// 订阅路径猜错是常态(扫描器),不值得记日志。
 		writeError(w, http.StatusNotFound, "订阅不存在")
@@ -55,6 +55,26 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.serveSubBody(w, r, user, settings, format, pathFormat, subToken)
+}
+
+// resolveSubUser 按订阅路径里的 token 找人。先走 users.sub_token 精确匹配;
+// 查不到再按 Marzban 的铸法验一次签名,通过后按 token 里带的用户名取人。
+// 后者是给迁过来的旧订阅链接兜底:Marzban 的 token 不落库、铸一次用一次,
+// 客户端里存的是哪一枚根本没法逐个抄过来,只能认「签名对的任意一枚」。
+func (s *Server) resolveSubUser(token string) (*model.User, error) {
+	user, err := s.store.GetUserBySubToken(token)
+	if err == nil {
+		return user, nil
+	}
+	settings, serr := s.store.GetSettings()
+	if serr != nil {
+		return nil, err
+	}
+	username, ok := model.ParseMarzbanSubToken(token, settings.MarzbanSubSecret)
+	if !ok {
+		return nil, err
+	}
+	return s.store.GetUser(username)
 }
 
 // serveSubBody 是给格式化订阅本体的那段:缓存命中直接回,不命中才重算。

@@ -23,6 +23,8 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	// CF token 是敏感值,GET 不回明文:只回「配没配」。
 	v.ACMECFTokenSet = v.ACMECFToken != ""
 	v.ACMECFToken = ""
+	v.MarzbanSubSecretSet = v.MarzbanSubSecret != ""
+	v.MarzbanSubSecret = ""
 	writeJSON(w, http.StatusOK, v)
 }
 
@@ -115,6 +117,12 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	v.ACMEDomain = cur.ACMEDomain
 	v.ACMECFToken = cur.ACMECFToken
 	v.ACMEStaging = cur.ACMEStaging
+	// marzban 迁库 secret 同敏感值待遇:整份 PUT 时空串表示「保持现状」,
+	// 要换新值才显式带明文。没有独立的写口 —— 它与 ACME 不同,不牵证书
+	// 一类的副作用,跟着 settings 走即可。
+	if v.MarzbanSubSecret == "" {
+		v.MarzbanSubSecret = cur.MarzbanSubSecret
+	}
 	if err := s.store.SaveSettings(&v); err != nil {
 		s.writeStoreError(w, err, "订阅设置")
 		return

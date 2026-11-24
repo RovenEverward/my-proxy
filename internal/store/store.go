@@ -468,6 +468,11 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN acme_cf_token TEXT NOT NULL DEFAULT ''`},
 	{"settings", "acme_staging",
 		`ALTER TABLE settings ADD COLUMN acme_staging INTEGER NOT NULL DEFAULT 0`},
+	// Marzban 迁来的订阅回退:存对方的 jwt secret_key(敏感,落库明文,与
+	// acme_cf_token 同一口径 —— 整库即备份,靠库文件权限)。开着时
+	// /sub/{token} 解不出用户会按 Marzban 铸法验签后按用户名找人。
+	{"settings", "marzban_sub_secret",
+		`ALTER TABLE settings ADD COLUMN marzban_sub_secret TEXT NOT NULL DEFAULT ''`},
 	// 批 5 协议支持:xhttp / splithttp / httpupgrade 的参数、wireguard 的服务端
 	// 配置、客户端 mux / fragment 开关。wg_secret 与 reality_priv 一个待遇:
 	// 只在服务端出现,客户端拿的是公钥。

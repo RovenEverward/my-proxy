@@ -286,7 +286,7 @@ POST             /api/users/{username}/revoke-sub
 GET              /api/users/{username}/links
 GET              /api/sub-pulls              每个用户第一次 / 最近一次拉取订阅(v0.9.8 起,只增)
 
-GET|PUT          /api/settings
+GET|PUT          /api/settings             敏感键同 acme_cf_token 待遇:marzban_sub_secret 只进不出(GET 只回 marzban_sub_secret_set,PUT 空串保持现状)
 POST             /api/settings/test-webhook   往当前 webhook_url 发一条测试事件
 
 PUT|DELETE       /api/acme/config             域名/CF token/staging;PUT 只改给到的字段,换域名或换 CA 会作废旧证书
@@ -354,7 +354,7 @@ $ curl -H 'Authorization: Bearer wrong' localhost:8080/api/nodes
 
 | 请求 | 结果 |
 | --- | --- |
-| `POST /api/users` | 启用 —— 新建的用户默认能用,和 `mpx user add` 一致 |
+| `POST /api/users` | 启用 —— 新建的用户默认能用,和 `mpx user add` 一致;`sub_token` 可在此时显式指定(迁库带外部 token 用),非法值回退自动生成 |
 | `PUT /api/users/{name}` | 保持原样 —— 只想改流量上限的一次 PUT 不会把停用的用户悄悄启用 |
 
 显式写 `"enabled": false` / `true` 时以请求体为准。服务端为此在请求体上把 `enabled` 读成 `*bool`(`internal/server/validate.go` 的 `userRequest`),为的是分得清「没说」和「说了 false」;领域模型 `model.User.Enabled` 仍是裸 bool,零值只在真正要表达「停用」的地方出现。

@@ -43,12 +43,14 @@ func (s *Store) GetSettings() (*model.Settings, error) {
 		`SELECT sub_url_prefix, profile_title, support_link, update_interval,
 		        webhook_url, notify_days_left, notify_usage_percent,
 		        rules, templates, ruleset_mode,
-		        cdn_optimize, cdn_speed_url, acme_domain, acme_cf_token, acme_staging
+		        cdn_optimize, cdn_speed_url, acme_domain, acme_cf_token, acme_staging,
+		        marzban_sub_secret
 		 FROM settings WHERE id = 1`).
 		Scan(&st.SubURLPrefix, &st.ProfileTitle, &st.SupportLink, &st.UpdateInterval,
 			&st.WebhookURL, &st.NotifyDaysLeft, &st.NotifyUsagePercent, &rules, &templates,
 			&st.RulesetMode, &st.CDNOptimize, &st.CDNSpeedURL,
-			&st.ACMEDomain, &st.ACMECFToken, &st.ACMEStaging)
+			&st.ACMEDomain, &st.ACMECFToken, &st.ACMEStaging,
+			&st.MarzbanSubSecret)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultSettings(), nil
 	}
@@ -102,8 +104,9 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 		`INSERT INTO settings (id, sub_url_prefix, profile_title, support_link,
 		                      update_interval, webhook_url, notify_days_left,
 		                      notify_usage_percent, rules, templates, ruleset_mode,
-		                      cdn_optimize, cdn_speed_url, acme_domain, acme_cf_token, acme_staging)
-		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                      cdn_optimize, cdn_speed_url, acme_domain, acme_cf_token, acme_staging,
+		                      marzban_sub_secret)
+		 VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			sub_url_prefix       = excluded.sub_url_prefix,
 			profile_title        = excluded.profile_title,
@@ -119,11 +122,13 @@ func (s *Store) SaveSettings(st *model.Settings) error {
 			cdn_speed_url        = excluded.cdn_speed_url,
 			acme_domain          = excluded.acme_domain,
 			acme_cf_token        = excluded.acme_cf_token,
-			acme_staging         = excluded.acme_staging`,
+			acme_staging         = excluded.acme_staging,
+			marzban_sub_secret   = excluded.marzban_sub_secret`,
 		st.SubURLPrefix, st.ProfileTitle, st.SupportLink, st.UpdateInterval,
 		st.WebhookURL, st.NotifyDaysLeft, st.NotifyUsagePercent, rules, templates,
 		st.RulesetMode, st.CDNOptimize, st.CDNSpeedURL,
-		st.ACMEDomain, st.ACMECFToken, boolToInt(st.ACMEStaging))
+		st.ACMEDomain, st.ACMECFToken, boolToInt(st.ACMEStaging),
+		st.MarzbanSubSecret)
 	if err != nil {
 		return fmt.Errorf("保存设置: %w", err)
 	}

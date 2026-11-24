@@ -114,8 +114,11 @@ func (req *userRequest) takePlanID() (*int64, bool, error) {
 
 // fillUserSecrets 给新建用户生成密钥与订阅 token。
 //
-// 无条件覆盖:请求体里带什么都不作数。用户凭证是控制面发出去的,让调用方挑
-// 只会多出一条能挑重复、挑弱值的路,而 CLI 还得把同一套生成逻辑再写一遍。
+// Key 无条件覆盖:凭证是控制面发出去的,让调用方挑只会多出一条能挑重复、挑
+// 弱值的路,CLI 还得把同一套生成逻辑再写一遍。
+// SubToken 则允许调用方显式指定:外部面板迁移过来的用户得保住旧订阅链接,
+// 新建时按原 token 落库,之后的拉取地址不必换。只在校验通过时采纳,空串或
+// 非法字符仍回退到自动生成。
 func fillUserSecrets(u *model.User) error {
 	key, err := model.NewKey()
 	if err != nil {
@@ -123,16 +126,35 @@ func fillUserSecrets(u *model.User) error {
 	}
 	u.Key = key
 
-	token, err := model.NewSubscriptionToken()
-	if err != nil {
-		return err
+	if u.SubToken == "" || !validSubToken(u.SubToken) {
+		token, err := model.NewSubscriptionToken()
+		if err != nil {
+			return err
+		}
+		u.SubToken = token
 	}
-	u.SubToken = token
 
 	if u.CreatedAt.IsZero() {
 		u.CreatedAt = time.Now()
 	}
 	return nil
+}
+
+// validSubToken 判断一段字符串能不能当订阅路径里的 token。
+// Marzban 的 token 走 base64url(无填充)+ 10 字符签名,MPX 自己的是 16 字符
+// RawURLEncoding,两类都收,所以只查字符集和长度,不锁死形状。
+func validSubToken(token string) bool {
+	if len(token) < 8 || len(token) > 128 {
+		return false
+	}
+	for i := 0; i < len(token); i++ {
+		c := token[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
+			c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 // ensureReality 给 REALITY 入站备齐密钥对与 shortId。

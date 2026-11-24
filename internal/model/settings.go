@@ -94,6 +94,15 @@ type Settings struct {
 	// ACMECFTokenSet 是「token 配没配」的只读出参,GET 里由服务端派生,
 	// 不落库;PUT 时被忽略。
 	ACMECFTokenSet bool `json:"acme_cf_token_set"`
+
+	// MarzbanSubSecret 是迁自 Marzban 的 jwt secret_key:开着它时,订阅路径里
+	// 解不出用户的 token 会按 Marzban 的铸法再验一次签名,通过后按里面的
+	// 用户名找人 —— 已发出去的旧订阅链接不用换。敏感值,GET 只回
+	// marzban_sub_secret_set;写接口里空串表示「保持现状」。
+	MarzbanSubSecret string `json:"marzban_sub_secret,omitempty"`
+	// MarzbanSubSecretSet 与 acme_cf_token_set 同待遇,只读出参。
+	MarzbanSubSecretSet bool `json:"marzban_sub_secret_set"`
+
 	// ACMEStaging 用 Let's Encrypt 的 staging 目录签测试证书(不签发即
 	// 受信),默认 false。切换 staging/正式会废弃已签证书重签:staging 证书
 	// 浏览器不认,留着反而比没有更糟。
