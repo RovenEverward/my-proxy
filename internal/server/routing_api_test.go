@@ -57,8 +57,10 @@ func TestRoutingAPI(t *testing.T) {
 		t.Fatalf("final %d %s", code, b)
 	}
 
+	var fetchedURL string
 	e.s.ruleSets.fetch = func(_ context.Context, url string) ([]byte, error) {
-		return []byte("payload:\n  - DOMAIN-SUFFIX,openai.com\n  - '+.chatgpt.com'\n  - DOMAIN-KEYWORD,claude\n"), nil
+		fetchedURL = url
+		return []byte("payload:\n  - '+.openai.com'\n  - '+.chatgpt.com'\n  - '+.claude.ai'\n"), nil
 	}
 	test := func(body map[string]any) testResult {
 		t.Helper()
@@ -77,6 +79,9 @@ func TestRoutingAPI(t *testing.T) {
 	r = test(map[string]any{"domain": "api.openai.com"})
 	if r.Target != model.TargetReject || len(r.Uncertain) != 1 || r.Uncertain[0].Rule.Type != model.RuleCIDR {
 		t.Fatalf("%+v", r)
+	}
+	if !strings.HasSuffix(fetchedURL, ".yaml") {
+		t.Fatalf("规则测试应把 .mrs 推导为同名 .yaml 拉取,实际 %q", fetchedURL)
 	}
 	r = test(map[string]any{"domain": "myads.net"})
 	if r.Matched != nil || r.Target != model.GroupTarget(g.ID) || len(r.DisabledHits) != 1 {

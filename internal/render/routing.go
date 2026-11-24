@@ -159,7 +159,11 @@ func ClashRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, error
 				if p.RulesetURL != nil {
 					url = p.RulesetURL("clash", c.Name, c.URL)
 				}
-				providers[c.Name] = map[string]any{"type": "http", "behavior": c.Behavior, "format": "yaml", "interval": 86400, "url": url, "path": "./ruleset/" + c.Name + ".yaml"}
+				format, ext := "yaml", ".yaml"
+				if strings.HasSuffix(c.URL, ".mrs") {
+					format, ext = "mrs", ".mrs"
+				}
+				providers[c.Name] = map[string]any{"type": "http", "behavior": c.Behavior, "format": format, "interval": 86400, "url": url, "path": "./ruleset/" + c.Name + ext}
 				line := "RULE-SET," + c.Name + "," + names.sets[i]
 				if c.NoResolve {
 					line += ",no-resolve"
@@ -313,8 +317,9 @@ func SingBoxRouting(eps []Endpoint, p RoutingPlan, template []byte) ([]byte, err
 		case model.RuleCIDR:
 			rules = append(rules, routeTo(map[string]any{"ip_cidr": []string{r.Value}}, r.Target, to))
 		case model.RuleGeoIP:
-			tag := "geoip-" + strings.ToLower(r.Value)
-			addSet(tag, "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/"+tag+".srs")
+			cc := strings.ToLower(r.Value)
+			tag := "geoip-" + cc
+			addSet(tag, "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/"+cc+".srs")
 			rules = append(rules, routeTo(map[string]any{"rule_set": []string{tag}}, r.Target, to))
 		case model.RuleSetRef:
 			rs, ok := model.RuleSetByKey(r.Value)

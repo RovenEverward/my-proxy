@@ -191,11 +191,11 @@ func TestRulesetFileGzipNegotiation(t *testing.T) {
 func TestListRulesetsAPI(t *testing.T) {
 	e, _ := newRulesetEnv(t, nil)
 	e.putRules([]model.RouteRule{
-		{Type: model.RuleSetRef, Value: "ai", Target: model.TargetReject, Enabled: true},
+		{Type: model.RuleSetRef, Value: "media", Target: model.TargetReject, Enabled: true},
 		{Type: model.RuleSetRef, Value: "lan", Target: model.TargetDirect, Enabled: false},
 		{Type: model.RuleGeoIP, Value: "CN", Target: model.TargetDirect, Enabled: true},
 	})
-	if _, err := e.st.CompleteRulesetRefresh("clash/openai", "u", time.Now(),
+	if _, err := e.st.CompleteRulesetRefresh("clash/youtube", "u", time.Now(),
 		[]byte("x"), "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -232,22 +232,22 @@ func TestListRulesetsAPI(t *testing.T) {
 		t.Fatalf("解析响应: %v\n%s", err, data)
 	}
 	if len(groups) != 2 {
-		t.Fatalf("应只有 ai + geoip 两组(lan 停用): %s", data)
+		t.Fatalf("应只有 media + geoip 两组(lan 停用): %s", data)
 	}
-	if groups[0].Key != "ai" || groups[0].Name != "AI 服务" {
-		t.Fatalf("ai 组应在目录序位置: %+v", groups[0])
+	if groups[0].Key != "media" || groups[0].Name != "流媒体" {
+		t.Fatalf("media 组应在目录序位置: %+v", groups[0])
 	}
-	if groups[0].Clash.Total != 4 || groups[0].Clash.Ready != 1 {
-		t.Fatalf("ai.clash 聚合不对: %+v", groups[0].Clash)
+	if groups[0].Clash.Total != 8 || groups[0].Clash.Ready != 1 {
+		t.Fatalf("media.clash 聚合不对: %+v", groups[0].Clash)
 	}
-	openaiReady := false
+	ytReady := false
 	for _, f := range groups[0].Clash.Files {
-		if f.Name == "openai" {
-			openaiReady = f.Ready
+		if f.Name == "youtube" {
+			ytReady = f.Ready
 		}
 	}
-	if !openaiReady {
-		t.Fatalf("openai 文件应就绪: %+v", groups[0].Clash.Files)
+	if !ytReady {
+		t.Fatalf("youtube 文件应就绪: %+v", groups[0].Clash.Files)
 	}
 	if groups[1].Key != "geoip" || groups[1].Name != "GeoIP" {
 		t.Fatalf("geoip 合成组应排最后: %+v", groups[1])
@@ -278,16 +278,16 @@ func TestRefreshRulesetsAPI(t *testing.T) {
 	if err := json.Unmarshal(data, &resp); err != nil {
 		t.Fatal(err)
 	}
-	// telegram 组 = 1 clash + 1 singbox 文件。
-	if resp.Started != 2 {
-		t.Fatalf("started 应为 2: %s", data)
+	// telegram 组 = 2 clash + 2 singbox 文件。
+	if resp.Started != 4 {
+		t.Fatalf("started 应为 4: %s", data)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for atomic.LoadInt64(&hits) < 2 && time.Now().Before(deadline) {
+	for atomic.LoadInt64(&hits) < 4 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
-	if atomic.LoadInt64(&hits) != 2 {
-		t.Fatalf("上游应被打 2 次,实际 %d", hits)
+	if atomic.LoadInt64(&hits) != 4 {
+		t.Fatalf("上游应被打 4 次,实际 %d", hits)
 	}
 
 	// 缺省 body 对全部引用组刷新;空表也要有 202。
@@ -335,15 +335,15 @@ func TestPrivatizedSubscriptionRendering(t *testing.T) {
 	e, _ := newRulesetEnv(t, nil)
 	user, subPath := e.createSubReadyUser("alice")
 	e.putRules([]model.RouteRule{
-		{Type: model.RuleSetRef, Value: "ai", Target: model.TargetReject, Enabled: true},
+		{Type: model.RuleSetRef, Value: "media", Target: model.TargetReject, Enabled: true},
 	})
-	if _, err := e.st.CompleteRulesetRefresh("clash/openai", "https://up/a.yaml",
-		time.Now(), []byte("payload: 1"), "text/yaml", ""); err != nil {
+	if _, err := e.st.CompleteRulesetRefresh("clash/youtube", "https://up/youtube.mrs",
+		time.Now(), []byte("mrs-bin"), "application/octet-stream", ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// upstream(默认):rule-provider 的 url 全是上游地址,不出现镜像 URL。
-	// (provider 的本地缓存路径是 "./ruleset/<name>.yaml",断言要看 url 值,
+	// (provider 的本地缓存路径是 "./ruleset/<name>.mrs",断言要看 url 值,
 	// 不能模糊搜 "/ruleset/" —— 那串本来就长在里面。)
 	code, _, upstreamBody := e.sub(subPath+"/clash-meta", "")
 	if code != http.StatusOK {
@@ -356,7 +356,7 @@ func TestPrivatizedSubscriptionRendering(t *testing.T) {
 		t.Fatal("upstream 模式应保留上游地址")
 	}
 
-	// 切成私有化:openai 已就绪 → 镜像地址;其余未就绪 → 仍上游。
+	// 切成私有化:youtube 已就绪 → 镜像地址;其余未就绪 → 仍上游。
 	if code, data := e.api("PUT", "/api/settings", map[string]any{"ruleset_mode": "privatized"}); code != http.StatusOK {
 		t.Fatalf("切私有化: %d %s", code, data)
 	}
@@ -364,19 +364,19 @@ func TestPrivatizedSubscriptionRendering(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("私有化订阅: %d", code)
 	}
-	mirror := e.srv.URL + "/sub/" + user.SubToken + "/ruleset/clash/openai"
+	mirror := e.srv.URL + "/sub/" + user.SubToken + "/ruleset/clash/youtube"
 	if !strings.Contains(string(privBody), mirror) {
 		t.Fatalf("就绪文件应换成镜像地址 %q:\n%s", mirror, privBody)
 	}
-	if !strings.Contains(string(privBody), "fastly.jsdelivr.net") {
+	if !strings.Contains(string(privBody), "cdn.jsdelivr.net") {
 		t.Fatal("未就绪文件应保留上游地址")
 	}
-	// sing-box 的 tag 需要 PathEscape(如 steam@cn);geoip 未就绪仍是上游。
+	// sing-box 未就绪仍是上游。
 	code, _, sbBody := e.sub(subPath+"/sing-box", "")
 	if code != http.StatusOK {
 		t.Fatalf("sing-box 订阅: %d", code)
 	}
-	if strings.Contains(string(sbBody), "/ruleset/singbox/openai") {
-		t.Fatal("singbox/openai 未就绪,不该换成镜像地址")
+	if strings.Contains(string(sbBody), "/ruleset/singbox/youtube") {
+		t.Fatal("singbox/youtube 未就绪,不该换成镜像地址")
 	}
 }

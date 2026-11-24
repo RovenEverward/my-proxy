@@ -389,11 +389,11 @@ func TestRulesetURLRewrite(t *testing.T) {
 
 	// 私有化闭包:已知名字换成镜像,其余原样返回。
 	mirror := func(f, n, up string) string {
-		if f == "clash" && n == "openai" {
-			return "https://cp.example.com/sub/tok/ruleset/clash/openai"
+		if f == "clash" && n == "ai" {
+			return "https://cp.example.com/sub/tok/ruleset/clash/ai"
 		}
-		if f == "singbox" && n == "openai" {
-			return "https://cp.example.com/sub/tok/ruleset/singbox/openai"
+		if f == "singbox" && n == "ai" {
+			return "https://cp.example.com/sub/tok/ruleset/singbox/ai"
 		}
 		return up
 	}
@@ -406,15 +406,18 @@ func TestRulesetURLRewrite(t *testing.T) {
 	if err := yaml.Unmarshal(out, &doc); err != nil {
 		t.Fatal(err)
 	}
-	openai, _ := doc.Providers["openai"].(map[string]any)
-	got, _ := openai["url"].(string)
-	if got != "https://cp.example.com/sub/tok/ruleset/clash/openai" {
-		t.Fatalf("openai provider 没被改写: %v", doc.Providers["openai"])
+	ai, _ := doc.Providers["ai"].(map[string]any)
+	got, _ := ai["url"].(string)
+	if got != "https://cp.example.com/sub/tok/ruleset/clash/ai" {
+		t.Fatalf("ai provider 没被改写: %v", doc.Providers["ai"])
+	}
+	if ai["format"] != "mrs" || ai["path"] != "./ruleset/ai.mrs" {
+		t.Fatalf("ai provider 应为 mrs 格式: %v", ai)
 	}
 	for name, p := range doc.Providers {
 		pm, _ := p.(map[string]any)
 		u, _ := pm["url"].(string)
-		if name != "openai" && strings.Contains(u, "cp.example.com") {
+		if name != "ai" && strings.Contains(u, "cp.example.com") {
 			t.Fatalf("未就绪的 %s 不该被改写: %s", name, u)
 		}
 	}
@@ -434,10 +437,10 @@ func TestRulesetURLRewrite(t *testing.T) {
 	}
 	found := false
 	for _, s := range cfg.Route.RuleSet {
-		if s["tag"] == "openai" {
+		if s["tag"] == "ai" {
 			found = true
-			if s["url"] != "https://cp.example.com/sub/tok/ruleset/singbox/openai" {
-				t.Fatalf("singbox openai 没被改写: %v", s["url"])
+			if s["url"] != "https://cp.example.com/sub/tok/ruleset/singbox/ai" {
+				t.Fatalf("singbox ai 没被改写: %v", s["url"])
 			}
 		}
 		if s["tag"] == "geoip-cn" && !strings.HasPrefix(s["url"].(string), "https://cdn.jsdelivr.net/") {
@@ -445,6 +448,6 @@ func TestRulesetURLRewrite(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("sing-box 配置里没有 openai rule_set")
+		t.Fatal("sing-box 配置里没有 ai rule_set")
 	}
 }

@@ -295,24 +295,23 @@ func TestClashStructure(t *testing.T) {
 			t.Errorf("meta 版应有 rule-providers")
 		}
 		groups, ok := doc["proxy-groups"].([]any)
-		if !ok || len(groups) < 15 {
-			t.Fatalf("meta 版 proxy-groups = %d 个, want >= 15", len(groups))
+		if !ok || len(groups) < 10 {
+			t.Fatalf("meta 版 proxy-groups = %d 个, want >= 10", len(groups))
 		}
 		groupNames := map[string]bool{}
 		for _, g := range groups {
 			groupNames[g.(map[string]any)["name"].(string)] = true
 		}
-		for _, want := range []string{"手动切换", "自动选择", "全球代理", "广告拦截",
-			"本地直连", "人工智能", "谷歌", "苹果", "微软", "社交", "流媒体", "游戏",
-			"开发", "国内媒体", "漏网之鱼"} {
+		for _, want := range []string{"手动切换", "自动选择", "全球代理",
+			"本地直连", "AI 服务", "流媒体", "Telegram", "微软", "苹果", "漏网之鱼"} {
 			if !groupNames[want] {
 				t.Errorf("meta 版缺策略组 %q", want)
 			}
 		}
 
 		rules, ok := doc["rules"].([]any)
-		if !ok || len(rules) < 100 {
-			t.Errorf("meta 版 rules = %d 条, want >= 100", len(rules))
+		if !ok || len(rules) < 15 {
+			t.Errorf("meta 版 rules = %d 条, want >= 15", len(rules))
 		}
 
 		dns, ok := doc["dns"].(map[string]any)

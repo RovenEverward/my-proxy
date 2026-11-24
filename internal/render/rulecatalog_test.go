@@ -9,11 +9,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// 内置规则组目录是从两份默认模板生成的;任何一边改了 URL 或删了规则集,这里会报出来。
+// 默认模板里引用的每份规则集都必须与内置目录一致(URL / behavior / format),
+// 且目录里每一项都应指向 MetaCubeX/meta-rules-dat 的 .mrs / .srs。
 func TestCatalogMatchesDefaults(t *testing.T) {
 	var clash struct {
 		Providers map[string]struct {
 			Behavior string `yaml:"behavior"`
+			Format   string `yaml:"format"`
 			URL      string `yaml:"url"`
 		} `yaml:"rule-providers"`
 		Rules []string `yaml:"rules"`
@@ -29,28 +31,47 @@ func TestCatalogMatchesDefaults(t *testing.T) {
 	if err := json.Unmarshal(singboxDefaultTemplate, &sb); err != nil {
 		t.Fatal(err)
 	}
-	sbURL := map[string]string{}
-	for _, r := range sb.Route.RuleSet {
-		sbURL[r.Tag] = r.URL
-	}
-	inCatalog := map[string]bool{}
+	clashCatalog := map[string]model.ClashRuleSet{}
+	sbCatalog := map[string]model.SingBoxRuleSet{}
 	for _, rs := range model.RuleCatalog() {
 		for _, c := range rs.Clash {
-			p, ok := clash.Providers[c.Name]
-			if !ok || p.URL != c.URL || p.Behavior != c.Behavior {
-				t.Errorf("%s: Clash 规则集 %s 与默认模板不一致", rs.Key, c.Name)
+			if !strings.HasSuffix(c.URL, ".mrs") {
+				t.Errorf("%s: Clash 规则集 %s 应使用 .mrs: %s", rs.Key, c.Name, c.URL)
 			}
-			inCatalog[c.Name] = true
+			clashCatalog[c.Name] = c
 		}
 		for _, s := range rs.SingBox {
-			if sbURL[s.Tag] != s.URL {
-				t.Errorf("%s: sing-box 规则集 %s 与默认模板不一致", rs.Key, s.Tag)
+			if !strings.HasSuffix(s.URL, ".srs") {
+				t.Errorf("%s: sing-box 规则集 %s 应使用 .srs: %s", rs.Key, s.Tag, s.URL)
 			}
+			sbCatalog[s.Tag] = s
+		}
+	}
+	for name, p := range clash.Providers {
+		c, ok := clashCatalog[name]
+		if !ok {
+			t.Errorf("默认 Clash 模板里的 provider %s 不在目录里", name)
+			continue
+		}
+		if p.URL != c.URL || p.Behavior != c.Behavior || p.Format != "mrs" {
+			t.Errorf("Clash provider %s 与目录不一致: tpl=%+v cat=%+v", name, p, c)
 		}
 	}
 	for _, r := range clash.Rules {
-		if f := strings.Split(r, ","); f[0] == "RULE-SET" && !inCatalog[f[1]] {
-			t.Errorf("默认模板的规则集 %s 不在目录里", f[1])
+		if f := strings.Split(r, ","); f[0] == "RULE-SET" {
+			if _, ok := clashCatalog[f[1]]; !ok {
+				t.Errorf("默认模板的规则集 %s 不在目录里", f[1])
+			}
+		}
+	}
+	for _, r := range sb.Route.RuleSet {
+		s, ok := sbCatalog[r.Tag]
+		if !ok {
+			t.Errorf("默认 sing-box 模板里的 rule_set %s 不在目录里", r.Tag)
+			continue
+		}
+		if r.URL != s.URL {
+			t.Errorf("sing-box rule_set %s URL 不一致: tpl=%s cat=%s", r.Tag, r.URL, s.URL)
 		}
 	}
 }

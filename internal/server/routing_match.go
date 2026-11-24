@@ -44,6 +44,7 @@ func defaultFetch(ctx context.Context, url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", "mihomo")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -71,8 +72,14 @@ func (c *ruleSetCache) get(ctx context.Context, rs model.ClashRuleSet) *ruleSetE
 	}
 	e := &ruleSetEntry{at: time.Now(), ipOnly: rs.Behavior == "ipcidr"}
 	if !e.ipOnly {
+		// MetaCubeX/meta-rules-dat 对每个 .mrs 都同路径发布同名 .yaml,
+		// 客户端拉二进制 .mrs,控制面规则测试器拉对应文本 .yaml 解析匹配。
+		fetchURL := rs.URL
+		if strings.HasSuffix(fetchURL, ".mrs") {
+			fetchURL = strings.TrimSuffix(fetchURL, ".mrs") + ".yaml"
+		}
 		ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-		body, err := fetch(ctx, rs.URL)
+		body, err := fetch(ctx, fetchURL)
 		cancel()
 		if err != nil {
 			e.err = err

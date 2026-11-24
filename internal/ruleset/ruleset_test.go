@@ -127,9 +127,9 @@ func TestFilesForRules(t *testing.T) {
 		}
 		keys[f.Key] = true
 	}
-	// telegram: 1 个 clash 文件 + 1 个 singbox 文件;geoip-cn: 1 个 singbox。
-	if len(files) != 3 {
-		t.Fatalf("文件数应为 3: %v", files)
+	// telegram: 2 个 clash 文件 + 2 个 singbox 文件;geoip-cn: 1 个 singbox。
+	if len(files) != 5 {
+		t.Fatalf("文件数应为 5: %v", files)
 	}
 	var geoip *File
 	for i, f := range files {
@@ -141,7 +141,7 @@ func TestFilesForRules(t *testing.T) {
 		t.Fatal("geoip-cn 文件缺失")
 	}
 	if geoip.Fmt != "singbox" || geoip.Name != "geoip-cn" ||
-		geoip.Upstream != "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs" {
+		geoip.Upstream != "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs" {
 		t.Fatalf("geoip 文件不对: %+v", *geoip)
 	}
 }
@@ -152,8 +152,8 @@ func TestFilesByGroup(t *testing.T) {
 		{Type: model.RuleGeoIP, Value: "CN", Enabled: true},
 	}
 	groups := FilesByGroup(rules)
-	if len(groups["telegram"]) != 2 {
-		t.Fatalf("telegram 组应 2 个文件: %v", groups["telegram"])
+	if len(groups["telegram"]) != 4 {
+		t.Fatalf("telegram 组应 4 个文件: %v", groups["telegram"])
 	}
 	if len(groups[GeoIPGroupKey]) != 1 || groups[GeoIPGroupKey][0].Key != "singbox/geoip-cn" {
 		t.Fatalf("geoip 合成组不对: %v", groups[GeoIPGroupKey])
@@ -161,7 +161,7 @@ func TestFilesByGroup(t *testing.T) {
 }
 
 func TestFileByKey(t *testing.T) {
-	if f, ok := FileByKey("clash/openai"); !ok || f.Fmt != "clash" || f.Name != "openai" {
+	if f, ok := FileByKey("clash/ai"); !ok || f.Fmt != "clash" || f.Name != "ai" {
 		t.Fatalf("目录文件解不出: %v %v", f, ok)
 	}
 	if f, ok := FileByKey("singbox/geoip-jp"); !ok || f.Upstream == "" {
@@ -199,14 +199,14 @@ func TestManagerRefreshSuccess(t *testing.T) {
 	})
 	defer m.Close()
 
-	if err := m.StartRefresh("clash/openai"); err != nil {
+	if err := m.StartRefresh("clash/ai"); err != nil {
 		t.Fatalf("启动刷新: %v", err)
 	}
 	waitFor(t, "快照写入", func() bool {
-		snap := fs.snapshot("clash/openai")
+		snap := fs.snapshot("clash/ai")
 		return snap != nil && len(snap.Body) > 0
 	})
-	body, ct, err := fs.RulesetSnapshotBody("clash/openai")
+	body, ct, err := fs.RulesetSnapshotBody("clash/ai")
 	if err != nil || string(body) != "payload: 1" || ct != "text/yaml" {
 		t.Fatalf("快照正文: %q %q %v", body, ct, err)
 	}
@@ -236,25 +236,25 @@ func TestManagerRefreshFailureKeepsOldBody(t *testing.T) {
 	})
 	defer m.Close()
 
-	if err := m.StartRefresh("clash/openai"); err != nil {
+	if err := m.StartRefresh("clash/ai"); err != nil {
 		t.Fatalf("首次刷新: %v", err)
 	}
 	waitFor(t, "首次就绪", func() bool {
-		snap := fs.snapshot("clash/openai")
+		snap := fs.snapshot("clash/ai")
 		return snap != nil && len(snap.Body) > 0
 	})
-	if err := m.StartRefresh("clash/openai"); err != nil {
+	if err := m.StartRefresh("clash/ai"); err != nil {
 		t.Fatalf("第二次刷新: %v", err)
 	}
 	waitFor(t, "失败落库", func() bool {
-		snap := fs.snapshot("clash/openai")
+		snap := fs.snapshot("clash/ai")
 		return snap != nil && snap.LastError != ""
 	})
-	body, _, err := fs.RulesetSnapshotBody("clash/openai")
+	body, _, err := fs.RulesetSnapshotBody("clash/ai")
 	if err != nil || string(body) != "payload: good" {
 		t.Fatalf("失败应保留旧正文: %q %v", body, err)
 	}
-	snap := fs.snapshot("clash/openai")
+	snap := fs.snapshot("clash/ai")
 	if !strings.Contains(snap.LastError, "502") {
 		t.Fatalf("last_error 应记 HTTP 502: %q", snap.LastError)
 	}
@@ -277,18 +277,18 @@ func TestManagerSingleFlight(t *testing.T) {
 	m := New(fs, upstreamClient(up.URL), nil)
 	defer m.Close()
 
-	if err := m.StartRefresh("clash/openai"); err != nil {
+	if err := m.StartRefresh("clash/ai"); err != nil {
 		t.Fatalf("第一次启动: %v", err)
 	}
-	if !m.Running("clash/openai") {
+	if !m.Running("clash/ai") {
 		t.Fatal("作业应在跑")
 	}
 	// 第二次调用不报错、不重复发请求。
-	if err := m.StartRefresh("clash/openai"); err != nil {
+	if err := m.StartRefresh("clash/ai"); err != nil {
 		t.Fatalf("单飞合并应返回 nil: %v", err)
 	}
 	close(release)
-	waitFor(t, "作业完成", func() bool { return !m.Running("clash/openai") })
+	waitFor(t, "作业完成", func() bool { return !m.Running("clash/ai") })
 	if n := atomic.LoadInt64(&hits); n != 1 {
 		t.Fatalf("单飞应只发 1 个请求,实际 %d", n)
 	}
@@ -310,7 +310,7 @@ func TestManagerRefreshDue(t *testing.T) {
 	m := New(fs, upstreamClient(up.URL), nil)
 	defer m.Close()
 
-	// 两条启用规则引用 telegram 组(2 个文件)+ geoip-jp;再加一条停用规则引 ai,
+	// 两条启用规则引用 telegram 组(4 个文件)+ geoip-jp;再加一条停用规则引 ai,
 	// 停用的不该被拉。
 	m.SetRefs(func() ([]model.RouteRule, error) {
 		return []model.RouteRule{
@@ -321,15 +321,15 @@ func TestManagerRefreshDue(t *testing.T) {
 	})
 
 	m.RefreshDue(time.Now())
-	waitFor(t, "3 个文件写入", func() bool {
+	waitFor(t, "5 个文件写入", func() bool {
 		fs.mu.Lock()
 		defer fs.mu.Unlock()
-		return fs.writes >= 3
+		return fs.writes >= 5
 	})
-	if n := atomic.LoadInt64(&hits); n != 3 {
-		t.Fatalf("应拉 3 个文件,实际 %d", n)
+	if n := atomic.LoadInt64(&hits); n != 5 {
+		t.Fatalf("应拉 5 个文件,实际 %d", n)
 	}
-	if fs.snapshot("clash/openai") != nil {
+	if fs.snapshot("clash/ai") != nil {
 		t.Fatal("停用规则引用的文件不该被拉")
 	}
 
@@ -346,5 +346,5 @@ func TestManagerRefreshDue(t *testing.T) {
 	}
 	fs.mu.Unlock()
 	m.RefreshDue(time.Now())
-	waitFor(t, "到期重拉", func() bool { return atomic.LoadInt64(&hits) == 3 })
+	waitFor(t, "到期重拉", func() bool { return atomic.LoadInt64(&hits) == 5 })
 }

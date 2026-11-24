@@ -132,7 +132,7 @@ func geoipFile(country string) File {
 		Fmt:      "singbox",
 		Name:     name,
 		Key:      "singbox/" + name,
-		Upstream: "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/" + name + ".srs",
+		Upstream: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/" + cc + ".srs",
 	}
 }
 
