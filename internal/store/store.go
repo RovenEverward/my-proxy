@@ -399,13 +399,6 @@ func (s *Store) migrate() error {
 	if err := s.migrateCDN(); err != nil {
 		return err
 	}
-	// UC-26:网页管理台的账号与会话,以及 ACME 证书状态。
-	if err := s.migrateAdmin(); err != nil {
-		return err
-	}
-	if err := s.migrateACME(); err != nil {
-		return err
-	}
 	if err := s.migrateMetrics(); err != nil {
 		return err
 	}
@@ -459,17 +452,7 @@ var addedColumns = []struct{ table, column, ddl string }{
 		`ALTER TABLE settings ADD COLUMN reach_keeps TEXT NOT NULL DEFAULT '{}'`},
 	{"settings", "bandwidth_test_url",
 		`ALTER TABLE settings ADD COLUMN bandwidth_test_url TEXT NOT NULL DEFAULT ''`},
-	// UC-26 批:管理台域名 + ACME。cf_token 是有 DNS 编辑权限的 Cloudflare
-	// API token(敏感,落库明文 —— 与库内其它机密同一口径:整库即备份,
-	// 靠库文件的 FS 权限);staging 默认关。
-	{"settings", "acme_domain",
-		`ALTER TABLE settings ADD COLUMN acme_domain TEXT NOT NULL DEFAULT ''`},
-	{"settings", "acme_cf_token",
-		`ALTER TABLE settings ADD COLUMN acme_cf_token TEXT NOT NULL DEFAULT ''`},
-	{"settings", "acme_staging",
-		`ALTER TABLE settings ADD COLUMN acme_staging INTEGER NOT NULL DEFAULT 0`},
-	// Marzban 迁来的订阅回退:存对方的 jwt secret_key(敏感,落库明文,与
-	// acme_cf_token 同一口径 —— 整库即备份,靠库文件权限)。开着时
+	// Marzban 迁来的订阅回退:存对方的 jwt secret_key(敏感,落库明文)。
 	// /sub/{token} 解不出用户会按 Marzban 铸法验签后按用户名找人。
 	{"settings", "marzban_sub_secret",
 		`ALTER TABLE settings ADD COLUMN marzban_sub_secret TEXT NOT NULL DEFAULT ''`},

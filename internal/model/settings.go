@@ -73,37 +73,18 @@ type Settings struct {
 	// 客户端直连上游,"privatized" 由控制面镜像、客户端改从控制面取。
 	RulesetMode string `json:"ruleset_mode"`
 
-	// ACMEDomain 是控制面 HTTPS 接口的公网域名(如 cp.example.net)。空串
-	// 表示未配 —— 管理台没有受信证书,等于不公网可用。
-	//
-	// 这组 acme_* 键只由 PUT /api/acme/config 写:那里才有「换域名废证书」
-	// 的副作用;整份 settings 的 PUT 入口会原样保留它们(见 handleSaveSettings)。
-	ACMEDomain string `json:"acme_domain"`
-	// ACMECFToken 是有 DNS 编辑权限的 Cloudflare API token,ACME 的 DNS-01
-	// 靠它建 _acme-challenge TXT。敏感值:读接口只回 acme_cf_token_set,
-	// 不回明文;写接口里空串表示「保持现状」。
-	ACMECFToken string `json:"acme_cf_token,omitempty"`
-	// ACMECFTokenSet 是「token 配没配」的只读出参,GET 里由服务端派生,
-	// 不落库;PUT 时被忽略。
-	ACMECFTokenSet bool `json:"acme_cf_token_set"`
-
 	// MarzbanSubSecret 是迁自 Marzban 的 jwt secret_key:开着它时,订阅路径里
 	// 解不出用户的 token 会按 Marzban 的铸法再验一次签名,通过后按里面的
 	// 用户名找人 —— 已发出去的旧订阅链接不用换。敏感值,GET 只回
 	// marzban_sub_secret_set;写接口里空串表示「保持现状」。
 	MarzbanSubSecret string `json:"marzban_sub_secret,omitempty"`
-	// MarzbanSubSecretSet 与 acme_cf_token_set 同待遇,只读出参。
+	// MarzbanSubSecretSet 是只读出参。
 	MarzbanSubSecretSet bool `json:"marzban_sub_secret_set"`
 
 	// SubNodePrefix 是订阅里 MPX 托管节点名的全局前缀,空串不加。对托管端点
 	// 统一生效(手写 remark 的也加 —— 用途是跟机场/转发订阅并排时一眼认出
 	// 自建,只看自动名会漏掉一部分)。
 	SubNodePrefix string `json:"sub_node_prefix"`
-
-	// ACMEStaging 用 Let's Encrypt 的 staging 目录签测试证书(不签发即
-	// 受信),默认 false。切换 staging/正式会废弃已签证书重签:staging 证书
-	// 浏览器不认,留着反而比没有更糟。
-	ACMEStaging bool `json:"acme_staging"`
 }
 
 // RulesetModePrivatized 是设置里「规则集由控制面镜像」的取值。

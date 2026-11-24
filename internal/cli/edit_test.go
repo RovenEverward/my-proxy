@@ -376,13 +376,15 @@ func TestInboundEditHintsSyncOnlyForNodeFields(t *testing.T) {
 	}
 }
 
-// 表格里的"可用"列和 CSV 的"可用性"列必须是同一件事,否则同一条用户在两处
-// 显示相反的状态。
+// 表格里的"可用"列正确反映用户启用状态。
 func TestUserRowMatchesCSVAvailability(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		u := userRow{ID: 1, Username: "alice", Enabled: enabled, Status: "active", ResetStrategy: "none"}
 		got := u.row()
-		want := enabledText(enabled)
+		want := "否"
+		if enabled {
+			want = "是"
+		}
 		if len(userHeaders) != len(got) {
 			t.Fatalf("表头 %d 列, 数据 %d 列", len(userHeaders), len(got))
 		}

@@ -32,18 +32,17 @@ var opts struct {
 // rootCmd 定义在包级:另一个文件里的 serveCmd 要挂到它上面。
 var rootCmd = &cobra.Command{
 	Use:   "mpx",
-	Short: "Agent-Native 极简代理编排核心（xray / sing-box 多节点控制面与 CLI）",
-	Long: `mpx 是面向极客与 AI Agent 的极简多节点代理编排核心（xray / sing-box 控制面与 CLI）。
+	Short: "Agent-Native 极简代理编排核心（多节点控制面与 CLI）",
+	Long: `mpx 是面向极客与 AI Agent 的极简多节点代理编排核心（控制面与 CLI）。
 
-它通过控制面的 /api 管理节点、入站、对外入口、用户、套餐、分流规则与多格式订阅。
+它通过控制面的 /api 管理节点、入站、对外入口、用户、分流规则与多格式订阅。
 所有查询与写操作均支持 --output json / -o json 结构化输出，适合脚本与 Coding Agent 编排。
 
-第一次用:在你自己的电脑上跑 mpx init --host <VPS>,它经 SSH 把那台 VPS 装成控制面
-和节点,建好管理员账号,并把这台电脑接上去。
-别的设备:mpx connect <控制面地址> --ssh <ssh别名>（推荐,免密走 SSH 通道）,或
-mpx connect <控制面地址>（账号密码登录）。
+接入控制面:
+  mpx connect <控制面地址> --ssh <ssh别名>      # 推荐:免密走 SSH 通道
+  mpx connect <控制面地址> --token <MPX_TOKEN>  # 直连 Bearer token
 
-不知道下一步该敲什么,先跑只读自检:mpx status 与 mpx doctor。
+日常排查:mpx status 与 mpx doctor。
 配置变更后用 mpx node sync --dry-run <节点> 预检,确认无误再 mpx node sync <节点> 下发。`,
 	// 错误统一由 Execute 打印一次;cobra 默认还会补一份 usage,那对使用者是噪音。
 	SilenceUsage:  true,
@@ -72,7 +71,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个控制面(按保存时的名称),覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd, initCmd, bootstrapCmd)
+	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd)
 
 	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
 	// 而这一行最该说清的恰恰是版本号本身是从哪来的。

@@ -46,31 +46,12 @@ func checkUIHint(t *testing.T, body []byte, wantError string) {
 
 func TestUIHintOnAuthAndLogin(t *testing.T) {
 	e := newEnv(t)
-	// 过期 / 错凭据。
+	// 错凭据。
 	code, body := e.request("GET", "/api/users", nil, map[string]string{"Authorization": "Bearer nope"})
 	if code != http.StatusUnauthorized {
 		t.Fatalf("错 token 应 401,得到 %d", code)
 	}
-	checkUIHint(t, body, "凭据不正确或会话已过期;请重新 mpx connect")
-
-	// 还没建管理员账号。
-	relaxAdmin(e)
-	r := httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"ops","password":"`+adminPW+`"}`))
-	r.RemoteAddr = "127.0.0.1:5000"
-	w := httptest.NewRecorder()
-	e.s.Handler().ServeHTTP(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("没建账号登录应 403,得到 %d %s", w.Code, w.Body)
-	}
-	checkUIHint(t, w.Body.Bytes(), "还没有管理员账号:在服务器上用 mpx admin create 建号(或由 mpx init 建)")
-
-	// 公网明文。
-	e.api("POST", "/api/admin/account", adminAccountRequest{Username: "ops", Password: adminPW})
-	r = httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"ops","password":"`+adminPW+`"}`))
-	r.RemoteAddr = "203.0.113.9:5000"
-	w = httptest.NewRecorder()
-	e.s.Handler().ServeHTTP(w, r)
-	checkUIHint(t, w.Body.Bytes(), "账号密码只能经 HTTPS 登录")
+	checkUIHint(t, body, "管理 token 不正确;请核对 MPX_TOKEN 或使用 mpx connect --ssh")
 }
 
 func TestDoctorUIHint(t *testing.T) {

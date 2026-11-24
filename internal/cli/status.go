@@ -97,7 +97,6 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"退避中的节点", backoff},
 		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
-		{"管理员账号", adminLoginText(st)},
 	}
 }
 
@@ -181,15 +180,4 @@ func humanDuration(d time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%d 秒", int(d/time.Second)))
 	}
 	return strings.Join(parts, " ")
-}
-
-// adminLoginText 写一行管理员登录的状况:账号建没建、登录锁没锁。
-func adminLoginText(st model.ControlStatus) string {
-	if !st.AdminAccountSet {
-		return "未建(密码模式 mpx connect 登不进去;服务器上 MPX_TOKEN mpx admin create 建号,或直接用 mpx connect --ssh)"
-	}
-	if st.LoginLockedUntil != nil {
-		return "已建,密码连续输错,登录锁定到 " + st.LoginLockedUntil.Format("15:04:05")
-	}
-	return "已建"
 }

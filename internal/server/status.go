@@ -49,11 +49,5 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Users:    len(users),
 	}
 	out.TLSFingerprint = s.tlsFingerprint
-	// UC-26:设备面字段退役;现在报「管理员账号建了没」与「登录锁没锁」,
-	// 供 install.sh 收尾文案与 mpx status 用。
-	if _, _, err := s.store.AdminAccount(); err == nil {
-		out.AdminAccountSet = true
-	}
-	out.LoginLockedUntil = s.adminLogin.LockedUntil(time.Now())
 	writeJSON(w, http.StatusOK, out)
 }

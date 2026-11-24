@@ -125,11 +125,6 @@ type ControlStatus struct {
 	Update UpdateInfo `json:"update"`
 	// TLSFingerprint 是控制面自签证书的公钥指纹(SHA256:...),CLI 按它认人。
 	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
-	// AdminAccountSet 表示管理员账号是否已建(UC-26);install.sh 靠它决定
-	// 收尾时提示不提示建号。
-	AdminAccountSet bool `json:"admin_account_set"`
-	// LoginLockedUntil 非空表示管理台登录连续输错、锁定到这个时刻。
-	LoginLockedUntil *time.Time `json:"login_locked_until,omitempty"`
 
 	Counts   Counts        `json:"counts"`
 	Backoffs []NodeBackoff `json:"backoffs"`

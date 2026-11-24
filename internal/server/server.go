@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/RovenEverward/my-proxy/internal/acme"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/ruleset"
@@ -89,21 +88,16 @@ type Server struct {
 	token    string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
-	// adminLogin 是管理台登录的限流闸(UC-26;设备接入已退役,登录是唯一
-	// 剩下的「无凭据换凭据」入口)。实现见 loginguard.go。
-	adminLogin *loginGuard
-	logger     *slog.Logger
-	mux        *http.ServeMux
-	nodeOps    NodeOps
+	logger         *slog.Logger
+	mux            *http.ServeMux
+	nodeOps        NodeOps
 	// extProber 是外部端点降级探测的实现点;nil 时用真实直连
 	// (defaultExternalProber)。测试换成替身免得打真实外网(UC-17)。
 	extProber externalProber
 	status    StatusSource
 	backoff   BackoffOps
 	updates   UpdateSource
-	// acme 是 UC-26 的 ACME 证书管理器;nil 时签发类接口 503、只读接口照常。
-	acme   *acme.Manager
-	dbPath string
+	dbPath    string
 	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
 	// 为空表示没配库路径,控制面升级接口据此返回 503。
 	updateDir string
@@ -176,7 +170,6 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 		subLimiter:     newSubLimiter(),
 		rulesetLimiter: newRulesetLimiter(),
 		apiLimiter:     newAPILimiter(),
-		adminLogin:     newLoginGuard(),
 	}
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
@@ -331,26 +324,9 @@ func (s *Server) routes() {
 	api.HandleFunc("GET /api/backup", s.handleBackup)
 	api.HandleFunc("POST /api/restore", s.handleRestore)
 
-	// 管理员账号:建号(尚无账号时)与改名共用一个口;改口令单独一条,
-	// 强制验旧密码。两条都过 requireAuth —— 建号与救援都由已认证凭据发起。
-	api.HandleFunc("POST /api/admin/account", s.handleAdminAccount)
-	api.HandleFunc("PUT /api/admin/password", s.handleAdminPassword)
-
-	// 控制面域名 + ACME 证书:acme_* 这组 settings 键只在这里改
-	// (PUT /api/settings 会原样保留它们,见 handleSaveSettings)。
-	api.HandleFunc("PUT /api/acme/config", s.handlePutACMEConfig)
-	api.HandleFunc("DELETE /api/acme/config", s.handleDeleteACMEConfig)
-	api.HandleFunc("GET /api/acme/status", s.handleACMEStatus)
-	api.HandleFunc("POST /api/acme/issue", s.handleStartACMEIssue)
-	api.HandleFunc("GET /api/acme/issue", s.handleACMEIssueProgress)
-
 	// 限流在外、鉴权在内:反过来的话,拿错 token 的请求在进桶之前就被 401 打回,
 	// 撞 token 等于不受限流。
 	s.mux.Handle("/api/", s.rateLimit(s.apiLimiter, s.requireAuth(apiCompression(api))))
-	// 管理员登录/登出不要 token —— 登录正是来领凭据的(mpx connect 密码路径);
-	// 登出要让已过期/被吊销的会话也能体面退出。自带同源校验与登录三道闸,见 admin.go。
-	s.mux.HandleFunc("POST /api/admin/login", s.handleAdminLogin)
-	s.mux.HandleFunc("POST /api/admin/logout", s.handleAdminLogout)
 }
 
 // ---- 请求/响应工具 ----

@@ -74,6 +74,39 @@ type userPresence struct {
 	LastActiveAt *time.Time `json:"last_active_at"`
 }
 
+func enabledText(enabled bool) string {
+	if enabled {
+		return "是"
+	}
+	return "否"
+}
+
+func strategyText(s string) string {
+	if s == "" {
+		return string(model.ResetNone)
+	}
+	return s
+}
+
+func fetchAllUsers(c *Client) ([]userRow, error) {
+	var all []userRow
+	for offset := 0; ; {
+		raw, err := c.do("GET", fmt.Sprintf("/api/users?limit=200&offset=%d", offset), nil)
+		if err != nil {
+			return nil, err
+		}
+		res, err := decode[userPage](raw)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, res.Users...)
+		if len(all) >= res.Total || len(res.Users) == 0 {
+			return all, nil
+		}
+		offset += len(res.Users)
+	}
+}
+
 func (u userRow) row() []string {
 	return []string{
 		strconv.FormatInt(u.ID, 10),
@@ -685,7 +718,7 @@ func revokeUserSub(c *Client, username string) (string, []byte, error) {
 func init() {
 	userCmd.AddCommand(userListCmd, userShowCmd, userAddCmd, userEditCmd, userRmCmd,
 		userEnableCmd, userDisableCmd, userRenewCmd, userLinksCmd,
-		userResetTrafficCmd, userRevokeSubCmd, userExportCmd, userImportCmd)
+		userResetTrafficCmd, userRevokeSubCmd)
 
 	userListCmd.Flags().IntVar(&userListFlags.page, "page", 1, "第几页(从 1 开始)")
 	userListCmd.Flags().IntVar(&userListFlags.pageSize, "page-size", 50, "每页多少条")
@@ -696,8 +729,6 @@ func init() {
 
 	userRenewCmd.Flags().StringVar(&userRenewFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
 	userRenewCmd.Flags().IntVar(&userRenewFlags.days, "days", 0, "从当前到期日(已过期则从今天)起顺延的天数")
-
-	userImportCmd.Flags().StringVarP(&userImportFlags.file, "file", "f", "", "要导入的 CSV 文件")
 
 	userAddCmd.Flags().StringVar(&userAddFlags.limit, "limit", "", "流量上限,如 100GB / 1.5TB;不填或 0 表示不限")
 	userAddCmd.Flags().StringVar(&userAddFlags.expire, "expire", "", "到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
