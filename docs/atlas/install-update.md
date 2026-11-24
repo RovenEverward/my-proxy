@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/buildinfo/, deploy/]
-verified: 2026-11-24 @ 5de6b0c
+verified: 2026-11-24 @ 3cd7512
 ---
 # 部署与运维
 

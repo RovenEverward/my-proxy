@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/cli/, internal/pin/, cmd/mpx/, skills/mpx/]
-verified: 2026-11-24 @ 5de6b0c
+verified: 2026-11-24 @ 3cd7512
 ---
 # 操作入口：CLI 与 Agent Skill
 

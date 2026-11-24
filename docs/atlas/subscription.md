@@ -2,7 +2,7 @@
 kind: part
 parent: README.md
 code: [internal/server/subscribe.go, internal/server/subcache.go, internal/server/routing_api.go, internal/server/ruleset.go, internal/server/settings.go, internal/render/clash.go, internal/render/singbox.go, internal/render/links.go, internal/render/routing.go, internal/model/routing.go, internal/model/settings.go, internal/ruleset/ruleset.go, internal/store/ruleset.go]
-verified: 2026-11-24 @ 5de6b0c
+verified: 2026-11-24 @ 3cd7512
 ---
 # 订阅与分流
 
