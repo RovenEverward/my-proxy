@@ -25,7 +25,7 @@ type ServeOptions struct {
 	DBPath   string        // SQLite 文件路径
 	Token    string        // 管理 token;为空表示不校验,只适合本机开发
 	Interval time.Duration // 后台任务间隔,0 用 control.DefaultInterval
-	Logger *slog.Logger
+	Logger   *slog.Logger
 	// SubAddr 是订阅专用监听(UC-10),例如 0.0.0.0:8081;空串不起。
 	// 节点镜像把 /sub 流量转到这个口,管理 /api 不会出现在这个监听上,
 	// 也不需要经过 TLS 嗅探分流(它就是纯 HTTP)。

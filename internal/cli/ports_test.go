@@ -71,4 +71,3 @@ func TestPortProbeFields(t *testing.T) {
 		t.Errorf("inbound 字段: %v", info)
 	}
 }
-

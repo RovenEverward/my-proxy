@@ -43,16 +43,16 @@ var userHeaders = []string{"ID", "用户名", "可用", "状态", "已用", "上
 
 // userRow 是 CLI 侧对服务端 userView 的映射。
 type userRow struct {
-	ID            int64      `json:"id"`
-	Username      string     `json:"username"`
-	Enabled       bool       `json:"enabled"`
-	Status        string     `json:"status"`
-	DataLimit     int64      `json:"data_limit"`
-	UsedTraffic   int64      `json:"used_traffic"`
-	ExpireAt      *time.Time `json:"expire_at"`
-	ResetStrategy string     `json:"reset_strategy"`
-	InboundIDs    []int64    `json:"inbound_ids"`
-	Note          string     `json:"note"`
+	ID            int64         `json:"id"`
+	Username      string        `json:"username"`
+	Enabled       bool          `json:"enabled"`
+	Status        string        `json:"status"`
+	DataLimit     int64         `json:"data_limit"`
+	UsedTraffic   int64         `json:"used_traffic"`
+	ExpireAt      *time.Time    `json:"expire_at"`
+	ResetStrategy string        `json:"reset_strategy"`
+	InboundIDs    []int64       `json:"inbound_ids"`
+	Note          string        `json:"note"`
 	Presence      *userPresence `json:"presence"`
 }
 

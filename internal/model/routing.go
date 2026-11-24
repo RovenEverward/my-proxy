@@ -149,15 +149,15 @@ const (
 
 // ProxyGroup 是按条件自动收入口的策略组;成员在渲染时按当前用户的端点计算。
 type ProxyGroup struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	Icon         string    `json:"icon,omitempty"`
-	Mode         GroupMode `json:"mode"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Icon      string    `json:"icon,omitempty"`
+	Mode      GroupMode `json:"mode"`
 	Regions   []string  `json:"regions,omitempty"`   // 国家码,任一
 	Protocols []string  `json:"protocols,omitempty"` // 协议短名(与订阅名后缀一致,如 Reality、Hy2),任一
 	Tags      []string  `json:"tags,omitempty"`      // 节点/入口标签,任一
-	TestURL      string    `json:"test_url,omitempty"`
-	Interval     int       `json:"interval,omitempty"` // 秒
+	TestURL   string    `json:"test_url,omitempty"`
+	Interval  int       `json:"interval,omitempty"` // 秒
 }
 
 // 策略组名不能和这些保留名或内置规则组生成的组名撞上(渲染时会出同名组)。

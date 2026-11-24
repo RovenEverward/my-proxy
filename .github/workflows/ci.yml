@@ -47,7 +47,7 @@ jobs:
 
       - name: 编译 mpx.exe
         shell: bash
-        run: CGO_ENABLED=0 go build -trimpath -tags with_utls,with_quic -o mpx.exe ./cmd/mpx
+        run: CGO_ENABLED=0 go build -trimpath -o mpx.exe ./cmd/mpx
 
       - name: 打 setup.exe
         shell: pwsh

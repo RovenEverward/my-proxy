@@ -45,10 +45,10 @@ type sourceView struct {
 	NodeCount     int    `json:"node_count"`
 	// Nodes 是快照里的节点名单:只带显示名与协议,不带地址和凭证,
 	// 让节点页这类清单界面可以直接展示成员而不用读订阅预览。
-	Nodes       []sourceNodeRef `json:"nodes"`
-	InputFormat string          `json:"input_format"`
-	Issues      []source.Issue                         `json:"issues"`
-	Grants      []string                               `json:"grants"`
+	Nodes       []sourceNodeRef                         `json:"nodes"`
+	InputFormat string                                  `json:"input_format"`
+	Issues      []source.Issue                          `json:"issues"`
+	Grants      []string                                `json:"grants"`
 	Formats     map[model.ClientFormat]sourceFormatView `json:"formats"`
 }
 

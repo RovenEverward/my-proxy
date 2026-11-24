@@ -33,7 +33,7 @@ func fakeSSH(t *testing.T, stdout, stderr string, exitCode int) string {
 	return argsFile
 }
 
-// shellQuote 把任意字节塞进单引号:单引号自身换成 '\'' 即可。
+// shellQuote 把任意字节塞进单引号:单引号自身换成 '\” 即可。
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

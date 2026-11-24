@@ -39,7 +39,6 @@ func Version() string {
 	return fromBuildInfo
 }
 
-
 var (
 	once          sync.Once
 	fromBuildInfo string
