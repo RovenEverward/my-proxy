@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 
@@ -13,12 +12,12 @@ import (
 
 func resetCoreCommandFlags(t *testing.T) {
 	t.Helper()
-	add, edit, install, core := inboundAddFlags, inboundEditFlags, nodeInstallFlags, nodeCoreFlags
+	add, edit, core := inboundAddFlags, inboundEditFlags, nodeCoreFlags
 	t.Cleanup(func() {
-		inboundAddFlags, inboundEditFlags, nodeInstallFlags, nodeCoreFlags = add, edit, install, core
+		inboundAddFlags, inboundEditFlags, nodeCoreFlags = add, edit, core
 		rootCmd.SetArgs(nil)
 	})
-	for _, cmd := range []*cobra.Command{inboundAddCmd, inboundEditCmd, nodeInstallCmd, nodeCoreEditCmd} {
+	for _, cmd := range []*cobra.Command{inboundAddCmd, inboundEditCmd, nodeCoreEditCmd} {
 		cmd.Flags().VisitAll(func(f *pflag.Flag) {
 			if err := f.Value.Set(f.DefValue); err != nil {
 				t.Fatal(err)
@@ -75,16 +74,10 @@ func TestQUICInboundCLIEditDefaults(t *testing.T) {
 	}
 }
 
-func TestCoreCLIInstallAndMetadata(t *testing.T) {
+func TestCoreCLIMetadata(t *testing.T) {
 	resetCoreCommandFlags(t)
-	var query string
 	var got model.CoreDeployment
 	fakeControlPlane(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/nodes/1/install" {
-			query = r.URL.RawQuery
-			_, _ = io.WriteString(w, `{"version":"1.12"}`)
-			return
-		}
 		if r.URL.Path != "/api/nodes/1/cores/sing-box" {
 			t.Errorf("unexpected route %s", r.URL.Path)
 		}
@@ -97,13 +90,6 @@ func TestCoreCLIInstallAndMetadata(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(got)
 	})
-	rootCmd.SetArgs([]string{"node", "install", "1", "--core", "sing-box", "--version", "1.12"})
-	if code := Execute(); code != 0 {
-		t.Fatalf("install exit %d", code)
-	}
-	if query != "core=sing-box&version=1.12" {
-		t.Fatalf("query %s", query)
-	}
 	rootCmd.SetArgs([]string{"node", "core", "edit", "1", "sing-box", "--api-port", "11086"})
 	if code := Execute(); code != 0 {
 		t.Fatalf("edit exit %d", code)

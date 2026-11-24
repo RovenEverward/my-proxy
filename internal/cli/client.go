@@ -90,9 +90,6 @@ const (
 	// defaultTimeout 是管理接口的常规上限。控制面一般就在本机(或一条 ssh 隧道
 	// 的另一头),正常几毫秒就回。
 	defaultTimeout = 30 * time.Second
-	// installTimeout 是安装节点核心的上限:控制面要下载一个几十兆的发布包,再推
-	// 同样大小的东西过 ssh 到节点上,慢链路下几分钟很正常。
-	installTimeout = 15 * time.Minute
 	// doctorTimeout 是自检的上限。自检要对每台节点各查一次(每次最多 checkBudget
 	// 30 秒),十几台节点串起来就是几分钟 —— 它本来就该慢慢跑完,中途被客户端
 	// 掐掉只会留下一半的表。

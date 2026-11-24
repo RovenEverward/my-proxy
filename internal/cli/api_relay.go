@@ -50,7 +50,6 @@ func runAPIRelay(stdin io.Reader, stdout io.Writer) error {
 	token := strings.TrimSpace(os.Getenv("MPX_TOKEN"))
 	if token == "" {
 		var err error
-		// 复用 update_run.go 的 env 文件读法(同一 KEY=VALUE 格式)。
 		if token, err = readEnvToken(relayEnvFile); err != nil {
 			return fmt.Errorf("取不到主钥匙(env 与 %s 都没有): %w", relayEnvFile, err)
 		}
@@ -92,4 +91,21 @@ func runAPIRelay(stdin io.Reader, stdout io.Writer) error {
 func init() {
 	apiRelayCmd.Flags().IntVar(&apiRelayFlags.port, "port", defaultControlPort, "本机控制面的 HTTP 端口")
 	rootCmd.AddCommand(apiRelayCmd)
+}
+
+func readEnvToken(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("读 %s 失败: %w", path, err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, "MPX_TOKEN="); ok {
+			v = strings.Trim(strings.TrimSpace(v), `"'`)
+			if v != "" {
+				return v, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%s 里没有 MPX_TOKEN", path)
 }

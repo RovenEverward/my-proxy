@@ -121,11 +121,27 @@ type ControlStatus struct {
 
 	// Version 是这份控制面的版本。从源码直接编出来、又没打 tag 时为空。
 	Version string `json:"version,omitempty"`
-	// Update 是更新检查的结论。没查过、或者查不成时字段基本是空的。
-	Update UpdateInfo `json:"update"`
 	// TLSFingerprint 是控制面自签证书的公钥指纹(SHA256:...),CLI 按它认人。
 	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
 
 	Counts   Counts        `json:"counts"`
 	Backoffs []NodeBackoff `json:"backoffs"`
+}
+
+// Counts 是各类对象的数量,给状态页一眼看规模用。
+type Counts struct {
+	Nodes    int `json:"nodes"`
+	Inbounds int `json:"inbounds"`
+	Hosts    int `json:"hosts"`
+	Users    int `json:"users"`
+}
+
+// NodeBackoff 是一台正处于失败退避中的节点。
+type NodeBackoff struct {
+	NodeID   int64  `json:"node_id"`
+	NodeName string `json:"node_name"`
+	// Failures 是连续失败次数,成功一次即清零。
+	Failures int `json:"failures"`
+	// SkipUntil 是这个窗口的结束时间,到了就重新试。
+	SkipUntil time.Time `json:"skip_until"`
 }

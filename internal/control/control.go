@@ -35,10 +35,6 @@ const (
 	// deployBudget 是 node sync 下发一个核心的上限:推一份几十 KB 的配置 +
 	// xray -test + 重启 + 等它起来,两分钟足够。
 	deployBudget = 2 * time.Minute
-	// installBudget 是 node install 的上限:要推 65MB(核心加两份 geodata),
-	// 实测约 40 秒,慢链路按 100KB/s 算约 11 分钟。它和 CLI 侧的
-	// installTimeout(15 分钟)对齐:HTTP 请求还在等的时候,不该先在节点这一层断掉。
-	installBudget = 15 * time.Minute
 	// onlineBudget 是后台刷新一台节点在线名单的上限:一次 SSH 里发两条命令,
 	// 按每个在线用户分块取 IP 的那条随人数变长,15 秒是个宽松的上限。
 	onlineBudget = 15 * time.Second

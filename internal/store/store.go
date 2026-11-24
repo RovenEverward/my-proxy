@@ -373,9 +373,6 @@ func (s *Store) migrate() error {
 	if err := s.migrateActivity(); err != nil {
 		return err
 	}
-	if err := s.migrateJobs(); err != nil {
-		return err
-	}
 	// UC-17 外部端点清洗层。
 	if err := s.migrateExternal(); err != nil {
 		return err

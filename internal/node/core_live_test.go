@@ -33,9 +33,9 @@ func TestLiveSingBoxSSHSystemd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin, client, key := os.Getenv("MPX_SINGBOX_LIVE_BINARY"), os.Getenv("MPX_SINGBOX_LIVE_CLIENT"), os.Getenv("MPX_SINGBOX_LIVE_KEY")
-	if bin == "" || client == "" || key == "" {
-		t.Fatal("isolated binaries and SSH identity required")
+	client, key := os.Getenv("MPX_SINGBOX_LIVE_CLIENT"), os.Getenv("MPX_SINGBOX_LIVE_KEY")
+	if client == "" || key == "" {
+		t.Fatal("isolated client binary and SSH identity required")
 	}
 	originalSSH, err := exec.LookPath("ssh")
 	if err != nil {
@@ -55,14 +55,11 @@ func TestLiveSingBoxSSHSystemd(t *testing.T) {
 	if _, err := r.Run(ctx, n, "systemctl is-active ssh"); err != nil {
 		t.Fatal(err)
 	}
-	if err := InstallSingBox(ctx, r, n, d, bin); err != nil {
-		t.Fatal(err)
-	}
 	version, err := SingBoxVersion(ctx, r, n)
-	if err != nil || version != "1.14.3" {
-		t.Fatalf("installed version %q: %v", version, err)
+	if err != nil || version == "" {
+		t.Fatalf("sing-box version %q: %v", version, err)
 	}
-	t.Logf("real SSH installed sing-box %s with QUIC+Stats tags", version)
+	t.Logf("real SSH sing-box %s", version)
 	cert, keyFile := selfSignedCert(t, dir)
 	for src, dest := range map[string]string{cert: "/etc/mpx/sing-box/live-cert.pem", keyFile: "/etc/mpx/sing-box/live-key.pem"} {
 		body, err := os.ReadFile(src)

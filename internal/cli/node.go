@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,7 +33,7 @@ var nodeCmd = &cobra.Command{
 }
 
 func init() {
-	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd, nodeInstallCmd,
+	nodeCmd.AddCommand(nodeListCmd, nodeShowCmd, nodeStatusCmd, nodeAddCmd, nodeEditCmd, nodeRmCmd, nodeConfigCmd, nodeSyncCmd,
 		nodeDrainCmd, nodeUndrainCmd, nodeOnlineCmd, nodeCoreCmd, nodeRetryCmd)
 
 	nodeAddCmd.Flags().StringVar(&nodeAddFlags.address, "address", "", "节点对外地址(IP 或域名),必填")
@@ -49,10 +48,6 @@ func init() {
 	// 空表示节点上已经信任控制面的密钥(装过了 / 手工放过),直接落库。
 	nodeAddCmd.Flags().BoolVar(&nodeAddFlags.sshPassword, "ssh-password", false,
 		"提示输一次 SSH 密码,用它把控制面的公钥装上节点(之后全程用密钥)")
-
-	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.core, "core", "xray", "核心:xray / sing-box")
-	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.version, "version", "", "核心版本,空表示最新版")
-	nodeInstallCmd.Flags().StringVar(&nodeInstallFlags.xrayVersion, "xray-version", "", "装哪个版本的 xray,空表示最新版")
 
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.name, "name", "", "新的节点名")
 	nodeEditCmd.Flags().StringVar(&nodeEditFlags.address, "address", "", "新的对外地址(IP 或域名)")
@@ -863,69 +858,6 @@ func runNodeSyncDryRun(c *Client, id int64) error {
 	}
 	fmt.Printf("确认无误后执行:mpx node sync %s（查看完整渲染配置:mpx node config %s）\n", res.Node, res.Node)
 	return nil
-}
-
-var nodeInstallFlags struct {
-	core        string
-	version     string
-	xrayVersion string
-}
-
-var nodeInstallCmd = &cobra.Command{
-	Use:   "install <节点>",
-	Short: "在节点上装好指定核心并启动它",
-	Long: `在节点上装好指定核心并启动它。
-
---core 默认 xray;hysteria2 / tuic 使用 sing-box。发布包由控制面下载和缓存,
-再通过 SSH 送到节点。--version 指定版本,留空使用最新版。
-
-两个核心各自使用独立的配置文件、API 端口和 systemd 服务。需要定制 sing-box
-部署信息时,先运行 mpx node core edit,再首次安装;部署后不能直接修改这些位置。
-
-安装会下发当前配置并启动所选核心。下载和推送在慢链路下需要几分钟。`,
-	Example: `  # 全新节点,装最新版
-  mpx node install 1
-
-  # 装指定的核心版本(也可以用来退回旧版)
-  mpx node install 1 --version v25.1.1
-
-  # 安装 hysteria2 / tuic 使用的 sing-box
-  mpx node install 1 --core sing-box --version 1.12.0`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		id, err := resolveNodeID(args[0], true)
-		if err != nil {
-			return err
-		}
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		core := model.Core(nodeInstallFlags.core)
-		if !core.Valid() {
-			return errors.New("--core 只能是 xray / sing-box")
-		}
-		version := nodeInstallFlags.version
-		if cmd.Flags().Changed("xray-version") {
-			if core != model.CoreXray || version != "" {
-				return errors.New("--xray-version 只支持 Xray,且不能与 --version 同用")
-			}
-			version = nodeInstallFlags.xrayVersion
-		}
-		path := nodePath(id) + "/install?core=" + url.QueryEscape(string(core))
-		if version != "" {
-			path += "&version=" + url.QueryEscape(version)
-		}
-		raw, err := c.doWithin(installTimeout, "POST", path, nil)
-		if err != nil {
-			return err
-		}
-		res, err := decode[map[string]string](raw)
-		if err != nil {
-			return err
-		}
-		return report(raw, "已在节点 %d 上装好并启动 %s %s", id, core, res["version"])
-	},
 }
 
 var nodeDrainCmd = &cobra.Command{

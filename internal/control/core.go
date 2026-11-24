@@ -10,7 +10,6 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/render"
-	"github.com/RovenEverward/my-proxy/internal/singboxbuild"
 )
 
 var coreLocks sync.Map
@@ -24,40 +23,6 @@ func (c *Control) lockNode(id int64) func() {
 	mutex := m.(*sync.Mutex)
 	mutex.Lock()
 	return mutex.Unlock
-}
-
-func (c *Control) InstallNodeCore(ctx context.Context, n model.Node, core model.Core, version string) (string, error) {
-	if core == model.CoreXray {
-		return c.InstallNode(ctx, n, version)
-	}
-	if core != model.CoreSingBox {
-		return "", fmt.Errorf("unsupported core %q", core)
-	}
-	ctx, cancel := context.WithTimeout(ctx, installBudget)
-	defer cancel()
-	unlock := c.lockNode(n.ID)
-	defer unlock()
-	goos, arch, err := node.Platform(ctx, c.runner, n)
-	if err != nil {
-		return "", err
-	}
-	files, err := singboxbuild.Fetch(ctx, singboxbuild.Request{Version: version, OS: goos, Arch: arch, Dir: c.cacheDir})
-	if err != nil {
-		return "", err
-	}
-	d, err := c.store.GetCoreDeployment(n.ID, core)
-	if err != nil {
-		return "", err
-	}
-	// Updating a running binary must use the same accounting boundary as config
-	// changes. Installation replaces the on-disk executable, not the running one.
-	if err := node.InstallSingBox(ctx, c.runner, n, *d, files.Binary); err != nil {
-		return "", err
-	}
-	if err := c.deploySingBox(ctx, n, time.Now(), true, false); err != nil {
-		return files.Version, err
-	}
-	return files.Version, nil
 }
 
 func (c *Control) deploySingBox(ctx context.Context, n model.Node, now time.Time, force, verifyRemote bool) error {

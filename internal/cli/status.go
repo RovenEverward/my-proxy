@@ -29,17 +29,11 @@ var statusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		// 先解出控制面版本,好在输出完之后提醒一句两边的代际是否一致。json 模式
-		// 下也提醒 —— 警告走 stderr,不污染 stdout 上那份原文。
 		st, err := decode[model.ControlStatus](raw)
 		if err != nil {
 			return err
 		}
-		if err := printStatus(raw, st); err != nil {
-			return err
-		}
-		warnVersionMismatch(localVersion(), st.Version)
-		return nil
+		return printStatus(raw, st)
 	},
 }
 
@@ -95,7 +89,6 @@ func statusPairs(st model.ControlStatus, now time.Time) [][2]string {
 		{"对外入口", strconv.Itoa(st.Counts.Hosts)},
 		{"用户", strconv.Itoa(st.Counts.Users)},
 		{"退避中的节点", backoff},
-		{"更新", updateText(st.Update)},
 		{"证书指纹", dash(st.TLSFingerprint)},
 	}
 }
@@ -109,30 +102,6 @@ func versionText(st model.ControlStatus) string {
 		return "未知(这份 mpx 没带版本号;用发布件装的会带)"
 	}
 	return st.Version
-}
-
-// updateText 写一行更新提示。
-//
-// 三种情形分开说,因为要人做的事完全不同:有新版要人去升;没有就是一句确认;
-// 问不成(断网等)必须说清是"没问成"而不是"已经最新" —— 把后者说成前者会让人
-// 放心,而真相只是不知道。
-func updateText(u model.UpdateInfo) string {
-	switch {
-	case u.Error != "":
-		// 上一次的结论还有效时一并留着:连不上不代表之前查到的"有新版本"不作数。
-		if u.Newer() {
-			return fmt.Sprintf("检查失败(%s);上次查到有 %s,见 %s", u.Error, u.Latest, u.URL)
-		}
-		return "检查失败(" + u.Error + ")"
-	case u.Newer():
-		return fmt.Sprintf("落后 %d 个发布 → %s,见 %s", u.Behind, u.Latest, u.URL)
-	case u.CheckedAt == nil:
-		return "还没查过"
-	case u.Latest == "":
-		return "已是最新(问过,但没问到发布)"
-	default:
-		return "已是最新(" + u.Latest + ")"
-	}
 }
 
 // statusBackoffRow 是一台退避中节点的表格行。

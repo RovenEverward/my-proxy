@@ -11,7 +11,6 @@ import (
 	"github.com/RovenEverward/my-proxy/internal/buildinfo"
 	"github.com/RovenEverward/my-proxy/internal/model"
 	"github.com/RovenEverward/my-proxy/internal/store"
-	"github.com/RovenEverward/my-proxy/internal/updatecheck"
 )
 
 // DefaultInterval 是后台任务的默认间隔。
@@ -72,10 +71,6 @@ type Task struct {
 	// 按节点分开存,因为"这一轮没报"必须是相对**查过**的那一轮说的:节点在退避里、
 	// 或者这一轮还没轮到它时,它的记录要保持原样 —— 那是"没问",不是"好了"。
 	armed map[int64]map[string]struct{}
-
-	// updates 查「有没有比现在更新的发布」。它自己带静默期,所以挂在这里、
-	// 每轮问一次是安全的;结论不落库,重启后重问一遍即可。
-	updates *updatecheck.Checker
 }
 
 // tickRecord 是最近一轮的时间信息。
@@ -117,7 +112,6 @@ func NewTask(c *Control, st *store.Store, logger *slog.Logger, interval time.Dur
 		armed:     map[int64]map[string]struct{}{},
 	}
 	t.alerter = t.defaultAlerter()
-	t.updates = updatecheck.New(buildinfo.Repo(), updatecheck.DefaultInterval)
 	return t
 }
 
@@ -254,7 +248,6 @@ func (t *Task) Tick(ctx context.Context) {
 	// N×15s 降到 ceil(N/4)×15s;refreshOnline 自己带锁与限频,安全。
 	t.refreshOnlineAll(ctx, nodes, skip, failed, t.now())
 	t.notifyUsers(ctx, t.now())
-	t.checkUpdates(ctx)
 	t.sweepNodeStatus(ctx, nodes, t.now())
 	// 每 120 轮（约每小时）裁剪 7 天前的旧流量采样，每 (node, core, user) 保留最新基准行。
 	if t.ticks%120 == 1 {
@@ -295,26 +288,6 @@ func (t *Task) refreshOnlineAll(ctx context.Context, nodes []model.Node, skip, f
 		}()
 	}
 	wg.Wait()
-}
-
-// checkUpdates 顺手问一次有没有新发布。
-//
-// 它和 notifyUsers、sweepNodeStatus 一样排在 finishTick 之后:一次 HTTP 往返,
-// 慢起来能有几秒,不该算进"一轮多久"的心跳里。Checker 自己带静默期,所以每轮
-// 调用不等于每轮发请求 —— 绝大多数轮次只是一次内存里的比较。
-//
-// 失败只记日志:更新检查连不上 GitHub 是常态(控制面本来就可能跑在没有外网的
-// 机器上),不该因此每 30 秒刷一条警告。错误会留在 Snapshot 里,`mpx status`
-// 想看的时候能看到。
-func (t *Task) checkUpdates(ctx context.Context) {
-	res := t.updates.Check(ctx, false)
-	if res.Error != "" {
-		t.logger.Debug("检查更新失败", "error", res.Error)
-		return
-	}
-	if res.Available() {
-		t.logger.Info("有新的发布", "当前", res.Current, "最新", res.Latest, "落后", res.Behind, "发布页", res.ReleaseURL)
-	}
 }
 
 // sweepEvery 是巡检的间隔:每多少个 Tick 查一次节点状态。
@@ -635,7 +608,6 @@ func (t *Task) Snapshot(now time.Time) model.ControlStatus {
 		Ticks:           t.ticks,
 		Backoffs:        []model.NodeBackoff{},
 		Version:         buildinfo.Version(),
-		Update:          t.updateInfo(),
 	}
 	if !t.lastTick.at.IsZero() {
 		at := t.lastTick.at
@@ -655,60 +627,6 @@ func (t *Task) Snapshot(now time.Time) model.ControlStatus {
 	}
 	sort.Slice(st.Backoffs, func(i, j int) bool { return st.Backoffs[i].NodeID < st.Backoffs[j].NodeID })
 	return st
-}
-
-// ControlUpdate 返回控制面自己这一份版本结论,给 GET /api/update 用。
-//
-// 结论来自同一个 updateInfo:接口与 /api/status 报的必须是同一件事,不能各算
-// 各的 —— 两处对不上时,使用者没法知道该信哪个。这里不发任何网络请求,上游的
-// 检查由后台任务按自己的节奏做。
-func (t *Task) ControlUpdate() model.UpdatePart {
-	return model.UpdatePartFrom(t.updateInfo())
-}
-
-// RefreshControlUpdate 强制向上游查一次,再给出与 ControlUpdate 同一套判据的结论。
-//
-// 给 GET /api/update?refresh=1 用:后台任务按静默期自己跑,但"刚发了新版想立刻
-// 看到"需要一个不等静默期的手动入口。查询失败不返回 error —— Checker 会把失败
-// 记进结论的 Error 字段,上一次的版本信息照常带回来。
-func (t *Task) RefreshControlUpdate(ctx context.Context) model.UpdatePart {
-	if t.updates != nil {
-		last := t.updates.Snapshot().CheckedAt
-		if last.IsZero() || time.Since(last) >= updatecheck.MinRefreshInterval {
-			t.updates.Check(ctx, true)
-		}
-	}
-	return t.ControlUpdate()
-}
-
-// updateInfo 把更新检查的结论翻成 API 的形状。
-//
-// 当前版本优先用编译进去的 buildinfo:定在二进制里的版本号不会因为运行环境换了
-// 个配置文件就不一样。只有它为空(从源码直接编)时才退回查出来的那个。
-func (t *Task) updateInfo() model.UpdateInfo {
-	if t.updates == nil {
-		return model.UpdateInfo{Current: buildinfo.Version()}
-	}
-	res := t.updates.Snapshot()
-	out := model.UpdateInfo{
-		Current:     res.Current,
-		Latest:      res.Latest,
-		Behind:      res.Behind,
-		URL:         res.ReleaseURL,
-		Notes:       res.Notes,
-		PublishedAt: res.PublishedAt,
-		Error:       res.Error,
-	}
-	// CheckedAt 在 checker 里是零值表示"没查过",这里翻成指针:API 上 null 比
-	// "0001-01-01" 好认。
-	if !res.CheckedAt.IsZero() {
-		at := res.CheckedAt
-		out.CheckedAt = &at
-	}
-	if buildinfo.Version() != "" {
-		out.Current = buildinfo.Version()
-	}
-	return out
 }
 
 // ResetDueUsers 把走到重置点的用户的本周期用量归零。

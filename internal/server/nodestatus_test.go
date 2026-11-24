@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -8,6 +9,33 @@ import (
 
 	"github.com/RovenEverward/my-proxy/internal/model"
 )
+
+// fakeNodeOps 记下被要求做了什么,并回放事先安排好的结果。
+type fakeNodeOps struct {
+	check    *model.NodeStatus
+	checkErr error
+	checked  int
+}
+
+func (f *fakeNodeOps) DeployNode(context.Context, model.Node, time.Time) error { return nil }
+
+func (f *fakeNodeOps) CheckNode(_ context.Context, n model.Node, now time.Time) (model.NodeStatus, error) {
+	f.checked++
+	if f.checkErr != nil {
+		return model.NodeStatus{}, f.checkErr
+	}
+	if f.check != nil {
+		return *f.check, nil
+	}
+	return model.NodeStatus{
+		NodeID: n.ID, CheckedAt: now, Reachable: true, Active: true,
+		Version: "26.3.27", ObservedHash: "abcdef", Certificates: []model.CertificateInfo{},
+	}, nil
+}
+
+func (f *fakeNodeOps) OnlineIPs(context.Context, model.Node) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
 
 func nodeStatusPath(id int64) string {
 	return fmt.Sprintf("/api/nodes/%d", id)

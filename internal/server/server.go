@@ -10,13 +10,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
-	"github.com/RovenEverward/my-proxy/internal/node"
 	"github.com/RovenEverward/my-proxy/internal/ruleset"
 	"github.com/RovenEverward/my-proxy/internal/source"
 	"github.com/RovenEverward/my-proxy/internal/store"
@@ -32,11 +30,7 @@ type NodeOps interface {
 	// Reachable=false 的状态、error 为 nil —— 调用方判断节点死活要看状态里的
 	// Reachable,而不是看 error 非不非空。
 	CheckNode(ctx context.Context, n model.Node, now time.Time) (model.NodeStatus, error)
-	// InstallNode 装好节点上的 xray 核心并启动它,返回实际装上的版本。返回非空
-	// 版本表示核心已经推上去了 —— 此时出错是配置没让服务起来,不是没装成。
-	InstallNode(ctx context.Context, n model.Node, version string) (string, error)
 	// OnlineIPs 现场读出节点上每个用户此刻的在线 IP 列表(0 个或多个)。
-	// 「在线」是 xray 的 IP 粒度 —— 一个用户多个终端会贡献多个 IP。
 	OnlineIPs(ctx context.Context, n model.Node) (map[string][]string, error)
 }
 
@@ -55,64 +49,23 @@ type BackoffOps interface {
 	ClearNodeBackoff(nodeID int64)
 }
 
-// UpdateSource 是控制面查更新那条线的结论,GET /api/update 靠它回答。
-//
-// 单独一个接口而不是直接复用 StatusSource:两者只有版本信息这一小块重叠,
-// 而 /api/update 想要的恰恰是「不查心跳、不碰节点」的那一份。
-type UpdateSource interface {
-	// ControlUpdate 返回控制面自己这一份版本结论,不发任何网络请求 —— 上游
-	// 的检查由后台任务按自己的节奏做,接口只负责把手里的结论说出来。
-	ControlUpdate() model.UpdatePart
-}
-
-// UpdateRefresher 是 UpdateSource 的可选扩展:显式要求控制面现在就去上游查一次,
-// 不等后台任务的静默期。
-//
-// 单独一个接口而不是直接加进 UpdateSource:接口只新增不改,现有实现(测试里的
-// 假更新源、别处接进来的实现)不该因为多了一个方法就编译不过。GET /api/update
-// 在 handler 里做类型断言,接得上就支持 refresh=1,接不上就照旧只回缓存结论。
-//
-// 检查失败不能返回 error:结论里的 Error 字段会带上失败原因,其余字段是上一次
-// 的结果。查询失败不该让整个接口失败。
-type UpdateRefresher interface {
-	RefreshControlUpdate(ctx context.Context) model.UpdatePart
-}
-
 // Server 持有控制面运行期需要的东西。
 type Server struct {
-	store   *store.Store
-	sources *source.Manager
-	// rulesets 是 UC-05 的规则集镜像拉取器;未接(测试/不接后台的用法)时
-	// 镜像下载接口一律 404,渲染也保持上游直连 —— 该功能不拖垮基础订阅。
+	store    *store.Store
+	sources  *source.Manager
 	rulesets *ruleset.Manager
 	token    string
 	// tlsFingerprint 是控制面自签证书的公钥指纹;只有 Serve 起来的实例才有。
 	tlsFingerprint string
 	logger         *slog.Logger
-	mux     *http.ServeMux
-	nodeOps NodeOps
-	status  StatusSource
-	backoff BackoffOps
-	updates UpdateSource
-	dbPath  string
-	// updateDir 是控制面升级请求/状态文件的目录,默认是库旁边的 update/。
-	// 为空表示没配库路径,控制面升级接口据此返回 503。
-	updateDir string
+	mux            *http.ServeMux
+	nodeOps        NodeOps
+	status         StatusSource
+	backoff        BackoffOps
+	dbPath         string
 
 	// sshKeyPath 是控制面那对 SSH 密钥的私钥路径,密码引导新节点时用它算公钥。
-	// 由 serve.go 定在数据目录下(与 systemd StateDirectory 对齐);测试里没设的
-	// 话 EnsureSSHKey 会回退到 ~/.ssh。
 	sshKeyPath string
-
-	// resolveXray 与 upgradeXray 是节点核心一键升级里 xray 那条路的两个实现点。
-	// 默认分别走 CoreUpgrader 的 ResolveXray / UpgradeXray(控制面进程里的真实
-	// 通道),测试替换成假实现,免得真去 ssh 节点或问 GitHub。
-	resolveXray func(ctx context.Context, n model.Node, version string) (assetURL, sha256 string, err error)
-	upgradeXray func(ctx context.Context, n model.Node, version, assetURL, sha256 string) (node.UpgradeResult, error)
-
-	// nodeUpdate 是节点核心升级任务的内存状态。任务只跑在控制面进程里,重启即
-	// 清空 —— 这是有意的:升级是操作者此刻发起的一件事,不是要落库的历史。
-	nodeUpdate nodeUpdateState
 
 	// subCache 缓存订阅渲染结果:同一个 token+format 在两次管理动作之间是
 	// 同一份内容,重算只是白跑一遍数据库加渲染。任何写库成功的管理接口都
@@ -167,12 +120,7 @@ func New(st *store.Store, token string, logger *slog.Logger, dbPath ...string) *
 	if len(dbPath) > 0 {
 		s.dbPath = dbPath[0]
 	}
-	if s.dbPath != "" {
-		s.updateDir = filepath.Join(filepath.Dir(s.dbPath), "update")
-	}
 	s.sources = source.NewManager(st, s.invalidateSubCache)
-	s.resolveXray = s.defaultResolveXray
-	s.upgradeXray = s.defaultUpgradeXray
 	s.routes()
 	return s
 }
@@ -188,16 +136,6 @@ func (s *Server) SetStatusSource(src StatusSource) { s.status = src }
 // SetBackoffOps 接上退避的人工操作口。不接时 POST /api/nodes/{id}/backoff/retry
 // 返回 501,和没接下发通道时 sync 的做法一致。
 func (s *Server) SetBackoffOps(ops BackoffOps) { s.backoff = ops }
-
-// SetUpdateSource 接上控制面的更新检查结论,GET /api/update 靠它回答。
-//
-// 不接时那一行只有本机版本、说不了有没有新版 —— 这也是 /api/update 该有的
-// 退化样子:接口本身照常回 200,不因为后台任务没起来就整个失败。
-func (s *Server) SetUpdateSource(src UpdateSource) { s.updates = src }
-
-// SetUpdateDir 换掉控制面升级请求/状态文件的目录,供测试指定可写位置。
-// 传空串等于禁用控制面升级接口。
-func (s *Server) SetUpdateDir(dir string) { s.updateDir = dir }
 
 // SetRulesets 接上规则集镜像拉取器(UC-05)。不接时 /sub/{token}/ruleset/* 一律
 // 404,订阅渲染保持上游直连 —— 见 renderSubscription 的 RulesetURL 注入条件。
@@ -231,20 +169,11 @@ func (s *Server) routes() {
 	s.rulesetRoutes(api)
 	s.planRoutes(api)
 	s.sourceRoutes(api)
-	s.jobRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)
 	api.HandleFunc("PUT /api/mirrors/{id}", s.handleUpdateMirror)
 	api.HandleFunc("DELETE /api/mirrors/{id}", s.handleDeleteMirror)
 	api.HandleFunc("GET /api/status", s.handleStatus)
-	api.HandleFunc("GET /api/update", s.handleUpdate)
-	// 控制面远程升级:只往 update 目录落一个请求文件,真正的换二进制由 root 的
-	// 一次性单元跑 `mpx update run control` 完成,见 selfupdate.ControlRunner。
-	api.HandleFunc("POST /api/update/control", s.handleUpdateControl)
-	// 节点核心一键升级:POST 起一个后台任务,GET 带 since 增量拉进度。
-	// 任务状态只在内存里,不落库。
-	api.HandleFunc("POST /api/update/nodes", s.handleUpdateNodesStart)
-	api.HandleFunc("GET /api/update/nodes", s.handleUpdateNodesProgress)
 	api.HandleFunc("GET /api/nodes", s.handleListNodes)
 	api.HandleFunc("POST /api/nodes", s.handleCreateNode)
 	// GET /api/nodes/{id} 认一个 ?fresh=1:不带就读库里缓存的状态,带了就现场
@@ -263,7 +192,6 @@ func (s *Server) routes() {
 	api.HandleFunc("DELETE /api/nodes/{id}", s.handleDeleteNode)
 	api.HandleFunc("GET /api/nodes/{id}/config", s.handlePreviewNodeConfig)
 	api.HandleFunc("POST /api/nodes/{id}/sync", s.handleSyncNode)
-	api.HandleFunc("POST /api/nodes/{id}/install", s.handleInstallNode)
 	api.HandleFunc("GET /api/nodes/{id}/ports", s.handleNodePorts)
 	api.HandleFunc("POST /api/nodes/{id}/drain", s.handleDrainNode)
 	api.HandleFunc("POST /api/nodes/{id}/undrain", s.handleUndrainNode)

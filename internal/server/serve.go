@@ -62,16 +62,6 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	}
 	defer st.Close()
 
-	// 上次进程没了,后台任务(体检、安装)不可能再有结局:把它们标成中断,否则
-	// 会一直显示在跑,还挡住同一节点上同名任务重新开始。
-	if n, err := st.InterruptRunningJobs(time.Now()); err != nil {
-		logger.Warn("把没做完的后台任务标成中断失败", "error", err)
-	} else if n > 0 {
-		logger.Info("上次没做完的后台任务标成了中断", "count", n)
-	}
-
-	// 核心缓存放在数据库旁边:服务单元的 ProtectSystem=strict 只给控制面留了
-	// /var/lib/mpx 一处可写,而缓存要能长期留存、重启之后还在。
 	ctrl := control.New(st, node.SSH{}, logger, filepath.Join(filepath.Dir(opt.DBPath), "xray"))
 	task := control.NewTask(ctrl, st, logger, opt.Interval)
 
@@ -114,12 +104,8 @@ func Serve(ctx context.Context, opt ServeOptions) error {
 	// 退避的人工重试与清零也接上:POST /api/nodes/{id}/backoff/retry 与 fresh=1
 	// 的可达确认都走同一个后台任务里的状态。
 	srv.SetBackoffOps(task)
-	// 更新结论也接上:GET /api/update 默认只转述后台任务问到的,自己不发起检查;
-	// 带 ?refresh=1 时经 UpdateRefresher 强制问一次(见 refreshControlUpdate)。
-	srv.SetUpdateSource(task)
 
-	// 自签证书:库里有就用,没有就生成。指纹另外落一份纯文本在库旁边,给
-	// mpx init 经 SSH 读回去打印接入命令用 —— 那一侧不该为了一个字符串去开库。
+	// 自签证书:库里有就用,没有就生成。
 	cert, fp, err := loadOrCreateIdentity(st)
 	if err != nil {
 		return err

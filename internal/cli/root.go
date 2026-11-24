@@ -71,18 +71,11 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&opts.profile, "profile", "", "用哪个控制面(按保存时的名称),覆盖 MPX_PROFILE 与文件里的 current")
 	rootCmd.PersistentFlags().StringVarP(&opts.output, "output", "o", outputTable, "输出格式:table 或 json")
 
-	rootCmd.AddCommand(serveCmd, statusCmd, updateCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd)
+	rootCmd.AddCommand(serveCmd, statusCmd, doctorCmd, nodeCmd, inboundCmd, hostCmd, userCmd, planCmd, settingsCmd, backupCmd, restoreCmd)
 
 	// cobra 默认打 "mpx version v0.2.0"。"version" 这个英文单词夹在中间没有信息量,
 	// 而这一行最该说清的恰恰是版本号本身是从哪来的。
 	rootCmd.SetVersionTemplate("mpx {{.Version}}\n")
-	// update 的子命令在 update.go 里定义,这里挂上去,让 root.go 保留"命令组
-	// 一览"这一个入口。
-	updateCmd.AddCommand(updateShowCmd)
-	updateCmd.AddCommand(updateApplyCmd)
-	updateCmd.AddCommand(updateRollbackCmd)
-	// root 侧的一次性执行器,由 mpx-update.service 调用,不出现在帮助里。
-	updateCmd.AddCommand(updateRunCmd)
 }
 
 // Execute 运行命令行,把错误打到 stderr,并返回进程退出码。
