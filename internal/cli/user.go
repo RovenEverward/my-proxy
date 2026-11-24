@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -40,16 +39,9 @@ User-Agent 自动给出不同格式。`,
 // "可用"和"状态"是两回事:状态是算出来的(过期、超限都会反映出来),可用是
 // 显式开关。停用的用户状态仍可能是 active,只有这一列能把它们分开 ——
 // CSV 导出一直有"可用性"列,表格少了它就跟导出的对不上。
-var userHeaders = []string{"ID", "用户名", "可用", "状态", "已用", "上限", "到期", "重置策略", "入站", "套餐", "备注"}
+var userHeaders = []string{"ID", "用户名", "可用", "状态", "已用", "上限", "到期", "重置策略", "入站", "备注"}
 
 // userRow 是 CLI 侧对服务端 userView 的映射。
-//
-// 除表格要展示的字段外还带上 enabled:导出 CSV 要写"可用性",而"可用性"是
-// 显式开关,不是由过期/超限推出的 status;表里两者的差别(停用 vs 过期)不加
-// 这一列就分不出来。
-//
-// PlanName 是本地按 plan_id 查出来的名字,不来自服务端(所以 json:"-");
-// 只有导出/展示前填充,拿不到时退回 #id。
 type userRow struct {
 	ID            int64      `json:"id"`
 	Username      string     `json:"username"`
@@ -60,12 +52,8 @@ type userRow struct {
 	ExpireAt      *time.Time `json:"expire_at"`
 	ResetStrategy string     `json:"reset_strategy"`
 	InboundIDs    []int64    `json:"inbound_ids"`
-	PlanID        *int64     `json:"plan_id,omitempty"`
-	PlanName      string     `json:"-"`
 	Note          string     `json:"note"`
-	// Presence 是控制面算出来的在线状态,导出 CSV 要写"最后在线"。老控制面不给这个
-	// 字段,解出来是 nil,那一列就空着 —— 猜一个时间比空着更糟。
-	Presence *userPresence `json:"presence"`
+	Presence      *userPresence `json:"presence"`
 }
 
 // userPresence 只解析导出要用的那一个字段(时间);IP 数、在线节点、节点连不上这些
@@ -118,58 +106,8 @@ func (u userRow) row() []string {
 		expireText(u.ExpireAt),
 		strategyText(u.ResetStrategy),
 		joinIDs(u.InboundIDs),
-		u.planText(),
 		u.Note,
 	}
-}
-
-// planText 是用户表格里"套餐"列的显示:优先本地解析出的套餐名,拿不到时退回
-// #id;没挂套餐显示 "-"(它按旧语义用入站范围)。
-func (u userRow) planText() string {
-	if u.PlanName != "" {
-		return u.PlanName
-	}
-	if u.PlanID != nil {
-		return "#" + strconv.FormatInt(*u.PlanID, 10)
-	}
-	return "-"
-}
-
-// userWriteBody 是发给控制面的用户请求体。
-//
-// 单独把 plan_id 拎出来,是因为 model.User 的 *int64 + omitempty 分不出
-// 「没带这个字段」和「带了 null」—— 而控制面需要区分:没带保持原套餐,null
-// 会被拒绝(不能把用户移出套餐)。PlanID 非空是数字,plan_idJSON(nil) 是显式 null,零值(省略)则不带。
-type userWriteBody struct {
-	model.User
-	PlanID json.RawMessage `json:"plan_id,omitempty"`
-}
-
-// planIDJSON 把显式的套餐归属编成 JSON 片段:非空是数字,空是 null。
-func planIDJSON(id *int64) json.RawMessage {
-	if id == nil {
-		return json.RawMessage("null")
-	}
-	return json.RawMessage(strconv.FormatInt(*id, 10))
-}
-
-// attachPlanNames 给一批用户补上套餐名,只在需要展示/导出的地方调用。
-// 名字查不到时留空,row() 会退回 #id。
-func attachPlanNames(c *Client, users []userRow) error {
-	plans, err := listPlans(c)
-	if err != nil {
-		return err
-	}
-	byID := make(map[int64]string, len(plans))
-	for _, p := range plans {
-		byID[p.ID] = p.Name
-	}
-	for i := range users {
-		if users[i].PlanID != nil {
-			users[i].PlanName = byID[*users[i].PlanID]
-		}
-	}
-	return nil
 }
 
 // limitText 把"不限"和某个具体上限区分开:0 在模型里就是不限,显示成 0B 会
@@ -211,7 +149,6 @@ var userListFlags struct {
 	status   string
 	search   string
 	inbound  int64
-	plan     string
 }
 
 // userPage 对应服务端的 userPage:一页用户加匹配总数。
@@ -262,13 +199,6 @@ var userListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(userListFlags.plan) != "" {
-			id, err := resolvePlanID(c, userListFlags.plan, false)
-			if err != nil {
-				return err
-			}
-			q.Set("plan", strconv.FormatInt(id, 10))
-		}
 		raw, err := c.do("GET", "/api/users?"+q.Encode(), nil)
 		if err != nil {
 			return err
@@ -278,9 +208,6 @@ var userListCmd = &cobra.Command{
 		}
 		page, err := decode[userPage](raw)
 		if err != nil {
-			return err
-		}
-		if err := attachPlanNames(c, page.Users); err != nil {
 			return err
 		}
 		rows := make([][]string, 0, len(page.Users))
@@ -328,9 +255,6 @@ func userListNextCmd(page int) string {
 	if userListFlags.inbound > 0 {
 		parts = append(parts, "--inbound", strconv.FormatInt(userListFlags.inbound, 10))
 	}
-	if userListFlags.plan != "" {
-		parts = append(parts, "--plan", userListFlags.plan)
-	}
 	return strings.Join(parts, " ")
 }
 
@@ -354,11 +278,6 @@ var userShowCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		users := []userRow{u}
-		if err := attachPlanNames(c, users); err != nil {
-			return err
-		}
-		u = users[0]
 		headers := userHeaders
 		values := u.row()
 		pairs := make([][2]string, 0, len(headers))
@@ -374,7 +293,6 @@ var userAddFlags struct {
 	expire        string
 	resetStrategy string
 	inbounds      string
-	plan          string
 	note          string
 	subToken      string
 	disabled      bool
@@ -425,15 +343,7 @@ var userAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		body := userWriteBody{User: u}
-		if strings.TrimSpace(userAddFlags.plan) != "" {
-			id, err := resolvePlanID(c, userAddFlags.plan, false)
-			if err != nil {
-				return err
-			}
-			body.PlanID = planIDJSON(&id)
-		}
-		raw, err := c.do("POST", "/api/users", body)
+		raw, err := c.do("POST", "/api/users", u)
 		if err != nil {
 			return err
 		}
@@ -451,7 +361,6 @@ var userEditFlags struct {
 	expire        string
 	resetStrategy string
 	inbounds      string
-	plan          string
 	note          string
 }
 
@@ -527,22 +436,8 @@ var userEditCmd = &cobra.Command{
 		if changed("note") {
 			u.Note = userEditFlags.note
 		}
-		// 没给 --plan 就完全不带这个字段(保持原套餐);给了名字/id 就改挂。
-		// --plan "" 直接拒绝:不能把用户移出套餐,否则会回落到全部入站。
-		body := userWriteBody{User: u}
-		if changed("plan") {
-			if strings.TrimSpace(userEditFlags.plan) == "" {
-				return errors.New(`--plan 不能为空:不能把用户移出套餐,请指定一个具体套餐(可以是默认套餐)`)
-			} else {
-				id, err := resolvePlanID(c, userEditFlags.plan, false)
-				if err != nil {
-					return err
-				}
-				body.PlanID = planIDJSON(&id)
-			}
-		}
 
-		raw, err = c.do("PUT", path, body)
+		raw, err = c.do("PUT", path, u)
 		if err != nil {
 			return err
 		}
@@ -610,7 +505,7 @@ func setUserEnabled(c *Client, username string, enabled bool) (string, []byte, e
 		return "", nil, err
 	}
 	u.Enabled = enabled
-	raw, err = c.do("PUT", path, userWriteBody{User: u})
+	raw, err = c.do("PUT", path, u)
 	if err != nil {
 		return "", nil, err
 	}
@@ -725,7 +620,6 @@ func init() {
 	userListCmd.Flags().StringVar(&userListFlags.status, "status", "", "只看某种状态:active / expired / limited / disabled")
 	userListCmd.Flags().StringVar(&userListFlags.search, "search", "", "用户名包含这段文字(不分大小写)")
 	userListCmd.Flags().Var(inboundFlag(&userListFlags.inbound), "inbound", "只看能用某个入站的用户(id、节点/tag 或唯一 tag)")
-	userListCmd.Flags().StringVar(&userListFlags.plan, "plan", "", "只看挂某个套餐的用户(套餐名、id 或唯一前缀)")
 
 	userRenewCmd.Flags().StringVar(&userRenewFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
 	userRenewCmd.Flags().IntVar(&userRenewFlags.days, "days", 0, "从当前到期日(已过期则从今天)起顺延的天数")
@@ -734,7 +628,6 @@ func init() {
 	userAddCmd.Flags().StringVar(&userAddFlags.expire, "expire", "", "到期日 YYYY-MM-DD(当地时区当天 23:59:59)")
 	userAddCmd.Flags().StringVar(&userAddFlags.resetStrategy, "reset-strategy", string(model.ResetNone), "流量重置策略:none / daily / weekly / monthly")
 	userAddCmd.Flags().StringVar(&userAddFlags.inbounds, "inbounds", "", "可用的入站 id,逗号分隔;空表示全部")
-	userAddCmd.Flags().StringVar(&userAddFlags.plan, "plan", "", "挂到某个套餐(套餐名或 id);不填则空入站归默认套餐")
 	userAddCmd.Flags().StringVar(&userAddFlags.note, "note", "", "备注")
 	userAddCmd.Flags().StringVar(&userAddFlags.subToken, "sub-token", "", "指定订阅链接里的 token(迁移已有面板时用);不填自动生成")
 	userAddCmd.Flags().BoolVar(&userAddFlags.disabled, "disabled", false, "建好后先停用")
@@ -743,7 +636,6 @@ func init() {
 	userEditCmd.Flags().StringVar(&userEditFlags.expire, "expire", "", "新的到期日 YYYY-MM-DD;给空串表示永不过期")
 	userEditCmd.Flags().StringVar(&userEditFlags.resetStrategy, "reset-strategy", "", "新的重置策略:none / daily / weekly / monthly")
 	userEditCmd.Flags().StringVar(&userEditFlags.inbounds, "inbounds", "", "新的可用入站 id,逗号分隔;给空串表示全部")
-	userEditCmd.Flags().StringVar(&userEditFlags.plan, "plan", "", "改挂到某个套餐(套餐名或 id,可以是默认套餐);不能为空")
 	userEditCmd.Flags().StringVar(&userEditFlags.note, "note", "", "新的备注;给空串表示清掉")
 }
 

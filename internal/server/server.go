@@ -167,7 +167,6 @@ func (s *Server) routes() {
 	s.metadataRoutes(api)
 	s.routingRoutes(api)
 	s.rulesetRoutes(api)
-	s.planRoutes(api)
 	s.sourceRoutes(api)
 	api.HandleFunc("GET /api/mirrors", s.handleListMirrors)
 	api.HandleFunc("POST /api/mirrors", s.handleCreateMirror)

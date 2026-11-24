@@ -382,7 +382,6 @@ type previewEntry struct {
 }
 
 // handlePreviewGroup 给一个草稿策略组,返回全部入口各自进不进组、为什么。
-// 可选 ?plan=<id> 时只在该套餐范围内的入口里预览(见 RFC §3.5)。
 func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 	var g model.ProxyGroup
 	if !decodeBody(w, r, &g) {
@@ -392,10 +391,6 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 	var eps []render.Endpoint
 	var err error
 	if name := strings.TrimSpace(r.URL.Query().Get("user")); name != "" {
-		if r.URL.Query().Get("plan") != "" {
-			writeError(w, http.StatusBadRequest, "用户与套餐预览不能同时指定")
-			return
-		}
 		u, getErr := s.store.GetUser(name)
 		if getErr != nil {
 			s.writeStoreError(w, getErr, "用户")
@@ -408,17 +403,10 @@ func (s *Server) handlePreviewGroup(w http.ResponseWriter, r *http.Request) {
 		set, setErr := s.subscriptionEndpointsFor(u, f)
 		eps, err = set.Endpoints, setErr
 	} else {
-		eps, err = s.previewEndpointsFor(r.URL.Query().Get("plan"))
+		eps, err = s.previewEndpoints()
 	}
 	if err != nil {
-		switch {
-		case errors.Is(err, errInvalidPlanQuery):
-			writeError(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, store.ErrPlanNotFound), errors.Is(err, store.ErrNotFound):
-			writeError(w, http.StatusNotFound, "套餐不存在")
-		default:
-			s.writeStoreError(w, err, "入口")
-		}
+		s.writeStoreError(w, err, "入口")
 		return
 	}
 	cands, err := s.groupCandidates(eps, []model.ProxyGroup{g})

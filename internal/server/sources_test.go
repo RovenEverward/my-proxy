@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -503,100 +502,5 @@ func TestSourceGrantAllPatchAndVisibility(t *testing.T) {
 	got := decodeJSON[sourceView](t, data)
 	if len(got.Grants) != 1 || got.Grants[0] != "alice" {
 		t.Fatalf("grants: %#v", got.Grants)
-	}
-}
-
-func TestSourcePlanGrantsAPIAndVisibility(t *testing.T) {
-	e := newEnv(t)
-	t.Cleanup(e.s.sources.Close)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "vless://11111111-1111-4111-8111-111111111111@plan.example.test:443?security=tls&sni=plan.example.test#p")
-	}))
-	defer upstream.Close()
-	src := addTestSource(t, e, upstream.URL)
-	// 套餐 + 挂套餐的用户。
-	code, pdata := e.api("POST", "/api/plans", map[string]any{"name": "VIP"})
-	if code != 201 {
-		t.Fatalf("create plan: %d %s", code, pdata)
-	}
-	var plan struct{ ID int64 }
-	if err := json.Unmarshal(pdata, &plan); err != nil {
-		t.Fatal(err)
-	}
-	alice := e.createUser("alice")
-	bob := e.createUser("bob")
-	if _, err := e.st.SetUserPlan("alice", &plan.ID); err != nil {
-		t.Fatalf("assign plan: %v", err)
-	}
-	e.s.invalidateSubCache()
-	// 单套餐授权端点(按名字)。
-	code, data := e.api("PUT", fmt.Sprintf("/api/sources/%d/plan-grants/VIP", src.ID), nil)
-	if code != 200 {
-		t.Fatalf("plan grant: %d %s", code, data)
-	}
-	var gr struct {
-		Users []string `json:"users"`
-		Plans []struct {
-			ID   int64  `json:"id"`
-			Name string `json:"name"`
-		} `json:"plans"`
-	}
-	if err := json.Unmarshal(data, &gr); err != nil {
-		t.Fatal(err)
-	}
-	if len(gr.Plans) != 1 || gr.Plans[0].Name != "VIP" {
-		t.Fatalf("plans in grants: %#v", gr.Plans)
-	}
-	// alice(VIP) 可见,bob(默认套餐)不可见。
-	code, _, body := e.sub("/sub/"+alice.SubToken+"/links", "")
-	if code != 200 || !strings.Contains(string(body), "plan.example.test") {
-		t.Fatalf("alice: %d %s", code, body)
-	}
-	_, _, body = e.sub("/sub/"+bob.SubToken+"/links", "")
-	if strings.Contains(string(body), "plan.example.test") {
-		t.Fatal("bob saw it")
-	}
-	// PUT grants 不带 plan_ids:套餐授权原样保留(老客户端兼容)。
-	code, data = e.api("PUT", fmt.Sprintf("/api/sources/%d/grants", src.ID), map[string]any{"users": []string{"bob"}})
-	if code != 200 {
-		t.Fatalf("put users: %d %s", code, data)
-	}
-	if err := json.Unmarshal(data, &gr); err != nil {
-		t.Fatal(err)
-	}
-	if len(gr.Plans) != 1 || len(gr.Users) != 1 || gr.Users[0] != "bob" {
-		t.Fatalf("after users-only put: %#v", gr)
-	}
-	// PUT 带 plan_ids=[]:清套餐授权,alice 不可见,bob 还在(按人)。
-	code, data = e.api("PUT", fmt.Sprintf("/api/sources/%d/grants", src.ID), map[string]any{"plan_ids": []int64{}})
-	if code != 200 {
-		t.Fatalf("put plan_ids: %d %s", code, data)
-	}
-	if err := json.Unmarshal(data, &gr); err != nil {
-		t.Fatal(err)
-	}
-	if len(gr.Plans) != 0 || len(gr.Users) != 1 {
-		t.Fatalf("after plan_ids clear: %#v", gr)
-	}
-	_, _, body = e.sub("/sub/"+alice.SubToken+"/links", "")
-	if strings.Contains(string(body), "plan.example.test") {
-		t.Fatal("alice still sees it")
-	}
-	code, _, body = e.sub("/sub/"+bob.SubToken+"/links", "")
-	if code != 200 || !strings.Contains(string(body), "plan.example.test") {
-		t.Fatal("bob lost grant")
-	}
-	// sourceView 带 plan_grants。
-	code, data = e.api("PUT", fmt.Sprintf("/api/sources/%d/plan-grants/VIP", src.ID), nil)
-	if code != 200 {
-		t.Fatal("re-grant")
-	}
-	code, data = e.api("GET", fmt.Sprintf("/api/sources/%d", src.ID), nil)
-	if code != 200 {
-		t.Fatal("get source")
-	}
-	v := decodeJSON[sourceView](t, data)
-	if len(v.PlanGrants) != 1 || v.PlanGrants[0].Name != "VIP" {
-		t.Fatalf("plan_grants: %#v", v.PlanGrants)
 	}
 }
