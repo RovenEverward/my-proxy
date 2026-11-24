@@ -1,32 +1,28 @@
 ---
 kind: part
-verified: 2026-11-22 @ 17f8e96 + working tree（UC-26 改写）
+verified: 2026-11-24 @ 16d41cd（UC-32 改写）
 ---
 # MPX：新人导览
 
-> **30 秒版**：MPX 是一个自建代理的控制面。手上有几台 VPS、要给自己和几十到上千个朋友分代理的人，用它把「谁能用哪些节点、用了多少、什么时候到期、订阅该长什么样」收进一台控制面里管。控制面持有唯一一份真相，替你给每台节点上的 xray / sing-box 下发配置、按人计流量、按客户端出订阅；你在任意浏览器打开 `https://<控制面地址>/admin/` 管理，或在自己电脑上用 `mpx` 命令行操作，装好之后不用再登录 VPS。
+> **30 秒版**：MPX 是一个面向极客与 AI Agent 的纯 Go 极简代理编排核心。手上有几台 VPS、要给自己和几十到上千个朋友分代理的人，用它把「谁能用哪些节点、用了多少、什么时候到期、订阅该长什么样」收进一台控制面（单二进制 + SQLite）里管。控制面持有唯一一份真相，替你给每台节点上的 xray / sing-box 校验并原子下发配置、按人无重启计流量、按客户端出多格式订阅；操作者或 AI Agent 通过 `mpx` 命令行（`-o json` / `--ssh` 通道）与官方 [Agent Skill](../../skills/mpx/SKILL.md) 完成全部运维。
 
 ## 愿景与思想
 
-> 待确认：本节由 Agent 从 [README](../../README.md)、[设计](../design.md) 里提炼，没有加进仓库之外的说法。属于守护层，请主人逐段确认或改写。
+MPX 想做的是：一个人、没有团队也没人值班，也能把几台到几十台服务器、几百上千个用户管得清清楚楚，而且把维护成本压到最低。在 AI Agent 已经能直接 SSH 运维服务器的背景下，重型 Web 面板、桌面壳和常驻探测/测评任务的维护成本远高于价值；但多节点代理仍有三件不能靠临时脚本凑合的确定性底层活——声明式多节点配置编排与回滚、无重启按人计量收敛、7×24 确定性多格式订阅分发。
 
-MPX 想做的是：一个人、没有团队也没人值班，也能把几台到几十台服务器、几百上千个用户管得清清楚楚，而且这件事不需要一直盯着。手工维护一台 xray 还行，机器和人一多就会出四种错：真相散在各台机器和表格里，改一处要重启断掉所有人，客户端手里的订阅悄悄过期，超限和到期没人去算。MPX 的回答是一个地方存唯一一份真相，由它算出每个节点上该是什么、每个人该拿到什么，再送过去。
-
-贯穿全局的想法有两个。第一，**控制面是大脑，节点只是执行器**：节点上不装任何 MPX 组件，只用 SSH 和 xray 自带的接口；配置全量渲染下发，改结构才重启，加人摘人走每 30 秒一轮的收敛、不碰别人的连接；流量读累计值，账不会丢。第二，**用户永远不用登录 VPS**：一行 `mpx init` 在自己电脑上经 SSH 把 VPS 装好，之后在任意浏览器用管理员账号登录 `/admin/` 管理，CLI 用 `mpx connect` 按证书指纹接入。
-
-操作的入口始终只有一套能力：命令行是基准，网页管理台把同样的事放进浏览器，由控制面自己伺服在 `/admin/`。界面可以先行（「UI 优先」：每个功能都要能在管理台里做），但不长出控制面接口之外的能力，每个写操作都能用等价命令做出来。控制面的接口只增不破，旧客户端必须照常工作。
+贯穿全局的想法有三个。第一，**控制面是唯一真相，节点只是执行器**：节点上不装任何 MPX 组件，只用 SSH 和核心自带的 API；结构变更先 `--dry-run` 预检再 `node sync` 校验下发（失败自动回滚），加人摘人走每 30 秒一轮的收敛、不碰在线连接，流量读累计值不会静默丢账。第二，**Agent-Native 极简单体**：只留单一纯 Go 二进制与一套结构化 CLI 契约（`-o json`、非交互参数、清晰退出码、`--ssh` 免密通道、随仓分发 `skills/mpx/SKILL.md`），不内置 Web 管理台、常驻 CDN 探测点或重型融合怪测评；高灵活度的按需排障与本机真实网络 CDN 优选交给操作者或 AI Agent 执行，结果经 `mpx host` / `mpx rule` 写回控制面。第三，**订阅契约优先**：同一条 `/sub/<token>` 持续稳定输出 Clash Meta、sing-box、Xray、Base64 与轻量浏览器用量页，一份坏配置或坏规则不能拖垮订阅服务。
 
 判断「做得好」的标准写在决策记录的口吻里：错了也看不出来的问题最优先（静默丢账先于一切）；一份坏配置、一条坏规则不能让整个订阅不可用；能拒绝自己的安装和升级才安全；不可用的用户要看得出来是停用、过期还是超限。
 
-现在做到了：一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流、远程升级与回滚、一键更新两层（控制面 + 节点）、控制面网页管理台（账号登录、域名 + ACME 证书、三平台 CLI 安装包、CI 冒烟）。
+现在做到了：纯 Go 单体一键安装、多节点多协议（含 sing-box 承载的 Hysteria2 / TUIC）、用户与套餐、按规则表分流与规则集镜像、外部订阅混入、订阅镜像、远程升级与回滚、SSH 通道免密接入、`node sync --dry-run` 预检与官方 Agent Skill。
 
 ## 思想地图
 
 | 思想 | 一句话 | 读完能明白什么 | 文档 |
 |---|---|---|---|
 | 唯一真相，节点是执行器 | 控制面算好再推过去，节点什么都不装 | 为什么改结构要重启、加人不用；为什么账不会丢 | — |
-| 不登录 VPS | 装、接入、升级都在自己设备上完成 | 为什么有 `init`、指纹、设备密码、远程升级 | — |
-| 一个入口，多张面孔 | CLI、网页管理台共用一套接口和边界 | 为什么管理台跟控制面同进程、接口只增不破 | — |
+| Agent-Native 纯 Go 单体 | 只留确定性核心与结构化 CLI + Skill，把灵活探测交给 Agent | 为什么砍掉 Web UI、内置 CDN 探测与融合怪，改用 `--ssh` 与 `-o json` | — |
+| 订阅契约优先 | 客户端链接与格式零破坏，异常状态清晰可辨 | 为什么退役旧表只迁移不删表、占位节点要说清停用/过期/超限 | — |
 
 ## 你需要知道的术语
 
@@ -35,11 +31,11 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 | 控制面 | 跑 `mpx serve` 的那台机器，持有数据库，对外提供管理接口和订阅 | `internal/server`、`internal/control` |
 | 节点 | 跑 xray 或 sing-box、真正承载用户流量的服务器 | `model.Node` |
 | 入站 | 节点上监听的一个端口加协议，比如 VLESS + REALITY 的 443 | `model.Inbound` |
-| 对外入口（host） | 订阅里发出去的地址，一个入站可以挂多个 | `model.Host` |
+| 对外入口（host） | 订阅里发出去的地址，一个入站可以挂多个（含 Agent 按需优选的 CDN IP） | `model.Host` |
 | 套餐 | 一组入站权限，用户挂上就能用这些入站 | `model.Plan` |
 | 收敛 | 每 30 秒比对「节点上有谁」和「该有谁」，只增删用户、不重启 | `control` 的 loop |
 | 占位节点 | 给停用、过期、超限用户的连不通但客户端肯接受的配置 | `render` |
-| 管理员账号 / 指纹 | 网页管理台与 `mpx connect` 共用的登录凭据，以及认控制面自签证书的方式 | `internal/cli/admin.go`、`internal/pin`、`mpx connect` |
+| SSH 通道 / 管理员账号 | `mpx connect --ssh` 走 `api-relay` 免密接入；无 SSH 环境用管理员账号 + 证书指纹 / ACME 接入 | `internal/cli/ssh.go`、`internal/cli/admin.go`、`internal/pin` |
 
 ## 组成
 
@@ -57,7 +53,7 @@ MPX 想做的是：一个人、没有团队也没人值班，也能把几台到�
 
 ```mermaid
 flowchart LR
-  op["浏览器 / 操作机<br/>/admin/ 网页管理台 · mpx CLI"] -- "HTTPS /api<br/>账号登录 · 按指纹认证书" --> cp
+  op["操作者 / AI Agent<br/>mpx CLI (-o json) · skills/mpx/SKILL.md"] -- "SSH 通道 (mpx api-relay)<br/>或 HTTPS /api" --> cp
   subgraph cp["控制面（mpx serve）"]
     db[("SQLite<br/>唯一真相")]
     api["管理接口"]
@@ -74,7 +70,7 @@ flowchart LR
 
 **走查：给朋友 alice 开一个账号**
 
-1. 你在自己电脑上跑 `mpx user add alice --plan 标准 --limit 100GB`（不带 `--plan` 就归默认套餐），或在 `/admin/` 管理台的用户页点「新建」。CLI 把它拼成一个 `/api` 请求（[internal/cli/user.go](../../internal/cli/user.go)），按控制面证书指纹建立 HTTPS 连接。这台电脑之前已经接入过控制面：跑 `mpx init` 的那台自动接入；别的设备用 `mpx connect` 加管理员账号密码接入，见 [本机入口](operator-entry.md)。
+1. 你或 AI Agent 在自己电脑上跑 `mpx user add alice --plan 标准 --limit 100GB -o json`（不带 `--plan` 就归默认套餐）。CLI 把它拼成一个 `/api` 请求（[internal/cli/user.go](../../internal/cli/user.go)），经 `--ssh` 通道（或按证书指纹/ACME 校验的 HTTPS）发给控制面。这台电脑之前已经接入过控制面：跑 `mpx init` 的那台自动走 SSH 通道；别的设备用 `mpx connect --ssh` 或密码登录接入，见 [本机入口](operator-entry.md)。
 2. 控制面的管理接口（[internal/server](../../internal/server/)）校验 token，写进 SQLite（[internal/store](../../internal/store/)）。节点上这时一个字节都没动。见 [控制面与数据](control-plane.md)。
 3. 下一轮后台循环（最多 30 秒）先采样、再重置、最后收敛：发现 alice 该在套餐里的那几个入站上，就经 SSH 调 xray 的 `adu` 把她加进去，不重启（[internal/control/loop.go](../../internal/control/loop.go)）。见 [节点](nodes.md)。
 4. 你把 `mpx user show alice` 里的订阅地址发给她。她的 Clash Verge 拉 `/sub/{token}`，控制面按 User-Agent 认出是 Clash Meta，用规则表生成带策略组的 YAML（[internal/render](../../internal/render/)）。见 [订阅与分流](subscription.md)。
