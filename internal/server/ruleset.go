@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/RovenEverward/my-proxy/internal/model"
@@ -111,7 +112,9 @@ func (s *Server) rulesetURLFunc(user *model.User, settings *model.Settings, r *h
 	}
 	return func(f, n, up string) string {
 		if snap := snaps[f+"/"+n]; snap != nil && snap.FetchedAt > 0 {
-			return prefix + f + "/" + url.PathEscape(n)
+			// 带快照时间戳作为版本号:接口响应有 Cache-Control: public, max-age=86400,
+			// 避免 Cloudflare 等边缘缓存把旧格式(如旧 yaml)或旧内容续供 24 小时。
+			return prefix + f + "/" + url.PathEscape(n) + "?v=" + strconv.FormatInt(snap.FetchedAt, 10)
 		}
 		return up
 	}, true

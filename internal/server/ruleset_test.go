@@ -364,9 +364,9 @@ func TestPrivatizedSubscriptionRendering(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("私有化订阅: %d", code)
 	}
-	mirror := e.srv.URL + "/sub/" + user.SubToken + "/ruleset/clash/youtube"
-	if !strings.Contains(string(privBody), mirror) {
-		t.Fatalf("就绪文件应换成镜像地址 %q:\n%s", mirror, privBody)
+	mirrorPrefix := e.srv.URL + "/sub/" + user.SubToken + "/ruleset/clash/youtube?v="
+	if !strings.Contains(string(privBody), mirrorPrefix) {
+		t.Fatalf("就绪文件应换成带版本号的镜像地址 %q:\n%s", mirrorPrefix, privBody)
 	}
 	if !strings.Contains(string(privBody), "cdn.jsdelivr.net") {
 		t.Fatal("未就绪文件应保留上游地址")
