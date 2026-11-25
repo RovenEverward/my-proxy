@@ -160,6 +160,52 @@ func TestQUICServerFiltering(t *testing.T) {
 	}
 }
 
+func TestSingBoxServerConfig_OutboundIP(t *testing.T) {
+	n, ins, users := quicFixture()
+	cases := []struct {
+		pref         string
+		wantStrategy string // 空表示不插入 resolve 规则
+	}{
+		{pref: "", wantStrategy: "prefer_ipv4"},
+		{pref: "v4v6", wantStrategy: "prefer_ipv4"},
+		{pref: "v4", wantStrategy: "ipv4_only"},
+		{pref: "v6", wantStrategy: "ipv6_only"},
+		{pref: "asis", wantStrategy: ""},
+	}
+	for _, tc := range cases {
+		t.Run("pref="+tc.pref, func(t *testing.T) {
+			node := n
+			node.OutboundIP = tc.pref
+			raw, err := SingBoxServerConfig(node, model.CoreDeployment{NodeID: node.ID, Core: model.CoreSingBox}, ins, users, scNow)
+			if err != nil {
+				t.Fatalf("SingBoxServerConfig 返回错误: %v", err)
+			}
+			cfg := decodeConfig(t, raw)
+			route := cfg["route"].(map[string]any)
+			rules := route["rules"].([]any)
+			if tc.wantStrategy == "" {
+				if len(rules) != 1 {
+					t.Fatalf("asis 应只保留私网拒绝规则,实际: %#v", rules)
+				}
+				if rules[0].(map[string]any)["ip_is_private"] != true {
+					t.Fatalf("规则顺序异常: %#v", rules)
+				}
+				return
+			}
+			if len(rules) != 2 {
+				t.Fatalf("应包含 resolve 与私网拒绝两条规则,实际: %#v", rules)
+			}
+			first := rules[0].(map[string]any)
+			if first["action"] != "resolve" || first["strategy"] != tc.wantStrategy {
+				t.Fatalf("resolve 规则 = %#v, 期望 strategy=%q", first, tc.wantStrategy)
+			}
+			if rules[1].(map[string]any)["ip_is_private"] != true {
+				t.Fatalf("第二条规则应为私网拒绝: %#v", rules)
+			}
+		})
+	}
+}
+
 func TestQUICRejectInvalid(t *testing.T) {
 	n, ins, users := quicFixture()
 	for _, mutate := range []func(*model.Inbound){

@@ -44,8 +44,8 @@ type Node struct {
 
 	// OutboundIP 是节点出站(直连)的 IP 版本偏好。
 	//
-	// "" 等同 "v4v6";取值见 ValidOutboundIP。它只影响节点上 xray 的 direct
-	// 出站(settings.domainStrategy),不碰订阅渲染。
+	// "" 等同 "v4v6";取值见 ValidOutboundIP。它影响节点上 xray(direct 出站
+	// settings.domainStrategy)与 sing-box(route resolve 策略)的直连出站,不碰订阅渲染。
 	OutboundIP string `json:"outbound_ip,omitempty"`
 }
 

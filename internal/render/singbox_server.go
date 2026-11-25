@@ -59,13 +59,38 @@ func SingBoxServerConfig(n model.Node, d model.CoreDeployment, inbounds []model.
 		"log":       map[string]any{"level": "warn"},
 		"inbounds":  rendered,
 		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
-		"route":     map[string]any{"final": "direct", "rules": []any{map[string]any{"ip_is_private": true, "action": "reject"}}},
+		"route":     map[string]any{"final": "direct", "rules": singboxRouteRules(n.OutboundIP)},
 		"experimental": map[string]any{"v2ray_api": map[string]any{
 			"listen": net.JoinHostPort("127.0.0.1", strconv.Itoa(apiPort)),
 			"stats":  map[string]any{"enabled": true, "inbounds": tags, "users": statsUsers},
 		}},
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// singboxRouteRules 构造 QUIC 节点路由规则:按节点的 OutboundIP 在私网拦截前
+// 插入对应的域名解析策略,与 Xray 的 serverDirectSettings 语义保持一致。
+// sing-box 1.12+ 已弃用 outbound.domain_strategy,1.14+ 须改用 route action:resolve。
+func singboxRouteRules(pref string) []any {
+	rules := make([]any, 0, 2)
+	if strategy := singboxResolveStrategy(pref); strategy != "" {
+		rules = append(rules, map[string]any{"action": "resolve", "strategy": strategy})
+	}
+	rules = append(rules, map[string]any{"ip_is_private": true, "action": "reject"})
+	return rules
+}
+
+func singboxResolveStrategy(pref string) string {
+	switch pref {
+	case "v4":
+		return "ipv4_only"
+	case "v6":
+		return "ipv6_only"
+	case "asis":
+		return ""
+	default:
+		return "prefer_ipv4"
+	}
 }
 
 func singboxServerInbound(in model.Inbound, users []model.User, now time.Time) (map[string]any, error) {
