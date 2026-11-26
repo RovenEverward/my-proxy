@@ -16,7 +16,7 @@ ATLAS = ROOT / args.atlas
 TREE_ROOT = ATLAS / 'README.md'
 BUDGET = {'entry': 60, 'node': 250}
 nodes = [p for p in [ENTRY, *sorted(ATLAS.rglob('*.md'))] if p.exists()]
-SKIP_DIRS = {'.git', '.github', 'node_modules', 'vendor', 'dist', 'build', '.venv', 'venv'}  # .github：issue/PR 模板是平台文件
+SKIP_DIRS = {'.git', '.github', 'node_modules', 'vendor', 'dist', 'build', '.venv', 'venv', '.visual-design'}  # .github：issue/PR 模板是平台文件
 SKIP_FILES = {'CLAUDE.md', 'AGENTS.md'}  # CLAUDE.md 只含 @AGENTS.md；目录级 AGENTS.md 由 Agent 自动加载
 linked, issues = set(), []
 

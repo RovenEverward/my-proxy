@@ -39,3 +39,6 @@
 /internal/ui/assets/build.tmp*/
 /internal/ui/assets/build.old-*/
 /.tmp/
+
+# 本地视觉设计评审产物
+/.visual-design/
