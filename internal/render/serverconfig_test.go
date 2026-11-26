@@ -158,6 +158,7 @@ func TestServerConfig(t *testing.T) {
 			inbounds: []model.Inbound{realityInbound},
 			users:    []model.User{scActiveUser("alice")},
 			checks: []scCheck{
+				{[]any{"policy", "levels", "0", "connIdle"}, float64(1800)},
 				{[]any{"inbounds", 1, "tag"}, "reality-in"},
 				{[]any{"inbounds", 1, "listen"}, "0.0.0.0"},
 				{[]any{"inbounds", 1, "port"}, float64(443)},
@@ -165,6 +166,8 @@ func TestServerConfig(t *testing.T) {
 				{[]any{"inbounds", 1, "streamSettings", "network"}, "tcp"},
 				{[]any{"inbounds", 1, "streamSettings", "security"}, "reality"},
 				{[]any{"inbounds", 1, "streamSettings", "tcpSettings"}, map[string]any{}},
+				{[]any{"inbounds", 1, "streamSettings", "sockopt", "tcpKeepAliveIdle"}, float64(30)},
+				{[]any{"inbounds", 1, "streamSettings", "sockopt", "tcpKeepAliveInterval"}, float64(15)},
 				{[]any{"inbounds", 1, "streamSettings", "realitySettings", "privateKey"}, "REALITY-PRIVATE-KEY"},
 				{[]any{"inbounds", 1, "streamSettings", "realitySettings", "serverNames"}, []any{"www.microsoft.com"}},
 				{[]any{"inbounds", 1, "streamSettings", "realitySettings", "shortIds"}, []any{"0123abcd", "deadbeef"}},
@@ -311,6 +314,8 @@ func TestServerConfig(t *testing.T) {
 				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "path"}, "/x"},
 				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "host"}, "cdn.example.com"},
 				{[]any{"inbounds", 1, "streamSettings", "xhttpSettings", "mode"}, "packet-up"},
+				{[]any{"inbounds", 1, "streamSettings", "sockopt", "tcpKeepAliveIdle"}, float64(30)},
+				{[]any{"inbounds", 1, "streamSettings", "sockopt", "tcpKeepAliveInterval"}, float64(15)},
 			},
 		},
 		{
@@ -354,6 +359,12 @@ func TestServerConfig(t *testing.T) {
 			cfg := scDecode(t, raw)
 			for _, c := range tt.checks {
 				scDigEqual(t, cfg, c.want, c.path...)
+			}
+			if tt.name == "wireguard" {
+				ss := scDig(t, cfg, "inbounds", 1, "streamSettings").(map[string]any)
+				if _, hasSockopt := ss["sockopt"]; hasSockopt {
+					t.Errorf("wireguard 不应输出 sockopt: %#v", ss["sockopt"])
+				}
 			}
 		})
 	}
@@ -518,7 +529,7 @@ func TestServerConfig_Skeleton(t *testing.T) {
 	}, "api")
 	scDigEqual(t, cfg, map[string]any{}, "stats")
 	scDigEqual(t, cfg, map[string]any{
-		"0": map[string]any{"statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true},
+		"0": map[string]any{"connIdle": float64(1800), "statsUserUplink": true, "statsUserDownlink": true, "statsUserOnline": true},
 	}, "policy", "levels")
 	scDigEqual(t, cfg, map[string]any{
 		"statsInboundUplink": true, "statsInboundDownlink": true,

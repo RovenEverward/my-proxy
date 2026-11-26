@@ -52,4 +52,5 @@ QUIC 入站（hysteria2 / tuic）走 sing-box，`sing-box check` 会打开 `cert
 - 读数比上次小 → 说明节点核心重启过 → 记异常日志，不当成负用量。
 - ssh 连接复用的 socket 路径太长 → 超过 unix socket 长度上限直接失败 → 路径必须短。
 - 直连出口默认 IPv4 优先（xray 写 `UseIPv4v6`，sing-box 经 `route` 的 `action: resolve` 写 `prefer_ipv4`，避免双栈节点 IPv6 失联时直连卡死），节点可用 `outbound_ip` 覆盖（如 `v4` / `v6` / `asis` + `node sync`）。
+- Xray 服务端配置默认将 `policy.levels.0.connIdle` 设为 `1800` 秒，并为非 WireGuard 入站开启 `streamSettings.sockopt` 内核 TCP Keep-Alive（`tcpKeepAliveIdle: 30`、`tcpKeepAliveInterval: 15`），防止长连接（如 WebSocket）因空闲超时或中间 NAT 回收而被掐断。
 - 节点不通 → 按退避跳过（短期 30s 起翻倍封顶 5 分钟，持续不通 1 小时后每小时一探）；修好后 `mpx node retry <节点>` 或 `GET /api/nodes/{id}?fresh=1` 立即清退避。

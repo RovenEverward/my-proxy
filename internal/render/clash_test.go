@@ -682,6 +682,16 @@ func TestClashProxyFields(t *testing.T) {
 		if opts["path"] != "/x" || opts["host"] != "cdn.example.com" || opts["mode"] != "packet-up" {
 			t.Errorf("xhttp-opts = %#v", opts)
 		}
+		reuse, ok := opts["reuse-settings"].(map[string]any)
+		if !ok {
+			t.Fatalf("xhttp-opts 缺少 reuse-settings: %#v", opts)
+		}
+		if reuse["h-keep-alive-period"] != 15 ||
+			reuse["max-concurrency"] != "16-32" ||
+			reuse["h-max-request-times"] != "600-900" ||
+			reuse["h-max-reusable-secs"] != "1800-3000" {
+			t.Errorf("reuse-settings = %#v", reuse)
+		}
 	})
 
 	t.Run("vless+httpupgrade", func(t *testing.T) {

@@ -38,3 +38,4 @@ verified: 2026-11-24 @ 3cd7512
 - 订阅走明文 HTTP（或经反代 HTTPS）→ token 可被链路窃听 → 换地址用 `/sub/{token}/rotate`。
 - Marzban 迁库兜底（`settings.marzban_sub_secret`）：`/sub/{token}` 精确查不到时按 Marzban 铸法验签并按用户名定位，旧订阅链接无需更换。
 - `settings.sub_node_prefix`（空串=不加）给 MPX 托管端点的订阅名统一加前缀，外采源不带。
+- Clash Meta（mihomo）订阅渲染 XHTTP 节点时自动写出 `xhttp-opts.reuse-settings`（含 `h-keep-alive-period: 15` 等复用与保活参数），防止 HTTP/2 长连接闲置被掐断。

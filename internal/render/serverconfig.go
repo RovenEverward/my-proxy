@@ -53,6 +53,7 @@ type serverPolicy struct {
 //
 // 入站客户端不写 level 字段,一律落在默认的 0 层,所以只需配 0。
 type serverLevel struct {
+	ConnIdle          int  `json:"connIdle,omitempty"`
 	StatsUserUplink   bool `json:"statsUserUplink"`
 	StatsUserDownlink bool `json:"statsUserDownlink"`
 	// StatsUserOnline 让 xray 记每个用户此刻的在线 IP(statsgetallonlineusers /
@@ -108,6 +109,13 @@ type serverStreamSettings struct {
 	HTTPUpgradeSettings *serverHTTPSettings    `json:"httpupgradeSettings,omitempty"`
 	TLSSettings         *serverTLSSettings     `json:"tlsSettings,omitempty"`
 	RealitySettings     *serverRealitySettings `json:"realitySettings,omitempty"`
+	Sockopt             *serverSockopt         `json:"sockopt,omitempty"`
+}
+
+// serverSockopt 打开节点入站的内核级 TCP Keep-Alive,避免静默长连接被 NAT/防火墙悄然回收。
+type serverSockopt struct {
+	TCPKeepAliveIdle     int `json:"tcpKeepAliveIdle,omitempty"`
+	TCPKeepAliveInterval int `json:"tcpKeepAliveInterval,omitempty"`
 }
 
 // serverEmptySettings 渲染成 {}:tcp 传输没有可选参数,但键必须在。
@@ -285,7 +293,7 @@ func ServerConfig(node model.Node, inbounds []model.Inbound, users []model.User,
 		API:   serverAPI{Tag: "api", Services: []string{"HandlerService", "StatsService"}},
 		Stats: struct{}{},
 		Policy: serverPolicy{
-			Levels: map[string]serverLevel{"0": {StatsUserUplink: true, StatsUserDownlink: true, StatsUserOnline: true}},
+			Levels: map[string]serverLevel{"0": {ConnIdle: 1800, StatsUserUplink: true, StatsUserDownlink: true, StatsUserOnline: true}},
 			System: serverPolicySystem{StatsInboundUplink: true, StatsInboundDownlink: true},
 		},
 		// 第一个入站固定是 API:dokodemo-door 把请求转给 xray 自身,控制面经 SSH
@@ -447,6 +455,13 @@ func serverRenderInbound(in model.Inbound, users []model.User, now time.Time) (s
 			ServerNames: serverNames,
 			PrivateKey:  in.RealityPriv,
 			ShortIDs:    shortIDs,
+		}
+	}
+
+	if in.Protocol != model.ProtocolWireguard {
+		stream.Sockopt = &serverSockopt{
+			TCPKeepAliveIdle:     30,
+			TCPKeepAliveInterval: 15,
 		}
 	}
 

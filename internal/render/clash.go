@@ -272,9 +272,18 @@ type clashGRPCOpts struct {
 
 // clashXHTTPOpts 是 xhttp 的传输参数,只有 mihomo 认。
 type clashXHTTPOpts struct {
-	Path string `yaml:"path,omitempty"`
-	Host string `yaml:"host,omitempty"`
-	Mode string `yaml:"mode,omitempty"`
+	Path          string                   `yaml:"path,omitempty"`
+	Host          string                   `yaml:"host,omitempty"`
+	Mode          string                   `yaml:"mode,omitempty"`
+	ReuseSettings *clashXHTTPReuseSettings `yaml:"reuse-settings,omitempty"`
+}
+
+// clashXHTTPReuseSettings 控制 mihomo xhttp 的连接复用与 HTTP/2 心跳保活。
+type clashXHTTPReuseSettings struct {
+	MaxConcurrency   string `yaml:"max-concurrency,omitempty"`
+	HMaxRequestTimes string `yaml:"h-max-request-times,omitempty"`
+	HMaxReusableSecs string `yaml:"h-max-reusable-secs,omitempty"`
+	HKeepAlivePeriod int    `yaml:"h-keep-alive-period,omitempty"`
 }
 
 // clashHTTPOpts 是 httpupgrade 的传输参数,只有 mihomo 认。
@@ -376,6 +385,14 @@ func clashNode(ep Endpoint, meta bool) (clashProxy, error) {
 			opts := &clashXHTTPOpts{Path: ep.Path, Host: ep.Host}
 			if ep.Mode != "" && ep.Mode != "auto" {
 				opts.Mode = ep.Mode
+			}
+			if meta {
+				opts.ReuseSettings = &clashXHTTPReuseSettings{
+					MaxConcurrency:   "16-32",
+					HMaxRequestTimes: "600-900",
+					HMaxReusableSecs: "1800-3000",
+					HKeepAlivePeriod: 15,
+				}
 			}
 			p.XHTTPOpts = opts
 		case model.NetworkHTTPUpgrade:
