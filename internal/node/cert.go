@@ -79,6 +79,9 @@ func EnsureTLSCertificates(ctx context.Context, r Runner, n model.Node, inbounds
 				"{ test -n %[3]q && test \"$(sha256sum %[1]s | cut -d' ' -f1),$(sha256sum %[2]s | cut -d' ' -f1)\" != %[3]q,%[4]q && echo diff:%[5]d || echo ok:%[5]d; }; ",
 			shellQuote(p.cert), shellQuote(p.key), wantCert, wantKey, i)
 	}
+	// 全 missing 时探针整体退出码非 0 —— 状态已经输出在 stdout,不是失败;
+	// Runner 会把非零退出当错误,这里兜一个 true 让三态标记说了算。
+	probe.WriteString("true; ")
 	out, err := r.Run(ctx, n, probe.String())
 	if err != nil {
 		return false, fmt.Errorf("检查节点上的证书文件失败: %w", err)
